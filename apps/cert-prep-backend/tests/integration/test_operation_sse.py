@@ -289,7 +289,7 @@ def test_document_operation_events_active_route_does_not_expose_recovered_operat
             storage_path=str(tmp_path / "restart.pdf"),
             page_count=1,
         )
-        document_id = document["id"]
+        document_id = document.id
         assert (
             document_operations.get_active_operation_for_document(
                 first_app.state.database,

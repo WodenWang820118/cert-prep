@@ -20,6 +20,7 @@ from cert_prep_backend.capture_integration.infrastructure.persistence import (
     publish_capture_document,
 )
 from cert_prep_backend.capture_integration.infrastructure import review_sessions
+from cert_prep_backend.source_library.domain.models import SourceDocument
 from cert_prep_backend.source_library.infrastructure import operations
 from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
 from cert_prep_backend.platform.database import Database
@@ -87,7 +88,7 @@ def begin_review_capture(
     source_kind: CaptureSourceKind,
     should_cancel: Callable[[], bool],
     on_runtime_started: Callable[[str], None] | None = None,
-) -> dict:
+) -> SourceDocument:
     def persist_runtime_id(operation) -> None:
         review_sessions.set_runtime_capture_id(
             db,
@@ -137,7 +138,7 @@ def commit_review_capture(
     session_id: str,
     candidate: CaptureDocument,
     should_cancel: Callable[[], bool],
-) -> dict:
+) -> SourceDocument:
     session = review_sessions.get(db, project_id=project_id, session_id=session_id)
     runtime_capture_id = session.get("runtime_capture_id")
     if not isinstance(runtime_capture_id, str) or not runtime_capture_id:
@@ -157,8 +158,8 @@ def commit_review_capture(
             project_id=project_id,
             document_id=document_id,
             operation_id=operation_id,
-            source_kind=source["source_kind"],
-            expected_sha256=source["sha256"],
+            source_kind=source.source_kind,
+            expected_sha256=source.sha256,
             document=capture.document,
             ocr_projection=capture.ocr_projection,
         )

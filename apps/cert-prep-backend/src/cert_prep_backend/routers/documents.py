@@ -229,7 +229,7 @@ async def upload_document(
                 storage_path=str(storage_path),
                 sha256=sha256,
                 canonical_suffix=prepared_source.canonical_suffix,
-                filename=document["filename"],
+                filename=document.filename,
                 kind=prepared_source.kind,
             )
             _submit_document_processing(
@@ -239,19 +239,19 @@ async def upload_document(
                 llm_provider=llm_provider,
                 streaming_questions=streaming_questions,
                 project_id=project_id,
-                document_id=document["id"],
+                document_id=document.id,
                 operation_id=operation_id,
                 source=source,
                 coordinator=capture_coordinator,
             )
-            return source_documents_repository.get_document(db, project_id, document["id"])
+            return source_documents_repository.get_document(db, project_id, document.id)
         return _process_document_upload(
             db=db,
             settings=settings,
             llm_provider=llm_provider,
             streaming_questions=streaming_questions,
             project_id=project_id,
-            document_id=document["id"],
+            document_id=document.id,
             operation_id=operation_id,
             source=prepared_source,
             coordinator=capture_coordinator,
@@ -296,14 +296,14 @@ def get_document(project_id: str, document_id: str, db=Depends(get_database)) ->
 def get_document_markdown(project_id: str, document_id: str, db=Depends(get_database)) -> Response:
     try:
         document = source_documents_repository.get_document(db, project_id, document_id)
-        if document["source_kind"] != "document" or FilePath(document["filename"]).suffix.lower() != ".pdf":
+        if document.source_kind != "document" or FilePath(document.filename).suffix.lower() != ".pdf":
             raise _markdown_unavailable_error("Markdown projection is currently available for PDF documents only.")
-        if document["status"] != "ready":
+        if document.status != "ready":
             raise _markdown_unavailable_error("Markdown projection is available after document processing completes.")
         chunks = source_documents_repository.list_chunks(db, project_id, document_id)
         if not chunks:
             raise _markdown_unavailable_error("Markdown projection requires at least one persisted document chunk.")
-        return Response(content=render_pdf_markdown(filename=document["filename"], chunks=chunks), media_type="text/markdown", headers={"Cache-Control": "private, no-store", "Content-Disposition": markdown_content_disposition(document["filename"])})
+        return Response(content=render_pdf_markdown(filename=document.filename, chunks=chunks), media_type="text/markdown", headers={"Cache-Control": "private, no-store", "Content-Disposition": markdown_content_disposition(document.filename)})
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
@@ -312,7 +312,7 @@ def get_document_markdown(project_id: str, document_id: str, db=Depends(get_data
 def get_document_audio_source(project_id: str, document_id: str, db=Depends(get_database), settings: Settings = Depends(get_settings)) -> FileResponse:
     try:
         document = source_documents_repository.get_document(db, project_id, document_id)
-        if document["source_kind"] != "audio":
+        if document.source_kind != "audio":
             raise _audio_source_unavailable_error("Only audio documents have a playable source.")
         source_file = source_documents_repository.get_source_file(db, project_id, document_id)
         source_path = _resolve_stored_source_path(settings, project_id=project_id, storage_path=source_file.storage_path)
@@ -358,7 +358,7 @@ async def retry_document_processing(
         source_file = source_documents_repository.get_source_file(db, project_id, document_id)
         source_path = await asyncio.to_thread(_verify_stored_source_file, settings, project_id=project_id, storage_path=source_file.storage_path, expected_sha256=source_file.sha256)
         canonical_suffix = source_path.suffix.lower()
-        kind = "audio" if document["source_kind"] == "audio" else "pdf" if canonical_suffix == ".pdf" else "image"
+        kind = "audio" if document.source_kind == "audio" else "pdf" if canonical_suffix == ".pdf" else "image"
         async_processing = bool(getattr(request.app.state, "document_processing_async_jobs", True))
         source: PreparedSource | StoredSourceReference
         if async_processing:
@@ -569,7 +569,7 @@ def _process_capture_workbench_upload(*, db, settings: Settings, llm_provider: L
     else:
         source_bytes = source.raw_bytes
         source_sha256 = sha256_hex(source_bytes)
-        file_name = source_documents_repository.get_document(db, project_id, document_id)["filename"]
+        file_name = source_documents_repository.get_document(db, project_id, document_id).filename
         canonical_suffix = source.canonical_suffix
 
     def should_cancel() -> bool:
@@ -607,10 +607,10 @@ def _process_capture_workbench_upload(*, db, settings: Settings, llm_provider: L
         coordinator.delete(capture.capture_id)
     except Exception:
         logger.warning("Validated Capture Runtime job could not be deleted after publication", extra={"project_id": project_id, "document_id": document_id, "capture_id": capture.capture_id})
-    if document["chunks_count"] > 0:
+    if document.chunks_count > 0:
         streaming_questions.enqueue_document(db, project_id=project_id, document_id=document_id)
         document = source_documents_repository.get_document(db, project_id, document_id)
-    if settings.auto_generate_exam_on_upload and not settings.streaming_draft_generation_on_upload and document["chunks_count"] > 0:
+    if settings.auto_generate_exam_on_upload and not settings.streaming_draft_generation_on_upload and document.chunks_count > 0:
         document = _auto_generate_exam_items(db, provider=llm_provider, project_id=project_id, document_id=document_id, limit=settings.auto_generate_exam_limit)
     return document
 
@@ -635,7 +635,7 @@ def _ensure_upload_operation_queued(db, *, project_id: str, operation_id: str) -
 
 def _update_document_exam_state(db, project_id: str, document_id: str, exam_item_count: int) -> dict:
     document = source_documents_repository.get_document(db, project_id, document_id)
-    next_status = "processing" if document["status"] == "processing" else "ready" if document["has_text"] and document["chunks_count"] > 0 else "exam_failed"
+    next_status = "processing" if document.status == "processing" else "ready" if document.has_text and document.chunks_count > 0 else "exam_failed"
     return source_documents_repository.update_exam_state(db, project_id=project_id, document_id=document_id, status=next_status, exam_item_count=exam_item_count)
 
 

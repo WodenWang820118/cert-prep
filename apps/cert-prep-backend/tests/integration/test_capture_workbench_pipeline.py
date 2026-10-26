@@ -248,7 +248,7 @@ def test_public_capture_publication_maps_exact_producer_engine_to_durable_method
             ocr_projection=projection,
         )
 
-        assert result["extraction_method"] == "windowsml_ocr"
+        assert result.extraction_method == "windowsml_ocr"
         assert _public_capture_counts(
             app,
             project_id=str(fixture["project_id"]),
@@ -390,7 +390,7 @@ def test_public_capture_publication_uses_projection_validation_for_embedded_mode
             ocr_projection=projection,
         )
 
-        assert result["extraction_method"] == "windowsml_ocr"
+        assert result.extraction_method == "windowsml_ocr"
 
 
 def test_legacy_embedded_and_mixed_rows_remain_read_compatible(tmp_path: Path) -> None:

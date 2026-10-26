@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from cert_prep_backend.platform.database import Database, utc_now
 from cert_prep_backend.projects.infrastructure.repository import ensure_project_exists
-from cert_prep_backend.source_library.domain.models import SourceFile
+from cert_prep_backend.source_library.domain.models import SourceDocument, SourceFile
 from cert_prep_backend.source_library.infrastructure.records import document_from_row, document_query
 from cert_prep_backend.source_library.domain.statuses import SourceDocumentStatus
 from cert_prep_backend.platform.errors import NotFoundError
@@ -21,7 +21,7 @@ def insert_processing_document(
     now: str,
     source_kind: str = "document",
     duration_ms: int | None = None,
-) -> dict:
+) -> SourceDocument:
     """Insert processing metadata using the caller's transaction."""
 
     connection.execute(
@@ -64,7 +64,7 @@ def insert_processing_document(
     return document_from_row(row)
 
 
-def list_documents(db: Database, project_id: str) -> list[dict]:
+def list_documents(db: Database, project_id: str) -> list[SourceDocument]:
     """List source documents for a project in newest-first order."""
 
     ensure_project_exists(db, project_id)
@@ -84,7 +84,7 @@ def list_documents(db: Database, project_id: str) -> list[dict]:
     return [document_from_row(row) for row in rows]
 
 
-def get_document(db: Database, project_id: str, document_id: str) -> dict:
+def get_document(db: Database, project_id: str, document_id: str) -> SourceDocument:
     """Load a source document by project and document id."""
 
     with db.connect() as connection:
@@ -122,7 +122,7 @@ def update_exam_state(
     document_id: str,
     status: str,
     exam_item_count: int,
-) -> dict:
+) -> SourceDocument:
     """Update mock-exam generation state on a source document."""
 
     now = utc_now()

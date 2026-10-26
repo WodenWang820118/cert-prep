@@ -4,6 +4,8 @@ from sqlite3 import Row
 
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.platform.errors import NotFoundError
+from cert_prep_backend.source_library.domain.models import SourceDocument
+from cert_prep_backend.source_library.domain.statuses import SourceDocumentStatus
 
 
 def document_query(connection, project_id: str, document_id: str) -> Row | None:
@@ -22,43 +24,43 @@ def document_query(connection, project_id: str, document_id: str) -> Row | None:
     ).fetchone()
 
 
-def document_from_row(row: Row) -> dict:
-    """Map a persisted document row into the API/domain dictionary shape."""
+def document_from_row(row: Row) -> SourceDocument:
+    """Map a persisted document row with its chunk count into a SourceDocument."""
 
-    return {
-        "id": row["id"],
-        "project_id": row["project_id"],
-        "filename": row["filename"],
-        "sha256": row["sha256"],
-        "language_hint": row["language_hint"],
-        "page_count": row["page_count"],
-        "has_text": bool(row["has_text"]),
-        "status": row["status"],
-        "extraction_method": row["extraction_method"],
-        "ocr_device": row["ocr_device"],
-        "ocr_fallback_reason": row["ocr_fallback_reason"],
-        "ocr_duration_ms": row["ocr_duration_ms"],
-        "processed_page_count": row["processed_page_count"],
-        "parse_wall_duration_ms": row["parse_wall_duration_ms"],
-        "render_duration_ms": row["render_duration_ms"],
-        "ocr_engine_duration_ms": row["ocr_engine_duration_ms"],
-        "ocr_worker_count": row["ocr_worker_count"],
-        "first_chunk_ms": row["first_chunk_ms"],
-        "exam_item_count": row["exam_item_count"],
-        "content_profile": row["content_profile"],
-        "classification_detail": row["classification_detail"],
-        "chunks_count": row["chunks_count"],
-        "created_at": row["created_at"],
-        "updated_at": row["updated_at"],
-        "source_kind": row["source_kind"],
-        "duration_ms": row["duration_ms"],
-        "transcription_status": row["transcription_status"],
-        "translation_status": row["translation_status"],
-        "configured_transcription_model": row["configured_transcription_model"],
-        "effective_transcription_model": row["effective_transcription_model"],
-        "transcription_device": row["transcription_device"],
-        "transcription_warning": row["transcription_warning"],
-    }
+    return SourceDocument(
+        id=row["id"],
+        project_id=row["project_id"],
+        filename=row["filename"],
+        sha256=row["sha256"],
+        language_hint=row["language_hint"],
+        page_count=row["page_count"],
+        has_text=bool(row["has_text"]),
+        status=SourceDocumentStatus(row["status"]),
+        extraction_method=row["extraction_method"],
+        ocr_device=row["ocr_device"],
+        ocr_fallback_reason=row["ocr_fallback_reason"],
+        ocr_duration_ms=row["ocr_duration_ms"],
+        processed_page_count=row["processed_page_count"],
+        parse_wall_duration_ms=row["parse_wall_duration_ms"],
+        render_duration_ms=row["render_duration_ms"],
+        ocr_engine_duration_ms=row["ocr_engine_duration_ms"],
+        ocr_worker_count=row["ocr_worker_count"],
+        first_chunk_ms=row["first_chunk_ms"],
+        exam_item_count=row["exam_item_count"],
+        content_profile=row["content_profile"],
+        classification_detail=row["classification_detail"],
+        chunks_count=row["chunks_count"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        source_kind=row["source_kind"],
+        duration_ms=row["duration_ms"],
+        transcription_status=row["transcription_status"],
+        translation_status=row["translation_status"],
+        configured_transcription_model=row["configured_transcription_model"],
+        effective_transcription_model=row["effective_transcription_model"],
+        transcription_device=row["transcription_device"],
+        transcription_warning=row["transcription_warning"],
+    )
 
 
 def ensure_document_exists(db: Database, project_id: str, document_id: str) -> None:

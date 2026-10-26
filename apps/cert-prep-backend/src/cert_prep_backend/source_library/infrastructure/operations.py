@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from cert_prep_backend.source_library.domain.models import SourceDocument
+
 from dataclasses import dataclass
 from sqlite3 import Connection, Row
 from collections.abc import Sequence
@@ -180,7 +182,7 @@ def create_and_attach_document(
     document_id: str | None = None,
     source_kind: str = "document",
     duration_ms: int | None = None,
-) -> dict:
+) -> SourceDocument:
     """Insert a document and attach it to the sole operation claimant atomically."""
 
     ensure_project_exists(db, project_id)
@@ -349,7 +351,7 @@ def publish_success(
     operation_id: str,
     document_id: str,
     extraction: PdfExtractionResult,
-) -> dict:
+) -> SourceDocument:
     """Atomically publish final extraction data and terminal operation success."""
 
     now = utc_now()
@@ -412,7 +414,7 @@ def publish_capture_audio_success(
     model: str,
     device: str | None,
     warning: str | None,
-) -> dict:
+) -> SourceDocument:
     """Atomically publish validated Capture Runtime transcript and translations."""
 
     if not segments:
