@@ -15,10 +15,10 @@ from cert_prep_backend.platform.errors import (
     ValidationError,
 )
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
-from cert_prep_backend.domains.practice import explanations as practice_explanations
-from cert_prep_backend.domains.practice import repository as practice_repository
-from cert_prep_backend.domains.practice.exceptions import PracticeSessionConflict
-from cert_prep_backend.domains.practice.schemas import (
+from cert_prep_backend.practice.application import explanations as practice_explanations
+from cert_prep_backend.practice.infrastructure import repository as practice_repository
+from cert_prep_backend.practice.domain.exceptions import PracticeSessionConflict
+from cert_prep_backend.practice.api.schemas import (
     PracticeAttemptCreate,
     PracticeAttemptRead,
     PracticeSessionCreate,

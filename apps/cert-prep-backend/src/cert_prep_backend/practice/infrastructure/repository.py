@@ -1,28 +1,28 @@
 from __future__ import annotations
 
-from cert_prep_backend.domains.practice.attempt_repository import (
+from cert_prep_backend.practice.infrastructure.attempt_repository import (
     record_attempt as _record_attempt,
 )
-from cert_prep_backend.domains.practice.models import PracticeSessionMode, WrongAnswer
-from cert_prep_backend.domains.practice.session_repository import (
+from cert_prep_backend.practice.domain.models import PracticeSessionMode, WrongAnswer
+from cert_prep_backend.practice.infrastructure.session_repository import (
     abandon_session as _abandon_session,
 )
-from cert_prep_backend.domains.practice.session_repository import (
+from cert_prep_backend.practice.infrastructure.session_repository import (
     create_session as _create_session,
 )
-from cert_prep_backend.domains.practice.session_repository import (
+from cert_prep_backend.practice.infrastructure.session_repository import (
     get_session as _get_session,
 )
-from cert_prep_backend.domains.practice.session_repository import (
+from cert_prep_backend.practice.infrastructure.session_repository import (
     list_active_sessions as _list_active_sessions,
 )
-from cert_prep_backend.domains.practice.wrong_answer_repository import (
+from cert_prep_backend.practice.infrastructure.wrong_answer_repository import (
     get_current_wrong_answer as _get_current_wrong_answer,
 )
-from cert_prep_backend.domains.practice.wrong_answer_repository import (
+from cert_prep_backend.practice.infrastructure.wrong_answer_repository import (
     list_wrong_answers as _list_wrong_answers,
 )
-from cert_prep_backend.domains.practice.wrong_answer_repository import (
+from cert_prep_backend.practice.infrastructure.wrong_answer_repository import (
     summarize_wrong_answers as _summarize_wrong_answers,
 )
 from cert_prep_backend.platform.database import Database

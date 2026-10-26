@@ -5,7 +5,7 @@ from typing import Protocol, runtime_checkable
 
 from cert_prep_backend.platform.errors import ProviderUnavailableError
 from cert_prep_backend.domains.mock_exams.ports import ProviderHealth, provider_capability
-from cert_prep_backend.domains.practice.models import WrongAnswer
+from cert_prep_backend.practice.domain.models import WrongAnswer
 
 
 @dataclass(frozen=True, slots=True)

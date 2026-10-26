@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from sqlite3 import Row
 
-from cert_prep_backend.domains.practice.models import (
+from cert_prep_backend.practice.domain.models import (
     PracticeAttempt,
     PracticeQuestion,
     PracticeSession,

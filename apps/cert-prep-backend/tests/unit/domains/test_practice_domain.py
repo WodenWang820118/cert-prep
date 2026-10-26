@@ -1,6 +1,6 @@
 import pytest
 
-from cert_prep_backend.domains.practice import (
+from cert_prep_backend.practice.domain import (
     NO_PLAYABLE_QUESTIONS_MESSAGE,
     QUESTION_NOT_IN_SESSION_MESSAGE,
     SELECTED_ANSWER_NOT_AVAILABLE_MESSAGE,

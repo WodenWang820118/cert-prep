@@ -7,29 +7,29 @@ from sqlite3 import Row
 from uuid import uuid4
 
 from cert_prep_backend.platform.errors import NotFoundError, ValidationError
-from cert_prep_backend.domains.practice.exceptions import PracticeSessionConflict
-from cert_prep_backend.domains.practice.models import (
+from cert_prep_backend.practice.domain.exceptions import PracticeSessionConflict
+from cert_prep_backend.practice.domain.models import (
     PracticeSessionMode,
     PracticeSessionStatus,
     WrongAnswer,
 )
-from cert_prep_backend.domains.practice.policies import (
+from cert_prep_backend.practice.domain.policies import (
     DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE,
     PracticeRuleViolation,
     is_playable_practice_question,
     select_random_session_question_ids,
     select_session_question_ids,
 )
-from cert_prep_backend.domains.practice.query_helpers import (
+from cert_prep_backend.practice.infrastructure.query_helpers import (
     ensure_project_row_exists,
     fetch_practice_session_row,
 )
-from cert_prep_backend.domains.practice.row_mappers import (
+from cert_prep_backend.practice.infrastructure.row_mappers import (
     attempt_to_record,
     practice_question_from_row,
     session_to_record,
 )
-from cert_prep_backend.domains.practice.wrong_answer_repository import (
+from cert_prep_backend.practice.infrastructure.wrong_answer_repository import (
     list_current_wrong_answer_models,
 )
 from cert_prep_backend.domains.source_documents import repository as documents_repository

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from cert_prep_backend.domains.practice.models import PracticeSessionMode, PracticeSessionStatus
+from cert_prep_backend.practice.domain.models import PracticeSessionMode, PracticeSessionStatus
 
 
 class PracticeSessionCreate(BaseModel):

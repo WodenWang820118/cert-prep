@@ -49,9 +49,9 @@ from cert_prep_backend.routers import (
     drafts,
     llm,
     operation_events,
-    practice,
     runtime,
 )
+from cert_prep_backend.practice.api import router as practice
 from cert_prep_backend.projects.api import router as projects
 
 

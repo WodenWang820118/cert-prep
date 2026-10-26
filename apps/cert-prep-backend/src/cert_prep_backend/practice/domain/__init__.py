@@ -1,4 +1,4 @@
-from cert_prep_backend.domains.practice.models import (
+from cert_prep_backend.practice.domain.models import (
     PracticeAttempt,
     PracticeQuestion,
     PracticeSession,
@@ -7,7 +7,7 @@ from cert_prep_backend.domains.practice.models import (
     QuestionDraftStatus,
     WrongAnswer,
 )
-from cert_prep_backend.domains.practice.policies import (
+from cert_prep_backend.practice.domain.policies import (
     DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE,
     NO_PLAYABLE_QUESTIONS_MESSAGE,
     QUESTION_NOT_IN_SESSION_MESSAGE,
