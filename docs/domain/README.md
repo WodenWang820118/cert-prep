@@ -29,7 +29,7 @@ flowchart LR
 | 教材來源   | 待補（C3）                 | `cert_prep_backend/source_library`、`app/source-library` | 規劃中  |
 | 擷取整合   | 待補（C3、C6）             | `cert_prep_backend/capture_integration`、`app/capture`   | 規劃中  |
 | 題目編寫   | 待補（C3）                 | `cert_prep_backend/authoring`、`app/authoring`           | 規劃中  |
-| 練習與複習 | 待補（C3）                 | `cert_prep_backend/practice`、`app/practice`             | 規劃中  |
+| 練習與複習 | [practice.md](practice.md) | `cert_prep_backend/practice`、`app/practice`             | C4 完成 |
 | AI 供應    | 待補（C3）                 | `cert_prep_backend/ai_providers`                         | 規劃中  |
 | 執行環境   | 待補（C3、C8）             | `cert_prep_backend/runtime_provisioning`、`app/runtime`  | 規劃中  |
 

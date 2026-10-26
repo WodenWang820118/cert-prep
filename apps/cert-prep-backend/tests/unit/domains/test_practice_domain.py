@@ -8,16 +8,19 @@ from cert_prep_backend.practice.domain import (
     PracticeQuestion,
     PracticeRuleViolation,
     PracticeSession,
+    PracticeSessionMode,
     PracticeSessionStatus,
     QuestionDraftStatus,
-    build_practice_attempt,
     current_wrong_answers,
-    is_playable_practice_question,
-    select_session_question_ids,
+    select_questions,
 )
 
 
-def test_practice_models_preserve_current_serialized_values() -> None:
+def _never_seed() -> int:
+    raise AssertionError("a seed was not needed")
+
+
+def test_practice_enums_keep_their_serialized_values() -> None:
     session = PracticeSession(
         id="session-1",
         project_id="project-1",
@@ -36,27 +39,42 @@ def test_practice_models_preserve_current_serialized_values() -> None:
     assert PracticeSessionStatus.COMPLETED.value == "completed"
     assert PracticeSessionStatus.ABANDONED.value == "abandoned"
     assert QuestionDraftStatus.APPROVED.value == "approved"
-    assert session.to_record()["status"] == "active"
-    assert session.to_record()["question_ids"] == ["question-1"]
-    assert session.to_record()["mode"] == "random_draw"
-    assert session.to_record()["document_id"] is None
-    assert session.to_record()["question_count"] == 10
-    assert session.to_record()["random_seed"] is None
-    assert session.to_record()["completed_at"] is None
-    assert session.to_record()["abandoned_at"] is None
+    assert session.status is PracticeSessionStatus.ACTIVE
+    assert session.question_ids == ("question-1",)
+    assert session.mode is PracticeSessionMode.RANDOM_DRAW
+    assert session.source_document_id is None
+    assert session.requested_question_count == 10
+    assert session.random_seed is None
+    assert session.completed_at is None
+    assert session.abandoned_at is None
     assert question.status is QuestionDraftStatus.APPROVED
 
 
-def test_select_session_questions_preserves_playable_order_and_requires_questions() -> None:
-    assert select_session_question_ids(["q-1", "q-2", "q-3"], 2) == ("q-1", "q-2")
+def test_ordered_selection_keeps_playable_order_and_requires_questions() -> None:
+    selection = select_questions(
+        PracticeSessionMode.FULL_DOCUMENT,
+        ["q-1", "q-2", "q-3"],
+        requested_count=2,
+        random_seed=None,
+        document_id="document-1",
+        new_seed=_never_seed,
+    )
 
+    assert selection.question_ids == ("q-1", "q-2")
+    assert selection.document_id == "document-1"
     with pytest.raises(PracticeRuleViolation) as exc_info:
-        select_session_question_ids([], 10)
-
+        select_questions(
+            PracticeSessionMode.REVIEW_RETRY,
+            [],
+            requested_count=10,
+            random_seed=None,
+            document_id=None,
+            new_seed=_never_seed,
+        )
     assert str(exc_info.value) == NO_PLAYABLE_QUESTIONS_MESSAGE
 
 
-def test_playable_practice_question_requires_complete_approved_grounded_content() -> None:
+def test_playable_question_requires_complete_approved_grounded_content() -> None:
     question = PracticeQuestion(
         id="question-1",
         question="Which access model should be applied?",
@@ -66,76 +84,54 @@ def test_playable_practice_question_requires_complete_approved_grounded_content(
         citation_page=1,
     )
 
-    assert is_playable_practice_question(question) is True
-    assert (
-        is_playable_practice_question(
-            PracticeQuestion(
-                id="question-2",
-                question="   ",
-                choices=question.choices,
-                correct_answer=question.correct_answer,
-                rationale=question.rationale,
-                citation_page=question.citation_page,
-            )
-        )
-        is False
-    )
-    assert (
-        is_playable_practice_question(
-            PracticeQuestion(
-                id="question-3",
-                question=question.question,
-                choices=("Use least privilege", "   "),
-                correct_answer=question.correct_answer,
-                rationale=question.rationale,
-                citation_page=question.citation_page,
-            )
-        )
-        is False
-    )
-    assert (
-        is_playable_practice_question(
-            PracticeQuestion(
-                id="question-4",
-                question=question.question,
-                choices=question.choices,
-                correct_answer="Missing answer",
-                rationale=question.rationale,
-                citation_page=question.citation_page,
-            )
-        )
-        is False
-    )
-    assert (
-        is_playable_practice_question(
-            PracticeQuestion(
-                id="question-5",
-                question=question.question,
-                choices=question.choices,
-                correct_answer=question.correct_answer,
-                rationale=" ",
-                citation_page=question.citation_page,
-            )
-        )
-        is False
-    )
-    assert (
-        is_playable_practice_question(
-            PracticeQuestion(
-                id="question-6",
-                question=question.question,
-                choices=question.choices,
-                correct_answer=question.correct_answer,
-                rationale=question.rationale,
-                citation_page=None,
-                source_excerpt="",
-            )
-        )
-        is False
-    )
+    assert question.is_playable() is True
+    unplayable = [
+        PracticeQuestion(
+            id="blank-question",
+            question="   ",
+            choices=question.choices,
+            correct_answer=question.correct_answer,
+            rationale=question.rationale,
+            citation_page=question.citation_page,
+        ),
+        PracticeQuestion(
+            id="one-real-choice",
+            question=question.question,
+            choices=("Use least privilege", "   "),
+            correct_answer=question.correct_answer,
+            rationale=question.rationale,
+            citation_page=question.citation_page,
+        ),
+        PracticeQuestion(
+            id="answer-not-a-choice",
+            question=question.question,
+            choices=question.choices,
+            correct_answer="Missing answer",
+            rationale=question.rationale,
+            citation_page=question.citation_page,
+        ),
+        PracticeQuestion(
+            id="blank-rationale",
+            question=question.question,
+            choices=question.choices,
+            correct_answer=question.correct_answer,
+            rationale=" ",
+            citation_page=question.citation_page,
+        ),
+        PracticeQuestion(
+            id="no-evidence",
+            question=question.question,
+            choices=question.choices,
+            correct_answer=question.correct_answer,
+            rationale=question.rationale,
+            citation_page=None,
+            source_excerpt="",
+        ),
+    ]
+    assert [item.id for item in unplayable if item.is_playable()] == []
 
 
-def test_practice_attempt_policy_validates_membership_and_grades_answer() -> None:
+def test_answering_checks_membership_and_choice_and_grades_the_answer() -> None:
     session = PracticeSession(
         id="session-1",
         project_id="project-1",
@@ -148,60 +144,46 @@ def test_practice_attempt_policy_validates_membership_and_grades_answer() -> Non
         correct_answer="Apply the cited concept",
     )
 
-    attempt = build_practice_attempt(
+    attempt = session.answer(
         attempt_id="attempt-1",
-        session=session,
         question=question,
         selected_answer="Ignore the cited source",
+        now="2026-06-11T00:01:00Z",
+    )
+
+    assert attempt == PracticeAttempt(
+        id="attempt-1",
+        session_id="session-1",
+        project_id="project-1",
+        question_id="question-1",
+        selected_answer="Ignore the cited source",
+        is_correct=False,
         created_at="2026-06-11T00:01:00Z",
     )
-
-    assert attempt.to_record() == {
-        "id": "attempt-1",
-        "session_id": "session-1",
-        "project_id": "project-1",
-        "question_id": "question-1",
-        "selected_answer": "Ignore the cited source",
-        "is_correct": False,
-        "created_at": "2026-06-11T00:01:00Z",
-    }
-
-    corrected = build_practice_attempt(
+    corrected = session.answer(
         attempt_id="attempt-2",
-        session=session,
         question=question,
         selected_answer="Apply the cited concept",
-        created_at="2026-06-11T00:02:00Z",
+        now="2026-06-11T00:02:00Z",
     )
-
     assert corrected.is_correct is True
 
     with pytest.raises(PracticeRuleViolation) as missing_choice:
-        build_practice_attempt(
+        session.answer(
             attempt_id="attempt-3",
-            session=session,
             question=question,
             selected_answer="Not a listed choice",
-            created_at="2026-06-11T00:03:00Z",
+            now="2026-06-11T00:03:00Z",
         )
-
     assert str(missing_choice.value) == SELECTED_ANSWER_NOT_AVAILABLE_MESSAGE
 
-    outside_session_question = PracticeQuestion(
-        id="question-2",
-        choices=("A", "B"),
-        correct_answer="A",
-    )
-
     with pytest.raises(PracticeRuleViolation) as outside_session:
-        build_practice_attempt(
+        session.answer(
             attempt_id="attempt-4",
-            session=session,
-            question=outside_session_question,
+            question=PracticeQuestion(id="question-2", choices=("A", "B"), correct_answer="A"),
             selected_answer="A",
-            created_at="2026-06-11T00:04:00Z",
+            now="2026-06-11T00:04:00Z",
         )
-
     assert str(outside_session.value) == QUESTION_NOT_IN_SESSION_MESSAGE
 
 
@@ -259,16 +241,14 @@ def test_current_wrong_answers_uses_latest_attempt_per_question() -> None:
     wrong_answers = current_wrong_answers(attempts, questions)
 
     assert [item.question_id for item in wrong_answers] == ["question-2"]
-    assert wrong_answers[0].to_record() == {
-        "attempt_id": "attempt-latest-wrong",
-        "session_id": "session-1",
-        "question_id": "question-2",
-        "question": "Which answer is grounded?",
-        "selected_answer": "Ungrounded",
-        "correct_answer": "Grounded",
-        "rationale": "The page says it directly.",
-        "citation_page": 2,
-        "source_excerpt": "Grounded answer evidence.",
-        "document_id": None,
-        "created_at": "2026-06-11T00:04:00Z",
-    }
+    wrong = wrong_answers[0]
+    assert (wrong.attempt_id, wrong.selected_answer, wrong.correct_answer) == (
+        "attempt-latest-wrong",
+        "Ungrounded",
+        "Grounded",
+    )
+    assert (wrong.citation_page, wrong.document_id, wrong.created_at) == (
+        2,
+        None,
+        "2026-06-11T00:04:00Z",
+    )

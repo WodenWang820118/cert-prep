@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from cert_prep_backend.practice.infrastructure import attempt_repository
+from cert_prep_backend.practice.api import router as practice_router
 from practice_test_support import _create_manual_question, _create_project, _upload_document
 
 
@@ -67,7 +67,7 @@ def test_wrong_answer_summary_groups_same_timestamp_attempts_by_insert_sequence(
     client: TestClient, auth_headers, monkeypatch
 ) -> None:
     monkeypatch.setattr(
-        attempt_repository,
+        practice_router,
         "utc_now",
         lambda: "2026-07-16T00:00:00+00:00",
     )

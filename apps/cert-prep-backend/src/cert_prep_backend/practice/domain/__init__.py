@@ -1,25 +1,31 @@
-from cert_prep_backend.practice.domain.models import (
-    PracticeAttempt,
+"""Domain model of the Practice and Review context, one module per aggregate."""
+
+from cert_prep_backend.practice.domain.attempt import PracticeAttempt
+from cert_prep_backend.practice.domain.exceptions import (
+    PracticeRuleViolation,
+    PracticeSessionConflict,
+)
+from cert_prep_backend.practice.domain.session import (
+    DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE,
+    NO_PLAYABLE_QUESTIONS_MESSAGE,
+    QUESTION_NOT_IN_SESSION_MESSAGE,
+    SELECTED_ANSWER_NOT_AVAILABLE_MESSAGE,
     PracticeQuestion,
     PracticeSession,
     PracticeSessionMode,
     PracticeSessionStatus,
     QuestionDraftStatus,
-    WrongAnswer,
+    QuestionSelection,
+    select_questions,
 )
-from cert_prep_backend.practice.domain.policies import (
-    DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE,
-    NO_PLAYABLE_QUESTIONS_MESSAGE,
-    QUESTION_NOT_IN_SESSION_MESSAGE,
-    SELECTED_ANSWER_NOT_AVAILABLE_MESSAGE,
-    PracticeRuleViolation,
-    build_practice_attempt,
+from cert_prep_backend.practice.domain.wrong_answer import (
+    AnsweredQuestion,
+    RepeatedMiss,
+    WrongAnswer,
+    WrongAnswerCluster,
+    WrongAnswerSummary,
     current_wrong_answers,
-    ensure_question_belongs_to_session,
-    ensure_selected_answer_is_available,
-    is_playable_practice_question,
-    select_random_session_question_ids,
-    select_session_question_ids,
+    current_wrong_answers_in,
 )
 
 __all__ = [
@@ -27,19 +33,21 @@ __all__ = [
     "NO_PLAYABLE_QUESTIONS_MESSAGE",
     "QUESTION_NOT_IN_SESSION_MESSAGE",
     "SELECTED_ANSWER_NOT_AVAILABLE_MESSAGE",
+    "AnsweredQuestion",
     "PracticeAttempt",
     "PracticeQuestion",
     "PracticeRuleViolation",
     "PracticeSession",
+    "PracticeSessionConflict",
     "PracticeSessionMode",
     "PracticeSessionStatus",
     "QuestionDraftStatus",
+    "QuestionSelection",
+    "RepeatedMiss",
     "WrongAnswer",
-    "build_practice_attempt",
+    "WrongAnswerCluster",
+    "WrongAnswerSummary",
     "current_wrong_answers",
-    "ensure_question_belongs_to_session",
-    "ensure_selected_answer_is_available",
-    "is_playable_practice_question",
-    "select_random_session_question_ids",
-    "select_session_question_ids",
+    "current_wrong_answers_in",
+    "select_questions",
 ]
