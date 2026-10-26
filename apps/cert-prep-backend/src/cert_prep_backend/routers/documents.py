@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import asdict
+
 import asyncio
 import hashlib
 import logging
@@ -55,6 +57,7 @@ from cert_prep_backend.authoring.domain.normalization import as_editable_questio
 from cert_prep_backend.authoring.domain.ports import DraftGenerationProvider as LLMProvider
 from cert_prep_backend.authoring.infrastructure.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.projects.infrastructure import repository as projects_repository
+from cert_prep_backend.source_library.domain.operation import DocumentOperation
 from cert_prep_backend.source_library.infrastructure import operations as document_operations
 from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
 from cert_prep_backend.source_library.infrastructure.audio import (
@@ -118,7 +121,7 @@ MARKDOWN_CONTENT = {"text/markdown": {"schema": {"type": "string", "format": "bi
 )
 def get_document_operation(project_id: str, operation_id: OperationIdPath, db=Depends(get_database)) -> dict:
     try:
-        return document_operations.get_operation(db, project_id=project_id, operation_id=operation_id)
+        return _operation_read(document_operations.get_operation(db, project_id=project_id, operation_id=operation_id))
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
@@ -138,8 +141,8 @@ def cancel_document_operation(
     try:
         operation = document_operations.cancel_operation(db, project_id=project_id, operation_id=operation_id)
         if _cancel_queued_document_work(worker_pool, operation_id):
-            return document_operations.get_operation(db, project_id=project_id, operation_id=operation_id)
-        return operation
+            return _operation_read(document_operations.get_operation(db, project_id=project_id, operation_id=operation_id))
+        return _operation_read(operation)
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
     except DocumentOperationConflictError as exc:
@@ -188,7 +191,7 @@ async def upload_document(
         projects_repository.ensure_project_exists(db, project_id)
         claim = document_operations.claim_operation(db, project_id=project_id, operation_id=operation_id)
         if not claim.acquired:
-            if claim.operation["status"] in {"cancel_requested", "canceled"}:
+            if claim.operation.status in {"cancel_requested", "canceled"}:
                 raise _operation_canceled_error("Document upload was canceled before it started.")
             raise _operation_conflict_error("Document operation id is already in use.")
         claimed = True
@@ -328,9 +331,9 @@ def get_document_audio_source(project_id: str, document_id: str, db=Depends(get_
 def cancel_document_processing(project_id: str, document_id: str, db=Depends(get_database), worker_pool: DocumentWorkerPool = Depends(get_document_worker_pool)) -> dict:
     try:
         operation = document_operations.cancel_document_processing(db, project_id=project_id, document_id=document_id)
-        if _cancel_queued_document_work(worker_pool, operation["id"]):
-            return document_operations.get_operation(db, project_id=project_id, operation_id=operation["id"])
-        return operation
+        if _cancel_queued_document_work(worker_pool, operation.id):
+            return _operation_read(document_operations.get_operation(db, project_id=project_id, operation_id=operation.id))
+        return _operation_read(operation)
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
     except OperationNotCancellableError as exc:
@@ -369,9 +372,9 @@ async def retry_document_processing(
         document_operations.start_retry_operation(db, project_id=project_id, document_id=document_id, operation_id=operation_id)
         if async_processing:
             _submit_document_processing(worker_pool=worker_pool, db=db, settings=settings, llm_provider=llm_provider, streaming_questions=streaming_questions, project_id=project_id, document_id=document_id, operation_id=operation_id, source=source, coordinator=capture_coordinator)
-            return document_operations.get_operation(db, project_id=project_id, operation_id=operation_id)
+            return _operation_read(document_operations.get_operation(db, project_id=project_id, operation_id=operation_id))
         _process_document_upload(db=db, settings=settings, llm_provider=llm_provider, streaming_questions=streaming_questions, project_id=project_id, document_id=document_id, operation_id=operation_id, source=source, coordinator=capture_coordinator)
-        return document_operations.get_operation(db, project_id=project_id, operation_id=operation_id)
+        return _operation_read(document_operations.get_operation(db, project_id=project_id, operation_id=operation_id))
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
     except InvalidSourceError as exc:
@@ -492,11 +495,18 @@ def _submit_document_processing(*, worker_pool: DocumentWorkerPool, db, settings
         document_operations.finish_failed(db, project_id=project_id, operation_id=operation_id, error="Document worker could not accept processing.")
         raise
     operation = document_operations.get_operation(db, project_id=project_id, operation_id=operation_id)
-    if operation["document_id"] == document_id and operation["status"] == "running":
+    if operation.document_id == document_id and operation.status == "running":
         return operation
-    if worker_pool.cancel(operation_id) is False and operation["status"] == "cancel_requested":
+    if worker_pool.cancel(operation_id) is False and operation.status == "cancel_requested":
         document_operations.acknowledge_cancellation(db, project_id=project_id, operation_id=operation_id)
     return document_operations.get_operation(db, project_id=project_id, operation_id=operation_id)
+
+
+
+def _operation_read(operation: DocumentOperation) -> dict:
+    """The operation as the DocumentOperationRead payload it has always been."""
+
+    return asdict(operation)
 
 
 def _cancel_queued_document_work(worker_pool: DocumentWorkerPool, operation_id: str) -> bool:
@@ -505,11 +515,11 @@ def _cancel_queued_document_work(worker_pool: DocumentWorkerPool, operation_id: 
 
 def _cancel_queued_operation(db, *, project_id: str, operation_id: str) -> None:
     operation = document_operations.get_operation(db, project_id=project_id, operation_id=operation_id)
-    if operation["status"] in {"canceled", "failed", "succeeded"}:
+    if operation.status in {"canceled", "failed", "succeeded"}:
         return
-    if operation["status"] != "cancel_requested":
+    if operation.status != "cancel_requested":
         operation = document_operations.cancel_operation(db, project_id=project_id, operation_id=operation_id)
-    if operation["status"] == "cancel_requested":
+    if operation.status == "cancel_requested":
         document_operations.acknowledge_cancellation(db, project_id=project_id, operation_id=operation_id)
 
 
@@ -621,15 +631,15 @@ def _capture_media_type(canonical_suffix: str) -> str:
 
 def _ensure_document_operation_running(db, *, project_id: str, document_id: str, operation_id: str) -> None:
     operation = document_operations.get_operation(db, project_id=project_id, operation_id=operation_id)
-    if not (operation["document_id"] == document_id and operation["status"] == "running" and operation["phase"] == "processing" and operation["cancellable"]):
+    if not (operation.document_id == document_id and operation.status == "running" and operation.phase == "processing" and operation.cancellable):
         raise DocumentProcessingCanceledError("Document processing is no longer active.")
 
 
 def _ensure_upload_operation_queued(db, *, project_id: str, operation_id: str) -> None:
     operation = document_operations.get_operation(db, project_id=project_id, operation_id=operation_id)
-    if operation["status"] in {"cancel_requested", "canceled"}:
+    if operation.status in {"cancel_requested", "canceled"}:
         raise DocumentProcessingCanceledError("Document upload was canceled before it started.")
-    if not (operation["document_id"] is None and operation["status"] == "queued" and operation["phase"] == "uploading" and operation["cancellable"]):
+    if not (operation.document_id is None and operation.status == "queued" and operation.phase == "uploading" and operation.cancellable):
         raise DocumentOperationStateError("Document upload operation is no longer available.")
 
 
