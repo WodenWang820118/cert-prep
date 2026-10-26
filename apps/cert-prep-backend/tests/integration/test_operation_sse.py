@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.platform.sse import operation_snapshot_stream
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.domains.runtime_installations.manager import RuntimeInstallationManager
+from cert_prep_backend.runtime_provisioning.infrastructure.manager import RuntimeInstallationManager
 from cert_prep_backend.source_library.infrastructure import operations as document_operations
 from cert_prep_backend.platform.change_notifications import DatabaseChangeNotifier
 from cert_prep_backend.platform.database import Database

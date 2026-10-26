@@ -8,8 +8,8 @@ from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.authoring.infrastructure.ollama_profiles import (
     collect_ollama_machine_inventory,
 )
-from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
-from cert_prep_backend.domains.runtime_schemas import (
+from cert_prep_backend.runtime_provisioning.infrastructure import RuntimeInstallationManager
+from cert_prep_backend.runtime_provisioning.api.schemas import (
     MachineInventoryRead,
     RuntimeInstallationRead,
     RuntimeRequirementsRead,

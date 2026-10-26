@@ -23,7 +23,7 @@ from cert_prep_backend.authoring.api.schemas import (
 from cert_prep_backend.authoring.infrastructure.provider_selection import (
     provider_selection_from_settings,
 )
-from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
+from cert_prep_backend.runtime_provisioning.infrastructure import RuntimeInstallationManager
 from cert_prep_backend.api.errors import (
     api_error,
     not_found_error,

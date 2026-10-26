@@ -290,9 +290,9 @@ is not part of this OCR-only TODO.
      `RuntimePromotionStore::adopt_verified_legacy_root`; their path-free
      `LegacyAdoptionPrepared`/`LegacyAdopted` receipt states are not current
      symbols. The Python
-    `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/manager.py`
+    `apps/cert-prep-backend/src/cert_prep_backend/runtime_provisioning/infrastructure/manager.py`
     (`RuntimeInstallationManager`, `RuntimeInstaller`) and
-    `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/installers.py`
+    `apps/cert-prep-backend/src/cert_prep_backend/runtime_provisioning/infrastructure/installers.py`
     (`LLMModelInstaller`) remain a separate provider/model-installation scope;
       they do not write this pointer or receipt. The store is distinct from the
       producer session journal and producer D8 stable pointer. The receipt must
@@ -759,7 +759,7 @@ is not part of this OCR-only TODO.
     and `apps/cert-prep-desktop/src-tauri/src/process_owner.rs`
     (`RuntimeProcessOwner::from_termination`, `RuntimeProcessOwner::terminate_once`,
      `owned_runtime_process!`). The Python
-     `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/manager.py`
+     `apps/cert-prep-backend/src/cert_prep_backend/runtime_provisioning/infrastructure/manager.py`
      (`RuntimeInstallationManager`, `RuntimeInstaller`) remains model/provider
      installation only. Acceptance helpers are the existing
     `apps/cert-prep-desktop/scripts/packaged-flow-smoke/app-lifecycle.mts`

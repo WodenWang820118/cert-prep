@@ -18,7 +18,7 @@ from cert_prep_backend.platform.errors import NotFoundError
 from cert_prep_backend.platform.sse import operation_snapshot_stream, streaming_response
 from cert_prep_backend.authoring.infrastructure import draft_jobs
 from cert_prep_backend.authoring.infrastructure.streaming import StreamingDraftGenerationManager
-from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
+from cert_prep_backend.runtime_provisioning.infrastructure import RuntimeInstallationManager
 from cert_prep_backend.source_library.infrastructure import operations as document_operations
 from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
 from cert_prep_backend.platform.change_notifications import DatabaseChangeNotifier
