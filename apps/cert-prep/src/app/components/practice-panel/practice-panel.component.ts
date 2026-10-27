@@ -24,7 +24,7 @@ import { AppIconComponent } from '../ui/app-icon.component';
   imports: [FormsModule, AppIconComponent],
   templateUrl: './practice-panel.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
-  styleUrl: './practice-panel.component.css',
+  styleUrls: ['./practice-panel.component.css', './practice-panel-session.component.css'],
 })
 export class PracticePanelComponent implements OnInit {
   readonly sessionMode = input<PracticeSessionMode>('random_draw');
