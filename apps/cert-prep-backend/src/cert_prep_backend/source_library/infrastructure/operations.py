@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from cert_prep_backend.source_library.domain.models import SourceDocument
 from cert_prep_backend.source_library.domain.operation import DocumentOperation
-from cert_prep_backend.source_library.domain.statuses import DocumentOperationStatus
+from cert_prep_backend.source_library.domain.statuses import (
+    DocumentOperationPhase,
+    DocumentOperationStatus,
+)
 
 from dataclasses import dataclass
 from sqlite3 import Connection, Row
@@ -1037,7 +1040,7 @@ def _operation_from_row(row: Row) -> DocumentOperation:
         project_id=row["project_id"],
         document_id=row["document_id"],
         status=DocumentOperationStatus(row["status"]),
-        phase=row["phase"],
+        phase=DocumentOperationPhase(row["phase"]),
         cancellable=bool(row["cancellable"]),
         error=row["error"],
         created_at=row["created_at"],

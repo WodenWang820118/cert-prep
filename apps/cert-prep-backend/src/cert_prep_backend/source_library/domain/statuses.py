@@ -5,6 +5,7 @@ from typing import Final, TypeAlias
 
 from cert_prep_contracts.documents import (
     DOCUMENT_STATUS_VALUES as DOCUMENT_STATUS_VALUES,
+    DocumentOperationPhase as DocumentOperationPhase,
     DocumentOperationStatus as DocumentOperationStatus,
     SourceDocumentStatus as SourceDocumentStatus,
     SourceDocumentStatusValue as SourceDocumentStatusValue,
