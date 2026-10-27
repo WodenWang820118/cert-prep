@@ -34,6 +34,7 @@ from cert_prep_backend.capture_integration.infrastructure.structuring import (
     CertPrepCaptureStructuringAdapter,
 )
 from cert_prep_backend.ai_providers.domain.provider import LLMProvider
+from cert_prep_backend.ai_providers.infrastructure.machine_inventory import OllamaMachineInventory
 from cert_prep_backend.ai_providers.infrastructure.provider import lazy_provider_from_settings
 from cert_prep_backend.authoring.infrastructure.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.runtime_provisioning.infrastructure import RuntimeInstallationManager
@@ -176,9 +177,11 @@ def create_app(
         async_jobs=streaming_draft_generation_async_jobs,
     )
     app.state.streaming_draft_generation_manager.recover_jobs(app.state.database)
+    app.state.machine_inventory = OllamaMachineInventory(app_settings)
     app.state.runtime_installation_manager = runtime_installation_manager or RuntimeInstallationManager(
         settings=app_settings,
         llm_provider=app.state.llm_provider,
+        machine_inventory=app.state.machine_inventory,
         db=app.state.database,
         async_jobs=runtime_installation_async_jobs,
     )

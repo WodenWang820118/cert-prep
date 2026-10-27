@@ -8,6 +8,7 @@ from dataclasses import asdict
 import pytest
 from fastapi.testclient import TestClient
 
+from cert_prep_backend.ai_providers.infrastructure.machine_inventory import OllamaMachineInventory
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.platform.sse import operation_snapshot_stream
 from cert_prep_backend.platform.config import Settings
@@ -176,6 +177,7 @@ def test_runtime_manager_db_commits_wake_operation_stream(
     manager = RuntimeInstallationManager(
         settings=settings,
         llm_provider=object(),
+        machine_inventory=OllamaMachineInventory(settings),
         db=database,
         async_jobs=True,
         installers=[BlockingInstaller(kind)],

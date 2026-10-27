@@ -6,7 +6,7 @@ import pytest
 
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.ai_providers.infrastructure import ollama_profiles as ollama_profile_module
+from cert_prep_backend.ai_providers.infrastructure import machine_inventory as machine_inventory_module
 from cert_prep_backend.ai_providers.infrastructure import provider as provider_module
 from cert_prep_backend.ai_providers.infrastructure.ollama_transport import OllamaProvider
 from cert_prep_backend.ai_providers.infrastructure.provider import provider_from_settings
@@ -136,7 +136,7 @@ def test_provider_from_settings_auto_policy_builds_selected_ollama_provider(
 ) -> None:
     inventory = _profile_inventory(total_ram=16 * GIB, free_disk=64 * GIB)
     monkeypatch.setattr(
-        ollama_profile_module,
+        machine_inventory_module,
         "collect_machine_inventory",
         lambda **_kwargs: inventory,
     )
@@ -184,7 +184,7 @@ def test_provider_from_settings_uses_selected_ollama_profile(
     tmp_path,
 ) -> None:
     monkeypatch.setattr(
-        ollama_profile_module,
+        machine_inventory_module,
         "collect_machine_inventory",
         lambda **_kwargs: _profile_inventory(total_ram=16 * GIB, free_disk=64 * GIB),
     )
@@ -215,7 +215,7 @@ def test_provider_from_settings_keeps_generic_gpu_in_auto_mode(
         ),
     )
     monkeypatch.setattr(
-        ollama_profile_module,
+        machine_inventory_module,
         "collect_machine_inventory",
         lambda **_kwargs: inventory,
     )
@@ -232,7 +232,7 @@ def test_provider_from_settings_keeps_fixed_raw_ollama_model_when_profile_disabl
     tmp_path,
 ) -> None:
     monkeypatch.setattr(
-        ollama_profile_module,
+        machine_inventory_module,
         "collect_machine_inventory",
         lambda **_kwargs: _profile_inventory(total_ram=16 * GIB, free_disk=64 * GIB),
     )
@@ -260,7 +260,7 @@ def test_provider_from_settings_forces_cpu_when_windows_inventory_fails(
         raise RuntimeError("inventory probe failed")
 
     monkeypatch.setattr(
-        ollama_profile_module,
+        machine_inventory_module,
         "collect_machine_inventory",
         fail_inventory,
     )

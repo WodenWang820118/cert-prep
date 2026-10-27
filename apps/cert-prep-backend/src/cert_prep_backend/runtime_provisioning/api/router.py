@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
 
-from cert_prep_backend.api.dependencies import get_runtime_installation_manager
-from cert_prep_backend.platform.dependencies import get_settings
-from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.ai_providers.api.schemas import MachineInventoryRead
-from cert_prep_backend.ai_providers.infrastructure.ollama_profiles import (
-    collect_ollama_machine_inventory,
+from cert_prep_backend.ai_providers.application import use_cases as ai_providers
+from cert_prep_backend.ai_providers.application.ports import MachineInventory
+from cert_prep_backend.api.dependencies import (
+    get_machine_inventory,
+    get_runtime_installation_manager,
 )
+from cert_prep_backend.ai_providers.api.schemas import MachineInventoryRead
 from cert_prep_backend.runtime_provisioning.infrastructure import RuntimeInstallationManager
 from cert_prep_backend.runtime_provisioning.api.schemas import (
     RuntimeInstallationRead,
@@ -35,9 +35,9 @@ def runtime_requirements(
 @router.get("/machine-inventory", response_model=MachineInventoryRead)
 def machine_inventory(
     refresh: bool = False,
-    settings: Settings = Depends(get_settings),
+    machine: MachineInventory = Depends(get_machine_inventory),
 ):
-    return collect_ollama_machine_inventory(settings, refresh=refresh)
+    return ai_providers.inspect_machine(machine, refresh=refresh)
 
 
 @router.post(

@@ -1,6 +1,7 @@
+"""Which provider a learner's preference selects, and what that provider needs installed."""
+
 from __future__ import annotations
 
-from cert_prep_backend.platform.config import Settings
 from cert_prep_contracts.llm import (
     LLMProviderName,
     LLMProviderPreference,
@@ -9,17 +10,15 @@ from cert_prep_contracts.llm import (
 from cert_prep_contracts.runtime import RuntimeRequirementKind
 
 
-def provider_selection_from_settings(
-    settings: Settings,
+def select_provider(
+    preference: LLMProviderPreference,
     *,
-    inventory=None,
+    configured_model: str,
     effective_provider: str | None = None,
     effective_model: str | None = None,
 ) -> LLMProviderSelection:
-    """Resolve the configured provider through the provider-neutral selection seam."""
+    """Select the provider for a preference: the fake one only when asked for, else Ollama."""
 
-    del inventory
-    preference = LLMProviderPreference(settings.llm_provider)
     selected = (
         LLMProviderName.FAKE
         if preference == LLMProviderPreference.FAKE
@@ -30,8 +29,8 @@ def provider_selection_from_settings(
         preference=preference,
         selected_provider=selected,
         effective_provider=effective,
-        configured_model=settings.ollama_model,
-        effective_model=effective_model or settings.ollama_model,
+        configured_model=configured_model,
+        effective_model=effective_model or configured_model,
         selection_reason=(
             "Selected fake from the explicit provider preference."
             if selected == LLMProviderName.FAKE
@@ -61,4 +60,4 @@ def _provider_name_or_default(
         return default
 
 
-__all__ = ["provider_selection_from_settings"]
+__all__ = ["select_provider"]

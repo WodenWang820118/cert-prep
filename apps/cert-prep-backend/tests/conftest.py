@@ -16,7 +16,7 @@ import pypdfium2 as pdfium
 
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.ai_providers.infrastructure import ollama_profiles
+from cert_prep_backend.ai_providers.infrastructure import machine_inventory
 from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureStreamingResult,
     CaptureUpload,
@@ -45,9 +45,9 @@ AUTH_TOKEN = "test-token"
 def _isolated_ollama_inventory_cache() -> Iterator[None]:
     # The inventory cache is keyed by data_dir, and pytest reuses a deleted
     # tmp_path name, so a stale inventory would leak into the next test.
-    ollama_profiles._inventory_cache.clear()
+    machine_inventory._inventory_cache.clear()
     yield
-    ollama_profiles._inventory_cache.clear()
+    machine_inventory._inventory_cache.clear()
 
 
 @pytest.fixture

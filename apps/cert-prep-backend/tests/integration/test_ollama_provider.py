@@ -7,7 +7,7 @@ import pytest
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.platform.errors import ProviderUnavailableError
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.ai_providers.infrastructure import ollama_profiles as ollama_profile_module
+from cert_prep_backend.ai_providers.infrastructure import machine_inventory as machine_inventory_module
 from cert_prep_backend.ai_providers.infrastructure import ollama_transport
 from cert_prep_backend.authoring.domain.models import DraftSuggestion, SourceChunk
 from cert_prep_backend.authoring.infrastructure.ollama_drafts import OllamaDraftWriter
@@ -540,7 +540,7 @@ def test_ollama_reasoning_runtime_failure_does_not_try_another_model() -> None:
 def test_ollama_profile_apis_return_200(monkeypatch, tmp_path) -> None:
     inventory = _profile_inventory(total_ram=16 * GIB, free_disk=64 * GIB)
     monkeypatch.setattr(
-        ollama_profile_module,
+        machine_inventory_module,
         "collect_machine_inventory",
         lambda **_kwargs: inventory,
     )
@@ -601,15 +601,15 @@ def test_ollama_machine_inventory_is_cached_and_refreshable(monkeypatch, tmp_pat
         return inventories[min(len(calls) - 1, len(inventories) - 1)]
 
     monkeypatch.setattr(
-        ollama_profile_module,
+        machine_inventory_module,
         "collect_machine_inventory",
         fake_collect_machine_inventory,
     )
     settings = Settings(data_dir=tmp_path, llm_provider="ollama")
 
-    first = ollama_profile_module.collect_ollama_machine_inventory(settings)
-    second = ollama_profile_module.collect_ollama_machine_inventory(settings)
-    refreshed = ollama_profile_module.collect_ollama_machine_inventory(
+    first = machine_inventory_module.collect_ollama_machine_inventory(settings)
+    second = machine_inventory_module.collect_ollama_machine_inventory(settings)
+    refreshed = machine_inventory_module.collect_ollama_machine_inventory(
         settings,
         refresh=True,
     )
@@ -627,7 +627,7 @@ def test_ollama_profile_inventory_is_deferred_until_used(monkeypatch, tmp_path) 
         return inventory
 
     monkeypatch.setattr(
-        ollama_profile_module,
+        machine_inventory_module,
         "collect_machine_inventory",
         fake_collect_machine_inventory,
     )
