@@ -43,15 +43,20 @@
 
 ## 題目編寫
 
-| 中文             | 程式名稱                  | 意思                                                            |
-| ---------------- | ------------------------- | --------------------------------------------------------------- |
-| 題目草稿         | `QuestionDraft`           | 由段落產生或手動建立、可以編修的選擇題                          |
-| 手寫草稿         | `NewQuestionDraft`        | 學習者自己寫的題目；引用出處時教材與段落要一起給                |
-| 草稿編修         | `DraftEdit`               | 學習者對草稿的修正；只改有給的欄位，出處與狀態不變              |
-| 產生工作         | `DraftGenerationJob`      | 一次產生題目的背景工作（確定性解析，或解析加 LLM 推理）         |
-| 寫草稿者         | `DraftGenerationProvider` | 把段落寫成題目草稿的介面；`draft_writer_for` 依設定的供應者挑選 |
-| Ollama 寫草稿者  | `OllamaDraftWriter`       | 經 JSON 對話請 Ollama 補上答案與解說、或找出解析不到的題目      |
-| 佔位草稿寫草稿者 | `PlaceholderDraftWriter`  | 假供應者用的固定草稿，讓 app 與測試不需要模型也能跑             |
+| 中文             | 程式名稱                      | 意思                                                                           |
+| ---------------- | ----------------------------- | ------------------------------------------------------------------------------ |
+| 題目草稿         | `QuestionDraft`               | 由段落產生或手動建立、可以編修的選擇題                                         |
+| 手寫草稿         | `NewQuestionDraft`            | 學習者自己寫的題目；引用出處時教材與段落要一起給                               |
+| 草稿編修         | `DraftEdit`                   | 學習者對草稿的修正；只改有給的欄位，出處與狀態不變                             |
+| 產生工作         | `DraftGenerationJob`          | 匯入教材後，為一個段落產生題目的背景工作（每個段落與策略一個）；提交前都能取消 |
+| 產生工作狀態     | `DraftGenerationJobStatus`    | 等待、執行中、要求取消、已取消、成功、因模型或供應者跳過、失敗                 |
+| 手動產生作業     | `ManualDraftOperation`        | 學習者要求為整份教材產生題目；同一份教材同時只有一個進行中                     |
+| 手動產生作業狀態 | `ManualDraftOperationStatus`  | 排隊、執行中、要求取消、已取消、成功、失敗                                     |
+| 產生已取消       | `DraftJobCanceledError`       | 取消在開始提交前發生；產生的草稿不寫入                                         |
+| 產生不能取消     | `DraftJobNotCancellableError` | 已經開始提交草稿，不能再取消                                                   |
+| 寫草稿者         | `DraftGenerationProvider`     | 把段落寫成題目草稿的介面；`draft_writer_for` 依設定的供應者挑選                |
+| Ollama 寫草稿者  | `OllamaDraftWriter`           | 經 JSON 對話請 Ollama 補上答案與解說、或找出解析不到的題目                     |
+| 佔位草稿寫草稿者 | `PlaceholderDraftWriter`      | 假供應者用的固定草稿，讓 app 與測試不需要模型也能跑                            |
 
 ## 練習與複習
 

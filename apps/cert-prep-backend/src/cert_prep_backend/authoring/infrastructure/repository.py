@@ -8,7 +8,7 @@ from uuid import uuid4
 from cert_prep_backend.platform.database import Database, utc_now
 from cert_prep_backend.authoring.domain.draft import DraftEdit, NewQuestionDraft, QuestionDraft
 from cert_prep_backend.authoring.domain.models import DraftSuggestion, UnavailableDraftBlock
-from cert_prep_backend.authoring.infrastructure.draft_jobs import DraftJobCanceledError
+from cert_prep_backend.authoring.domain.generation import DraftJobCanceledError
 from cert_prep_backend.source_library.infrastructure import repository as documents_repository
 from cert_prep_backend.projects.infrastructure.repository import ensure_project_exists
 from cert_prep_backend.platform.errors import NotFoundError

@@ -16,6 +16,7 @@ from cert_prep_backend.platform.dependencies import (
 from cert_prep_backend.api.errors import not_found_error
 from cert_prep_backend.platform.errors import NotFoundError
 from cert_prep_backend.platform.sse import operation_snapshot_stream, streaming_response
+from cert_prep_backend.authoring.domain.generation import DraftGenerationJob, ManualDraftOperation
 from cert_prep_backend.authoring.infrastructure import draft_jobs
 from cert_prep_backend.authoring.infrastructure.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.runtime_provisioning.infrastructure import RuntimeInstallationManager
@@ -155,7 +156,7 @@ def draft_operation_events(
                 operation_id,
             ),
             event_name="draft-operation",
-            is_terminal=lambda value: value["status"]
+            is_terminal=lambda value: value.status
             in {"canceled", "succeeded", "failed"},
             last_event_id=last_event_id,
         )
@@ -250,7 +251,7 @@ def _manual_operation_snapshot(
     project_id: str,
     document_id: str,
     operation_id: str,
-) -> dict:
+) -> ManualDraftOperation:
     return manager.get_manual_operation(
         db,
         project_id=project_id,
@@ -275,9 +276,9 @@ def _model_download_snapshot(
     return snapshot
 
 
-def _draft_jobs_terminal(items: list[dict]) -> bool:
+def _draft_jobs_terminal(items: list[DraftGenerationJob]) -> bool:
     return bool(items) and all(
-        item["status"]
+        item.status
         in {
             "succeeded",
             "failed",

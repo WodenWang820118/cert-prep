@@ -23,12 +23,12 @@ def test_draft_insert_and_success_attribution_commit_together(client, auth_heade
         provider="future-provider",
         model="qwen3.5:4b",
     )
-    draft_jobs.mark_running(client.app.state.database, job["id"])
-    draft_jobs.begin_commit(client.app.state.database, job["id"])
+    draft_jobs.mark_running(client.app.state.database, job.id)
+    draft_jobs.begin_commit(client.app.state.database, job.id)
 
     drafts_repository.append_generated_drafts_and_complete_job(
         client.app.state.database,
-        job_id=job["id"],
+        job_id=job.id,
         project_id=project_id,
         document_id=document_id,
         suggestions=[_suggestion(chunk)],
@@ -37,13 +37,13 @@ def test_draft_insert_and_success_attribution_commit_together(client, auth_heade
         fallback_reason="primary model required more memory",
     )
 
-    completed = draft_jobs.get_job(client.app.state.database, job["id"])
-    assert completed["status"] == "succeeded"
-    assert completed["effective_provider"] == "future-provider"
-    assert completed["effective_model"] == "future-model-fallback"
-    assert completed["fallback_reason"] == "primary model required more memory"
-    assert completed["phase"] == "completed"
-    assert completed["cancellable"] is False
+    completed = draft_jobs.get_job(client.app.state.database, job.id)
+    assert completed.status == "succeeded"
+    assert completed.effective_provider == "future-provider"
+    assert completed.effective_model == "future-model-fallback"
+    assert completed.fallback_reason == "primary model required more memory"
+    assert completed.phase == "completed"
+    assert completed.cancellable is False
     assert len(drafts_repository.list_drafts(client.app.state.database, project_id)) == 1
 
 
@@ -62,8 +62,8 @@ def test_draft_insert_rolls_back_when_success_attribution_cannot_commit(
         provider="future-provider",
         model="qwen3.5:4b",
     )
-    draft_jobs.mark_running(client.app.state.database, job["id"])
-    draft_jobs.begin_commit(client.app.state.database, job["id"])
+    draft_jobs.mark_running(client.app.state.database, job.id)
+    draft_jobs.begin_commit(client.app.state.database, job.id)
     with client.app.state.database.connect() as connection:
         connection.execute(
             """
@@ -79,7 +79,7 @@ def test_draft_insert_rolls_back_when_success_attribution_cannot_commit(
     with pytest.raises(sqlite3.IntegrityError, match="success attribution rejected"):
         drafts_repository.append_generated_drafts_and_complete_job(
             client.app.state.database,
-            job_id=job["id"],
+            job_id=job.id,
             project_id=project_id,
             document_id=document_id,
             suggestions=[_suggestion(chunk)],
@@ -89,9 +89,9 @@ def test_draft_insert_rolls_back_when_success_attribution_cannot_commit(
         )
 
     assert drafts_repository.list_drafts(client.app.state.database, project_id) == []
-    persisted = draft_jobs.get_job(client.app.state.database, job["id"])
-    assert persisted["status"] == "running"
-    assert persisted["phase"] == "committing"
+    persisted = draft_jobs.get_job(client.app.state.database, job.id)
+    assert persisted.status == "running"
+    assert persisted.phase == "committing"
 
 
 def test_manual_operation_persists_unavailable_parsed_blocks_without_playable_rows(
@@ -108,12 +108,12 @@ def test_manual_operation_persists_unavailable_parsed_blocks_without_playable_ro
         provider="capture-runtime-question-completion",
         model="qwen3.5:4b",
     )
-    manual_operations.mark_running(client.app.state.database, operation["id"])
-    manual_operations.begin_commit(client.app.state.database, operation["id"])
+    manual_operations.mark_running(client.app.state.database, operation.id)
+    manual_operations.begin_commit(client.app.state.database, operation.id)
 
     drafts_repository.append_generated_drafts_and_complete_manual_operation(
         client.app.state.database,
-        operation_id=operation["id"],
+        operation_id=operation.id,
         project_id=project_id,
         document_id=document_id,
         suggestions=[],
@@ -136,11 +136,11 @@ def test_manual_operation_persists_unavailable_parsed_blocks_without_playable_ro
         client.app.state.database,
         project_id=project_id,
         document_id=document_id,
-        operation_id=operation["id"],
+        operation_id=operation.id,
     )
-    assert completed["status"] == "succeeded"
-    assert completed["generated_count"] == 0
-    assert completed["unavailable_blocks"] == [
+    assert completed.status == "succeeded"
+    assert completed.generated_count == 0
+    assert list(completed.unavailable_blocks) == [
         {
             "status": "needs_review",
             "chunk_id": chunk["id"],

@@ -11,6 +11,11 @@ from cert_prep_backend.platform.dependencies import get_database
 from cert_prep_backend.authoring.infrastructure import draft_jobs
 from cert_prep_backend.authoring.infrastructure import repository as mock_exams_repository
 from cert_prep_backend.authoring.domain.draft import DraftEdit, NewQuestionDraft, QuestionDraft
+from cert_prep_backend.authoring.domain.generation import (
+    DraftGenerationJob,
+    DraftJobNotCancellableError,
+    ManualDraftOperation,
+)
 from cert_prep_backend.authoring.domain.models import source_chunk_from_document_chunk
 from cert_prep_backend.ai_providers.domain.provider import LLMProvider
 from cert_prep_backend.authoring.infrastructure.draft_writing import generate_drafts_for_strategy
@@ -96,7 +101,7 @@ def cancel_document_draft_job(
     document_id: str,
     job_id: str,
     db: Database = Depends(get_database),
-) -> dict:
+) -> DraftGenerationJob:
     try:
         return draft_jobs.request_cancel(
             db,
@@ -104,7 +109,7 @@ def cancel_document_draft_job(
             document_id=document_id,
             job_id=job_id,
         )
-    except draft_jobs.DraftJobNotCancellableError as exc:
+    except DraftJobNotCancellableError as exc:
         raise api_error(
             status.HTTP_409_CONFLICT,
             "operation_not_cancellable",
@@ -127,7 +132,7 @@ def start_manual_draft_operation(
     streaming_questions: StreamingDraftGenerationManager = Depends(
         get_streaming_draft_generation_manager
     ),
-) -> dict:
+) -> ManualDraftOperation:
     try:
         return streaming_questions.start_manual_operation(
             db,
@@ -152,7 +157,7 @@ def get_manual_draft_operation(
     streaming_questions: StreamingDraftGenerationManager = Depends(
         get_streaming_draft_generation_manager
     ),
-) -> dict:
+) -> ManualDraftOperation:
     try:
         return streaming_questions.get_manual_operation(
             db,
@@ -176,7 +181,7 @@ def cancel_manual_draft_operation(
     streaming_questions: StreamingDraftGenerationManager = Depends(
         get_streaming_draft_generation_manager
     ),
-) -> dict:
+) -> ManualDraftOperation:
     try:
         return streaming_questions.cancel_manual_operation(
             db,
@@ -184,7 +189,7 @@ def cancel_manual_draft_operation(
             document_id=document_id,
             operation_id=operation_id,
         )
-    except draft_jobs.DraftJobNotCancellableError as exc:
+    except DraftJobNotCancellableError as exc:
         raise api_error(
             status.HTTP_409_CONFLICT,
             "operation_not_cancellable",
