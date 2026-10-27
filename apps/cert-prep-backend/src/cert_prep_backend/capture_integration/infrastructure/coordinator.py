@@ -26,6 +26,9 @@ from capture_runtime_client import (
     StreamingCaptureStatus,
     StreamingEventType,
 )
+from cert_prep_backend.capture_integration.application.messages import (
+    PDF_OCR_UNAVAILABLE_MESSAGE,
+)
 from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeClient,
     CaptureRuntimeCompatibilityError,
@@ -43,10 +46,6 @@ from cert_prep_backend.capture_integration.infrastructure.structuring import (
 
 
 _IDEMPOTENCY_NAMESPACE = UUID("518ad006-a998-4b4b-b0fb-9be26b4447ac")
-PDF_OCR_UNAVAILABLE_MESSAGE = (
-    "This PDF requires WindowsML OCR, which is unavailable in the installed "
-    "Capture Runtime."
-)
 _SOURCE_REQUIREMENTS: dict[
     CaptureSourceKind,
     tuple[CaptureRequirementId, str],

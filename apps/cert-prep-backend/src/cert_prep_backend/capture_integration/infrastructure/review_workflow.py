@@ -15,9 +15,15 @@ from cert_prep_backend.capture_integration.domain.review_session import (
     CaptureReviewSession,
     CaptureReviewStatus,
 )
+from cert_prep_backend.capture_integration.application.errors import (
+    CaptureExtractionCanceled,
+    CaptureExtractionFailed,
+    CaptureRequirementUnavailable,
+)
 from cert_prep_backend.capture_integration.infrastructure.coordinator import (
     CaptureRuntimeCanceledError,
     CaptureRuntimeJobError,
+    CaptureRuntimeRequirementUnavailableError,
     CertPrepCaptureCoordinator,
 )
 from cert_prep_backend.capture_integration.infrastructure.persistence import (
@@ -287,8 +293,73 @@ def _cleanup_review_sessions(
     return tuple(cleaned)
 
 
+class CaptureReviewWorkflowAdapter:
+    """Begin a runtime review and translate coordinator failures into application errors."""
+
+    def __init__(
+        self, db: Database, coordinator: CertPrepCaptureCoordinator | None
+    ) -> None:
+        self._db = db
+        self._coordinator = coordinator
+
+    def begin_review(
+        self,
+        *,
+        project_id: str,
+        document_id: str,
+        operation_id: str,
+        session_id: str,
+        file_name: str,
+        content: bytes,
+        media_type: str,
+        source_kind: str,
+        should_cancel: Callable[[], bool],
+        on_runtime_started: Callable[[str], None],
+    ) -> None:
+        runtime_kind = CaptureSourceKind.PDF if source_kind == "pdf" else CaptureSourceKind.IMAGE
+        try:
+            begin_review_capture(
+                self._db,
+                coordinator=self._coordinator,
+                project_id=project_id,
+                document_id=document_id,
+                operation_id=operation_id,
+                session_id=session_id,
+                file_name=file_name,
+                content=content,
+                media_type=media_type,
+                source_kind=runtime_kind,
+                should_cancel=should_cancel,
+                on_runtime_started=on_runtime_started,
+            )
+        except CaptureRuntimeCanceledError as error:
+            raise CaptureExtractionCanceled() from error
+        except CaptureRuntimeRequirementUnavailableError as error:
+            raise CaptureRequirementUnavailable(str(error)) from error
+        except CaptureRuntimeJobError as error:
+            raise CaptureExtractionFailed(error.code, error.last_event_sequence) from error
+        except Exception as error:
+            raise CaptureExtractionFailed(None, None) from error
+
+
+class CaptureReviewMaintenanceAdapter:
+    """Expire and recover review sessions through the existing cleanup functions."""
+
+    def __init__(self, db: Database, coordinator: CertPrepCaptureCoordinator | None) -> None:
+        self._db = db
+        self._coordinator = coordinator
+
+    def expire(self) -> tuple[str, ...]:
+        return cleanup_expired_review_sessions(self._db, coordinator=self._coordinator)
+
+    def recover(self) -> tuple[str, ...]:
+        return cleanup_active_review_sessions(self._db, coordinator=self._coordinator)
+
+
 __all__ = [
     "CaptureCommitClaim",
+    "CaptureReviewMaintenanceAdapter",
+    "CaptureReviewWorkflowAdapter",
     "begin_capture_commit",
     "begin_review_capture",
     "candidate_digest",

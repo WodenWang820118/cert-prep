@@ -120,6 +120,14 @@ forbidden_modules = [
   "cert_prep_backend.routers",
 ]
 
+# D8: Capture Integration is the anticorruption layer for Capture Runtime. The SDK's types
+# stay in its infrastructure and in the router's response models.
+[[tool.importlinter.contracts]]
+name = "Capture Integration's use cases do not name Capture SDK types"
+type = "forbidden"
+source_modules = ["cert_prep_backend.capture_integration.application"]
+forbidden_modules = ["capture_runtime_client"]
+
 [[tool.importlinter.contracts]]
 name = "Study Projects does not depend on other contexts"
 type = "forbidden"
@@ -246,7 +254,6 @@ ignore_imports = [
   "cert_prep_backend.authoring.infrastructure.draft_jobs -> cert_prep_backend.projects.infrastructure.repository",
   "cert_prep_backend.authoring.infrastructure.manual_operations -> cert_prep_backend.projects.infrastructure.repository",
   "cert_prep_backend.authoring.infrastructure.repository -> cert_prep_backend.projects.infrastructure.repository",
-  "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.projects.infrastructure.repository",
   "cert_prep_backend.routers.documents -> cert_prep_backend.projects.infrastructure.repository",
 ]
 
@@ -292,8 +299,6 @@ ignore_imports = [
   "cert_prep_backend.authoring.infrastructure.streaming -> cert_prep_backend.source_library.infrastructure.repository",
   "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.source_library.infrastructure.operations",
   "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.source_library.infrastructure.repository",
-  "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.source_library.infrastructure.source_preparation",
-  "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.source_library.infrastructure.storage",
   "cert_prep_backend.capture_integration.infrastructure.persistence -> cert_prep_backend.source_library.infrastructure.operations",
   "cert_prep_backend.capture_integration.infrastructure.review_workflow -> cert_prep_backend.source_library.infrastructure.operations",
   "cert_prep_backend.capture_integration.infrastructure.review_workflow -> cert_prep_backend.source_library.infrastructure.repository",
