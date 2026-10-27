@@ -33,3 +33,15 @@ class CaptureExtractionFailed(Exception):
 
 class CaptureRuntimeCallFailed(Exception):
     """A runtime call failed for a reason the host does not treat as already gone."""
+
+
+class CaptureReviewConflict(Exception):
+    """The review cannot accept this confirmation. The router answers 409."""
+
+
+class CaptureCommitNotQueued(Exception):
+    """The commit worker could not be queued. The router answers 503."""
+
+
+class CaptureGatewayRejection(Exception):
+    """The runtime did not confirm a report, cancel, or delete. The router answers 502."""

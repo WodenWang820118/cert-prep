@@ -549,6 +549,11 @@ class StreamingDraftGenerationWork:
         self._manager = manager
         self._db = db
 
+    def enqueue_document(self, project_id: str, document_id: str) -> None:
+        self._manager.enqueue_document(
+            self._db, project_id=project_id, document_id=document_id
+        )
+
     def retry_jobs(self, project_id: str, document_id: str) -> list[DraftGenerationJob]:
         return self._manager.retry_document_jobs(
             self._db, project_id=project_id, document_id=document_id

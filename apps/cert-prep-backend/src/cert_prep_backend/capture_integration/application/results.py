@@ -17,6 +17,24 @@ class CaptureUploadClaim:
 
 
 @dataclass(frozen=True, slots=True)
+class QueuedCaptureCommit:
+    """A commit that is already complete, or accepted for background publication."""
+
+    replay_completed: bool
+    document: SourceDocument | None
+    last_event_sequence: int
+
+
+@dataclass(frozen=True, slots=True)
+class ReportedStructuringFailure:
+    """A stored structuring failure, or a replay of a session that is no longer active."""
+
+    replay: bool
+    document_id: str
+    runtime_operation: object | None
+
+
+@dataclass(frozen=True, slots=True)
 class StartedCaptureReview:
     """The session and document a newly accepted upload projects in its 202 response."""
 
