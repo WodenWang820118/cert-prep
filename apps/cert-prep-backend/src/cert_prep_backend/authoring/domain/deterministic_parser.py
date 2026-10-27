@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
+import re
 
-from cert_prep_backend.source_library.domain.exam_content import parse_jlpt_question_blocks
+from cert_prep_backend.source_library.domain.exam_content import (
+    ParsedQuestionBlock,
+    parse_jlpt_question_blocks,
+    without_page_footer,
+)
 from cert_prep_backend.authoring.domain.models import (
     AnswerKeySource,
     DraftSuggestion,
@@ -60,13 +66,7 @@ def is_exam_source_chunk(chunk: SourceChunk) -> bool:
     """Return whether a chunk looks like exam content rather than notice text."""
 
     text = chunk.raw_or_text().lower()
-    rejected_markers = (
-        "this test paper has multiple versions",
-        "the questions are the same, but the fonts and layouts differ",
-        "official wechat",
-        "\u8907\u6570\u306e\u30d0\u30fc\u30b8\u30e7\u30f3",
-    )
-    if any(marker in text for marker in rejected_markers):
+    if _is_notice_chunk(chunk):
         return False
     exam_markers = (
         "\u554f\u984c",
@@ -75,7 +75,93 @@ def is_exam_source_chunk(chunk: SourceChunk) -> bool:
         "mondai",
         "choose",
     )
-    return any(marker in text for marker in exam_markers)
+    return any(marker in text for marker in exam_markers) or bool(
+        parse_jlpt_question_blocks(
+            text=chunk.raw_or_text(),
+            page_number=chunk.page_number,
+            chunk_index=chunk.chunk_index,
+        )
+    )
+
+
+def _is_notice_chunk(chunk: SourceChunk) -> bool:
+    text = chunk.raw_or_text().lower()
+    rejected_markers = (
+        "this test paper has multiple versions",
+        "the questions are the same, but the fonts and layouts differ",
+        "official wechat",
+        "\u8907\u6570\u306e\u30d0\u30fc\u30b8\u30e7\u30f3",
+    )
+    return any(marker in text for marker in rejected_markers)
+
+
+_NUMBERED_LINE = re.compile(r"(?m)^[ \t]*(?P<number>\d{1,3})(?!\d)[.\uFF0E]?[ \t]*")
+_SECTION_LINE = re.compile(
+    r"(?im)^[ \t]*(?:(?:問題[ \t]*|mondai[ \t]+)\d{1,3}(?=[\s、，,]|$)|言語知識[ \t]*[（(])"
+)
+
+
+def _page_question_text(chunk: SourceChunk) -> str:
+    return without_page_footer(chunk.raw_or_text(), chunk.page_number).rstrip()
+
+
+def _continued_question(left: SourceChunk, right: SourceChunk) -> ParsedQuestionBlock | None:
+    if (
+        not left.document_id
+        or left.document_id != right.document_id
+        or right.page_number != left.page_number + 1
+        or right.chunk_index != left.chunk_index + 1
+        or _is_notice_chunk(left)
+        or _is_notice_chunk(right)
+    ):
+        return None
+    left_text = _page_question_text(left)
+    left_markers = list(_NUMBERED_LINE.finditer(left_text))
+    for count in (3, 2, 1):
+        if len(left_markers) <= count:
+            continue
+        if [int(m.group("number")) for m in left_markers[-count:]] != list(range(1, count + 1)):
+            continue
+        question = left_markers[-count - 1]
+        # A 1..4 marker has ambiguous question/option identity across a boundary.
+        if int(question.group("number")) <= 4:
+            return None
+        tail = left_text[question.start() :]
+        if _SECTION_LINE.search(tail):
+            return None
+        prefix = _page_question_text(right).lstrip()
+        section = _SECTION_LINE.search(prefix)
+        if section:
+            prefix = prefix[: section.start()].rstrip()
+        right_markers = list(_NUMBERED_LINE.finditer(prefix))
+        if not right_markers or right_markers[0].start() != 0:
+            return None
+        expected = count + 1
+        for marker in right_markers:
+            if expected == 5:
+                # A later numeric line may be a quantity or decimal wrapped
+                # inside option 4. Only an unambiguous new question ends it.
+                if int(marker.group("number")) > 4 and re.match(
+                    r"[ \t]*\d{1,3}(?:[.\uFF0E](?!\d)|[ \t]+|\r?$)",
+                    prefix[marker.start() :].split("\n", 1)[0],
+                ):
+                    prefix = prefix[: marker.start()].rstrip()
+                    break
+                continue
+            if int(marker.group("number")) != expected:
+                return None
+            expected += 1
+        if expected != 5:
+            return None
+        blocks = parse_jlpt_question_blocks(
+            text=tail + "\n" + prefix,
+            page_number=left.page_number,
+            chunk_index=left.chunk_index,
+        )
+        if len(blocks) == 1 and blocks[0].source_question_number == question.group("number"):
+            return blocks[0]
+        return None
+    return None
 
 
 def extract_jlpt_question_blocks(
@@ -84,16 +170,31 @@ def extract_jlpt_question_blocks(
     """Extract visible JLPT question blocks without using AI reasoning."""
 
     suggestions: list[DraftSuggestion] = []
-    for chunk in chunks:
+    for chunk_index, chunk in enumerate(chunks):
         if len(suggestions) >= limit:
             break
-        if not is_exam_source_chunk(chunk):
-            continue
-        for block in parse_jlpt_question_blocks(
-            text=chunk.raw_or_text(),
-            page_number=chunk.page_number,
-            chunk_index=chunk.chunk_index,
-        ):
+        blocks = (
+            parse_jlpt_question_blocks(
+                text=chunk.raw_or_text(),
+                page_number=chunk.page_number,
+                chunk_index=chunk.chunk_index,
+            )
+            if is_exam_source_chunk(chunk)
+            else []
+        )
+        if chunk_index + 1 < len(chunks):
+            continued = _continued_question(chunk, chunks[chunk_index + 1])
+            if continued is not None:
+                blocks.append(
+                    replace(
+                        continued,
+                        source_order=chunk.page_number * 10_000
+                        + chunk.chunk_index * 1_000
+                        + len(blocks)
+                        + 1,
+                    )
+                )
+        for block in blocks:
             suggestions.append(
                 DraftSuggestion(
                     chunk_id=chunk.id,

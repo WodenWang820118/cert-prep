@@ -51,14 +51,17 @@ class ParsedQuestionBlock:
     source_excerpt: str
 
 
+# A numbered OCR line is a structural boundary. Missing markers must not make
+# one stem/choice consume the next question's numbered lines.
+_BLOCK_TEXT = r"(?:(?!\r?\n[ \t]*\d{1,3}(?:[.\uFF0E](?!\d)|(?=\s|$))).)"
 QUESTION_BLOCK_PATTERN = re.compile(
-    r"(?<!\u554f\u984c)(?P<number>\d{1,3})\s+"
-    r"(?P<stem>.+?)\s*"
-    r"1\s*(?P<c1>.+?)\s*"
-    r"2\s*(?P<c2>.+?)\s*"
-    r"3\s*(?P<c3>.+?)\s*"
-    r"4\s*(?P<c4>.+?)"
-    r"(?=\s+\d{1,3}\s+|$)",
+    r"(?<!\u554f\u984c)(?<!\d)(?P<number>\d{1,3})(?:[.\uFF0E](?!\d)\s*|\s+)"
+    rf"(?P<stem>{_BLOCK_TEXT}+?)\s*"
+    rf"(?<!\d)1(?!\d)\s*(?P<c1>{_BLOCK_TEXT}+?)\s*"
+    rf"(?<!\d)2(?!\d)\s*(?P<c2>{_BLOCK_TEXT}+?)\s*"
+    rf"(?<!\d)3(?!\d)\s*(?P<c3>{_BLOCK_TEXT}+?)\s*"
+    r"(?<!\d)4(?!\d)\s*(?P<c4>.+?)"
+    r"(?=\s+\d{1,3}(?:[.\uFF0E](?!\d)\s*|\s+)|$)",
     re.DOTALL,
 )
 GROUP_PROMPT_PATTERN = re.compile(
@@ -144,15 +147,11 @@ def parse_jlpt_question_blocks(
     page_number: int,
     chunk_index: int = 0,
 ) -> list[ParsedQuestionBlock]:
-    source_text = _question_block_source_text(text)
+    source_text = _question_block_source_text(without_page_footer(text, page_number))
     group_prompt = _first_group_prompt(text)
-    is_grouped_set = group_prompt is not None and _prompt_is_grouped_question_set(
-        group_prompt[1]
-    )
+    is_grouped_set = group_prompt is not None and _prompt_is_grouped_question_set(group_prompt[1])
     item_kind = (
-        QuestionItemKind.GROUPED_QUESTION
-        if is_grouped_set
-        else QuestionItemKind.VOCABULARY_SINGLE
+        QuestionItemKind.GROUPED_QUESTION if is_grouped_set else QuestionItemKind.VOCABULARY_SINGLE
     )
     group_key = None
     if is_grouped_set and group_prompt is not None:
@@ -229,6 +228,20 @@ def _first_group_prompt(text: str) -> tuple[str, str] | None:
 
 def _clean_exam_text(text: str) -> str:
     return " ".join((text or "").split()).strip(" -")
+
+
+def without_page_footer(text: str, page_number: int) -> str:
+    lines = (text or "").rstrip().splitlines(keepends=True)
+    if len(lines) < 2:
+        return text or ""
+    footer = re.fullmatch(
+        r"(?P<rule>[-\u2014\u2015])\s*(?P<page>\d+)\s*(?P=rule)", lines[-1].strip()
+    )
+    # Bare numbers are ambiguous with wrapped answers even when they match
+    # page metadata. Only a visibly decorated matching footer is removable.
+    if footer is not None and footer.group("page") == str(page_number):
+        return "".join(lines[:-1]).rstrip()
+    return text or ""
 
 
 def _question_block_source_text(text: str) -> str:
