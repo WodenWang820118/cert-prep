@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterator
-from functools import partial
 import json
 from pathlib import Path
 import re
@@ -41,18 +40,14 @@ from capture_runtime_client import (
     StreamingCaptureStatus,
     StreamingEventType,
 )
-from cert_prep_backend.api.dependencies import (
-    get_capture_coordinator,
-    get_document_worker_pool,
-    get_streaming_draft_generation_manager,
-)
+from cert_prep_backend.api.dependencies import get_capture_coordinator
 from cert_prep_backend.platform.dependencies import (
     get_database,
     get_settings,
 )
 from cert_prep_backend.api.errors import ApiErrorRead, api_error, not_found_error
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.platform.errors import BackendError, NotFoundError
+from cert_prep_backend.platform.errors import NotFoundError, ValidationError
 from cert_prep_backend.capture_integration.domain.review_session import (
     CaptureReviewSession,
     CaptureReviewStatus,
@@ -65,12 +60,18 @@ from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeProtocolError,
 )
 from cert_prep_backend.capture_integration.application import use_cases as capture_reviews
-from cert_prep_backend.capture_integration.application.errors import CaptureAudioRejected
+from cert_prep_backend.capture_integration.application.errors import (
+    CaptureAudioRejected,
+    CaptureCommitNotQueued,
+    CaptureGatewayRejection,
+    CaptureReviewConflict,
+)
 from cert_prep_backend.capture_integration.application.ports import (
     CaptureBackgroundWork,
     CaptureDocuments,
     CaptureFileStore,
     CaptureOperations,
+    CaptureQuestionDrafting,
     CaptureReviewEvents,
     CaptureReviewMaintenance,
     CaptureReviewStore,
@@ -88,10 +89,7 @@ from cert_prep_backend.capture_integration.application.ocr_summary import (
 )
 from cert_prep_backend.capture_integration.infrastructure.review import reviewed_text_overrides
 from cert_prep_backend.capture_integration.infrastructure.review_workflow import (
-    begin_capture_commit,
-    candidate_digest,
     cleanup_expired_review_sessions,
-    commit_review_capture,
 )
 from cert_prep_backend.capture_integration.infrastructure.runtime_policy import (
     SUPPORTED_RUNTIME_VERSION,
@@ -100,10 +98,6 @@ from cert_prep_backend.projects.application.ports import ProjectRepository
 from cert_prep_backend.source_library.domain.document import DocumentChunk, SourceDocument
 from cert_prep_backend.source_library.infrastructure import operations
 from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
-from cert_prep_backend.platform.document_worker_pool import (
-    DocumentWorkItem,
-    DocumentWorkerPool,
-)
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.routers.documents import _read_limited_upload
 
@@ -267,6 +261,10 @@ def get_capture_background_work(request: Request) -> CaptureBackgroundWork:
 
 def get_capture_review_events(request: Request) -> CaptureReviewEvents:
     return request.app.state.capture_runtime_event_registry
+
+
+def get_capture_question_drafting(request: Request) -> CaptureQuestionDrafting:
+    return request.app.state.draft_generation_work
 
 
 @router.post(
@@ -641,93 +639,49 @@ def commit_capture(
     capture_id: str,
     commit_request: CaptureStreamingCommitRequest,
     db: Database = Depends(get_database),
-    workers: DocumentWorkerPool = Depends(get_document_worker_pool),
-    streaming_questions=Depends(get_streaming_draft_generation_manager),
+    documents: CaptureDocuments = Depends(get_capture_documents),
+    operations: CaptureOperations = Depends(get_capture_operations),
+    sessions: CaptureReviewStore = Depends(get_capture_review_store),
+    workflow: CaptureReviewWorkflow = Depends(get_capture_review_workflow),
+    maintenance: CaptureReviewMaintenance = Depends(get_capture_review_maintenance),
+    work: CaptureBackgroundWork = Depends(get_capture_background_work),
+    events: CaptureReviewEvents = Depends(get_capture_review_events),
+    drafts: CaptureQuestionDrafting = Depends(get_capture_question_drafting),
 ) -> CaptureReviewOperationRead:
-    coordinator = get_capture_coordinator(request)
-    cleanup_expired_review_sessions(db, coordinator=coordinator)
-    session = _session_or_404(db, project_id, capture_id)
-    if session.status == CaptureReviewStatus.COMPLETED:
-        stored_request_id = session.confirm_request_id
-        if stored_request_id and (
-            stored_request_id != commit_request.client_request_id
-            or session.confirm_review_digest
-            != candidate_digest(commit_request.candidate)
-        ):
-            raise HTTPException(
-                status_code=409,
-                detail="Capture commit does not match the completed request.",
-            )
-        return get_capture(request, project_id, capture_id, db)
-    if not session.is_active:
-        raise HTTPException(status_code=409, detail="Capture review is no longer pending.")
-    document = _document_or_404(db, project_id, session.document_id)
-    if commit_request.candidate.source.sha256 != document.sha256:
-        raise HTTPException(status_code=422, detail="Capture candidate source does not match.")
+    get_capture_coordinator(request)
+    capture_reviews.expire_capture_reviews(maintenance)
     try:
-        claim = begin_capture_commit(
-            db,
+        queued = capture_reviews.commit_capture_review(
+            sessions,
+            documents,
+            operations,
+            workflow,
+            work,
+            events,
+            drafts,
             project_id=project_id,
-            document_id=session.document_id,
-            operation_id=session.operation_id,
             session_id=capture_id,
             candidate=commit_request.candidate,
             client_request_id=commit_request.client_request_id,
         )
-    except (BackendError, RuntimeError) as error:
+    except NotFoundError as error:
+        raise not_found_error(str(error)) from error
+    except CaptureReviewConflict as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
-    if claim.acquired:
-        item = DocumentWorkItem(
-            operation_id=session.operation_id,
-            run=partial(
-                _run_commit,
-                db=db,
-                coordinator=coordinator,
-                project_id=project_id,
-                document_id=session.document_id,
-                operation_id=session.operation_id,
-                session_id=capture_id,
-                candidate=commit_request.candidate,
-                streaming_questions=streaming_questions,
-                shutdown_requested=workers.is_closed,
-                registry=_event_registry(request),
-            ),
-            cancel_queued=partial(
-                _cancel_queued,
-                db,
-                project_id=project_id,
-                operation_id=session.operation_id,
-                session_id=capture_id,
-                registry=_event_registry(request),
-            ),
-        )
-        try:
-            workers.submit(item)
-        except Exception as error:
-            operations.finish_failed(
-                db,
-                project_id=project_id,
-                operation_id=session.operation_id,
-                error="Capture commit could not be queued.",
-            )
-            review_sessions.finish(
-                db,
-                project_id=project_id,
-                session_id=capture_id,
-                status=CaptureReviewStatus.FAILED,
-            )
-            raise HTTPException(
-                status_code=503,
-                detail="Capture commit could not be queued.",
-            ) from error
+    except ValidationError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except CaptureCommitNotQueued as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    if queued.replay_completed:
+        return get_capture(request, project_id, capture_id, db)
     return _operation_from_document(
         capture_id,
-        document,
+        queued.document,
         status_value=StreamingCaptureStatus.STRUCTURING,
         progress=0.75,
-        bytes_count=_document_bytes(db, project_id, document.id),
-        media_type=_document_media_type(db, project_id, document.id),
-        last_event_sequence=int(claim.session.last_event_sequence),
+        bytes_count=_document_bytes(db, project_id, queued.document.id),
+        media_type=_document_media_type(db, project_id, queued.document.id),
+        last_event_sequence=int(queued.last_event_sequence),
     )
 
 
@@ -741,43 +695,34 @@ def report_structuring_failure(
     capture_id: str,
     failure: CaptureStreamingFailureRequest,
     db: Database = Depends(get_database),
+    operations: CaptureOperations = Depends(get_capture_operations),
+    sessions: CaptureReviewStore = Depends(get_capture_review_store),
+    runtime: CaptureRuntime = Depends(get_capture_runtime),
 ) -> CaptureReviewOperationRead:
-    coordinator = get_capture_coordinator(request)
-    session = _session_or_404(db, project_id, capture_id)
-    if not session.is_active:
-        return get_capture(request, project_id, capture_id, db)
-    runtime_id = session.runtime_capture_id
-    if not runtime_id:
-        raise HTTPException(status_code=409, detail="Capture Runtime operation is not available.")
+    get_capture_coordinator(request)
     try:
-        operation = coordinator.report_structuring_failure(
-            runtime_id,
-            operation_id=failure.client_request_id or session.operation_id,
+        reported = capture_reviews.report_structuring_failure(
+            sessions,
+            operations,
+            runtime,
+            project_id=project_id,
+            session_id=capture_id,
+            client_request_id=failure.client_request_id,
             code=failure.code,
             message=failure.message,
         )
-        operations.finish_failed(
-            db,
-            project_id=project_id,
-            operation_id=session.operation_id,
-            error="Capture host structuring failed.",
-        )
-        review_sessions.finish(
-            db,
-            project_id=project_id,
-            session_id=capture_id,
-            status=CaptureReviewStatus.FAILED,
-            terminal_sequence=operation.last_event_sequence,
-        )
-    except Exception as error:
-        raise HTTPException(
-            status_code=502,
-            detail="Capture structuring failure could not be confirmed.",
-        ) from error
+    except NotFoundError as error:
+        raise not_found_error(str(error)) from error
+    except CaptureReviewConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except CaptureGatewayRejection as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    if reported.replay:
+        return get_capture(request, project_id, capture_id, db)
     return _host_operation(
-        operation,
+        reported.runtime_operation,
         capture_id=capture_id,
-        document_id=session.document_id,
+        document_id=reported.document_id,
     )
 
 
@@ -787,46 +732,27 @@ def cancel_capture(
     project_id: str,
     capture_id: str,
     db: Database = Depends(get_database),
+    operations: CaptureOperations = Depends(get_capture_operations),
+    sessions: CaptureReviewStore = Depends(get_capture_review_store),
+    runtime: CaptureRuntime = Depends(get_capture_runtime),
+    events: CaptureReviewEvents = Depends(get_capture_review_events),
+    maintenance: CaptureReviewMaintenance = Depends(get_capture_review_maintenance),
 ) -> CaptureReviewOperationRead:
-    coordinator = get_capture_coordinator(request)
-    cleanup_expired_review_sessions(db, coordinator=coordinator)
-    session = _session_or_404(db, project_id, capture_id)
-    if not session.is_active:
-        return get_capture(request, project_id, capture_id, db)
+    get_capture_coordinator(request)
+    capture_reviews.expire_capture_reviews(maintenance)
     try:
-        runtime_operation: CaptureOperation | None = None
-        operations.cancel_operation(
-            db,
-            project_id=project_id,
-            operation_id=session.operation_id,
-        )
-        runtime_id = session.runtime_capture_id
-        if runtime_id:
-            runtime_operation = coordinator.cancel(runtime_id)
-        operations.acknowledge_cancellation(
-            db,
-            project_id=project_id,
-            operation_id=session.operation_id,
-        )
-        review_sessions.finish(
-            db,
+        capture_reviews.cancel_capture_review(
+            sessions,
+            operations,
+            runtime,
+            events,
             project_id=project_id,
             session_id=capture_id,
-            status=CaptureReviewStatus.CANCELED,
-            terminal_sequence=(
-                runtime_operation.last_event_sequence if runtime_operation is not None else None
-            ),
         )
-        _event_registry(request).publish_terminal(
-            project_id,
-            capture_id,
-            CaptureReviewStatus.CANCELED,
-        )
-    except Exception as error:
-        raise HTTPException(
-            status_code=502,
-            detail="Capture cancellation could not be confirmed.",
-        ) from error
+    except NotFoundError as error:
+        raise not_found_error(str(error)) from error
+    except CaptureGatewayRejection as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
     return get_capture(request, project_id, capture_id, db)
 
 
@@ -909,111 +835,34 @@ def delete_capture(
     project_id: str,
     capture_id: str,
     db: Database = Depends(get_database),
+    operations: CaptureOperations = Depends(get_capture_operations),
+    sessions: CaptureReviewStore = Depends(get_capture_review_store),
+    runtime: CaptureRuntime = Depends(get_capture_runtime),
+    events: CaptureReviewEvents = Depends(get_capture_review_events),
+    maintenance: CaptureReviewMaintenance = Depends(get_capture_review_maintenance),
 ) -> Response:
-    coordinator = get_capture_coordinator(request)
+    get_capture_coordinator(request)
     session = _session_or_404(db, project_id, capture_id)
     if session.is_active:
-        cancel_capture(request, project_id, capture_id, db)
+        cancel_capture(
+            request,
+            project_id,
+            capture_id,
+            db,
+            operations,
+            sessions,
+            runtime,
+            events,
+            maintenance,
+        )
         session = _session_or_404(db, project_id, capture_id)
-    runtime_id = session.runtime_capture_id
-    if runtime_id:
-        try:
-            coordinator.delete(runtime_id)
-        except CaptureRuntimeError as error:
-            if error.status_code != 404:
-                raise HTTPException(
-                    status_code=502,
-                    detail="Capture Runtime deletion could not be confirmed.",
-                ) from error
-        except Exception:
-            # A completed result read may already have deleted the ephemeral
-            # runtime operation. The durable Cert Prep document is retained.
-            pass
+    try:
+        capture_reviews.discard_capture_runtime(
+            runtime, runtime_capture_id=session.runtime_capture_id
+        )
+    except CaptureGatewayRejection as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-def _run_commit(
-    *,
-    db: Database,
-    coordinator: CertPrepCaptureCoordinator,
-    project_id: str,
-    document_id: str,
-    operation_id: str,
-    session_id: str,
-    candidate: CaptureDocument,
-    streaming_questions,
-    shutdown_requested,
-    registry: CaptureRuntimeEventRegistry,
-) -> None:
-    try:
-        document = commit_review_capture(
-            db,
-            coordinator=coordinator,
-            project_id=project_id,
-            document_id=document_id,
-            operation_id=operation_id,
-            session_id=session_id,
-            candidate=candidate,
-            should_cancel=lambda: (
-                shutdown_requested()
-                or not _operation_active(db, project_id, operation_id)
-            ),
-        )
-        if document.chunks_count > 0:
-            streaming_questions.enqueue_document(
-                db,
-                project_id=project_id,
-                document_id=document_id,
-            )
-    except CaptureRuntimeCanceledError:
-        capture_reviews.finish_canceled_capture(
-            review_sessions.CaptureReviewStoreAdapter(db),
-            source_documents_repository.SqliteDocumentOperationRepository(db),
-            registry,
-            project_id=project_id,
-            operation_id=operation_id,
-            session_id=session_id,
-        )
-    finally:
-        try:
-            session = review_sessions.get(
-                db,
-                project_id=project_id,
-                session_id=session_id,
-            )
-        except Exception:
-            pass
-        else:
-            if not session.is_active:
-                registry.publish_terminal(project_id, session_id, session.status)
-
-
-def _cancel_queued(
-    db: Database,
-    *,
-    project_id: str,
-    operation_id: str,
-    session_id: str,
-    registry: CaptureRuntimeEventRegistry,
-) -> None:
-    try:
-        operations.cancel_operation(db, project_id=project_id, operation_id=operation_id)
-        operations.acknowledge_cancellation(
-            db,
-            project_id=project_id,
-            operation_id=operation_id,
-        )
-    finally:
-        try:
-            review_sessions.finish(
-                db,
-                project_id=project_id,
-                session_id=session_id,
-                status=CaptureReviewStatus.CANCELED,
-            )
-            registry.publish_terminal(project_id, session_id, CaptureReviewStatus.CANCELED)
-        except Exception:
-            pass
 
 
 def _host_event_stream(

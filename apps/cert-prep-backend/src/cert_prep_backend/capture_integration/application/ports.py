@@ -97,6 +97,21 @@ class CaptureFileStore(Protocol):
 
 
 class CaptureReviewWorkflow(Protocol):
+    def digest(self, candidate: object) -> str: ...
+
+    def candidate_source_sha256(self, candidate: object) -> str: ...
+
+    def claim_commit(
+        self,
+        *,
+        project_id: str,
+        document_id: str,
+        operation_id: str,
+        session_id: str,
+        candidate: object,
+        client_request_id: str,
+    ) -> tuple[CaptureReviewSession, bool]: ...
+
     def begin_review(
         self,
         *,
@@ -111,6 +126,17 @@ class CaptureReviewWorkflow(Protocol):
         should_cancel: Callable[[], bool],
         on_runtime_started: Callable[[str], None],
     ) -> None: ...
+
+    def commit_review(
+        self,
+        *,
+        project_id: str,
+        document_id: str,
+        operation_id: str,
+        session_id: str,
+        candidate: object,
+        should_cancel: Callable[[], bool],
+    ) -> SourceDocument: ...
 
 
 class CaptureReviewMaintenance(Protocol):
@@ -152,3 +178,7 @@ class CaptureReviewEvents(Protocol):
     def publish_terminal(self, project_id: str, session_id: str, terminal: str) -> None: ...
 
     def publish_review_ready(self, project_id: str, session_id: str) -> None: ...
+
+
+class CaptureQuestionDrafting(Protocol):
+    def enqueue_document(self, project_id: str, document_id: str) -> None: ...

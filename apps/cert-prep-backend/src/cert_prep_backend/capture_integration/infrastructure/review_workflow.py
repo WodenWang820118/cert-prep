@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import hashlib
 import json
+from typing import cast
 
 from capture_runtime_client import (
     CaptureDocument,
@@ -294,7 +295,7 @@ def _cleanup_review_sessions(
 
 
 class CaptureReviewWorkflowAdapter:
-    """Begin a runtime review and translate coordinator failures into application errors."""
+    """Claim, begin, and commit a runtime review, translating coordinator failures."""
 
     def __init__(
         self, db: Database, coordinator: CertPrepCaptureCoordinator | None
@@ -340,6 +341,57 @@ class CaptureReviewWorkflowAdapter:
             raise CaptureExtractionFailed(error.code, error.last_event_sequence) from error
         except Exception as error:
             raise CaptureExtractionFailed(None, None) from error
+
+    def digest(self, candidate: object) -> str:
+        return candidate_digest(cast(CaptureDocument, candidate))
+
+    def candidate_source_sha256(self, candidate: object) -> str:
+        return cast(CaptureDocument, candidate).source.sha256
+
+    def claim_commit(
+        self,
+        *,
+        project_id: str,
+        document_id: str,
+        operation_id: str,
+        session_id: str,
+        candidate: object,
+        client_request_id: str,
+    ) -> tuple[CaptureReviewSession, bool]:
+        claim = begin_capture_commit(
+            self._db,
+            project_id=project_id,
+            document_id=document_id,
+            operation_id=operation_id,
+            session_id=session_id,
+            candidate=cast(CaptureDocument, candidate),
+            client_request_id=client_request_id,
+        )
+        return claim.session, claim.acquired
+
+    def commit_review(
+        self,
+        *,
+        project_id: str,
+        document_id: str,
+        operation_id: str,
+        session_id: str,
+        candidate: object,
+        should_cancel: Callable[[], bool],
+    ) -> SourceDocument:
+        try:
+            return commit_review_capture(
+                self._db,
+                coordinator=self._coordinator,
+                project_id=project_id,
+                document_id=document_id,
+                operation_id=operation_id,
+                session_id=session_id,
+                candidate=cast(CaptureDocument, candidate),
+                should_cancel=should_cancel,
+            )
+        except CaptureRuntimeCanceledError as error:
+            raise CaptureExtractionCanceled() from error
 
 
 class CaptureReviewMaintenanceAdapter:

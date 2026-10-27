@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import hashlib
 
 import pytest
@@ -9,16 +10,33 @@ import pytest
 from cert_prep_backend.capture_integration.application import use_cases
 from cert_prep_backend.capture_integration.application.errors import (
     CaptureAudioRejected,
+    CaptureCommitNotQueued,
     CaptureExtractionCanceled,
     CaptureExtractionFailed,
+    CaptureGatewayRejection,
     CaptureRequirementUnavailable,
+    CaptureReviewConflict,
+    CaptureRuntimeCallFailed,
 )
 from cert_prep_backend.capture_integration.application.messages import PDF_OCR_UNAVAILABLE_MESSAGE
+from cert_prep_backend.capture_integration.application.results import (
+    RuntimeCancellation,
+    StructuringFailureNotice,
+)
 from cert_prep_backend.capture_integration.domain.review_session import (
     CaptureReviewSession,
     CaptureReviewStatus,
 )
-from cert_prep_backend.platform.errors import DocumentOperationConflictError, NotFoundError
+from cert_prep_backend.capture_integration.infrastructure.client import CaptureRuntimeError
+from cert_prep_backend.capture_integration.infrastructure.runtime_gateway import (
+    CoordinatorCaptureRuntime,
+)
+from cert_prep_backend.platform.errors import (
+    BackendError,
+    DocumentOperationConflictError,
+    NotFoundError,
+    ValidationError,
+)
 from cert_prep_backend.source_library.domain.document import SourceDocument, SourceFile
 from cert_prep_backend.source_library.domain.operation import DocumentOperation
 from cert_prep_backend.source_library.domain.statuses import (
@@ -43,7 +61,7 @@ class Prepared:
         self.page_count = page_count
 
 
-def source_document(filename: str = "scan.png") -> SourceDocument:
+def source_document(filename: str = "scan.png", *, chunks_count: int = 0) -> SourceDocument:
     return SourceDocument(
         id="document",
         project_id=PROJECT,
@@ -66,7 +84,7 @@ def source_document(filename: str = "scan.png") -> SourceDocument:
         exam_item_count=0,
         content_profile="unknown",
         classification_detail="",
-        chunks_count=0,
+        chunks_count=chunks_count,
         created_at="t",
         updated_at="t",
     )
@@ -248,6 +266,13 @@ class FakeSessions:
         self.trace = trace
         self.session = session
         self.finish_error: BaseException | None = None
+        self.get_error: BaseException | None = None
+
+    def get(self, *, project_id: str, session_id: str) -> CaptureReviewSession:
+        self.trace.append(("get", project_id, session_id))
+        if self.get_error is not None:
+            raise self.get_error
+        return self.session
 
     def create(
         self, *, project_id: str, document_id: str, operation_id: str
@@ -266,6 +291,7 @@ class FakeSessions:
         self.trace.append(("finish", project_id, session_id, status, terminal_sequence))
         if self.finish_error is not None:
             raise self.finish_error
+        self.session = replace(self.session, status=status)
         return self.session
 
 
@@ -275,6 +301,14 @@ class FakeWorkflow:
         self.error: BaseException | None = None
         self.should_cancel = None
         self.on_runtime_started = None
+        self.sessions: FakeSessions | None = None
+        self.digest_value = "digest"
+        self.candidate_sha = DIGEST
+        self.acquired = True
+        self.claimed_session: CaptureReviewSession | None = None
+        self.claim_error: BaseException | None = None
+        self.commit_error: BaseException | None = None
+        self.published = source_document()
 
     def begin_review(self, **kwargs) -> None:
         self.should_cancel = kwargs["should_cancel"]
@@ -294,6 +328,113 @@ class FakeWorkflow:
         )
         if self.error is not None:
             raise self.error
+
+    def digest(self, candidate: object) -> str:
+        self.trace.append(("digest", candidate))
+        return self.digest_value
+
+    def candidate_source_sha256(self, candidate: object) -> str:
+        self.trace.append(("candidate_sha", candidate))
+        return self.candidate_sha
+
+    def claim_commit(
+        self,
+        *,
+        project_id: str,
+        document_id: str,
+        operation_id: str,
+        session_id: str,
+        candidate: object,
+        client_request_id: str,
+    ) -> tuple[CaptureReviewSession, bool]:
+        self.trace.append(
+            (
+                "claim_commit",
+                project_id,
+                document_id,
+                operation_id,
+                session_id,
+                candidate,
+                client_request_id,
+            )
+        )
+        if self.claim_error is not None:
+            raise self.claim_error
+        claimed = self.claimed_session if self.claimed_session is not None else review_session()
+        return claimed, self.acquired
+
+    def commit_review(
+        self,
+        *,
+        project_id: str,
+        document_id: str,
+        operation_id: str,
+        session_id: str,
+        candidate: object,
+        should_cancel,
+    ) -> SourceDocument:
+        self.should_cancel = should_cancel
+        self.trace.append(
+            ("commit_review", project_id, document_id, operation_id, session_id, candidate)
+        )
+        if self.commit_error is not None:
+            raise self.commit_error
+        if self.sessions is not None:
+            self.sessions.session = replace(
+                self.sessions.session, status=CaptureReviewStatus.COMPLETED
+            )
+        return self.published
+
+
+class FakeDrafts:
+    def __init__(self, trace: list[tuple]) -> None:
+        self.trace = trace
+        self.error: BaseException | None = None
+
+    def enqueue_document(self, project_id: str, document_id: str) -> None:
+        self.trace.append(("enqueue", project_id, document_id))
+        if self.error is not None:
+            raise self.error
+
+
+class FakeRuntime:
+    def __init__(self, trace: list[tuple]) -> None:
+        self.trace = trace
+        self.error: BaseException | None = None
+        self.delete_error: BaseException | None = None
+        self.terminal_sequence = 4
+        self.cancellation_sequence: int | None = 5
+        self.operation: object = "runtime-operation"
+
+    def report_structuring_failure(
+        self,
+        runtime_capture_id: str,
+        *,
+        operation_id: str,
+        code: str,
+        message: str,
+    ) -> StructuringFailureNotice:
+        self.trace.append(("report", runtime_capture_id, operation_id, code, message))
+        if self.error is not None:
+            raise self.error
+        return StructuringFailureNotice(
+            terminal_sequence=self.terminal_sequence,
+            runtime_operation=self.operation,
+        )
+
+    def cancel(self, runtime_capture_id: str) -> RuntimeCancellation:
+        self.trace.append(("runtime_cancel", runtime_capture_id))
+        if self.error is not None:
+            raise self.error
+        return RuntimeCancellation(
+            terminal_sequence=self.cancellation_sequence,
+            runtime_operation=self.operation,
+        )
+
+    def delete(self, runtime_capture_id: str) -> None:
+        self.trace.append(("delete", runtime_capture_id))
+        if self.delete_error is not None:
+            raise self.delete_error
 
 
 class FakeWork:
@@ -357,6 +498,9 @@ class World:
         self.work = FakeWork(self.trace)
         self.events = FakeEvents(self.trace)
         self.maintenance = FakeMaintenance(self.trace)
+        self.drafts = FakeDrafts(self.trace)
+        self.runtime = FakeRuntime(self.trace)
+        self.workflow.sessions = self.sessions
 
 
 def claim(world: World):
@@ -415,11 +559,15 @@ def accepted_prefix(filename: str | None, attached_name: str) -> list[tuple]:
 def test_public_use_cases_are_the_review_lifecycle_names() -> None:
     assert use_cases.__all__ == [
         "abandon_capture_upload",
+        "cancel_capture_review",
         "claim_capture_upload",
+        "commit_capture_review",
+        "discard_capture_runtime",
         "expire_capture_reviews",
         "extract_capture_for_review",
-        "finish_canceled_capture",
+        "publish_reviewed_capture",
         "recover_capture_reviews",
+        "report_structuring_failure",
         "start_capture_review",
     ]
 
@@ -855,7 +1003,7 @@ def test_an_acknowledge_error_still_finishes_a_canceled_capture() -> None:
     world.operations.acknowledge_error = RuntimeError("ack")
 
     with pytest.raises(RuntimeError, match="ack"):
-        use_cases.finish_canceled_capture(
+        use_cases._finish_canceled_capture(
             world.sessions,
             world.operations,
             world.events,
@@ -877,7 +1025,7 @@ def test_a_finish_error_after_a_failed_acknowledge_replaces_it() -> None:
     world.sessions.finish_error = RuntimeError("no row")
 
     with pytest.raises(RuntimeError, match="no row"):
-        use_cases.finish_canceled_capture(
+        use_cases._finish_canceled_capture(
             world.sessions,
             world.operations,
             world.events,
@@ -898,3 +1046,523 @@ def test_expire_and_recover_each_call_only_their_maintenance_method() -> None:
     recovering = World()
     assert use_cases.recover_capture_reviews(recovering.maintenance) == ("session",)
     assert recovering.trace == [("recover",)]
+
+
+CANDIDATE = "candidate"
+REQUEST = "request-1"
+COMMIT_NOT_QUEUED = "Capture commit could not be queued."
+COMMIT_MISMATCH = "Capture commit does not match the completed request."
+REVIEW_NOT_PENDING = "Capture review is no longer pending."
+CANDIDATE_MISMATCH = "Capture candidate source does not match."
+STRUCTURING_FAILED = "Capture host structuring failed."
+RUNTIME_UNAVAILABLE = "Capture Runtime operation is not available."
+STRUCTURING_GATEWAY = "Capture structuring failure could not be confirmed."
+CANCEL_GATEWAY = "Capture cancellation could not be confirmed."
+DELETE_GATEWAY = "Capture Runtime deletion could not be confirmed."
+
+
+def completed_session(
+    request_id: str | None, digest: str | None = "digest"
+) -> CaptureReviewSession:
+    return replace(
+        review_session(),
+        status=CaptureReviewStatus.COMPLETED,
+        confirm_request_id=request_id,
+        confirm_review_digest=digest,
+    )
+
+
+def commit(world: World, *, candidate: object = CANDIDATE, client_request_id: str = REQUEST):
+    return use_cases.commit_capture_review(
+        world.sessions,
+        world.documents,
+        world.operations,
+        world.workflow,
+        world.work,
+        world.events,
+        world.drafts,
+        project_id=PROJECT,
+        session_id="session",
+        candidate=candidate,
+        client_request_id=client_request_id,
+    )
+
+
+def publish(world: World, *, candidate: object = CANDIDATE) -> None:
+    use_cases.publish_reviewed_capture(
+        world.sessions,
+        world.operations,
+        world.workflow,
+        world.work,
+        world.events,
+        world.drafts,
+        project_id=PROJECT,
+        document_id="document",
+        operation_id=OPERATION,
+        session_id="session",
+        candidate=candidate,
+    )
+
+
+def report(
+    world: World,
+    *,
+    client_request_id: str | None = "client",
+    code: str = "host_failed",
+    message: str = "no text",
+):
+    return use_cases.report_structuring_failure(
+        world.sessions,
+        world.operations,
+        world.runtime,
+        project_id=PROJECT,
+        session_id="session",
+        client_request_id=client_request_id,
+        code=code,
+        message=message,
+    )
+
+
+def cancel(world: World) -> None:
+    use_cases.cancel_capture_review(
+        world.sessions,
+        world.operations,
+        world.runtime,
+        world.events,
+        project_id=PROJECT,
+        session_id="session",
+    )
+
+
+def test_a_matching_completed_commit_replays_without_a_claim() -> None:
+    world = World()
+    world.sessions.session = completed_session(REQUEST)
+
+    queued = commit(world)
+
+    assert queued.replay_completed is True
+    assert ("digest", CANDIDATE) in world.trace
+    assert "claim_commit" not in [item[0] for item in world.trace]
+    assert "document" not in [item[0] for item in world.trace]
+
+
+def test_a_falsy_stored_request_id_replays_without_a_digest_or_a_claim() -> None:
+    for request_id in (None, ""):
+        world = World()
+        world.sessions.session = completed_session(request_id, digest=None)
+
+        queued = commit(world)
+
+        assert queued.replay_completed is True
+        assert world.trace == [("get", PROJECT, "session")]
+
+
+def test_a_completed_commit_mismatch_is_a_conflict() -> None:
+    mismatched_id = World()
+    mismatched_id.sessions.session = completed_session(REQUEST)
+    with pytest.raises(CaptureReviewConflict) as caught:
+        commit(mismatched_id, client_request_id="other")
+    assert str(caught.value) == COMMIT_MISMATCH
+    assert "digest" not in [item[0] for item in mismatched_id.trace]
+
+    mismatched_digest = World()
+    mismatched_digest.sessions.session = completed_session(REQUEST)
+    mismatched_digest.workflow.digest_value = "other"
+    with pytest.raises(CaptureReviewConflict) as caught:
+        commit(mismatched_digest)
+    assert str(caught.value) == COMMIT_MISMATCH
+    assert ("digest", CANDIDATE) in mismatched_digest.trace
+    assert "claim_commit" not in [item[0] for item in mismatched_digest.trace]
+
+
+def test_an_inactive_review_cannot_be_committed() -> None:
+    world = World()
+    world.sessions.session = replace(review_session(), status=CaptureReviewStatus.FAILED)
+
+    with pytest.raises(CaptureReviewConflict) as caught:
+        commit(world)
+
+    assert str(caught.value) == REVIEW_NOT_PENDING
+    assert world.trace == [("get", PROJECT, "session")]
+
+
+def test_a_missing_session_or_document_is_not_found_before_the_claim() -> None:
+    missing_session = World()
+    missing_session.sessions.get_error = NotFoundError("Capture review session not found.")
+    with pytest.raises(NotFoundError, match="Capture review session not found."):
+        commit(missing_session)
+    assert missing_session.trace == [("get", PROJECT, "session")]
+
+    missing_document = World()
+    missing_document.documents.document_error = NotFoundError("Document not found.")
+    with pytest.raises(NotFoundError, match="Document not found."):
+        commit(missing_document)
+    assert "claim_commit" not in [item[0] for item in missing_document.trace]
+
+
+def test_a_candidate_hash_mismatch_is_a_validation_error_and_does_not_claim() -> None:
+    world = World()
+    world.workflow.candidate_sha = "f" * 64
+
+    with pytest.raises(ValidationError) as caught:
+        commit(world)
+
+    assert str(caught.value) == CANDIDATE_MISMATCH
+    assert "claim_commit" not in [item[0] for item in world.trace]
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        BackendError("stored claim failed"),
+        RuntimeError("review changed"),
+        NotFoundError("Capture review session not found."),
+    ],
+)
+def test_a_claim_error_becomes_a_review_conflict(error: Exception) -> None:
+    world = World()
+    world.workflow.claim_error = error
+
+    with pytest.raises(CaptureReviewConflict) as caught:
+        commit(world)
+
+    assert str(caught.value) == str(error)
+    assert "submit" not in [item[0] for item in world.trace]
+
+
+def test_a_repeated_claim_does_not_submit_and_returns_the_claim_sequence() -> None:
+    world = World()
+    world.workflow.acquired = False
+    world.workflow.claimed_session = replace(review_session(), last_event_sequence=9)
+
+    queued = commit(world)
+
+    assert queued.replay_completed is False
+    assert queued.last_event_sequence == 9
+    assert queued.document is not None
+    assert "submit" not in [item[0] for item in world.trace]
+
+
+def test_an_acquired_commit_submits_publication_and_queued_cancel() -> None:
+    world = World()
+    world.workflow.claimed_session = replace(review_session(), last_event_sequence=11)
+
+    queued = commit(world)
+
+    assert queued.replay_completed is False
+    assert queued.last_event_sequence == 11
+    assert [item[0] for item in world.trace] == [
+        "get",
+        "document",
+        "candidate_sha",
+        "claim_commit",
+        "submit",
+    ]
+    assert world.work.cancel_queued is not None
+    world.trace.clear()
+    world.work.cancel_queued()
+    assert [item[0] for item in world.trace] == [
+        "cancel",
+        "acknowledge",
+        "finish",
+        "publish_terminal",
+    ]
+
+
+def test_a_submit_failure_fails_the_operation_then_the_session_and_is_not_queued() -> None:
+    world = World()
+    world.work.submit_error = RuntimeError("pool closed")
+
+    with pytest.raises(CaptureCommitNotQueued) as caught:
+        commit(world)
+
+    assert str(caught.value) == COMMIT_NOT_QUEUED
+    assert world.trace[-2:] == [
+        ("fail", PROJECT, OPERATION, COMMIT_NOT_QUEUED),
+        ("finish", PROJECT, "session", CaptureReviewStatus.FAILED, None),
+    ]
+
+
+def test_a_failure_to_mark_the_unqueued_commit_propagates() -> None:
+    world = World()
+    world.work.submit_error = RuntimeError("pool closed")
+    world.operations.fail_error = RuntimeError("disk")
+
+    with pytest.raises(RuntimeError, match="disk"):
+        commit(world)
+
+    assert ("finish", PROJECT, "session", CaptureReviewStatus.FAILED, None) not in world.trace
+
+
+def test_a_failure_to_finish_the_unqueued_commit_propagates() -> None:
+    world = World()
+    world.work.submit_error = RuntimeError("pool closed")
+    world.sessions.finish_error = RuntimeError("no row")
+
+    with pytest.raises(RuntimeError, match="no row"):
+        commit(world)
+
+    assert ("fail", PROJECT, OPERATION, COMMIT_NOT_QUEUED) in world.trace
+
+
+def test_commit_publication_enqueues_drafts_only_when_chunks_exist() -> None:
+    empty = World()
+    publish(empty)
+    assert "enqueue" not in [item[0] for item in empty.trace]
+    assert ("publish_terminal", PROJECT, "session", CaptureReviewStatus.COMPLETED) in empty.trace
+
+    drafted = World()
+    drafted.workflow.published = source_document(chunks_count=2)
+    publish(drafted)
+    assert ("enqueue", PROJECT, "document") in drafted.trace
+    assert drafted.trace[-2:] == [
+        ("get", PROJECT, "session"),
+        ("publish_terminal", PROJECT, "session", CaptureReviewStatus.COMPLETED),
+    ]
+
+
+def test_a_canceled_commit_finishes_and_publishes_twice() -> None:
+    world = World()
+    world.workflow.commit_error = CaptureExtractionCanceled()
+
+    publish(world)
+
+    assert [item for item in world.trace if item[0] == "publish_terminal"] == [
+        ("publish_terminal", PROJECT, "session", CaptureReviewStatus.CANCELED),
+        ("publish_terminal", PROJECT, "session", CaptureReviewStatus.CANCELED),
+    ]
+    assert [item[0] for item in world.trace] == [
+        "commit_review",
+        "acknowledge",
+        "finish",
+        "publish_terminal",
+        "get",
+        "publish_terminal",
+    ]
+
+
+def test_commit_publication_publishes_in_finally_only_when_the_session_is_inactive() -> None:
+    world = World()
+    world.workflow.commit_error = RuntimeError("runtime down")
+
+    with pytest.raises(RuntimeError, match="runtime down"):
+        publish(world)
+
+    assert ("get", PROJECT, "session") in world.trace
+    assert "publish_terminal" not in [item[0] for item in world.trace]
+
+
+def test_a_commit_reload_error_in_finally_is_swallowed() -> None:
+    world = World()
+    world.sessions.get_error = RuntimeError("missing")
+
+    publish(world)
+
+    assert ("get", PROJECT, "session") in world.trace
+    assert "publish_terminal" not in [item[0] for item in world.trace]
+
+
+def test_a_draft_enqueue_error_still_reaches_finally() -> None:
+    world = World()
+    world.workflow.published = source_document(chunks_count=1)
+    world.drafts.error = RuntimeError("drafts down")
+
+    with pytest.raises(RuntimeError, match="drafts down"):
+        publish(world)
+
+    assert ("enqueue", PROJECT, "document") in world.trace
+    enqueue_at = world.trace.index(("enqueue", PROJECT, "document"))
+    get_at = world.trace.index(("get", PROJECT, "session"))
+    assert enqueue_at < get_at
+    assert ("publish_terminal", PROJECT, "session", CaptureReviewStatus.COMPLETED) in world.trace
+
+
+def test_commit_publication_cancels_when_the_pool_is_closed_or_the_operation_stopped() -> None:
+    world = World()
+    publish(world)
+    cancel_check = world.workflow.should_cancel
+    assert cancel_check is not None
+
+    world.trace.clear()
+    world.work.closed = True
+    assert cancel_check() is True
+    assert "operation" not in [item[0] for item in world.trace]
+
+    world.work.closed = False
+    world.operations.status = DocumentOperationStatus.QUEUED
+    assert cancel_check() is True
+    assert ("operation", PROJECT, OPERATION) in world.trace
+
+
+def test_an_inactive_structuring_failure_replays_without_the_runtime() -> None:
+    world = World()
+    world.sessions.session = replace(review_session(), status=CaptureReviewStatus.FAILED)
+
+    reported = report(world)
+
+    assert reported.replay is True
+    assert reported.runtime_operation is None
+    assert world.trace == [("get", PROJECT, "session")]
+
+
+def test_a_structuring_failure_without_a_runtime_id_is_a_conflict() -> None:
+    world = World()
+
+    with pytest.raises(CaptureReviewConflict) as caught:
+        report(world)
+
+    assert str(caught.value) == RUNTIME_UNAVAILABLE
+    assert "report" not in [item[0] for item in world.trace]
+
+
+def test_a_structuring_failure_stores_the_runtime_sequence() -> None:
+    world = World()
+    world.sessions.session = replace(review_session(), runtime_capture_id="runtime")
+
+    reported = report(world, client_request_id="client")
+
+    assert reported.replay is False
+    assert reported.document_id == "document"
+    assert reported.runtime_operation == "runtime-operation"
+    assert world.trace == [
+        ("get", PROJECT, "session"),
+        ("report", "runtime", "client", "host_failed", "no text"),
+        ("fail", PROJECT, OPERATION, STRUCTURING_FAILED),
+        ("finish", PROJECT, "session", CaptureReviewStatus.FAILED, 4),
+    ]
+
+
+def test_a_structuring_failure_uses_the_operation_id_when_the_client_omits_one() -> None:
+    world = World()
+    world.sessions.session = replace(review_session(), runtime_capture_id="runtime")
+
+    report(world, client_request_id=None)
+
+    assert ("report", "runtime", OPERATION, "host_failed", "no text") in world.trace
+
+
+def test_any_structuring_failure_error_becomes_the_gateway_rejection() -> None:
+    world = World()
+    world.sessions.session = replace(review_session(), runtime_capture_id="runtime")
+    world.runtime.error = RuntimeError("down")
+
+    with pytest.raises(CaptureGatewayRejection) as caught:
+        report(world)
+
+    assert str(caught.value) == STRUCTURING_GATEWAY
+
+
+def test_an_inactive_cancel_writes_nothing() -> None:
+    world = World()
+    world.sessions.session = replace(review_session(), status=CaptureReviewStatus.CANCELED)
+
+    cancel(world)
+
+    assert world.trace == [("get", PROJECT, "session")]
+
+
+def test_an_active_cancel_confirms_the_runtime_then_ends_the_session() -> None:
+    world = World()
+    world.sessions.session = replace(review_session(), runtime_capture_id="runtime")
+
+    cancel(world)
+
+    assert world.trace == [
+        ("get", PROJECT, "session"),
+        ("cancel", PROJECT, OPERATION),
+        ("runtime_cancel", "runtime"),
+        ("acknowledge", PROJECT, OPERATION),
+        ("finish", PROJECT, "session", CaptureReviewStatus.CANCELED, 5),
+        ("publish_terminal", PROJECT, "session", CaptureReviewStatus.CANCELED),
+    ]
+
+
+def test_a_cancel_without_a_runtime_id_skips_the_runtime_and_stores_no_sequence() -> None:
+    world = World()
+
+    cancel(world)
+
+    assert "runtime_cancel" not in [item[0] for item in world.trace]
+    assert ("finish", PROJECT, "session", CaptureReviewStatus.CANCELED, None) in world.trace
+    assert ("publish_terminal", PROJECT, "session", CaptureReviewStatus.CANCELED) in world.trace
+
+
+def test_any_cancel_error_becomes_the_gateway_rejection() -> None:
+    world = World()
+    world.sessions.session = replace(review_session(), runtime_capture_id="runtime")
+    world.operations.cancel_error = RuntimeError("busy")
+
+    with pytest.raises(CaptureGatewayRejection) as caught:
+        cancel(world)
+
+    assert str(caught.value) == CANCEL_GATEWAY
+    assert "acknowledge" not in [item[0] for item in world.trace]
+
+
+def test_discard_skips_a_missing_runtime_id() -> None:
+    world = World()
+
+    use_cases.discard_capture_runtime(world.runtime, runtime_capture_id=None)
+    use_cases.discard_capture_runtime(world.runtime, runtime_capture_id="")
+
+    assert world.trace == []
+
+
+def test_a_runtime_delete_failure_becomes_the_gateway_rejection() -> None:
+    world = World()
+    world.runtime.delete_error = CaptureRuntimeCallFailed("down")
+
+    with pytest.raises(CaptureGatewayRejection) as caught:
+        use_cases.discard_capture_runtime(world.runtime, runtime_capture_id="runtime")
+
+    assert str(caught.value) == DELETE_GATEWAY
+    assert world.trace == [("delete", "runtime")]
+
+
+def test_a_runtime_delete_that_returns_is_success() -> None:
+    world = World()
+
+    use_cases.discard_capture_runtime(world.runtime, runtime_capture_id="runtime")
+
+    assert world.trace == [("delete", "runtime")]
+
+
+def test_discard_does_not_swallow_errors_the_adapter_did_not_translate() -> None:
+    world = World()
+    world.runtime.delete_error = RuntimeError("socket")
+
+    with pytest.raises(RuntimeError, match="socket"):
+        use_cases.discard_capture_runtime(world.runtime, runtime_capture_id="runtime")
+
+
+class _DeleteCoordinator:
+    def __init__(self, error: BaseException | None = None) -> None:
+        self.error = error
+        self.calls: list[str] = []
+
+    def delete(self, capture_id: str) -> None:
+        self.calls.append(capture_id)
+        if self.error is not None:
+            raise self.error
+
+
+def test_runtime_delete_swallows_not_found_and_unexpected_errors() -> None:
+    missing = _DeleteCoordinator(
+        CaptureRuntimeError(
+            status_code=404,
+            code="capture_not_found",
+            message="Streaming capture was not found.",
+        )
+    )
+    CoordinatorCaptureRuntime(missing).delete("capture")
+    assert missing.calls == ["capture"]
+
+    rejected = _DeleteCoordinator(
+        CaptureRuntimeError(status_code=503, code="unavailable", message="down")
+    )
+    with pytest.raises(CaptureRuntimeCallFailed):
+        CoordinatorCaptureRuntime(rejected).delete("capture")
+
+    unexpected = _DeleteCoordinator(RuntimeError("socket"))
+    CoordinatorCaptureRuntime(unexpected).delete("capture")
+    assert unexpected.calls == ["capture"]
