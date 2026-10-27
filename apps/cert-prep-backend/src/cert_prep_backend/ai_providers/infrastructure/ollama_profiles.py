@@ -80,7 +80,7 @@ def profile_catalog_payload() -> dict[str, Any]:
 def profile_selection_payload(settings: Settings) -> dict[str, Any]:
     """Return profile selection payload, including disabled/raw-model mode."""
 
-    from cert_prep_backend.authoring.infrastructure.provider_selection import (
+    from cert_prep_backend.ai_providers.infrastructure.provider_selection import (
         provider_selection_from_settings,
     )
     from cert_prep_contracts.llm import LLMProviderName

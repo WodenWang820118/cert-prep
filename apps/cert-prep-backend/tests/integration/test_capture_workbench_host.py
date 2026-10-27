@@ -61,8 +61,8 @@ from cert_prep_backend.capture_integration.infrastructure.structuring import (
     CaptureStructuringTimeoutError,
     CertPrepCaptureStructuringAdapter,
 )
-from cert_prep_backend.authoring.infrastructure.ollama_transport import OllamaProvider
-from cert_prep_backend.authoring.infrastructure.provider import LazyDraftGenerationProvider
+from cert_prep_backend.ai_providers.infrastructure.ollama_transport import OllamaProvider
+from cert_prep_backend.ai_providers.infrastructure.provider import LazyLLMProvider
 from llm_test_fakes import RecordingOllamaClient
 
 
@@ -716,7 +716,7 @@ def test_capture_adapter_reuses_existing_ollama_client_and_model() -> None:
         factory_calls += 1
         return provider
 
-    lazy_provider = LazyDraftGenerationProvider(
+    lazy_provider = LazyLLMProvider(
         provider_factory,
         provider="ollama",
         model="cert-prep-qwen",

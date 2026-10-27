@@ -9,7 +9,7 @@ from cert_prep_backend.api.errors import api_error
 from cert_prep_backend.platform.dependencies import get_settings
 from cert_prep_backend.capture_integration.infrastructure.client import CaptureRuntimeClient
 from cert_prep_backend.capture_integration.infrastructure.coordinator import CertPrepCaptureCoordinator
-from cert_prep_backend.authoring.domain.ports import DraftGenerationProvider as LLMProvider
+from cert_prep_backend.ai_providers.domain.provider import LLMProvider
 from cert_prep_backend.authoring.infrastructure.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.runtime_provisioning.infrastructure import RuntimeInstallationManager
 from cert_prep_backend.platform.document_worker_pool import (

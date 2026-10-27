@@ -9,7 +9,7 @@ from cert_prep_backend.api.errors import (
     not_found_error,
     validation_error,
 )
-from cert_prep_backend.authoring.domain.ports import DraftGenerationProvider as LLMProvider
+from cert_prep_backend.ai_providers.domain.provider import LLMProvider
 from cert_prep_backend.platform.database import utc_now
 from cert_prep_backend.platform.errors import NotFoundError, ValidationError
 from cert_prep_backend.practice.api.schemas import (

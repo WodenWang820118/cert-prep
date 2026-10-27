@@ -50,17 +50,9 @@ EXAM_ITEMS_SCHEMA: dict[str, Any] = {
 }
 
 
-def json_response(response: Any) -> dict[str, Any]:
-    """Read and validate the JSON object returned by Ollama chat responses."""
+def json_payload(content: object) -> dict[str, Any]:
+    """Read and validate the JSON object in the text of an Ollama chat reply."""
 
-    message = getattr(response, "message", None)
-    content = None
-    if isinstance(message, dict):
-        content = message.get("content")
-    elif message is not None:
-        content = getattr(message, "content", None)
-    if content is None and isinstance(response, dict):
-        content = response.get("message", {}).get("content")
     if not isinstance(content, str):
         raise ProviderUnavailableError("Ollama returned an unreadable response.")
     try:

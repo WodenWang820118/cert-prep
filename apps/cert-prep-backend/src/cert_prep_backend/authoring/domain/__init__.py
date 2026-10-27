@@ -11,7 +11,7 @@ from cert_prep_backend.authoring.domain.models import (
     draft_status_from_value,
 )
 from cert_prep_backend.authoring.domain.normalization import normalize_answer
-from cert_prep_backend.authoring.domain.ports import DraftGenerationProvider, ProviderHealth
+from cert_prep_backend.authoring.domain.ports import DraftGenerationProvider
 
 __all__ = [
     "DEFAULT_GENERATED_ANSWER_KEY_SOURCE",
@@ -22,7 +22,6 @@ __all__ = [
     "DraftGenerationStrategy",
     "DraftStatus",
     "DraftSuggestion",
-    "ProviderHealth",
     "SourceChunk",
     "answer_key_source_from_value",
     "draft_status_from_value",

@@ -53,7 +53,8 @@ from cert_prep_backend.capture_integration.infrastructure.persistence import pub
 from cert_prep_backend.authoring.infrastructure import repository as mock_exams_repository
 from cert_prep_backend.authoring.domain.models import source_chunk_from_document_chunk
 from cert_prep_backend.authoring.domain.normalization import as_editable_question
-from cert_prep_backend.authoring.domain.ports import DraftGenerationProvider as LLMProvider
+from cert_prep_backend.ai_providers.domain.provider import LLMProvider
+from cert_prep_backend.authoring.infrastructure.draft_writing import draft_writer_for
 from cert_prep_backend.authoring.infrastructure.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.projects.infrastructure import repository as projects_repository
 from cert_prep_backend.source_library.application import use_cases as source_library
@@ -491,7 +492,7 @@ def _cancel_queued_operation(db, *, project_id: str, operation_id: str) -> None:
 def _auto_generate_exam_items(db, *, provider: LLMProvider, project_id: str, document_id: str, limit: int) -> dict:
     chunks = [source_chunk_from_document_chunk(chunk) for chunk in source_documents_repository.get_source_chunks(db, project_id, document_id)]
     try:
-        suggestions = [as_editable_question(suggestion) for suggestion in provider.generate_drafts(chunks, limit)]
+        suggestions = [as_editable_question(suggestion) for suggestion in draft_writer_for(provider).generate_drafts(chunks, limit)]
     except ProviderUnavailableError:
         return _update_document_exam_state(db, project_id, document_id, 0)
     if not suggestions:

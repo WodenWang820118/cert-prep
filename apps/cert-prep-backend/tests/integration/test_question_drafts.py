@@ -10,7 +10,7 @@ from cert_prep_backend.authoring.domain.models import (
 )
 from cert_prep_backend.authoring.infrastructure import repository as drafts_repository
 from cert_prep_backend.platform.errors import ProviderUnavailableError
-from cert_prep_backend.authoring.domain.ports import ProviderHealth
+from cert_prep_backend.ai_providers.domain.provider import ProviderHealth
 from cert_prep_backend.authoring.api.schemas import DraftGenerateRequest
 
 

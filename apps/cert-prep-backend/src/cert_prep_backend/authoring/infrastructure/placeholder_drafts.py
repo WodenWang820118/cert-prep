@@ -1,43 +1,19 @@
+"""Placeholder drafts for the fake provider, so the app and its tests run without a model."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence
 
-from cert_prep_backend.platform.config import DEFAULT_OLLAMA_MODEL
-from cert_prep_backend.source_library.domain.exam_content import QuestionItemKind
 from cert_prep_backend.authoring.domain.models import (
     AnswerKeySource,
     DraftSuggestion,
     SourceChunk,
 )
-from cert_prep_backend.authoring.domain.ports import ProviderHealth
-from cert_prep_contracts.llm import GenerationAttribution
+from cert_prep_backend.source_library.domain.exam_content import QuestionItemKind
 
 
-class FakeLLMProvider:
-    """Deterministic local provider used when Ollama is not configured."""
-
-    provider = "fake"
-
-    def __init__(self, model: str = DEFAULT_OLLAMA_MODEL) -> None:
-        self.model = model
-
-    def health(self) -> ProviderHealth:
-        """Return an always-available health snapshot for local deterministic drafts."""
-
-        return ProviderHealth(
-            provider=self.provider,
-            model=self.model,
-            available=True,
-            detail="deterministic local fake provider",
-            configured_model=self.model,
-            effective_model=self.model,
-        )
-
-    def reset_generation_attribution(self) -> None:
-        return None
-
-    def generation_attribution(self) -> GenerationAttribution:
-        return GenerationAttribution(self.provider, self.model)
+class PlaceholderDraftWriter:
+    """Deterministic draft writer used with the fake provider when Ollama is not configured."""
 
     def generate_drafts(self, chunks: Sequence[SourceChunk], limit: int) -> list[DraftSuggestion]:
         """Generate deterministic placeholder drafts from source chunks."""

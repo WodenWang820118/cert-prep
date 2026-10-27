@@ -33,8 +33,8 @@ from cert_prep_backend.capture_integration.infrastructure.review_workflow import
 from cert_prep_backend.capture_integration.infrastructure.structuring import (
     CertPrepCaptureStructuringAdapter,
 )
-from cert_prep_backend.authoring.domain.ports import DraftGenerationProvider as LLMProvider
-from cert_prep_backend.authoring.infrastructure.provider import lazy_provider_from_settings
+from cert_prep_backend.ai_providers.domain.provider import LLMProvider
+from cert_prep_backend.ai_providers.infrastructure.provider import lazy_provider_from_settings
 from cert_prep_backend.authoring.infrastructure.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.runtime_provisioning.infrastructure import RuntimeInstallationManager
 from cert_prep_backend.source_library.application import use_cases as source_library
@@ -53,9 +53,10 @@ from cert_prep_backend.capture_integration.api import (
 )
 from cert_prep_backend.routers import (
     documents,
-    llm,
     operation_events,
 )
+from cert_prep_backend.ai_providers.api import router as llm
+from cert_prep_backend.runtime_provisioning.api import model_download_router as model_downloads
 from cert_prep_backend.runtime_provisioning.api import router as runtime
 from cert_prep_backend.authoring.api import router as drafts
 from cert_prep_backend.practice.api import router as practice
@@ -249,6 +250,7 @@ def create_app(
     app.include_router(drafts.drafts_router, dependencies=protected_dependencies)
     app.include_router(practice.router, dependencies=protected_dependencies)
     app.include_router(llm.router, dependencies=protected_dependencies)
+    app.include_router(model_downloads.router, dependencies=protected_dependencies)
     app.include_router(runtime.router, dependencies=protected_dependencies)
     app.include_router(capture_runtime.router, dependencies=protected_dependencies)
     app.include_router(capture_workbench.router, dependencies=protected_dependencies)

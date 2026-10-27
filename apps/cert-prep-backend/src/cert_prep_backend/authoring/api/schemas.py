@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
-from cert_prep_backend.runtime_provisioning.api.schemas import MachineInventoryRead
 from cert_prep_backend.source_library.domain.exam_content import QuestionItemKind, QuestionItemKindValue
 from cert_prep_backend.authoring.domain.models import (
     AnswerKeySource,
@@ -14,12 +13,6 @@ from cert_prep_backend.authoring.infrastructure.draft_jobs import DraftGeneratio
 from cert_prep_backend.authoring.infrastructure.manual_operations import (
     ManualDraftOperationStatus,
 )
-from cert_prep_contracts.llm import (
-    LLMExecutionMode,
-    LLMProviderName,
-    LLMProviderPreference,
-)
-from cert_prep_contracts.runtime import RuntimeInstallationStatus, RuntimeRequirementKind
 
 
 class DraftGenerateRequest(BaseModel):
@@ -148,91 +141,3 @@ class ManualDraftGenerationOperationRead(BaseModel):
     created_at: str
     updated_at: str
     commit_started_at: str | None = None
-
-
-class LLMHealthRead(BaseModel):
-    provider: str
-    model: str
-    available: bool
-    detail: str
-    unavailable_reason: str | None = None
-    configured_model: str | None = None
-    effective_model: str | None = None
-    fallback_models: list[str] = Field(default_factory=list)
-    fallback_reason: str | None = None
-    execution_mode: LLMExecutionMode | None = None
-    execution_warning: str | None = None
-    profile_id: str | None = None
-    base_model: str | None = None
-    modelfile_sha256: str | None = None
-    profile_reason: str | None = None
-    profile_warnings: list[str] = Field(default_factory=list)
-
-
-class LLMProviderSelectionRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    preference: LLMProviderPreference
-    selected_provider: LLMProviderName
-    effective_provider: LLMProviderName
-    configured_model: str
-    effective_model: str
-    selection_reason: str
-    fallback_reason: str | None = None
-    runtime_requirement_kind: RuntimeRequirementKind | None = None
-    model_requirement_kind: RuntimeRequirementKind | None = None
-
-
-class OllamaModelProfileRead(BaseModel):
-    profile_id: str
-    display_name: str
-    description: str
-    base_model: str
-    local_model: str
-    context_window: int
-    system_prompt: str
-    parameters: dict[str, str | int | float | bool] = Field(default_factory=dict)
-    min_total_ram_bytes: int | None = None
-    min_available_ram_bytes: int | None = None
-    min_free_disk_bytes: int | None = None
-    min_vram_bytes: int | None = None
-    auto_selectable: bool
-    explicit_opt_in_required: bool
-    fallback_profile_ids: list[str] = Field(default_factory=list)
-
-
-class OllamaProfilesRead(BaseModel):
-    items: list[OllamaModelProfileRead]
-
-
-class OllamaProfileSelectionRead(BaseModel):
-    profile_enabled: bool
-    profile_id: str | None = None
-    selected_profile: OllamaModelProfileRead | None = None
-    support_status: str
-    reason: str
-    fallback_profiles: list[OllamaModelProfileRead] = Field(default_factory=list)
-    fallback_models: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    inventory: MachineInventoryRead | None = None
-    modelfile_sha256: str | None = None
-    effective_model: str
-    base_model: str | None = None
-
-
-class ModelDownloadRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    provider: str
-    model: str
-    status: RuntimeInstallationStatus
-    phase: str
-    cancellable: bool
-    detail: str
-    completed: int | None
-    total: int | None
-    created_at: str
-    updated_at: str
-    commit_started_at: str | None = None
-    error: str | None = None

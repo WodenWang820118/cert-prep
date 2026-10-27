@@ -16,7 +16,7 @@ import pypdfium2 as pdfium
 
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.authoring.infrastructure import ollama_profiles
+from cert_prep_backend.ai_providers.infrastructure import ollama_profiles
 from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureStreamingResult,
     CaptureUpload,

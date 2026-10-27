@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from cert_prep_backend.authoring.domain.ports import ProviderHealth
+from cert_prep_backend.ai_providers.domain.provider import ProviderHealth
 from conftest import minimal_pdf
 
 

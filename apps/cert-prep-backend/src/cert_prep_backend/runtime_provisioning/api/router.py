@@ -5,12 +5,12 @@ from fastapi import APIRouter, Depends, status
 from cert_prep_backend.api.dependencies import get_runtime_installation_manager
 from cert_prep_backend.platform.dependencies import get_settings
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.authoring.infrastructure.ollama_profiles import (
+from cert_prep_backend.ai_providers.api.schemas import MachineInventoryRead
+from cert_prep_backend.ai_providers.infrastructure.ollama_profiles import (
     collect_ollama_machine_inventory,
 )
 from cert_prep_backend.runtime_provisioning.infrastructure import RuntimeInstallationManager
 from cert_prep_backend.runtime_provisioning.api.schemas import (
-    MachineInventoryRead,
     RuntimeInstallationRead,
     RuntimeRequirementsRead,
 )
