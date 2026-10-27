@@ -84,7 +84,7 @@ classDiagram
 教材（`SourceDocument`）：
 
 - 只有處理完成的 PDF 能匯出 Markdown，而且至少要有一個段落（`ensure_markdown_exportable`、`MarkdownProjection`）。
-- 只有錄音能播放；播放前確認原始檔仍在專案的上傳資料夾、大小在上限內、SHA-256 與匯入時相同（`ensure_playable`、`open_audio_source`）。
+- 只有錄音能播放；播放前確認原始檔仍在專案的上傳資料夾、大小在上限內、SHA-256 與匯入時相同；原始檔不見或被改過時是 `SourceDocumentUnavailable`（`ensure_playable`、`open_audio_source`）。
 - 修正轉錄段落時去掉前後空白，不能是空字串；修正後段落的版本加一，它的翻譯變成過期（`edited_transcript_text`、`DocumentChunk.translation_stale`）。
 - 狀態是可用、有文字、已處理的頁數大於 0 的教材才能產生題目（`SourceDocumentLifecyclePolicy`）。
 
@@ -131,7 +131,7 @@ stateDiagram-v2
 | 列出教材      | `list_documents`           | 專案的所有教材                                                             |
 | 查看教材      | `view_document`            | 一份教材與它的處理結果                                                     |
 | 匯出 Markdown | `export_markdown`          | 處理完成的 PDF 依段落產生 Markdown；其他教材是 `SourceDocumentUnavailable` |
-| 播放錄音      | `open_audio_source`        | 驗證過完整性的錄音原始檔                                                   |
+| 播放錄音      | `open_audio_source`        | 驗證過完整性的錄音原始檔；原始檔不見或被改過時無法播放                     |
 | 查看作業      | `view_operation`           | 一個匯入作業的狀態與階段                                                   |
 | 取消作業      | `cancel_operation`         | 取消一個作業；還沒開始的作業 id 先記為已取消，之後不能再用                 |
 | 取消處理      | `cancel_processing`        | 取消正在處理一份教材的作業                                                 |

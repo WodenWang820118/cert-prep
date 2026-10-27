@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from cert_prep_backend.platform.errors import InvalidSourceError
 from cert_prep_backend.source_library.application import use_cases
 from cert_prep_backend.source_library.domain.document import (
     DocumentChunk,
@@ -199,6 +200,25 @@ def test_only_an_intact_recording_can_be_played(
         use_cases.open_audio_source(
             FakeDocuments(document, []), FakeFiles(tmp_path / path, sha256), "project", "document"
         )
+
+    assert raised.value.code == "audio_source_unavailable"
+
+
+class MissingFiles:
+    def resolve(self, project_id: str, storage_path: str) -> Path:
+        raise InvalidSourceError("The stored source file is unavailable.")
+
+    def sha256(self, source_path: Path) -> str:
+        raise AssertionError("a missing file is never hashed")
+
+
+def test_a_recording_whose_file_is_gone_is_unavailable() -> None:
+    documents = FakeDocuments(_document(source_kind="audio"), [])
+
+    with pytest.raises(
+        SourceDocumentUnavailable, match="stored audio source is unavailable"
+    ) as raised:
+        use_cases.open_audio_source(documents, MissingFiles(), "project", "document")
 
     assert raised.value.code == "audio_source_unavailable"
 
