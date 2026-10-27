@@ -1,4 +1,4 @@
-"""Use cases of Capture Integration for a capture review, from upload through deletion."""
+"""Use cases of Capture Integration, from a capture review through runtime setup."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import hashlib
 import logging
 from pathlib import PurePath
 from typing import Literal
+from uuid import UUID
 
 from cert_prep_backend.capture_integration.application.errors import (
     CaptureAudioRejected,
@@ -41,6 +42,7 @@ from cert_prep_backend.capture_integration.application.ports import (
     CaptureReviewStore,
     CaptureReviewWorkflow,
     CaptureRuntime,
+    CaptureRuntimeSetup,
 )
 from cert_prep_backend.capture_integration.application.results import (
     CaptureResultView,
@@ -64,12 +66,15 @@ from cert_prep_backend.source_library.domain.document import SourceDocument
 __all__ = [
     "abandon_capture_upload",
     "cancel_capture_review",
+    "cancel_runtime_installation",
     "claim_capture_upload",
     "commit_capture_review",
     "discard_capture_runtime",
     "expire_capture_reviews",
     "extract_capture_for_review",
     "hold_capture_stream",
+    "list_runtime_installations",
+    "list_runtime_requirements",
     "load_completed_capture",
     "note_capture_event",
     "preview_capture_structure",
@@ -79,10 +84,14 @@ __all__ = [
     "release_capture_result",
     "report_structuring_failure",
     "start_capture_review",
+    "start_runtime_installation",
     "view_capture",
     "view_ocr_summary",
     "view_partial_capture",
     "view_raw_capture",
+    "view_runtime_installation",
+    "view_runtime_provenance",
+    "view_runtime_ready",
 ]
 
 logger = logging.getLogger(__name__)
@@ -1111,3 +1120,50 @@ def _capture_source_media_type(
         return _media_type(source_file.filename, PurePath(source_file.storage_path).suffix)
     except (OSError, KeyError, NotFoundError):
         return "application/octet-stream"
+
+
+def view_runtime_ready(setup: CaptureRuntimeSetup) -> object:
+    """Return the runtime handshake. The response model stays on the router."""
+
+    return setup.handshake()
+
+
+def view_runtime_provenance(setup: CaptureRuntimeSetup) -> object:
+    """Return packaged provenance plus one live handshake."""
+
+    return setup.provenance()
+
+
+def list_runtime_requirements(setup: CaptureRuntimeSetup) -> object:
+    """Return the runtime's install requirements."""
+
+    return setup.requirements()
+
+
+def start_runtime_installation(
+    setup: CaptureRuntimeSetup,
+    *,
+    requirement_id: str,
+    idempotency_key: UUID,
+) -> object:
+    """Start an installation. Consent and the idempotency key are already checked."""
+
+    return setup.start_installation(requirement_id, idempotency_key=idempotency_key)
+
+
+def list_runtime_installations(setup: CaptureRuntimeSetup) -> object:
+    """Return the runtime's installation jobs."""
+
+    return setup.installations()
+
+
+def view_runtime_installation(setup: CaptureRuntimeSetup, *, installation_id: str) -> object:
+    """Return one installation. A terminal job still clears the discovery cache."""
+
+    return setup.installation(installation_id)
+
+
+def cancel_runtime_installation(setup: CaptureRuntimeSetup, *, installation_id: str) -> object:
+    """Cancel one installation job."""
+
+    return setup.cancel_installation(installation_id)

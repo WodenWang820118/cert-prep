@@ -41,6 +41,9 @@ from cert_prep_backend.capture_integration.infrastructure.review_workflow import
 from cert_prep_backend.capture_integration.infrastructure.runtime_gateway import (
     CoordinatorCaptureRuntime,
 )
+from cert_prep_backend.capture_integration.infrastructure.runtime_setup import (
+    ClientCaptureRuntimeSetup,
+)
 from cert_prep_backend.capture_integration.infrastructure.structuring import (
     CertPrepCaptureStructuringAdapter,
 )
@@ -160,6 +163,11 @@ def create_app(
     )
     app.state.owns_capture_runtime_client = (
         capture_runtime_client is None and app.state.capture_runtime_client is not None
+    )
+    app.state.capture_runtime_setup = (
+        ClientCaptureRuntimeSetup(app.state.capture_runtime_client)
+        if app.state.capture_runtime_client is not None
+        else None
     )
     app.state.capture_coordinator = (
         CertPrepCaptureCoordinator(

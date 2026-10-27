@@ -743,12 +743,15 @@ def test_public_use_cases_are_the_review_lifecycle_names() -> None:
     assert use_cases.__all__ == [
         "abandon_capture_upload",
         "cancel_capture_review",
+        "cancel_runtime_installation",
         "claim_capture_upload",
         "commit_capture_review",
         "discard_capture_runtime",
         "expire_capture_reviews",
         "extract_capture_for_review",
         "hold_capture_stream",
+        "list_runtime_installations",
+        "list_runtime_requirements",
         "load_completed_capture",
         "note_capture_event",
         "preview_capture_structure",
@@ -758,10 +761,14 @@ def test_public_use_cases_are_the_review_lifecycle_names() -> None:
         "release_capture_result",
         "report_structuring_failure",
         "start_capture_review",
+        "start_runtime_installation",
         "view_capture",
         "view_ocr_summary",
         "view_partial_capture",
         "view_raw_capture",
+        "view_runtime_installation",
+        "view_runtime_provenance",
+        "view_runtime_ready",
     ]
 
 

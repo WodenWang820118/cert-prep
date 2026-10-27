@@ -1,9 +1,10 @@
-"""What the capture review use cases need from sessions, Source Library, files, and work."""
+"""What the capture use cases need from sessions, Source Library, files, work, and setup."""
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from typing import Protocol
+from uuid import UUID
 
 from cert_prep_backend.capture_integration.application.results import (
     RuntimeCancellation,
@@ -239,3 +240,23 @@ class CaptureEventSignal(Protocol):
 
 class CaptureQuestionDrafting(Protocol):
     def enqueue_document(self, project_id: str, document_id: str) -> None: ...
+
+
+class CaptureRuntimeSetup(Protocol):
+    """Setup calls on Capture Runtime. Results stay opaque to the use cases."""
+
+    def handshake(self) -> object: ...
+
+    def provenance(self) -> object: ...
+
+    def requirements(self) -> object: ...
+
+    def start_installation(
+        self, requirement_id: str, *, idempotency_key: UUID
+    ) -> object: ...
+
+    def installations(self) -> object: ...
+
+    def installation(self, installation_id: str) -> object: ...
+
+    def cancel_installation(self, installation_id: str) -> object: ...
