@@ -7,7 +7,7 @@ from cert_prep_contracts.transcription import TranscriptSegment
 
 from cert_prep_backend.platform.database import Database, utc_now
 from cert_prep_backend.source_library.domain.exam_content import content_profile_from_value, line_metadata
-from cert_prep_backend.source_library.domain.models import DocumentChunk, ExtractedPage
+from cert_prep_backend.source_library.domain.document import DocumentChunk, ExtractedPage
 from cert_prep_backend.source_library.infrastructure.records import ensure_document_exists
 from cert_prep_backend.platform.errors import NotFoundError
 
@@ -79,11 +79,10 @@ def chunk_from_row(row: Row) -> DocumentChunk:
 
 
 def update_chunk_text(
-    db: Database, project_id: str, document_id: str, chunk_id: str, text: str
+    db: Database, project_id: str, document_id: str, chunk_id: str, normalized: str
 ) -> DocumentChunk:
-    normalized = text.strip()
-    if not normalized:
-        raise ValueError("Japanese transcript text must not be empty.")
+    """Store a transcript chunk's edited text (see edited_transcript_text) as a new revision."""
+
     with db.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
         result = connection.execute(

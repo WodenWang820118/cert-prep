@@ -37,11 +37,16 @@ from cert_prep_backend.authoring.domain.ports import DraftGenerationProvider as 
 from cert_prep_backend.authoring.infrastructure.provider import lazy_provider_from_settings
 from cert_prep_backend.authoring.infrastructure.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.runtime_provisioning.infrastructure import RuntimeInstallationManager
-from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
+from cert_prep_backend.source_library.application import use_cases as source_library
+from cert_prep_backend.source_library.infrastructure.audio import OllamaChunkTranslator
+from cert_prep_backend.source_library.infrastructure.repository import (
+    SqliteDocumentOperationRepository,
+    SqliteDocumentRepository,
+)
+from cert_prep_backend.source_library.infrastructure.storage import LocalSourceFileStore
 from cert_prep_backend.platform.document_worker_pool import (
     DocumentWorkerPool,
 )
-from cert_prep_backend.source_library.infrastructure.operations import recover_operations
 from cert_prep_backend.capture_integration.api import (
     runtime_router as capture_runtime,
     router as capture_workbench,
@@ -125,8 +130,13 @@ def create_app(
     )
     app.state.project_repository = SqliteProjectRepository(app.state.database)
     app.state.practice_store = SqlitePracticeStore(app.state.database)
-    recover_operations(app.state.database)
-    source_documents_repository.recover_processing_documents(app.state.database)
+    app.state.document_repository = SqliteDocumentRepository(app.state.database)
+    app.state.document_operation_repository = SqliteDocumentOperationRepository(app.state.database)
+    app.state.source_file_store = LocalSourceFileStore(app_settings)
+    app.state.chunk_translator = OllamaChunkTranslator(app.state.database, app_settings)
+    source_library.recover_interrupted_work(
+        app.state.document_operation_repository, app.state.document_repository
+    )
     app.state.llm_provider = llm_provider or lazy_provider_from_settings(app_settings)
     app.state.capture_runtime_client = capture_runtime_client or _capture_runtime_client(
         app_settings

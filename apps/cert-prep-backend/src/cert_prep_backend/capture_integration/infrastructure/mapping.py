@@ -16,7 +16,7 @@ from cert_prep_backend.capture_integration.application.ocr_summary import (
 )
 from cert_prep_backend.capture_integration.infrastructure.review import reviewed_text_overrides
 from cert_prep_backend.source_library.domain.exam_content import classify_exam_text, line_metadata
-from cert_prep_backend.source_library.domain.models import (
+from cert_prep_backend.source_library.domain.document import (
     ExtractedPage,
     PdfExtractionResult,
 )

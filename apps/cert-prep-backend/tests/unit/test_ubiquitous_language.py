@@ -21,12 +21,22 @@ def _concepts() -> list[dict]:
 
 
 def _domain_enums() -> dict[str, type[Enum]]:
+    """Enums a modelled domain defines, or takes from cert_prep_contracts (as Source Library's
+    document and operation statuses), keyed by the name OpenAPI gives them."""
+
     enums: dict[str, type[Enum]] = {}
     for context in documented_contexts():
         for module in modules_of(f"cert_prep_backend.{context}.domain"):
-            for name, value in vars(module).items():
-                if inspect.isclass(value) and issubclass(value, Enum) and value.__module__ == module.__name__:
-                    enums[name] = value
+            for value in vars(module).values():
+                if (
+                    inspect.isclass(value)
+                    and issubclass(value, Enum)
+                    and (
+                        value.__module__ == module.__name__
+                        or value.__module__.startswith("cert_prep_contracts.")
+                    )
+                ):
+                    enums[value.__name__] = value
     return enums
 
 

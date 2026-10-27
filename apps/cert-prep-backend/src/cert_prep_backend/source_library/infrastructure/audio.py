@@ -11,7 +11,7 @@ from cert_prep_backend.platform.errors import (
     DocumentProcessingCanceledError,
 )
 from cert_prep_backend.platform.database import Database
-from cert_prep_backend.source_library.domain.models import DocumentChunk
+from cert_prep_backend.source_library.domain.document import DocumentChunk
 from cert_prep_backend.source_library.infrastructure import chunks
 
 
@@ -63,6 +63,33 @@ class OllamaTraditionalChineseTranslator:
             return
         self._released = True
         self._client.generate(model=self._model, keep_alive=0)
+
+
+class OllamaChunkTranslator:
+    """Translates a document's transcript chunks with the configured Ollama model."""
+
+    def __init__(self, db: Database, settings: Settings) -> None:
+        self._db = db
+        self._settings = settings
+
+    def translate_chunk(self, project_id: str, document_id: str, chunk_id: str) -> DocumentChunk:
+        return translate_chunk(
+            self._db,
+            translator=OllamaTraditionalChineseTranslator(self._settings),
+            project_id=project_id,
+            document_id=document_id,
+            chunk_id=chunk_id,
+        )
+
+    def translate_stale_chunks(self, project_id: str, document_id: str) -> list[DocumentChunk]:
+        return translate_stale_chunks(
+            self._db,
+            translator=OllamaTraditionalChineseTranslator(
+                self._settings, keep_alive=BATCH_TRANSLATION_KEEP_ALIVE
+            ),
+            project_id=project_id,
+            document_id=document_id,
+        )
 
 
 def translate_chunk(

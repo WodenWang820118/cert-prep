@@ -4,6 +4,8 @@ import hashlib
 from pathlib import Path
 
 from cert_prep_backend.platform.config import Settings
+from cert_prep_backend.platform.errors import InvalidSourceError
+from cert_prep_backend.source_library.domain.document import AUDIO_MEDIA_TYPES
 
 
 def sha256_hex(content: bytes) -> str:
@@ -26,3 +28,51 @@ def store_source_file(
     if not path.exists():
         path.write_bytes(content)
     return path
+
+
+class LocalSourceFileStore:
+    """Original source files under the data directory, one upload folder per project."""
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+
+    def resolve(self, project_id: str, storage_path: str) -> Path:
+        """The stored file; it must lie in the project's folder and be within the upload limit."""
+
+        expected_root = (self._settings.data_dir / "uploads" / project_id).resolve()
+        try:
+            source_path = Path(storage_path).resolve(strict=True)
+            source_path.relative_to(expected_root)
+            stat = source_path.stat()
+        except (OSError, ValueError) as exc:
+            raise InvalidSourceError("The stored source file is unavailable.") from exc
+        source_limit = (
+            self._settings.max_audio_upload_bytes
+            if source_path.suffix.lower() in AUDIO_MEDIA_TYPES
+            else self._settings.max_upload_bytes
+        )
+        if not source_path.is_file() or stat.st_size <= 0 or stat.st_size > source_limit:
+            raise InvalidSourceError("The stored source file is unavailable.")
+        return source_path
+
+    def sha256(self, source_path: Path) -> str:
+        digest = hashlib.sha256()
+        try:
+            with source_path.open("rb") as source:
+                while chunk := source.read(1024 * 1024):
+                    digest.update(chunk)
+        except OSError as exc:
+            raise InvalidSourceError("The stored source file is unavailable.") from exc
+        return digest.hexdigest()
+
+    def verified_path(self, project_id: str, storage_path: str, expected_sha256: str) -> Path:
+        source_path = self.resolve(project_id, storage_path)
+        if self.sha256(source_path) != expected_sha256:
+            raise InvalidSourceError("The stored source file failed integrity verification.")
+        return source_path
+
+    def verified_content(self, project_id: str, storage_path: str, expected_sha256: str) -> bytes:
+        content = self.resolve(project_id, storage_path).read_bytes()
+        if sha256_hex(content) != expected_sha256:
+            raise InvalidSourceError("The stored source file failed integrity verification.")
+        return content

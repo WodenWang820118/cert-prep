@@ -9,7 +9,7 @@ from cert_prep_backend.authoring.domain.models import (
     SourceChunk,
     source_chunk_from_document_chunk,
 )
-from cert_prep_backend.source_library.domain.models import DocumentChunk
+from cert_prep_backend.source_library.domain.document import DocumentChunk
 from cert_prep_backend.authoring.infrastructure.provider import (
     MAX_PROMPT_SOURCE_CHARS,
     _draft_suggestion_from_item,

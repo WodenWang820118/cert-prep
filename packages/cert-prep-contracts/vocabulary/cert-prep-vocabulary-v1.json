@@ -43,6 +43,267 @@
       "codeName": "PracticeSessionMode.REVIEW_RETRY",
       "enum": { "enumId": "PracticeSessionMode", "value": "review_retry" },
       "retired": false
+    },
+    {
+      "id": "source-library.document-status.processing",
+      "label": "處理中",
+      "codeName": "SourceDocumentStatus.PROCESSING",
+      "enum": { "enumId": "SourceDocumentStatus", "value": "processing" },
+      "retired": false
+    },
+    {
+      "id": "source-library.document-status.cancel-requested",
+      "label": "取消中",
+      "codeName": "SourceDocumentStatus.CANCEL_REQUESTED",
+      "enum": { "enumId": "SourceDocumentStatus", "value": "cancel_requested" },
+      "retired": false
+    },
+    {
+      "id": "source-library.document-status.canceled",
+      "label": "已取消",
+      "codeName": "SourceDocumentStatus.CANCELED",
+      "enum": { "enumId": "SourceDocumentStatus", "value": "canceled" },
+      "retired": false
+    },
+    {
+      "id": "source-library.document-status.ready",
+      "label": "可用",
+      "codeName": "SourceDocumentStatus.READY",
+      "enum": { "enumId": "SourceDocumentStatus", "value": "ready" },
+      "retired": false
+    },
+    {
+      "id": "source-library.document-status.exam-failed",
+      "label": "題目產生失敗",
+      "codeName": "SourceDocumentStatus.EXAM_FAILED",
+      "enum": { "enumId": "SourceDocumentStatus", "value": "exam_failed" },
+      "retired": false
+    },
+    {
+      "id": "source-library.document-status.no-text-detected",
+      "label": "沒有文字",
+      "codeName": "SourceDocumentStatus.NO_TEXT_DETECTED",
+      "enum": { "enumId": "SourceDocumentStatus", "value": "no_text_detected" },
+      "retired": false
+    },
+    {
+      "id": "source-library.document-status.ocr-failed",
+      "label": "OCR 失敗",
+      "codeName": "SourceDocumentStatus.OCR_FAILED",
+      "enum": { "enumId": "SourceDocumentStatus", "value": "ocr_failed" },
+      "retired": false
+    },
+    {
+      "id": "source-library.document-status.transcription-failed",
+      "label": "轉錄失敗",
+      "codeName": "SourceDocumentStatus.TRANSCRIPTION_FAILED",
+      "enum": {
+        "enumId": "SourceDocumentStatus",
+        "value": "transcription_failed"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.extraction-method.embedded",
+      "label": "內嵌文字",
+      "codeName": "PdfExtractionMethod.EMBEDDED",
+      "enum": { "enumId": "PdfExtractionMethod", "value": "embedded" },
+      "retired": false
+    },
+    {
+      "id": "source-library.extraction-method.mixed",
+      "label": "內嵌文字與 OCR 混合",
+      "codeName": "PdfExtractionMethod.MIXED",
+      "enum": { "enumId": "PdfExtractionMethod", "value": "mixed" },
+      "retired": false
+    },
+    {
+      "id": "source-library.extraction-method.none",
+      "label": "沒有擷取",
+      "codeName": "PdfExtractionMethod.NONE",
+      "enum": { "enumId": "PdfExtractionMethod", "value": "none" },
+      "retired": false
+    },
+    {
+      "id": "source-library.extraction-method.ocr-failed",
+      "label": "OCR 失敗",
+      "codeName": "PdfExtractionMethod.OCR_FAILED",
+      "enum": { "enumId": "PdfExtractionMethod", "value": "ocr_failed" },
+      "retired": false
+    },
+    {
+      "id": "source-library.extraction-method.windowsml-ocr",
+      "label": "Windows ML OCR",
+      "codeName": "PdfExtractionMethod.WINDOWSML_OCR",
+      "enum": { "enumId": "PdfExtractionMethod", "value": "windowsml_ocr" },
+      "retired": false
+    },
+    {
+      "id": "source-library.content-profile.unknown",
+      "label": "未判斷",
+      "codeName": "ContentProfile.UNKNOWN",
+      "enum": { "enumId": "ContentProfile", "value": "unknown" },
+      "retired": false
+    },
+    {
+      "id": "source-library.content-profile.jlpt-vocabulary",
+      "label": "JLPT 字彙",
+      "codeName": "ContentProfile.JLPT_VOCABULARY",
+      "enum": { "enumId": "ContentProfile", "value": "jlpt_vocabulary" },
+      "retired": false
+    },
+    {
+      "id": "source-library.content-profile.jlpt-grouped",
+      "label": "JLPT 題組",
+      "codeName": "ContentProfile.JLPT_GROUPED",
+      "enum": { "enumId": "ContentProfile", "value": "jlpt_grouped" },
+      "retired": false
+    },
+    {
+      "id": "source-library.content-profile.mixed",
+      "label": "混合",
+      "codeName": "ContentProfile.MIXED",
+      "enum": { "enumId": "ContentProfile", "value": "mixed" },
+      "retired": false
+    },
+    {
+      "id": "source-library.question-item-kind.unknown",
+      "label": "未判斷",
+      "codeName": "QuestionItemKind.UNKNOWN",
+      "enum": { "enumId": "QuestionItemKind", "value": "unknown" },
+      "retired": false
+    },
+    {
+      "id": "source-library.question-item-kind.vocabulary-single",
+      "label": "單題字彙",
+      "codeName": "QuestionItemKind.VOCABULARY_SINGLE",
+      "enum": { "enumId": "QuestionItemKind", "value": "vocabulary_single" },
+      "retired": false
+    },
+    {
+      "id": "source-library.question-item-kind.grouped-question",
+      "label": "題組題",
+      "codeName": "QuestionItemKind.GROUPED_QUESTION",
+      "enum": { "enumId": "QuestionItemKind", "value": "grouped_question" },
+      "retired": false
+    },
+    {
+      "id": "source-library.operation-status.queued",
+      "label": "排隊中",
+      "codeName": "DocumentOperationStatus.QUEUED",
+      "enum": { "enumId": "DocumentOperationStatus", "value": "queued" },
+      "retired": false
+    },
+    {
+      "id": "source-library.operation-status.running",
+      "label": "執行中",
+      "codeName": "DocumentOperationStatus.RUNNING",
+      "enum": { "enumId": "DocumentOperationStatus", "value": "running" },
+      "retired": false
+    },
+    {
+      "id": "source-library.operation-status.cancel-requested",
+      "label": "要求取消",
+      "codeName": "DocumentOperationStatus.CANCEL_REQUESTED",
+      "enum": {
+        "enumId": "DocumentOperationStatus",
+        "value": "cancel_requested"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.operation-status.canceled",
+      "label": "已取消",
+      "codeName": "DocumentOperationStatus.CANCELED",
+      "enum": { "enumId": "DocumentOperationStatus", "value": "canceled" },
+      "retired": false
+    },
+    {
+      "id": "source-library.operation-status.succeeded",
+      "label": "成功",
+      "codeName": "DocumentOperationStatus.SUCCEEDED",
+      "enum": { "enumId": "DocumentOperationStatus", "value": "succeeded" },
+      "retired": false
+    },
+    {
+      "id": "source-library.operation-status.failed",
+      "label": "失敗",
+      "codeName": "DocumentOperationStatus.FAILED",
+      "enum": { "enumId": "DocumentOperationStatus", "value": "failed" },
+      "retired": false
+    },
+    {
+      "id": "source-library.operation-phase.uploading",
+      "label": "上傳中",
+      "codeName": "DocumentOperationPhase.UPLOADING",
+      "enum": { "enumId": "DocumentOperationPhase", "value": "uploading" },
+      "retired": false
+    },
+    {
+      "id": "source-library.operation-phase.processing",
+      "label": "處理中",
+      "codeName": "DocumentOperationPhase.PROCESSING",
+      "enum": { "enumId": "DocumentOperationPhase", "value": "processing" },
+      "retired": false
+    },
+    {
+      "id": "source-library.operation-phase.awaiting-review",
+      "label": "等待檢閱",
+      "codeName": "DocumentOperationPhase.AWAITING_REVIEW",
+      "enum": {
+        "enumId": "DocumentOperationPhase",
+        "value": "awaiting_review"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.operation-phase.transcribing",
+      "label": "轉錄中",
+      "codeName": "DocumentOperationPhase.TRANSCRIBING",
+      "enum": { "enumId": "DocumentOperationPhase", "value": "transcribing" },
+      "retired": false
+    },
+    {
+      "id": "source-library.operation-phase.translating",
+      "label": "翻譯中",
+      "codeName": "DocumentOperationPhase.TRANSLATING",
+      "enum": { "enumId": "DocumentOperationPhase", "value": "translating" },
+      "retired": false
+    },
+    {
+      "id": "source-library.operation-phase.canceling",
+      "label": "取消中",
+      "codeName": "DocumentOperationPhase.CANCELING",
+      "enum": { "enumId": "DocumentOperationPhase", "value": "canceling" },
+      "retired": false
+    },
+    {
+      "id": "source-library.operation-phase.committing",
+      "label": "寫入結果",
+      "codeName": "DocumentOperationPhase.COMMITTING",
+      "enum": { "enumId": "DocumentOperationPhase", "value": "committing" },
+      "retired": false
+    },
+    {
+      "id": "source-library.operation-phase.canceled",
+      "label": "已取消",
+      "codeName": "DocumentOperationPhase.CANCELED",
+      "enum": { "enumId": "DocumentOperationPhase", "value": "canceled" },
+      "retired": false
+    },
+    {
+      "id": "source-library.operation-phase.completed",
+      "label": "完成",
+      "codeName": "DocumentOperationPhase.COMPLETED",
+      "enum": { "enumId": "DocumentOperationPhase", "value": "completed" },
+      "retired": false
+    },
+    {
+      "id": "source-library.operation-phase.failed",
+      "label": "失敗",
+      "codeName": "DocumentOperationPhase.FAILED",
+      "enum": { "enumId": "DocumentOperationPhase", "value": "failed" },
+      "retired": false
     }
   ]
 }

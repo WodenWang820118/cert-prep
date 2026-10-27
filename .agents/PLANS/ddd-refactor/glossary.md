@@ -11,12 +11,28 @@
 
 ## 教材來源
 
-| 中文     | 程式名稱            | 意思                                                   |
-| -------- | ------------------- | ------------------------------------------------------ |
-| 教材     | `SourceDocument`    | 匯入的一份 PDF、圖片或錄音                             |
-| 段落     | `DocumentChunk`     | 教材切成的一段文字，題目由段落產生                     |
-| 匯入作業 | `DocumentOperation` | 匯入、擷取、切段、刪除等背景作業與它的進度             |
-| 內容類型 | `ContentProfile`    | 教材的題型慣例，例如 `jlpt_vocabulary`、`jlpt_grouped` |
+| 中文             | 程式名稱                                      | 意思                                                           |
+| ---------------- | --------------------------------------------- | -------------------------------------------------------------- |
+| 教材             | `SourceDocument`                              | 匯入的一份 PDF、圖片或錄音                                     |
+| 原始檔           | `SourceFile`                                  | 匯入的檔案、它的 SHA-256 與存放位置                            |
+| 段落             | `DocumentChunk`                               | 教材切成的一段文字，題目由段落產生；錄音的段落有時間區間與翻譯 |
+| 教材狀態         | `SourceDocumentStatus`                        | 處理中、取消中、已取消、可用，或處理失敗的原因                 |
+| 擷取結果         | `PdfExtraction`（舊名 `PdfExtractionResult`） | 一次擷取得到的頁面、狀態與各階段耗時                           |
+| 擷取頁面         | `ExtractedPage`                               | 擷取出的一頁文字與擷取方式                                     |
+| 擷取方式         | `PdfExtractionMethod`                         | 內嵌文字、OCR、兩者混合，或沒有文字                            |
+| 擷取政策         | `PdfExtractionPolicy`                         | 依擷取出的頁面決定教材狀態與擷取方式                           |
+| 教材生命週期政策 | `SourceDocumentLifecyclePolicy`               | 教材什麼時候能產生題目、產生後是什麼狀態                       |
+| 內容類型         | `ContentProfile`                              | 教材的題型慣例，例如 `jlpt_vocabulary`、`jlpt_grouped`         |
+| 文字分類         | `TextClassification`                          | 一段文字判斷出的內容類型與判斷依據                             |
+| 行範圍           | `LineMetadata`                                | 段落在原文的起訖行與行數                                       |
+| 題目區塊         | `ParsedQuestionBlock`                         | 從教材文字切出的一題：題號、題幹、選項與所屬題組               |
+| 題目形式         | `QuestionItemKind`                            | 一題是單獨的字彙題，還是題組裡的一題                           |
+| Markdown 匯出    | `MarkdownProjection`                          | 可匯出的 PDF 與用來產生 Markdown 的段落                        |
+| 教材無法提供     | `SourceDocumentUnavailable`                   | 教材不能以要求的形式提供，例如圖片沒有 Markdown                |
+| 匯入作業         | `DocumentOperation`                           | 一次匯入、擷取、檢閱或重試，以及它還能不能取消                 |
+| 作業狀態         | `DocumentOperationStatus`                     | 排隊、執行中、要求取消、已取消、成功、失敗                     |
+| 作業階段         | `DocumentOperationPhase`                      | 上傳、處理、等待檢閱、轉錄、翻譯、取消中、寫入結果等           |
+| 失敗後的教材狀態 | `DocumentFailureState`                        | 作業失敗或取消後，頁面教材留下的狀態，之後可以重試             |
 
 ## 擷取整合
 
