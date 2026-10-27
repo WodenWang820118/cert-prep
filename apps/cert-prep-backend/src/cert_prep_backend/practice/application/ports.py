@@ -61,6 +61,11 @@ class PracticeRepository(Protocol):
         """Store is_correct for attempts whose grade changed."""
         ...
 
+    def refresh_snapshot_keys(self, project_id: str, question: PracticeQuestion) -> int:
+        """Copy the question's current key and rationale into the session snapshots that show
+        the same question text and choices. Snapshots of an edited question keep what was shown."""
+        ...
+
     def answered_question_ids(self, session: PracticeSession) -> set[str]: ...
 
     def save_status(self, session: PracticeSession) -> None:

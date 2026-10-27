@@ -31,6 +31,7 @@ describe('WrongAnswerReviewStore', () => {
     source_excerpt: 'Relevant source excerpt.',
     document_id: 'document-1',
     created_at: '2026-06-23T00:00:00Z',
+    answer_key_source: null,
   };
   const summary = {
     current_wrong_count: 1,

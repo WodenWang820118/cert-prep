@@ -267,6 +267,7 @@ def _question_read(question: PracticeQuestion) -> PracticeSessionQuestionRead:
         citation_page=question.citation_page,
         source_excerpt=question.source_excerpt,
         document_id=question.document_id,
+        answer_key_source=question.answer_key_source,
     )
 
 
@@ -295,6 +296,7 @@ def _wrong_answer_read(wrong_answer: WrongAnswer) -> WrongAnswerRead:
         source_excerpt=wrong_answer.source_excerpt,
         document_id=wrong_answer.document_id,
         created_at=wrong_answer.created_at,
+        answer_key_source=wrong_answer.answer_key_source,
     )
 
 

@@ -10,12 +10,13 @@ import type {
 } from './draft-review-panel.contracts';
 import { formatChoiceKey } from './draft-review-panel.formatters';
 import { displayChoice } from '../../services/choice-display';
+import { AiInferredAnswerBadgeComponent } from '../ui/ai-inferred-answer-badge.component';
 import { AppIconComponent } from '../ui/app-icon.component';
 import { HlmInput } from '@spartan-ng/helm/input';
 
 @Component({
   selector: 'app-draft-question-editor-card',
-  imports: [AppIconComponent, HlmInput],
+  imports: [AiInferredAnswerBadgeComponent, AppIconComponent, HlmInput],
   templateUrl: './draft-question-editor-card.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
 })

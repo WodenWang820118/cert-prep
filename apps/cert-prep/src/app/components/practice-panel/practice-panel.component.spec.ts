@@ -7,6 +7,7 @@ import {
 } from '../../testing/app.spec-helpers';
 import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
 import type {
+  PracticeAttemptRead,
   PracticeSessionRead,
   QuestionDraftRead,
 } from '../../contracts/api.contracts';
@@ -110,6 +111,84 @@ describe('PracticePanelComponent', () => {
       expect(apiClient.recordPracticeAttempt).toHaveBeenCalledWith(appProject.id, 'session-1', {
         question_id: question.id, selected_answer: '１ からかって',
       }, { signal: expect.any(AbortSignal) });
+    });
+
+    it('adds the inferred-key note to the answered question, including when it is no longer active', () => {
+      const inferred = editableQuestion('draft-1', { answer_key_source: 'ai_inferred' });
+      const confirmed = editableQuestion('draft-2', { answer_key_source: 'manual' });
+      const store = arrangeActiveSession([inferred, confirmed]);
+      store.practiceSession.set({
+        ...practiceSession([inferred.id, confirmed.id]),
+        mode,
+        questions: [
+          snapshotQuestion(inferred, 'ai_inferred'),
+          snapshotQuestion(confirmed, 'manual'),
+        ],
+      });
+      store.answeredQuestionIds.set(new Set([inferred.id]));
+      store.lastAttempt.set(practiceAttempt(inferred.id, false));
+      const fixture = TestBed.createComponent(PracticePanelComponent);
+      fixture.componentRef.setInput('sessionMode', mode);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.textContent).toContain(
+        'Last answer: Needs review (answer key inferred by AI, not confirmed)',
+      );
+      expect(fixture.nativeElement.textContent).toContain(confirmed.question);
+    });
+
+    it.each([
+      [true, 'Last answer: Correct (answer key inferred by AI, not confirmed)'],
+      [false, 'Last answer: Needs review (answer key inferred by AI, not confirmed)'],
+    ] as const)('suffixes a %s last answer when the key was inferred', (isCorrect, expected) => {
+      const question = editableQuestion('draft-1', { answer_key_source: 'pdf' });
+      const store = arrangeActiveSession([question]);
+      store.practiceSession.set({
+        ...practiceSession([question.id]),
+        mode,
+        questions: [snapshotQuestion(question, 'ai_inferred')],
+      });
+      store.lastAttempt.set(practiceAttempt(question.id, isCorrect));
+      const fixture = TestBed.createComponent(PracticePanelComponent);
+      fixture.componentRef.setInput('sessionMode', mode);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.textContent).toContain(expected);
+    });
+
+    it.each(['manual', 'pdf', null] as const)(
+      'leaves the last-answer line unchanged when the key source is %s',
+      (answerKeySource) => {
+        const question = editableQuestion('draft-1', {
+          answer_key_source: answerKeySource ?? 'ai_inferred',
+        });
+        const store = arrangeActiveSession([question]);
+        store.practiceSession.set({
+          ...practiceSession([question.id]),
+          mode,
+          questions: [snapshotQuestion(question, answerKeySource)],
+        });
+        store.lastAttempt.set(practiceAttempt(question.id, true));
+        const fixture = TestBed.createComponent(PracticePanelComponent);
+        fixture.componentRef.setInput('sessionMode', mode);
+        fixture.detectChanges();
+
+        const message = fixture.nativeElement.querySelector('.practice-attempt-message');
+        expect(message?.textContent?.trim()).toBe('Last answer: Correct');
+      },
+    );
+
+    it('uses the live draft source when the session has no question snapshot', () => {
+      const question = editableQuestion('draft-1', { answer_key_source: 'ai_inferred' });
+      const store = arrangeActiveSession([question]);
+      store.lastAttempt.set(practiceAttempt(question.id, false));
+      const fixture = TestBed.createComponent(PracticePanelComponent);
+      fixture.componentRef.setInput('sessionMode', mode);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.textContent).toContain(
+        'Last answer: Needs review (answer key inferred by AI, not confirmed)',
+      );
     });
   });
 
@@ -226,6 +305,7 @@ describe('PracticePanelComponent', () => {
           citation_page: 9,
           source_excerpt: 'Snapshot excerpt.',
           document_id: editableAppQuestion.document_id,
+          answer_key_source: null,
         },
       ],
     });
@@ -391,6 +471,38 @@ function practiceSession(questionIds: readonly string[]): PracticeSessionRead {
     completed_at: null,
     abandoned_at: null,
     attempts: [],
+  };
+}
+
+function practiceAttempt(
+  questionId: string,
+  isCorrect: boolean,
+): PracticeAttemptRead {
+  return {
+    id: `attempt-${questionId}`,
+    session_id: 'session-1',
+    project_id: appProject.id,
+    question_id: questionId,
+    selected_answer: 'A',
+    is_correct: isCorrect,
+    created_at: '2026-10-28T00:00:00Z',
+  };
+}
+
+function snapshotQuestion(
+  question: QuestionDraftRead,
+  answerKeySource: string | null,
+): PracticeSessionRead['questions'][number] {
+  return {
+    id: question.id,
+    question: question.question,
+    choices: [...question.choices],
+    answer: question.answer,
+    rationale: question.rationale,
+    citation_page: question.citation_page,
+    source_excerpt: question.source_excerpt,
+    document_id: question.document_id,
+    answer_key_source: answerKeySource,
   };
 }
 

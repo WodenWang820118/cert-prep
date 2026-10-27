@@ -226,7 +226,7 @@
           class="practice-attempt-message"
           [class.is-correct]="attempt.is_correct"
         >
-          {{ attempt.is_correct ? 'Last answer: Correct' : 'Last answer: Needs review' }}
+          {{ lastAnswerText(attempt) }}
         </p>
       }
     </section>

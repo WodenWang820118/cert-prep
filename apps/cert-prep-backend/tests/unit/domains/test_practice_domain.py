@@ -207,6 +207,7 @@ def test_current_wrong_answers_uses_latest_attempt_per_question() -> None:
             rationale="The page says it directly.",
             citation_page=2,
             source_excerpt="Grounded answer evidence.",
+            answer_key_source="ai_inferred",
         ),
     }
     attempts = [
@@ -253,6 +254,8 @@ def test_current_wrong_answers_uses_latest_attempt_per_question() -> None:
         None,
         "2026-06-11T00:04:00Z",
     )
+    assert wrong.answer_key_source == "ai_inferred"
+    assert wrong.as_question().answer_key_source == "ai_inferred"
 
 
 def test_regrading_uses_the_same_key_match_as_answering() -> None:

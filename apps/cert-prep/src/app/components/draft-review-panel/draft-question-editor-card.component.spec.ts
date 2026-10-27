@@ -24,6 +24,44 @@ describe('DraftQuestionEditorCardComponent', () => {
     expect(text).toContain('Page 3');
     expect(text).toContain('Relevant source excerpt.');
     expect(text).toContain('Ready for practice');
+    expect(text).not.toContain('AI-inferred answer');
+  });
+
+  it.each(['manual', 'pdf', null] as const)(
+    'hides the AI-inferred badge when the key source is %s',
+    (answerKeySource) => {
+      const fixture = TestBed.createComponent(DraftQuestionEditorCardComponent);
+      fixture.componentRef.setInput('model', { ...questionModel(), answerKeySource });
+      fixture.detectChanges();
+
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="ai-inferred-answer"]'),
+      ).toBeNull();
+    },
+  );
+
+  it('marks an AI-inferred key beside the practice status and the answer', () => {
+    const fixture = TestBed.createComponent(DraftQuestionEditorCardComponent);
+    fixture.componentRef.setInput('model', {
+      ...questionModel(),
+      answerKeySource: 'ai_inferred',
+    });
+    fixture.detectChanges();
+
+    const badges = fixture.nativeElement.querySelectorAll(
+      '[data-testid="ai-inferred-answer"]',
+    );
+    expect(badges).toHaveLength(2);
+    expect(badges[0]?.textContent?.trim()).toBe('AI-inferred answer');
+    expect(badges[0]?.getAttribute('aria-description')).toBe(
+      'The answer was inferred by the local AI model and has not been confirmed. Check it against the source.',
+    );
+    expect(
+      fixture.nativeElement.querySelector('.workbench-question-meta [data-testid="ai-inferred-answer"]'),
+    ).not.toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('.workbench-rationale [data-testid="ai-inferred-answer"]'),
+    ).not.toBeNull();
   });
 
   it('strips source ordinals in the choice list and answer while retaining letter labels', () => {
@@ -106,6 +144,7 @@ function questionModel(): DraftQuestionEditorViewModel {
     isEditing: false,
     edit: null,
     saveBusy: false,
+    answerKeySource: null,
   };
 }
 

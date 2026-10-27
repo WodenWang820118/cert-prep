@@ -1217,6 +1217,7 @@ function practiceSessionQuestion(
     citation_page: draft.citation_page,
     source_excerpt: draft.source_excerpt,
     document_id: draft.document_id,
+    answer_key_source: draft.answer_key_source,
   };
 }
 
@@ -1254,6 +1255,7 @@ function createWrongAnswer(
     source_excerpt: draft.source_excerpt,
     document_id: draft.document_id,
     created_at: attempt.created_at,
+    answer_key_source: draft.answer_key_source,
   };
 }
 

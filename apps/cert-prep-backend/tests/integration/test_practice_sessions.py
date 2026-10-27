@@ -39,6 +39,7 @@ def test_practice_session_attempts_and_wrong_answer_review(client: TestClient, a
             "citation_page": question["citation_page"],
             "source_excerpt": question["source_excerpt"],
             "document_id": document_id,
+            "answer_key_source": "ai_inferred",
         }
     ]
 
@@ -58,7 +59,7 @@ def test_practice_session_attempts_and_wrong_answer_review(client: TestClient, a
     assert item["correct_answer"] == "Apply the cited concept"
     assert item["citation_page"] == 1
     assert item["document_id"] == document_id
-    assert item["document_id"] == document_id
+    assert item["answer_key_source"] == "ai_inferred"
 
     corrected = client.post(
         f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
@@ -114,6 +115,7 @@ def test_review_retry_session_uses_current_wrong_answer_snapshots(
             "citation_page": 1,
             "source_excerpt": "Least privilege keeps cloud permissions scoped.",
             "document_id": document_id,
+            "answer_key_source": "manual",
         }
     ]
 

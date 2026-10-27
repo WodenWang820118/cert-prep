@@ -189,6 +189,7 @@ describe('PracticeStore session modes', () => {
           citation_page: 7,
           source_excerpt: 'Snapshot source excerpt.',
           document_id: documents[0].id,
+          answer_key_source: null,
         },
       ],
     });
@@ -202,6 +203,7 @@ describe('PracticeStore session modes', () => {
       citation_page: 7,
       source_excerpt: 'Snapshot source excerpt.',
       document_id: documents[0].id,
+      answer_key_source: null,
     });
   });
 
@@ -238,6 +240,7 @@ describe('PracticeStore session modes', () => {
           citation_page: 1,
           source_excerpt: 'Source excerpt.',
           document_id: documents[0].id,
+          answer_key_source: null,
         },
       ],
     });
@@ -351,6 +354,7 @@ function sessionQuestion(id: string, question: string) {
     citation_page: 1,
     source_excerpt: 'Source.',
     document_id: 'document-1',
+    answer_key_source: null,
   };
 }
 

@@ -70,6 +70,7 @@ export interface DraftQuestionEditorViewModel {
   readonly isEditing: boolean;
   readonly edit: DraftEditViewModel | null;
   readonly saveBusy: boolean;
+  readonly answerKeySource: string | null;
 }
 
 export type DraftQuestionEditorAction =

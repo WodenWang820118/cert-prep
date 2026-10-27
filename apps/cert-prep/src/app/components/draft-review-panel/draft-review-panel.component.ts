@@ -118,6 +118,7 @@ export class DraftReviewPanelComponent {
           isEditing,
           edit: isEditing ? cloneDraftEdit(this.drafts.draftEdit(draft)) : null,
           saveBusy: this.operations.isBusyFor('saveDraft'),
+          answerKeySource: draft.answer_key_source,
         };
       }),
   );

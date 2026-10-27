@@ -49,6 +49,7 @@ class PracticeQuestion:
     citation_page: int | None = None
     source_excerpt: str | None = None
     document_id: str | None = None
+    answer_key_source: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "choices", tuple(self.choices))

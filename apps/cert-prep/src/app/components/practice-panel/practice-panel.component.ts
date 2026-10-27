@@ -8,6 +8,7 @@ import {
   input,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import type { PracticeAttemptRead } from '../../contracts/api.contracts';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { OperationStore } from '../../stores/operation.store';
 import type { PracticeSessionMode } from '../../stores/practice/contracts/practice.contracts';
@@ -134,6 +135,15 @@ export class PracticePanelComponent implements OnInit {
     return this.choiceKeys.key(index);
   }
 
+  protected lastAnswerText(attempt: PracticeAttemptRead): string {
+    const verdict = attempt.is_correct
+      ? 'Last answer: Correct'
+      : 'Last answer: Needs review';
+    return this.answerKeySource(attempt.question_id) === 'ai_inferred'
+      ? `${verdict} (answer key inferred by AI, not confirmed)`
+      : verdict;
+  }
+
   protected readonly questionNavigatorItems = computed<
     readonly QuestionNavigatorItem[]
   >(() => {
@@ -159,6 +169,18 @@ export class PracticePanelComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadPracticeInputs();
+  }
+
+  private answerKeySource(questionId: string): string | null | undefined {
+    const snapshot = this.practice
+      .practiceSession()
+      ?.questions.find((question) => question.id === questionId);
+    if (snapshot !== undefined) {
+      return snapshot.answer_key_source;
+    }
+
+    return this.drafts.drafts().find((draft) => draft.id === questionId)
+      ?.answer_key_source;
   }
 
   private loadPracticeInputs(): void {

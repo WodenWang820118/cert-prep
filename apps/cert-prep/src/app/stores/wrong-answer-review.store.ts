@@ -1,5 +1,5 @@
 import { effect, inject, Injectable, signal } from '@angular/core';
-import { catchError, from, of } from 'rxjs';
+import { catchError, from, of, switchMap } from 'rxjs';
 import { CERT_PREP_API } from '../constants/cert-prep-api.constants';
 import type {
   WrongAnswerExplanationRead,
@@ -10,7 +10,10 @@ import { CertPrepHttpResourceClient } from '../services/cert-prep-http-resource-
 import { OperationStore } from './operation.store';
 import { ProjectStore } from './project.store';
 import type { WrongAnswerExplanationState } from './wrong-answer-review/contracts/wrong-answer-review.contracts';
-import { EMPTY_EXPLANATION_STATE } from './wrong-answer-review/constants/wrong-answer-review.constants';
+import {
+  EMPTY_ANSWER_KEY_CORRECTION,
+  EMPTY_EXPLANATION_STATE,
+} from './wrong-answer-review/constants/wrong-answer-review.constants';
 
 @Injectable({ providedIn: 'root' })
 export class WrongAnswerReviewStore {
@@ -31,6 +34,7 @@ export class WrongAnswerReviewStore {
   readonly explanations = signal<Record<string, WrongAnswerExplanationState>>(
     {},
   );
+  readonly answerKeyCorrection = signal(EMPTY_ANSWER_KEY_CORRECTION);
   private readonly explanationSync = effect(() => {
     const status = this.wrongAnswersResource.status();
     if (status === 'resolved' || status === 'local') {
@@ -63,6 +67,64 @@ export class WrongAnswerReviewStore {
     this.wrongAnswersResource.set([]);
     this.summaryResource.set(null);
     this.explanations.set({});
+    this.answerKeyCorrection.set(EMPTY_ANSWER_KEY_CORRECTION);
+  }
+
+  correctAnswerKey(questionId: string, answer: string): void {
+    const project = this.projects.selectedProject();
+    if (project === null || answer.length === 0) {
+      return;
+    }
+
+    this.answerKeyCorrection.set({
+      questionId,
+      saving: true,
+      message: null,
+      error: null,
+    });
+    this.operations
+      .run(
+        'review',
+        (result: { regraded_attempts: number }) =>
+          correctedAnswerKeyMessage(result.regraded_attempts),
+        (signal) =>
+          from(
+            this.api.updateQuestionDraft(
+              project.id,
+              questionId,
+              // The AI rationale argued for the wrong key, so it is cleared with the correction.
+              { answer, answer_key_source: 'manual', rationale: '' },
+              { signal },
+            ),
+          ).pipe(
+            switchMap(() =>
+              this.api.regradePracticeQuestion(project.id, questionId, {
+                signal,
+              }),
+            ),
+          ),
+      )
+      .subscribe((result) => {
+        if (result === null) {
+          this.answerKeyCorrection.set({
+            questionId,
+            saving: false,
+            message: null,
+            error:
+              this.operations.error() ??
+              'The answer key could not be corrected.',
+          });
+          return;
+        }
+
+        this.answerKeyCorrection.set({
+          questionId,
+          saving: false,
+          message: correctedAnswerKeyMessage(result.regraded_attempts),
+          error: null,
+        });
+        this.load(project.id);
+      });
   }
 
   refresh(): void {
@@ -227,4 +289,8 @@ export class WrongAnswerReviewStore {
       ),
     );
   }
+}
+
+function correctedAnswerKeyMessage(regradedAttempts: number): string {
+  return `Answer key corrected. ${regradedAttempts} attempt(s) regraded.`;
 }
