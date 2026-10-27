@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from cert_prep_backend.platform.errors import InvalidSourceError
 from cert_prep_backend.source_library.application.ports import (
     ChunkTranslator,
     DocumentOperationRepository,
@@ -79,9 +80,15 @@ def open_audio_source(
 ) -> AudioSource:
     documents.document(project_id, document_id).ensure_playable()
     source_file = documents.source_file(project_id, document_id)
-    path = files.resolve(project_id, source_file.storage_path)
-    media_type = AUDIO_MEDIA_TYPES.get(path.suffix.lower())
-    if media_type is None or files.sha256(path) != source_file.sha256:
+    try:
+        path = files.resolve(project_id, source_file.storage_path)
+        media_type = AUDIO_MEDIA_TYPES.get(path.suffix.lower())
+        intact = media_type is not None and files.sha256(path) == source_file.sha256
+    except InvalidSourceError as exc:
+        raise SourceDocumentUnavailable(
+            AUDIO_SOURCE_UNAVAILABLE, "The stored audio source is unavailable."
+        ) from exc
+    if not intact:
         raise SourceDocumentUnavailable(
             AUDIO_SOURCE_UNAVAILABLE, "The stored audio source failed integrity verification."
         )
