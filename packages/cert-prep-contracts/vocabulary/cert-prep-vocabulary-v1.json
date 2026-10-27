@@ -367,6 +367,164 @@
       "codeName": "RuntimeRequirementKind.OLLAMA_MODEL",
       "enum": { "enumId": "RuntimeRequirementKind", "value": "ollama_model" },
       "retired": false
+    },
+    {
+      "id": "authoring.draft-status.approved",
+      "label": "已核可",
+      "codeName": "DraftStatus.APPROVED",
+      "enum": { "enumId": "DraftStatus", "value": "approved" },
+      "retired": false
+    },
+    {
+      "id": "authoring.answer-key-source.manual",
+      "label": "學習者給的答案",
+      "codeName": "AnswerKeySource.MANUAL",
+      "enum": { "enumId": "AnswerKeySource", "value": "manual" },
+      "retired": false
+    },
+    {
+      "id": "authoring.answer-key-source.pdf",
+      "label": "教材上的答案",
+      "codeName": "AnswerKeySource.PDF",
+      "enum": { "enumId": "AnswerKeySource", "value": "pdf" },
+      "retired": false
+    },
+    {
+      "id": "authoring.answer-key-source.ai-inferred",
+      "label": "模型推論的答案",
+      "codeName": "AnswerKeySource.AI_INFERRED",
+      "enum": { "enumId": "AnswerKeySource", "value": "ai_inferred" },
+      "retired": false
+    },
+    {
+      "id": "authoring.generation-strategy.deterministic-only",
+      "label": "只用確定性解析",
+      "codeName": "DraftGenerationStrategy.DETERMINISTIC_ONLY",
+      "enum": {
+        "enumId": "DraftGenerationStrategy",
+        "value": "deterministic_only"
+      },
+      "retired": false
+    },
+    {
+      "id": "authoring.generation-strategy.hybrid-reasoning",
+      "label": "解析加語言模型",
+      "codeName": "DraftGenerationStrategy.HYBRID_REASONING",
+      "enum": {
+        "enumId": "DraftGenerationStrategy",
+        "value": "hybrid_reasoning"
+      },
+      "retired": false
+    },
+    {
+      "id": "authoring.generation-job-status.pending",
+      "label": "等待",
+      "codeName": "DraftGenerationJobStatus.PENDING",
+      "enum": { "enumId": "DraftGenerationJobStatus", "value": "pending" },
+      "retired": false
+    },
+    {
+      "id": "authoring.generation-job-status.running",
+      "label": "執行中",
+      "codeName": "DraftGenerationJobStatus.RUNNING",
+      "enum": { "enumId": "DraftGenerationJobStatus", "value": "running" },
+      "retired": false
+    },
+    {
+      "id": "authoring.generation-job-status.cancel-requested",
+      "label": "要求取消",
+      "codeName": "DraftGenerationJobStatus.CANCEL_REQUESTED",
+      "enum": {
+        "enumId": "DraftGenerationJobStatus",
+        "value": "cancel_requested"
+      },
+      "retired": false
+    },
+    {
+      "id": "authoring.generation-job-status.canceled",
+      "label": "已取消",
+      "codeName": "DraftGenerationJobStatus.CANCELED",
+      "enum": { "enumId": "DraftGenerationJobStatus", "value": "canceled" },
+      "retired": false
+    },
+    {
+      "id": "authoring.generation-job-status.succeeded",
+      "label": "成功",
+      "codeName": "DraftGenerationJobStatus.SUCCEEDED",
+      "enum": { "enumId": "DraftGenerationJobStatus", "value": "succeeded" },
+      "retired": false
+    },
+    {
+      "id": "authoring.generation-job-status.skipped-provider-unavailable",
+      "label": "供應者不能用而跳過",
+      "codeName": "DraftGenerationJobStatus.SKIPPED_PROVIDER_UNAVAILABLE",
+      "enum": {
+        "enumId": "DraftGenerationJobStatus",
+        "value": "skipped_provider_unavailable"
+      },
+      "retired": false
+    },
+    {
+      "id": "authoring.generation-job-status.skipped-missing-model",
+      "label": "模型不在而跳過",
+      "codeName": "DraftGenerationJobStatus.SKIPPED_MISSING_MODEL",
+      "enum": {
+        "enumId": "DraftGenerationJobStatus",
+        "value": "skipped_missing_model"
+      },
+      "retired": false
+    },
+    {
+      "id": "authoring.generation-job-status.failed",
+      "label": "失敗",
+      "codeName": "DraftGenerationJobStatus.FAILED",
+      "enum": { "enumId": "DraftGenerationJobStatus", "value": "failed" },
+      "retired": false
+    },
+    {
+      "id": "authoring.manual-operation-status.queued",
+      "label": "排隊",
+      "codeName": "ManualDraftOperationStatus.QUEUED",
+      "enum": { "enumId": "ManualDraftOperationStatus", "value": "queued" },
+      "retired": false
+    },
+    {
+      "id": "authoring.manual-operation-status.running",
+      "label": "執行中",
+      "codeName": "ManualDraftOperationStatus.RUNNING",
+      "enum": { "enumId": "ManualDraftOperationStatus", "value": "running" },
+      "retired": false
+    },
+    {
+      "id": "authoring.manual-operation-status.cancel-requested",
+      "label": "要求取消",
+      "codeName": "ManualDraftOperationStatus.CANCEL_REQUESTED",
+      "enum": {
+        "enumId": "ManualDraftOperationStatus",
+        "value": "cancel_requested"
+      },
+      "retired": false
+    },
+    {
+      "id": "authoring.manual-operation-status.canceled",
+      "label": "已取消",
+      "codeName": "ManualDraftOperationStatus.CANCELED",
+      "enum": { "enumId": "ManualDraftOperationStatus", "value": "canceled" },
+      "retired": false
+    },
+    {
+      "id": "authoring.manual-operation-status.succeeded",
+      "label": "成功",
+      "codeName": "ManualDraftOperationStatus.SUCCEEDED",
+      "enum": { "enumId": "ManualDraftOperationStatus", "value": "succeeded" },
+      "retired": false
+    },
+    {
+      "id": "authoring.manual-operation-status.failed",
+      "label": "失敗",
+      "codeName": "ManualDraftOperationStatus.FAILED",
+      "enum": { "enumId": "ManualDraftOperationStatus", "value": "failed" },
+      "retired": false
     }
   ]
 }

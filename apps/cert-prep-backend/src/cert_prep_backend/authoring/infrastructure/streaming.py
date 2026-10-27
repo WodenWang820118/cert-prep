@@ -542,3 +542,43 @@ def _compact_reasoning_chunk(source_chunk: SourceChunk) -> SourceChunk:
     )
 
 
+class StreamingDraftGenerationWork:
+    """Background draft generation of one database, run by the streaming manager."""
+
+    def __init__(self, manager: StreamingDraftGenerationManager, db: Database) -> None:
+        self._manager = manager
+        self._db = db
+
+    def retry_jobs(self, project_id: str, document_id: str) -> list[DraftGenerationJob]:
+        return self._manager.retry_document_jobs(
+            self._db, project_id=project_id, document_id=document_id
+        )
+
+    def start_manual_operation(
+        self,
+        project_id: str,
+        document_id: str,
+        limit: int,
+        strategy: DraftGenerationStrategy,
+    ) -> ManualDraftOperation:
+        return self._manager.start_manual_operation(
+            self._db,
+            project_id=project_id,
+            document_id=document_id,
+            limit=limit,
+            strategy=strategy,
+        )
+
+    def manual_operation(
+        self, project_id: str, document_id: str, operation_id: str
+    ) -> ManualDraftOperation:
+        return self._manager.get_manual_operation(
+            self._db, project_id=project_id, document_id=document_id, operation_id=operation_id
+        )
+
+    def cancel_manual_operation(
+        self, project_id: str, document_id: str, operation_id: str
+    ) -> ManualDraftOperation:
+        return self._manager.cancel_manual_operation(
+            self._db, project_id=project_id, document_id=document_id, operation_id=operation_id
+        )

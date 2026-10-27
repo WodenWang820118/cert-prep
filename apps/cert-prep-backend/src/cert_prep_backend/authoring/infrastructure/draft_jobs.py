@@ -369,3 +369,18 @@ def _apply(connection: Connection, before: DraftGenerationJob, after: DraftGener
 
 def _optional_row_value(row: Row, column: str):
     return row[column] if column in row.keys() else None
+
+
+class SqliteDraftGenerationJobRepository:
+    """Draft generation jobs stored in SQLite."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    def jobs_of(self, project_id: str, document_id: str) -> list[DraftGenerationJob]:
+        return list_document_jobs(self._db, project_id, document_id)
+
+    def cancel(self, project_id: str, document_id: str, job_id: str) -> DraftGenerationJob:
+        return request_cancel(
+            self._db, project_id=project_id, document_id=document_id, job_id=job_id
+        )
