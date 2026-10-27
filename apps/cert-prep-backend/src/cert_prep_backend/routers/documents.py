@@ -50,7 +50,7 @@ from cert_prep_backend.capture_integration.infrastructure.coordinator import (
 )
 from cert_prep_backend.capture_integration.infrastructure.persistence import publish_capture_document
 from cert_prep_backend.authoring.infrastructure import repository as mock_exams_repository
-from cert_prep_backend.authoring.domain.models import source_chunk_from_record
+from cert_prep_backend.authoring.domain.models import source_chunk_from_document_chunk
 from cert_prep_backend.authoring.domain.normalization import as_editable_question
 from cert_prep_backend.authoring.domain.ports import DraftGenerationProvider as LLMProvider
 from cert_prep_backend.authoring.infrastructure.streaming import StreamingDraftGenerationManager
@@ -389,7 +389,7 @@ async def retry_document_processing(
 @router.get("/{document_id}/chunks", response_model=ChunkList)
 def list_document_chunks(project_id: str, document_id: str, db=Depends(get_database)) -> dict:
     try:
-        return {"items": source_documents_repository.list_chunks(db, project_id, document_id)}
+        return {"items": [ChunkRead.from_chunk(chunk) for chunk in source_documents_repository.list_chunks(db, project_id, document_id)]}
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
@@ -397,7 +397,7 @@ def list_document_chunks(project_id: str, document_id: str, db=Depends(get_datab
 @router.patch("/{document_id}/chunks/{chunk_id}", response_model=ChunkRead)
 def update_document_chunk(project_id: str, document_id: str, chunk_id: str, body: ChunkUpdate, db=Depends(get_database)) -> dict:
     try:
-        return source_documents_repository.update_chunk_text(db, project_id, document_id, chunk_id, body.text)
+        return ChunkRead.from_chunk(source_documents_repository.update_chunk_text(db, project_id, document_id, chunk_id, body.text))
     except ValueError as exc:
         raise validation_error(str(exc)) from exc
     except NotFoundError as exc:
@@ -407,7 +407,7 @@ def update_document_chunk(project_id: str, document_id: str, chunk_id: str, body
 @router.post("/{document_id}/chunks/{chunk_id}/translation", response_model=ChunkRead)
 def translate_document_chunk(project_id: str, document_id: str, chunk_id: str, db=Depends(get_database), settings: Settings = Depends(get_settings)) -> dict:
     try:
-        return translate_chunk(db, translator=OllamaTraditionalChineseTranslator(settings), project_id=project_id, document_id=document_id, chunk_id=chunk_id)
+        return ChunkRead.from_chunk(translate_chunk(db, translator=OllamaTraditionalChineseTranslator(settings), project_id=project_id, document_id=document_id, chunk_id=chunk_id))
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
     except Exception as exc:
@@ -417,7 +417,7 @@ def translate_document_chunk(project_id: str, document_id: str, chunk_id: str, d
 @router.post("/{document_id}/translations", response_model=ChunkList)
 def translate_document_stale_chunks(project_id: str, document_id: str, db=Depends(get_database), settings: Settings = Depends(get_settings)) -> dict:
     try:
-        return {"items": translate_stale_chunks(db, translator=OllamaTraditionalChineseTranslator(settings, keep_alive=BATCH_TRANSLATION_KEEP_ALIVE), project_id=project_id, document_id=document_id)}
+        return {"items": [ChunkRead.from_chunk(chunk) for chunk in translate_stale_chunks(db, translator=OllamaTraditionalChineseTranslator(settings, keep_alive=BATCH_TRANSLATION_KEEP_ALIVE), project_id=project_id, document_id=document_id)]}
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
     except Exception as exc:
@@ -514,7 +514,7 @@ def _cancel_queued_operation(db, *, project_id: str, operation_id: str) -> None:
 
 
 def _auto_generate_exam_items(db, *, provider: LLMProvider, project_id: str, document_id: str, limit: int) -> dict:
-    chunks = [source_chunk_from_record(chunk) for chunk in source_documents_repository.get_source_chunks(db, project_id, document_id)]
+    chunks = [source_chunk_from_document_chunk(chunk) for chunk in source_documents_repository.get_source_chunks(db, project_id, document_id)]
     try:
         suggestions = [as_editable_question(suggestion) for suggestion in provider.generate_drafts(chunks, limit)]
     except ProviderUnavailableError:

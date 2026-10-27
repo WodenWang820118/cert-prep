@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TypeAlias
 
+from cert_prep_backend.source_library.domain.models import DocumentChunk
 from cert_prep_backend.source_library.domain.exam_content import (
     ContentProfileValue,
     QuestionItemKind,
@@ -57,23 +58,20 @@ class SourceChunk:
         return self.raw_text or self.text
 
 
-def source_chunk_from_record(chunk: dict) -> SourceChunk:
-    """Map persistence data while keeping edited audio text canonical for drafts."""
+def source_chunk_from_document_chunk(chunk: DocumentChunk) -> SourceChunk:
+    """The Source Library chunk as a draft source, keeping edited audio text canonical."""
 
-    current_text = chunk["text"]
     return SourceChunk(
-        id=chunk["id"],
-        page_number=chunk["page_number"],
-        chunk_index=chunk["chunk_index"],
-        text=current_text,
-        raw_text=(
-            current_text if chunk.get("locator_kind") == "time" else chunk["raw_text"]
-        ),
-        source_excerpt=chunk["source_excerpt"],
-        line_start=chunk["line_start"],
-        line_end=chunk["line_end"],
-        line_count=chunk["line_count"],
-        content_profile=chunk["content_profile"],
+        id=chunk.id,
+        page_number=chunk.page_number,
+        chunk_index=chunk.chunk_index,
+        text=chunk.text,
+        raw_text=chunk.text if chunk.locator_kind == "time" else chunk.raw_text,
+        source_excerpt=chunk.source_excerpt,
+        line_start=chunk.line_start,
+        line_end=chunk.line_end,
+        line_count=chunk.line_count,
+        content_profile=chunk.content_profile,
     )
 
 

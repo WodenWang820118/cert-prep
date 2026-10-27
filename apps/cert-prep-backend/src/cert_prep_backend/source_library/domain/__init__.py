@@ -3,7 +3,7 @@ from cert_prep_backend.source_library.domain.models import (
     PdfExtraction,
     PdfExtractionResult,
     SourceDocument,
-    SourceDocumentChunk,
+    DocumentChunk,
     SourceFile,
 )
 from cert_prep_backend.source_library.domain.policies import PdfExtractionPolicy, SourceDocumentLifecyclePolicy
@@ -25,7 +25,7 @@ __all__ = [
     "PdfExtractionPolicy",
     "SourceTextExtractor",
     "SourceDocument",
-    "SourceDocumentChunk",
+    "DocumentChunk",
     "SourceDocumentLifecyclePolicy",
     "SourceDocumentRepository",
     "SourceDocumentStatus",

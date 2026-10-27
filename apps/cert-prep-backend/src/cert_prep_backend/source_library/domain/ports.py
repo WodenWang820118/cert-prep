@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from cert_prep_backend.source_library.domain.models import PdfExtraction, SourceDocument, SourceDocumentChunk, SourceFile
+from cert_prep_backend.source_library.domain.models import PdfExtraction, SourceDocument, DocumentChunk, SourceFile
 from cert_prep_backend.source_library.domain.statuses import SourceDocumentStatus
 
 
@@ -28,7 +28,7 @@ class SourceDocumentRepository(Protocol):
     def get(self, *, project_id: str, document_id: str) -> SourceDocument:
         ...
 
-    def list_chunks(self, *, project_id: str, document_id: str) -> tuple[SourceDocumentChunk, ...]:
+    def list_chunks(self, *, project_id: str, document_id: str) -> tuple[DocumentChunk, ...]:
         ...
 
     def update_exam_state(

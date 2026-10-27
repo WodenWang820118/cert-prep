@@ -11,6 +11,7 @@ from cert_prep_backend.platform.errors import (
     DocumentProcessingCanceledError,
 )
 from cert_prep_backend.platform.database import Database
+from cert_prep_backend.source_library.domain.models import DocumentChunk
 from cert_prep_backend.source_library.infrastructure import chunks
 
 
@@ -74,11 +75,11 @@ def translate_chunk(
     should_cancel: Callable[[], bool] | None = None,
     operation_id: str | None = None,
     reconcile_document_status: bool = True,
-) -> dict:
+) -> DocumentChunk:
     _raise_if_translation_canceled(should_cancel)
     chunk = chunks.get_chunk(db, project_id, document_id, chunk_id)
-    expected_source_revision = chunk['source_revision']
-    translated = translator.translate(chunk['text'])
+    expected_source_revision = chunk.source_revision
+    translated = translator.translate(chunk.text)
     _raise_if_translation_canceled(should_cancel)
     if not translated:
         raise ValueError('Translation provider returned empty text.')
@@ -118,22 +119,22 @@ def translate_stale_chunks(
     should_cancel: Callable[[], bool] | None = None,
     operation_id: str | None = None,
     reconcile_document_status: bool = True,
-) -> list[dict]:
+) -> list[DocumentChunk]:
     has_translatable_chunks = False
     try:
         items = chunks.list_chunks(db, project_id, document_id)
         has_translatable_chunks = bool(items)
-        translated: list[dict] = []
+        translated: list[DocumentChunk] = []
         for item in items:
             _raise_if_translation_canceled(should_cancel)
-            if item['translation_stale']:
+            if item.translation_stale:
                 translated.append(
                     translate_chunk(
                         db,
                         translator=translator,
                         project_id=project_id,
                         document_id=document_id,
-                        chunk_id=item['id'],
+                        chunk_id=item.id,
                         should_cancel=should_cancel,
                         operation_id=operation_id,
                         reconcile_document_status=False,

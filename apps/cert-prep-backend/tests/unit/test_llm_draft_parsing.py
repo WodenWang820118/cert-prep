@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 
 from cert_prep_backend.platform.errors import ProviderUnavailableError
@@ -5,8 +7,9 @@ from cert_prep_backend.authoring.domain.models import (
     DraftGenerationStrategy,
     DraftSuggestion,
     SourceChunk,
-    source_chunk_from_record,
+    source_chunk_from_document_chunk,
 )
+from cert_prep_backend.source_library.domain.models import DocumentChunk
 from cert_prep_backend.authoring.infrastructure.provider import (
     MAX_PROMPT_SOURCE_CHARS,
     _draft_suggestion_from_item,
@@ -19,23 +22,26 @@ from cert_prep_backend.authoring.infrastructure.provider import (
 
 
 def test_audio_draft_source_uses_edited_text_while_pdf_keeps_raw_text() -> None:
-    record = {
-        "id": "chunk",
-        "page_number": 0,
-        "chunk_index": 0,
-        "text": "編集後の日本語",
-        "raw_text": "Whisper の最初の日本語",
-        "source_excerpt": "編集後の日本語",
-        "line_start": 1,
-        "line_end": 1,
-        "line_count": 1,
-        "content_profile": "study_material",
-        "locator_kind": "time",
-    }
+    chunk = DocumentChunk(
+        id="chunk",
+        document_id="document",
+        page_number=0,
+        chunk_index=0,
+        text="編集後の日本語",
+        raw_text="Whisper の最初の日本語",
+        line_start=1,
+        line_end=1,
+        line_count=1,
+        source_excerpt="編集後の日本語",
+        extraction_method="none",
+        content_profile="study_material",
+        created_at="2026-10-27T00:00:00+00:00",
+        locator_kind="time",
+    )
 
-    assert source_chunk_from_record(record).raw_or_text() == "編集後の日本語"
-    record["locator_kind"] = "page"
-    assert source_chunk_from_record(record).raw_or_text() == "Whisper の最初の日本語"
+    assert source_chunk_from_document_chunk(chunk).raw_or_text() == "編集後の日本語"
+    page_chunk = replace(chunk, locator_kind="page")
+    assert source_chunk_from_document_chunk(page_chunk).raw_or_text() == "Whisper の最初の日本語"
 
 
 def test_draft_parser_rejects_cover_and_instruction_text_as_exam_items() -> None:

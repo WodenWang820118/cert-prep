@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from conftest import minimal_image, minimal_pdf
 from document_test_helpers import _create_project
+from cert_prep_backend.source_library.domain.models import DocumentChunk
 from cert_prep_backend.source_library.api.markdown import (
     markdown_content_disposition,
     markdown_download_filename,
@@ -11,14 +12,32 @@ from cert_prep_backend.source_library.api.markdown import (
 )
 
 
+def _chunk(page_number: int, text: str) -> DocumentChunk:
+    return DocumentChunk(
+        id=f"chunk-{page_number}-{len(text)}",
+        document_id="document",
+        page_number=page_number,
+        chunk_index=0,
+        text=text,
+        raw_text=text,
+        line_start=None,
+        line_end=None,
+        line_count=0,
+        source_excerpt=text,
+        extraction_method="embedded",
+        content_profile="unknown",
+        created_at="2026-10-27T00:00:00+00:00",
+    )
+
+
 def test_render_pdf_markdown_orders_pages_and_preserves_unicode() -> None:
     filename = "\u30101\u30112025\u5e7407\u6708N1 \u771f\u984c.pdf"
     content = render_pdf_markdown(
         filename=filename,
         chunks=[
-            {"page_number": 2, "text": "第二頁文字"},
-            {"page_number": 1, "text": "第一頁文字"},
-            {"page_number": 2, "text": "第二頁補充"},
+            _chunk(2, "第二頁文字"),
+            _chunk(1, "第一頁文字"),
+            _chunk(2, "第二頁補充"),
         ],
     )
 
@@ -35,7 +54,7 @@ def test_render_pdf_markdown_orders_pages_and_preserves_unicode() -> None:
 def test_render_pdf_markdown_keeps_empty_chunk_as_an_empty_page_body() -> None:
     assert render_pdf_markdown(
         filename="empty.pdf",
-        chunks=[{"page_number": 1, "text": ""}],
+        chunks=[_chunk(1, "")],
     ) == "# empty.pdf\n\n## Page 1\n"
 
 

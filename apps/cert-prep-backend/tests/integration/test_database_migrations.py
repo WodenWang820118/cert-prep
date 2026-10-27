@@ -437,7 +437,7 @@ def test_audio_migrations_preserve_pdf_defaults_and_install_time_citation_trigge
     assert pdf_chunk["locator_kind"] == "page"
     assert pdf_chunk["source_revision"] == 1
     assert pdf_chunk["translation_source_revision"] is None
-    assert chunk_repository.chunk_from_row(pdf_chunk)["translation_stale"] is False
+    assert chunk_repository.chunk_from_row(pdf_chunk).translation_stale is False
     assert audio_draft is not None
     assert audio_draft["citation_locator_kind"] == "time"
     assert audio_draft["citation_start_ms"] == 100

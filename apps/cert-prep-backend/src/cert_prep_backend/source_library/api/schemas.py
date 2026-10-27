@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import asdict
+
 from pydantic import BaseModel
 
 from cert_prep_backend.source_library.domain.exam_content import ContentProfileValue
 from cert_prep_backend.source_library.domain.models import (
     DocumentStatus,
+    DocumentChunk,
     ExtractionMethod,
 )
 
@@ -69,6 +72,10 @@ class ChunkRead(BaseModel):
     translated_text: str | None = None
     translation_source_revision: int | None = None
     translation_stale: bool = False
+
+    @classmethod
+    def from_chunk(cls, chunk: DocumentChunk) -> ChunkRead:
+        return cls(**asdict(chunk), translation_stale=chunk.translation_stale)
 
 
 class ChunkUpdate(BaseModel):
