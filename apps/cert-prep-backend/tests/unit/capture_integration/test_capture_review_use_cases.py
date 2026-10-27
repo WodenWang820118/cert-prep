@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 import hashlib
+from types import SimpleNamespace
 
 import pytest
 
-from capture_runtime_client import StreamingCaptureStatus
+from capture_runtime_client import CAPTURE_RUNTIME_VERSION, StreamingCaptureStatus
 
 from cert_prep_backend.capture_integration.application import use_cases
 from cert_prep_backend.capture_integration.application.errors import (
@@ -16,10 +17,19 @@ from cert_prep_backend.capture_integration.application.errors import (
     CaptureExtractionCanceled,
     CaptureExtractionFailed,
     CaptureGatewayRejection,
+    CaptureOcrClosed,
+    CaptureOcrMissing,
+    CaptureOcrNotReady,
+    CaptureOcrTransport,
+    CaptureOcrUnavailable,
     CaptureRequirementUnavailable,
+    CaptureResultMissing,
+    CaptureResultProtocolError,
+    CaptureResultUnavailable,
     CaptureReviewConflict,
     CaptureReviewInputRejected,
     CaptureRuntimeCallFailed,
+    CaptureSourceMissing,
 )
 from cert_prep_backend.capture_integration.application.messages import PDF_OCR_UNAVAILABLE_MESSAGE
 from cert_prep_backend.capture_integration.application.results import (
@@ -30,7 +40,10 @@ from cert_prep_backend.capture_integration.domain.review_session import (
     CaptureReviewSession,
     CaptureReviewStatus,
 )
-from cert_prep_backend.capture_integration.infrastructure.client import CaptureRuntimeError
+from cert_prep_backend.capture_integration.infrastructure.client import (
+    CaptureRuntimeError,
+    CaptureRuntimeProtocolError,
+)
 from cert_prep_backend.capture_integration.infrastructure.runtime_gateway import (
     CoordinatorCaptureRuntime,
 )
@@ -55,6 +68,15 @@ STORED = "stored/path"
 CREATION_FAILED = "Capture review creation failed."
 EXTRACTION_FAILED = "Capture Runtime extraction failed."
 AUDIO_REJECTED = "Capture review supports PDF and image sources only."
+OCR_NOT_READY = "OCR summary is not ready."
+OCR_REVIEW_CLOSED = "Capture review is closed."
+OCR_SUMMARY_UNAVAILABLE = "Capture Runtime OCR summary is unavailable."
+OCR_RUNTIME_UNAVAILABLE = "Capture Runtime is unavailable."
+OCR_CAPTURE_MISSING = "Capture not found."
+REVIEW_NOT_COMPLETE = "Capture review is not complete."
+RESULT_PROTOCOL = "Capture Runtime result violated the v2 contract."
+RESULT_MISSING_MESSAGE = "Capture Runtime result is gone."
+RESULT_UNAVAILABLE = "Capture Runtime result unavailable."
 
 
 class Prepared:
@@ -144,6 +166,9 @@ class FakeDocuments:
         self.document_filename = "scan.png"
         self.document_error: BaseException | None = None
         self.source_error: BaseException | None = None
+        self.source_outcomes: list[object] = []
+        self.chunks: list[object] = []
+        self.chunks_error: BaseException | None = None
 
     def document(self, project_id: str, document_id: str) -> SourceDocument:
         self.trace.append(("document", project_id, document_id))
@@ -153,9 +178,20 @@ class FakeDocuments:
 
     def source_file(self, project_id: str, document_id: str) -> SourceFile:
         self.trace.append(("source_file", project_id, document_id))
+        if self.source_outcomes:
+            outcome = self.source_outcomes.pop(0)
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return outcome
         if self.source_error is not None:
             raise self.source_error
         return self.source
+
+    def chunks_of(self, project_id: str, document_id: str) -> list[object]:
+        self.trace.append(("chunks_of", project_id, document_id))
+        if self.chunks_error is not None:
+            raise self.chunks_error
+        return self.chunks
 
     def attach_document(
         self,
@@ -242,6 +278,8 @@ class FakeFiles:
         self.prepared = prepared
         self.prepare_error: BaseException | None = None
         self.read_error: BaseException | None = None
+        self.size = 12
+        self.size_error: BaseException | None = None
         self.content = b"stored-bytes"
 
     def prepare(
@@ -274,6 +312,12 @@ class FakeFiles:
             raise self.read_error
         return self.content
 
+    def byte_size(self, storage_path: str) -> int:
+        self.trace.append(("byte_size", storage_path))
+        if self.size_error is not None:
+            raise self.size_error
+        return self.size
+
 
 class FakeSessions:
     def __init__(self, trace: list[tuple], session: CaptureReviewSession) -> None:
@@ -283,12 +327,16 @@ class FakeSessions:
         self.get_error: BaseException | None = None
         self.observe_error: BaseException | None = None
         self.observed: CaptureReviewSession | None = None
+        self.next_sessions: list[CaptureReviewSession] = []
 
     def get(self, *, project_id: str, session_id: str) -> CaptureReviewSession:
         self.trace.append(("get", project_id, session_id))
         if self.get_error is not None:
             raise self.get_error
-        return self.session
+        current = self.session
+        if self.next_sessions:
+            self.session = self.next_sessions.pop(0)
+        return current
 
     def create(
         self, *, project_id: str, document_id: str, operation_id: str
@@ -431,6 +479,12 @@ class _RuntimeOperation:
         self.last_event_sequence = sequence
 
 
+class _RuntimeResult:
+    def __init__(self, operation: _RuntimeOperation, raw: object) -> None:
+        self.operation = operation
+        self.raw = raw
+
+
 class FakeRuntime:
     def __init__(self, trace: list[tuple]) -> None:
         self.trace = trace
@@ -441,6 +495,10 @@ class FakeRuntime:
         self.raw_error: BaseException | None = None
         self.validate_error: BaseException | None = None
         self.structure_error: BaseException | None = None
+        self.ocr_operation_error: BaseException | None = None
+        self.ocr_projection_error: BaseException | None = None
+        self.fetch_error: BaseException | None = None
+        self.release_error: BaseException | None = None
         self.terminal_sequence = 4
         self.cancellation_sequence: int | None = 5
         self.operation: object = "runtime-operation"
@@ -448,6 +506,14 @@ class FakeRuntime:
         self.partial: object = "partial"
         self.raw: object = "raw"
         self.structured: object = "structured"
+        self.ocr_operation: object = _RuntimeOperation(
+            SimpleNamespace(value="awaiting_structuring"), 4
+        )
+        self.ocr_projection: object = object()
+        self.result = _RuntimeResult(
+            _RuntimeOperation(StreamingCaptureStatus.COMPLETED, 7),
+            "raw-result",
+        )
         self.should_cancel = None
 
     def report_structuring_failure(
@@ -497,6 +563,29 @@ class FakeRuntime:
         if self.raw_error is not None:
             raise self.raw_error
         return self.raw
+
+    def read_operation_for_ocr(self, runtime_capture_id: str) -> object:
+        self.trace.append(("read_operation_for_ocr", runtime_capture_id))
+        if self.ocr_operation_error is not None:
+            raise self.ocr_operation_error
+        return self.ocr_operation
+
+    def read_ocr_projection(self, runtime_capture_id: str) -> object:
+        self.trace.append(("read_ocr_projection", runtime_capture_id))
+        if self.ocr_projection_error is not None:
+            raise self.ocr_projection_error
+        return self.ocr_projection
+
+    def fetch_result(self, runtime_capture_id: str) -> object:
+        self.trace.append(("fetch_result", runtime_capture_id))
+        if self.fetch_error is not None:
+            raise self.fetch_error
+        return self.result
+
+    def release_result(self, runtime_capture_id: str) -> None:
+        self.trace.append(("release_result", runtime_capture_id))
+        if self.release_error is not None:
+            raise self.release_error
 
     def validate_review(self, raw: object, review: object) -> None:
         self.trace.append(("validate_review", raw, review))
@@ -654,12 +743,16 @@ def test_public_use_cases_are_the_review_lifecycle_names() -> None:
         "discard_capture_runtime",
         "expire_capture_reviews",
         "extract_capture_for_review",
+        "load_completed_capture",
         "preview_capture_structure",
         "publish_reviewed_capture",
+        "read_runtime_result",
         "recover_capture_reviews",
+        "release_capture_result",
         "report_structuring_failure",
         "start_capture_review",
         "view_capture",
+        "view_ocr_summary",
         "view_partial_capture",
         "view_raw_capture",
     ]
@@ -1647,18 +1740,150 @@ def test_runtime_delete_swallows_not_found_and_unexpected_errors() -> None:
             message="Streaming capture was not found.",
         )
     )
-    CoordinatorCaptureRuntime(missing).delete("capture")
+    CoordinatorCaptureRuntime(missing, object()).delete("capture")
     assert missing.calls == ["capture"]
 
     rejected = _DeleteCoordinator(
         CaptureRuntimeError(status_code=503, code="unavailable", message="down")
     )
     with pytest.raises(CaptureRuntimeCallFailed):
-        CoordinatorCaptureRuntime(rejected).delete("capture")
+        CoordinatorCaptureRuntime(rejected, object()).delete("capture")
 
     unexpected = _DeleteCoordinator(RuntimeError("socket"))
-    CoordinatorCaptureRuntime(unexpected).delete("capture")
+    CoordinatorCaptureRuntime(unexpected, object()).delete("capture")
     assert unexpected.calls == ["capture"]
+
+
+class _ClassifiedClient:
+    def __init__(self, error: BaseException | None = None, value: object = "ocr") -> None:
+        self.error = error
+        self.value = value
+        self.calls: list[tuple[str, str]] = []
+
+    def get_capture(self, capture_id: str) -> object:
+        self.calls.append(("get_capture", capture_id))
+        if self.error is not None:
+            raise self.error
+        return self.value
+
+    def get_ocr(self, capture_id: str) -> object:
+        self.calls.append(("get_ocr", capture_id))
+        if self.error is not None:
+            raise self.error
+        return self.value
+
+
+class _ClassifiedCoordinator:
+    def __init__(self, error: BaseException | None = None, value: object = "result") -> None:
+        self.error = error
+        self.value = value
+        self.calls: list[tuple[str, str]] = []
+
+    def get_result(self, capture_id: str) -> object:
+        self.calls.append(("get_result", capture_id))
+        if self.error is not None:
+            raise self.error
+        return self.value
+
+    def delete(self, capture_id: str) -> None:
+        self.calls.append(("delete", capture_id))
+        if self.error is not None:
+            raise self.error
+
+
+class _NotFoundProtocol(CaptureRuntimeProtocolError):
+    """A protocol failure that also looks like a missing capture."""
+
+    status_code = 404
+    code = "capture_not_found"
+
+    def __init__(self) -> None:
+        super().__init__("Capture Runtime returned a mismatched result source")
+
+
+def _expect_ocr(error: BaseException, expected: type[Exception], message: str) -> None:
+    client = _ClassifiedClient(error)
+    runtime = CoordinatorCaptureRuntime(object(), client)
+    for read in (runtime.read_operation_for_ocr, runtime.read_ocr_projection):
+        with pytest.raises(expected) as caught:
+            read("capture")
+        assert str(caught.value) == message
+        assert caught.value.__cause__ is error
+    assert client.calls == [("get_capture", "capture"), ("get_ocr", "capture")]
+
+
+def _expect_result(error: BaseException, expected: type[Exception], message: str) -> None:
+    coordinator = _ClassifiedCoordinator(error)
+    runtime = CoordinatorCaptureRuntime(coordinator, object())
+    with pytest.raises(expected) as caught:
+        runtime.fetch_result("capture")
+    assert str(caught.value) == message
+    assert caught.value.__cause__ is error
+    assert coordinator.calls == [("get_result", "capture")]
+
+
+def test_ocr_and_result_reads_classify_runtime_failures() -> None:
+    transport = CaptureRuntimeError(
+        status_code=404,
+        code="capture_not_found",
+        message="private",
+        category="transport",
+    )
+    missing = CaptureRuntimeError(
+        status_code=404,
+        code="capture_not_found",
+        message="private",
+        category="protocol",
+    )
+    conflict = CaptureRuntimeError(
+        status_code=409,
+        code="conflict",
+        message="private",
+        category="protocol",
+    )
+    _expect_ocr(transport, CaptureOcrTransport, OCR_RUNTIME_UNAVAILABLE)
+    _expect_ocr(missing, CaptureOcrMissing, OCR_CAPTURE_MISSING)
+    _expect_ocr(conflict, CaptureOcrUnavailable, OCR_SUMMARY_UNAVAILABLE)
+    _expect_ocr(RuntimeError("socket"), CaptureOcrUnavailable, OCR_SUMMARY_UNAVAILABLE)
+
+    client = _ClassifiedClient()
+    coordinator = _ClassifiedCoordinator()
+    runtime = CoordinatorCaptureRuntime(coordinator, client)
+    assert runtime.read_operation_for_ocr("capture") == "ocr"
+    assert runtime.read_ocr_projection("capture") == "ocr"
+    assert client.calls == [("get_capture", "capture"), ("get_ocr", "capture")]
+    assert coordinator.calls == []
+
+    protocol = CaptureRuntimeProtocolError(
+        "Capture Runtime returned a mismatched result source"
+    )
+    _expect_result(protocol, CaptureResultProtocolError, RESULT_PROTOCOL)
+    _expect_result(_NotFoundProtocol(), CaptureResultProtocolError, RESULT_PROTOCOL)
+    gone = CaptureRuntimeError(status_code=404, code="other", message="gone")
+    named = CaptureRuntimeError(
+        status_code=404,
+        code="capture_not_found",
+        message="gone",
+    )
+    _expect_result(gone, CaptureResultMissing, RESULT_MISSING_MESSAGE)
+    _expect_result(named, CaptureResultMissing, RESULT_MISSING_MESSAGE)
+    down = CaptureRuntimeError(status_code=503, code="unavailable", message="down")
+    _expect_result(down, CaptureResultUnavailable, RESULT_UNAVAILABLE)
+    _expect_result(RuntimeError("socket"), CaptureResultUnavailable, RESULT_UNAVAILABLE)
+
+    loaded = _ClassifiedCoordinator(value="body")
+    runtime = CoordinatorCaptureRuntime(loaded, object())
+    assert runtime.fetch_result("capture") == "body"
+    assert loaded.calls == [("get_result", "capture")]
+
+    rejected = CaptureRuntimeError(status_code=503, code="unavailable", message="down")
+    swallowing = _ClassifiedCoordinator(rejected)
+    CoordinatorCaptureRuntime(swallowing, object()).release_result("capture")
+    assert swallowing.calls == [("delete", "capture")]
+    surprising = _ClassifiedCoordinator(RuntimeError("socket"))
+    CoordinatorCaptureRuntime(surprising, object()).release_result("capture")
+    with pytest.raises(CaptureRuntimeCallFailed):
+        CoordinatorCaptureRuntime(_DeleteCoordinator(rejected), object()).delete("capture")
 
 
 RUNTIME = "runtime"
@@ -2116,7 +2341,7 @@ def test_runtime_status_predicates_keep_identity_apart_from_membership() -> None
         def __init__(self, status: object) -> None:
             self.status = status
 
-    runtime = CoordinatorCaptureRuntime(object())
+    runtime = CoordinatorCaptureRuntime(object(), object())
     member = _Operation(StreamingCaptureStatus.COMPLETED)
     assert runtime.status_is(member, "completed") is True
     assert runtime.status_equals(member, "completed", "failed", "cancelled") is True
@@ -2131,3 +2356,530 @@ def test_runtime_status_predicates_keep_identity_apart_from_membership() -> None
 
     awaiting = _Operation(StreamingCaptureStatus.AWAITING_STRUCTURING)
     assert runtime.status_is(awaiting, "awaiting_structuring") is True
+
+
+def _enum_value(value: str) -> SimpleNamespace:
+    return SimpleNamespace(value=value)
+
+
+def _ocr_source() -> SimpleNamespace:
+    return SimpleNamespace(
+        sha256="a" * 64,
+        file_name="private-source.pdf",
+        media_type="application/pdf",
+        bytes=1234,
+    )
+
+
+def _ocr_provenance() -> SimpleNamespace:
+    return SimpleNamespace(
+        status=_enum_value("resolved"),
+        engine="windowsml-ocr",
+        model="capture-ocr-model",
+        model_digest="sha256:" + "b" * 64,
+        device="directml:0",
+        profile_id="profile-1",
+        profile_spec_sha256="c" * 64,
+    )
+
+
+def _ocr_operation(status: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        capture_id=RUNTIME,
+        status=_enum_value(status),
+        source=_ocr_source(),
+    )
+
+
+def _ocr_projection() -> SimpleNamespace:
+    page = SimpleNamespace(
+        page=1,
+        status=_enum_value("recognized"),
+        text="recognized",
+        boxes=[object()],
+        confidence=0.75,
+        provenance=_ocr_provenance(),
+        failure=None,
+    )
+    return SimpleNamespace(
+        api_version="2.0",
+        schema_version="3",
+        capture_id=RUNTIME,
+        status=_enum_value("completed"),
+        source=_ocr_source(),
+        pages=[page],
+        page_count=1,
+        runtime_version=CAPTURE_RUNTIME_VERSION,
+        contract_sha256="d" * 64,
+        provenance=_ocr_provenance(),
+        failure=None,
+    )
+
+
+def _ready_ocr(world: World) -> None:
+    with_runtime(world)
+    world.runtime.ocr_operation = _ocr_operation("awaiting_structuring")
+    world.runtime.ocr_projection = _ocr_projection()
+
+
+def view_ocr(world: World):
+    return use_cases.view_ocr_summary(
+        world.sessions,
+        world.runtime,
+        project_id=PROJECT,
+        session_id="session",
+    )
+
+
+def load_completed(world: World):
+    return use_cases.load_completed_capture(
+        world.sessions,
+        world.documents,
+        world.files,
+        project_id=PROJECT,
+        session_id="session",
+    )
+
+
+def read_result(world: World):
+    return use_cases.read_runtime_result(
+        world.sessions,
+        world.runtime,
+        project_id=PROJECT,
+        session_id="session",
+        runtime_capture_id=RUNTIME,
+    )
+
+
+def source_display(world: World):
+    return use_cases.capture_source_display(
+        world.documents,
+        world.files,
+        project_id=PROJECT,
+        document_id="document",
+    )
+
+
+def test_ocr_summary_does_not_expire_and_returns_the_host_id() -> None:
+    world = World()
+    _ready_ocr(world)
+
+    summary = view_ocr(world)
+
+    assert summary.capture_id == "session"
+    assert summary.status == "completed"
+    assert calls(world) == [
+        "get",
+        "read_operation_for_ocr",
+        "read_ocr_projection",
+        "get",
+    ]
+    assert world.trace[1] == ("read_operation_for_ocr", RUNTIME)
+    assert world.trace[2] == ("read_ocr_projection", RUNTIME)
+    assert "expire" not in calls(world)
+
+
+def test_a_missing_ocr_session_is_not_the_session_not_found_error() -> None:
+    world = World()
+    world.sessions.get_error = NotFoundError("Capture review session not found.")
+
+    with pytest.raises(CaptureOcrMissing) as caught:
+        view_ocr(world)
+
+    assert str(caught.value) == OCR_CAPTURE_MISSING
+    assert caught.value.__cause__ is None
+    assert not isinstance(caught.value, NotFoundError)
+    assert calls(world) == ["get"]
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        CaptureReviewStatus.CONFIRMING,
+        CaptureReviewStatus.COMPLETED,
+        CaptureReviewStatus.CANCELED,
+    ],
+)
+def test_a_closed_review_has_no_ocr_summary(status: CaptureReviewStatus) -> None:
+    world = World()
+    with_runtime(world, status=status)
+
+    with pytest.raises(CaptureOcrClosed) as caught:
+        view_ocr(world)
+
+    assert str(caught.value) == OCR_REVIEW_CLOSED
+    assert calls(world) == ["get"]
+
+
+@pytest.mark.parametrize("runtime_id", [None, ""])
+@pytest.mark.parametrize(
+    ("status", "error_type", "message"),
+    [
+        (CaptureReviewStatus.PENDING, CaptureOcrNotReady, OCR_NOT_READY),
+        (CaptureReviewStatus.FAILED, CaptureOcrUnavailable, OCR_SUMMARY_UNAVAILABLE),
+    ],
+)
+def test_ocr_without_a_runtime_id(
+    runtime_id: str | None,
+    status: CaptureReviewStatus,
+    error_type: type[Exception],
+    message: str,
+) -> None:
+    world = World()
+    with_runtime(world, status=status, runtime_id=runtime_id)
+
+    with pytest.raises(error_type) as caught:
+        view_ocr(world)
+
+    assert str(caught.value) == message
+    assert calls(world) == ["get"]
+
+
+def test_an_unknown_review_status_is_ocr_unavailable() -> None:
+    world = World()
+    world.sessions.session = replace(review_session(), status="weird")
+
+    with pytest.raises(CaptureOcrUnavailable) as caught:
+        view_ocr(world)
+
+    assert str(caught.value) == OCR_SUMMARY_UNAVAILABLE
+    assert calls(world) == ["get"]
+
+
+@pytest.mark.parametrize("status", ["created", "waiting_input", "extracting"])
+def test_an_early_runtime_status_is_not_ready_and_does_not_read_ocr(status: str) -> None:
+    world = World()
+    with_runtime(world)
+    world.runtime.ocr_operation = _ocr_operation(status)
+
+    with pytest.raises(CaptureOcrNotReady) as caught:
+        view_ocr(world)
+
+    assert str(caught.value) == OCR_NOT_READY
+    assert calls(world) == ["get", "read_operation_for_ocr"]
+
+
+@pytest.mark.parametrize("status", ["structuring", "completed", "cancelled"])
+def test_an_unpublished_runtime_status_is_unavailable(status: str) -> None:
+    world = World()
+    with_runtime(world)
+    world.runtime.ocr_operation = _ocr_operation(status)
+
+    with pytest.raises(CaptureOcrUnavailable) as caught:
+        view_ocr(world)
+
+    assert str(caught.value) == OCR_SUMMARY_UNAVAILABLE
+    assert calls(world) == ["get", "read_operation_for_ocr"]
+
+
+def test_a_failed_review_whose_operation_is_not_failed_does_not_read_ocr() -> None:
+    world = World()
+    with_runtime(world, status=CaptureReviewStatus.FAILED)
+    world.runtime.ocr_operation = _ocr_operation("awaiting_structuring")
+
+    with pytest.raises(CaptureOcrUnavailable) as caught:
+        view_ocr(world)
+
+    assert str(caught.value) == OCR_SUMMARY_UNAVAILABLE
+    assert calls(world) == ["get", "read_operation_for_ocr"]
+
+
+def test_a_runtime_status_that_is_not_a_string_is_unavailable() -> None:
+    world = World()
+    with_runtime(world)
+    world.runtime.ocr_operation = object()
+
+    with pytest.raises(CaptureOcrUnavailable) as caught:
+        view_ocr(world)
+
+    assert str(caught.value) == OCR_SUMMARY_UNAVAILABLE
+    assert caught.value.__cause__ is None
+    assert "read_ocr_projection" not in calls(world)
+
+    world = World()
+    with_runtime(world)
+    world.runtime.ocr_operation = _RuntimeOperation(1, 1)
+
+    with pytest.raises(CaptureOcrUnavailable) as caught:
+        view_ocr(world)
+
+    assert caught.value.__cause__ is None
+    assert calls(world) == ["get", "read_operation_for_ocr"]
+
+
+@pytest.mark.parametrize("where", ["operation", "projection"])
+@pytest.mark.parametrize(
+    "error",
+    [
+        CaptureOcrTransport(OCR_RUNTIME_UNAVAILABLE),
+        CaptureOcrMissing(OCR_CAPTURE_MISSING),
+        CaptureOcrUnavailable(OCR_SUMMARY_UNAVAILABLE),
+        RuntimeError("proxy"),
+    ],
+)
+def test_classified_ocr_errors_propagate(where: str, error: Exception) -> None:
+    world = World()
+    with_runtime(world)
+    world.runtime.ocr_operation = _ocr_operation("awaiting_structuring")
+    if where == "operation":
+        world.runtime.ocr_operation_error = error
+    else:
+        world.runtime.ocr_projection_error = error
+
+    with pytest.raises(type(error)) as caught:
+        view_ocr(world)
+
+    assert caught.value is error
+    if where == "operation":
+        assert calls(world) == ["get", "read_operation_for_ocr"]
+    else:
+        assert calls(world) == ["get", "read_operation_for_ocr", "read_ocr_projection"]
+
+
+def test_a_failed_ocr_projection_is_unavailable_without_a_second_get() -> None:
+    world = World()
+    with_runtime(world)
+    world.runtime.ocr_operation = _ocr_operation("awaiting_structuring")
+    world.runtime.ocr_projection = SimpleNamespace()
+
+    with pytest.raises(CaptureOcrUnavailable) as caught:
+        view_ocr(world)
+
+    assert str(caught.value) == OCR_SUMMARY_UNAVAILABLE
+    assert caught.value.__cause__ is None
+    assert calls(world) == ["get", "read_operation_for_ocr", "read_ocr_projection"]
+
+
+def test_a_changed_runtime_id_on_the_second_get_is_unavailable() -> None:
+    world = World()
+    _ready_ocr(world)
+    world.sessions.next_sessions = [
+        replace(world.sessions.session, runtime_capture_id="other")
+    ]
+
+    with pytest.raises(CaptureOcrUnavailable) as caught:
+        view_ocr(world)
+
+    assert str(caught.value) == OCR_SUMMARY_UNAVAILABLE
+    assert calls(world) == [
+        "get",
+        "read_operation_for_ocr",
+        "read_ocr_projection",
+        "get",
+    ]
+
+
+def test_a_failed_reread_rejects_a_completed_summary() -> None:
+    world = World()
+    _ready_ocr(world)
+    world.sessions.next_sessions = [
+        replace(world.sessions.session, status=CaptureReviewStatus.FAILED)
+    ]
+
+    with pytest.raises(CaptureOcrUnavailable) as caught:
+        view_ocr(world)
+
+    assert str(caught.value) == OCR_SUMMARY_UNAVAILABLE
+    assert calls(world) == [
+        "get",
+        "read_operation_for_ocr",
+        "read_ocr_projection",
+        "get",
+    ]
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        CaptureReviewStatus.CONFIRMING,
+        CaptureReviewStatus.COMPLETED,
+        CaptureReviewStatus.CANCELED,
+    ],
+)
+def test_a_review_that_closes_before_the_second_read_is_closed(
+    status: CaptureReviewStatus,
+) -> None:
+    world = World()
+    _ready_ocr(world)
+    world.sessions.next_sessions = [replace(world.sessions.session, status=status)]
+
+    with pytest.raises(CaptureOcrClosed) as caught:
+        view_ocr(world)
+
+    assert str(caught.value) == OCR_REVIEW_CLOSED
+    assert calls(world).count("get") == 2
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        CaptureReviewStatus.PENDING,
+        CaptureReviewStatus.CONFIRMING,
+        CaptureReviewStatus.CANCELED,
+        CaptureReviewStatus.FAILED,
+    ],
+)
+def test_a_result_that_is_not_complete_does_not_list_chunks(
+    status: CaptureReviewStatus,
+) -> None:
+    world = World()
+    with_runtime(world, status=status)
+
+    with pytest.raises(CaptureReviewConflict) as caught:
+        load_completed(world)
+
+    assert str(caught.value) == REVIEW_NOT_COMPLETE
+    assert world.trace == [("get", PROJECT, "session")]
+
+
+def test_a_completed_capture_loads_chunks_then_display_before_fetch_and_observe() -> None:
+    world = World()
+    with_runtime(world, status=CaptureReviewStatus.COMPLETED)
+    chunk = object()
+    world.documents.chunks = [chunk]
+    world.files.size = 18
+    operation = _RuntimeOperation(StreamingCaptureStatus.COMPLETED, 9)
+    world.runtime.result = _RuntimeResult(operation, "raw-body")
+
+    stored = load_completed(world)
+    viewed = read_result(world)
+
+    assert stored.chunks == [chunk]
+    assert stored.content_length == 18
+    assert stored.media_type == "image/png"
+    assert viewed is not None
+    assert viewed.operation is operation
+    assert viewed.raw == "raw-body"
+    assert world.trace == [
+        ("get", PROJECT, "session"),
+        ("document", PROJECT, "document"),
+        ("chunks_of", PROJECT, "document"),
+        ("source_file", PROJECT, "document"),
+        ("source_file", PROJECT, "document"),
+        ("byte_size", "uploads/scan.png"),
+        ("fetch_result", RUNTIME),
+        ("observe", PROJECT, "session", 9),
+    ]
+
+
+def test_a_completed_capture_without_its_source_row_is_not_a_missing_capture() -> None:
+    world = World()
+    with_runtime(world, status=CaptureReviewStatus.COMPLETED)
+    world.documents.source_error = NotFoundError("Source file not found.")
+
+    with pytest.raises(CaptureSourceMissing, match="Source file not found."):
+        load_completed(world)
+
+
+def test_a_missing_runtime_result_returns_none_without_observe_or_another_stat() -> None:
+    world = World()
+    with_runtime(world, status=CaptureReviewStatus.COMPLETED)
+    world.runtime.fetch_error = CaptureResultMissing(RESULT_MISSING_MESSAGE)
+
+    load_completed(world)
+    assert read_result(world) is None
+
+    assert calls(world).count("byte_size") == 1
+    assert "observe" not in calls(world)
+    assert "release_result" not in calls(world)
+    source_display(world)
+    assert calls(world).count("byte_size") == 2
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        CaptureResultProtocolError(RESULT_PROTOCOL),
+        CaptureResultUnavailable(RESULT_UNAVAILABLE),
+    ],
+)
+def test_result_read_failures_propagate_and_do_not_observe(error: Exception) -> None:
+    world = World()
+    with_runtime(world, status=CaptureReviewStatus.COMPLETED)
+    world.runtime.fetch_error = error
+
+    with pytest.raises(type(error)) as caught:
+        read_result(world)
+
+    assert caught.value is error
+    assert calls(world) == ["fetch_result"]
+
+
+def test_an_observe_failure_propagates_and_does_not_release() -> None:
+    world = World()
+    with_runtime(world, status=CaptureReviewStatus.COMPLETED)
+    world.sessions.observe_error = RuntimeError("sequence")
+
+    with pytest.raises(RuntimeError, match="sequence"):
+        read_result(world)
+
+    assert "fetch_result" in calls(world)
+    assert "release_result" not in calls(world)
+
+
+def test_release_swallows_a_failure_discard_would_reject() -> None:
+    world = World()
+    world.runtime.release_error = CaptureRuntimeCallFailed("down")
+
+    use_cases.release_capture_result(world.runtime, runtime_capture_id=RUNTIME)
+
+    assert world.trace == [("release_result", RUNTIME)]
+    world.runtime.delete_error = CaptureRuntimeCallFailed("down")
+    with pytest.raises(CaptureGatewayRejection) as caught:
+        use_cases.discard_capture_runtime(world.runtime, runtime_capture_id=RUNTIME)
+    assert str(caught.value) == DELETE_GATEWAY
+
+
+def test_a_stored_result_without_runtime_evidence_stats_again() -> None:
+    world = World()
+    with_runtime(world, status=CaptureReviewStatus.COMPLETED, runtime_id=None)
+    chunk = object()
+    world.documents.chunks = [chunk]
+    world.files.size = 18
+
+    stored = load_completed(world)
+
+    assert stored.chunks == [chunk]
+    assert (stored.content_length, stored.media_type) == (18, "image/png")
+    assert calls(world).count("byte_size") == 1
+    assert "fetch_result" not in calls(world)
+    assert source_display(world) == (18, "image/png")
+    assert calls(world).count("byte_size") == 2
+
+
+@pytest.mark.parametrize("error", [OSError("missing"), KeyError("path")])
+def test_a_file_stat_failure_keeps_the_filename_media_type(error: Exception) -> None:
+    world = World()
+    world.files.size_error = error
+
+    assert source_display(world) == (1, "image/png")
+    assert calls(world) == ["source_file", "source_file", "byte_size"]
+
+
+def test_a_missing_source_on_the_byte_lookup_propagates() -> None:
+    world = World()
+    world.documents.source_outcomes = [
+        world.source,
+        NotFoundError("Document not found."),
+    ]
+
+    with pytest.raises(NotFoundError, match="Document not found."):
+        source_display(world)
+
+    assert calls(world) == ["source_file", "source_file"]
+
+
+def test_a_missing_source_on_the_media_lookup_falls_back() -> None:
+    world = World()
+    world.files.size = 20
+    world.documents.source_outcomes = [
+        NotFoundError("Document not found."),
+        world.source,
+    ]
+
+    assert source_display(world) == (20, "application/octet-stream")
+    assert world.trace == [
+        ("source_file", PROJECT, "document"),
+        ("source_file", PROJECT, "document"),
+        ("byte_size", "uploads/scan.png"),
+    ]

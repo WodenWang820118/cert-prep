@@ -3,18 +3,29 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import NoReturn
 
 from capture_runtime_client import StreamingCaptureStatus
 
 from cert_prep_backend.capture_integration.application.errors import (
     CaptureExtractionCanceled,
+    CaptureOcrMissing,
+    CaptureOcrTransport,
+    CaptureOcrUnavailable,
+    CaptureResultMissing,
+    CaptureResultProtocolError,
+    CaptureResultUnavailable,
     CaptureRuntimeCallFailed,
 )
 from cert_prep_backend.capture_integration.application.results import (
     RuntimeCancellation,
     StructuringFailureNotice,
 )
-from cert_prep_backend.capture_integration.infrastructure.client import CaptureRuntimeError
+from cert_prep_backend.capture_integration.infrastructure.client import (
+    CaptureRuntimeClient,
+    CaptureRuntimeError,
+    CaptureRuntimeProtocolError,
+)
 from cert_prep_backend.capture_integration.infrastructure.coordinator import (
     CaptureRuntimeCanceledError,
     CertPrepCaptureCoordinator,
@@ -38,8 +49,13 @@ _CAPTURE_STATUSES = {
 class CoordinatorCaptureRuntime:
     """The configured coordinator as the capture review runtime port."""
 
-    def __init__(self, coordinator: CertPrepCaptureCoordinator) -> None:
+    def __init__(
+        self,
+        coordinator: CertPrepCaptureCoordinator,
+        client: CaptureRuntimeClient,
+    ) -> None:
         self._coordinator = coordinator
+        self._client = client
 
     def report_structuring_failure(
         self,
@@ -85,6 +101,38 @@ class CoordinatorCaptureRuntime:
     def read_raw(self, runtime_capture_id: str) -> object:
         return self._coordinator.get_raw(runtime_capture_id)
 
+    def read_operation_for_ocr(self, runtime_capture_id: str) -> object:
+        try:
+            return self._client.get_capture(runtime_capture_id)
+        except Exception as error:
+            _raise_ocr_failure(error)
+
+    def read_ocr_projection(self, runtime_capture_id: str) -> object:
+        try:
+            return self._client.get_ocr(runtime_capture_id)
+        except Exception as error:
+            _raise_ocr_failure(error)
+
+    def fetch_result(self, runtime_capture_id: str) -> object:
+        try:
+            return self._coordinator.get_result(runtime_capture_id)
+        except CaptureRuntimeProtocolError as error:
+            raise CaptureResultProtocolError(
+                "Capture Runtime result violated the v2 contract."
+            ) from error
+        except CaptureRuntimeError as error:
+            if getattr(error, "status_code", None) == 404:
+                raise CaptureResultMissing("Capture Runtime result is gone.") from error
+            raise CaptureResultUnavailable("Capture Runtime result unavailable.") from error
+        except Exception as error:
+            raise CaptureResultUnavailable("Capture Runtime result unavailable.") from error
+
+    def release_result(self, runtime_capture_id: str) -> None:
+        try:
+            self._coordinator.delete(runtime_capture_id)
+        except Exception:
+            return
+
     def validate_review(self, raw: object, review: object) -> None:
         reviewed_text_overrides(raw, review)
 
@@ -112,3 +160,19 @@ class CoordinatorCaptureRuntime:
 
     def status_equals(self, operation: object, *tokens: str) -> bool:
         return operation.status in {_CAPTURE_STATUSES[token] for token in tokens}
+
+
+def _raise_ocr_failure(error: BaseException) -> NoReturn:
+    """Classify an OCR read the way the route used to, transport before not-found."""
+
+    if isinstance(error, CaptureRuntimeError):
+        if getattr(error, "category", None) == "transport":
+            raise CaptureOcrTransport("Capture Runtime is unavailable.") from error
+        if (
+            getattr(error, "status_code", None) == 404
+            and getattr(error, "code", None) == "capture_not_found"
+        ):
+            raise CaptureOcrMissing("Capture not found.") from error
+    raise CaptureOcrUnavailable(
+        "Capture Runtime OCR summary is unavailable."
+    ) from error

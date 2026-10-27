@@ -13,7 +13,11 @@ from cert_prep_backend.capture_integration.domain.review_session import (
     CaptureReviewSession,
     CaptureReviewStatus,
 )
-from cert_prep_backend.source_library.domain.document import SourceDocument, SourceFile
+from cert_prep_backend.source_library.domain.document import (
+    DocumentChunk,
+    SourceDocument,
+    SourceFile,
+)
 from cert_prep_backend.source_library.domain.operation import DocumentOperation
 
 
@@ -50,6 +54,8 @@ class CaptureDocuments(Protocol):
     def document(self, project_id: str, document_id: str) -> SourceDocument: ...
 
     def source_file(self, project_id: str, document_id: str) -> SourceFile: ...
+
+    def chunks_of(self, project_id: str, document_id: str) -> list[DocumentChunk]: ...
 
     def attach_document(
         self,
@@ -98,6 +104,8 @@ class CaptureFileStore(Protocol):
     ) -> str: ...
 
     def read_bytes(self, storage_path: str) -> bytes: ...
+
+    def byte_size(self, storage_path: str) -> int: ...
 
 
 class CaptureReviewWorkflow(Protocol):
@@ -168,6 +176,14 @@ class CaptureRuntime(Protocol):
     def read_partial(self, runtime_capture_id: str) -> object: ...
 
     def read_raw(self, runtime_capture_id: str) -> object: ...
+
+    def read_operation_for_ocr(self, runtime_capture_id: str) -> object: ...
+
+    def read_ocr_projection(self, runtime_capture_id: str) -> object: ...
+
+    def fetch_result(self, runtime_capture_id: str) -> object: ...
+
+    def release_result(self, runtime_capture_id: str) -> None: ...
 
     def validate_review(self, raw: object, review: object) -> None: ...
 

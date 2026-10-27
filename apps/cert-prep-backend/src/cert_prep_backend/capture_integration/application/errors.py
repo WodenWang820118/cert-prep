@@ -49,3 +49,39 @@ class CaptureCommitNotQueued(Exception):
 
 class CaptureGatewayRejection(Exception):
     """The runtime did not confirm a report, cancel, or delete. The router answers 502."""
+
+
+class CaptureOcrNotReady(Exception):
+    """OCR evidence is not stable yet. The router answers 409."""
+
+
+class CaptureOcrClosed(Exception):
+    """The review is closed, so OCR evidence is no longer served. The router answers 410."""
+
+
+class CaptureOcrUnavailable(Exception):
+    """OCR evidence cannot be shown. The router answers 502."""
+
+
+class CaptureOcrTransport(Exception):
+    """The OCR read could not reach Capture Runtime. The router answers 503."""
+
+
+class CaptureOcrMissing(Exception):
+    """No capture exists for this OCR read. The router answers 404."""
+
+
+class CaptureResultProtocolError(Exception):
+    """The runtime result violated the v2 contract. The router answers 502."""
+
+
+class CaptureResultUnavailable(Exception):
+    """The runtime result could not be read. The router answers 502."""
+
+
+class CaptureResultMissing(Exception):
+    """The runtime result is already gone. The stored projection is used instead."""
+
+
+class CaptureSourceMissing(Exception):
+    """A completed capture's document has lost its source record. It is not answered as 404."""

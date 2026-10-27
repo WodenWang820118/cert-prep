@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from cert_prep_backend.capture_integration.domain.review_session import CaptureReviewSession
-from cert_prep_backend.source_library.domain.document import SourceDocument
+from cert_prep_backend.source_library.domain.document import DocumentChunk, SourceDocument
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,3 +68,22 @@ class ViewedCapture:
     document: SourceDocument
     runtime_operation: object | None
     report_extracting: bool
+
+
+@dataclass(frozen=True, slots=True)
+class StoredCapture:
+    """A completed review's document and chunks, plus the source display already read."""
+
+    session: CaptureReviewSession
+    document: SourceDocument
+    chunks: list[DocumentChunk]
+    content_length: int
+    media_type: str
+
+
+@dataclass(frozen=True, slots=True)
+class CaptureResultView:
+    """A runtime result the router still has to project. The runtime job is not released yet."""
+
+    operation: object
+    raw: object

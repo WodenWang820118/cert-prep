@@ -184,7 +184,10 @@ def create_app(
         app.state.database, app.state.capture_coordinator
     )
     app.state.capture_runtime = (
-        CoordinatorCaptureRuntime(app.state.capture_coordinator)
+        CoordinatorCaptureRuntime(
+            app.state.capture_coordinator,
+            app.state.capture_runtime_client,
+        )
         if app.state.capture_coordinator is not None
         else None
     )
