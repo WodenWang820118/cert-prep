@@ -58,3 +58,13 @@ class RuntimeCancellation:
 
     terminal_sequence: int | None
     runtime_operation: object
+
+
+@dataclass(frozen=True, slots=True)
+class ViewedCapture:
+    """The session and document a capture view projects, plus a runtime operation when shown."""
+
+    session: CaptureReviewSession
+    document: SourceDocument
+    runtime_operation: object | None
+    report_extracting: bool

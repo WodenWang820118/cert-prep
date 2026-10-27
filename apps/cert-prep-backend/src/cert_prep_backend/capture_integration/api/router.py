@@ -65,6 +65,7 @@ from cert_prep_backend.capture_integration.application.errors import (
     CaptureCommitNotQueued,
     CaptureGatewayRejection,
     CaptureReviewConflict,
+    CaptureReviewInputRejected,
 )
 from cert_prep_backend.capture_integration.application.ports import (
     CaptureBackgroundWork,
@@ -79,7 +80,6 @@ from cert_prep_backend.capture_integration.application.ports import (
     CaptureRuntime,
 )
 from cert_prep_backend.capture_integration.infrastructure.coordinator import (
-    CaptureRuntimeCanceledError,
     CertPrepCaptureCoordinator,
 )
 from cert_prep_backend.capture_integration.application.ocr_summary import (
@@ -87,7 +87,6 @@ from cert_prep_backend.capture_integration.application.ocr_summary import (
     OcrSummaryValidationError,
     build_ocr_summary,
 )
-from cert_prep_backend.capture_integration.infrastructure.review import reviewed_text_overrides
 from cert_prep_backend.capture_integration.infrastructure.review_workflow import (
     cleanup_expired_review_sessions,
 )
@@ -352,70 +351,50 @@ def get_capture(
 ) -> CaptureReviewOperationRead:
     coordinator = get_capture_coordinator(request)
     cleanup_expired_review_sessions(db, coordinator=coordinator)
-    session = _session_or_404(db, project_id, capture_id)
-    document = _document_or_404(db, project_id, session.document_id)
-    if session.status == CaptureReviewStatus.CONFIRMING:
-        # Runtime commit can become terminal before the durable document and
-        # review session have been published atomically. The host operation is
-        # still structuring throughout that window.
+    try:
+        viewed = capture_reviews.view_capture(
+            get_capture_review_store(request),
+            get_capture_documents(request),
+            get_capture_operations(request),
+            get_capture_runtime(request),
+            project_id=project_id,
+            session_id=capture_id,
+        )
+    except NotFoundError as error:
+        raise not_found_error(str(error)) from error
+    except CaptureGatewayRejection as error:
+        raise HTTPException(status_code=502, detail=str(error)) from None
+    if viewed.runtime_operation is None:
         return _operation_for_session(
             db,
             project_id=project_id,
-            session=session,
-            document=document,
+            session=viewed.session,
+            document=viewed.document,
         )
-    runtime_id = session.runtime_capture_id
-    if runtime_id:
-        try:
-            operation = coordinator.get_capture(runtime_id)
-            session = review_sessions.observe_event_sequence(
-                db,
-                project_id=project_id,
-                session_id=capture_id,
-                sequence=operation.last_event_sequence,
+    try:
+        operation = viewed.runtime_operation
+        if viewed.report_extracting:
+            # The runtime awaits structuring before the host operation can
+            # take the review; until then the host is still extracting.
+            operation = operation.model_copy(
+                update={"status": StreamingCaptureStatus.EXTRACTING}
             )
-            if session.is_active and operation.status in {
-                StreamingCaptureStatus.COMPLETED,
-                StreamingCaptureStatus.FAILED,
-                StreamingCaptureStatus.CANCELLED,
-            }:
-                return _operation_for_session(
-                    db,
-                    project_id=project_id,
-                    session=session,
-                    document=document,
-                )
-            expected_terminal = {
-                CaptureReviewStatus.COMPLETED: StreamingCaptureStatus.COMPLETED,
-                CaptureReviewStatus.CANCELED: StreamingCaptureStatus.CANCELLED,
-                CaptureReviewStatus.FAILED: StreamingCaptureStatus.FAILED,
-            }.get(session.status)
-            if expected_terminal is None or operation.status is expected_terminal:
-                if (
-                    operation.status is StreamingCaptureStatus.AWAITING_STRUCTURING
-                    and not _review_ready(db, project_id, session)
-                ):
-                    # The runtime awaits structuring before the host operation can
-                    # take the review; until then the host is still extracting.
-                    operation = operation.model_copy(
-                        update={"status": StreamingCaptureStatus.EXTRACTING}
-                    )
-                return _host_operation(
-                    operation,
-                    capture_id=capture_id,
-                    document_id=session.document_id,
-                )
-        except Exception:
-            if session.is_active:
-                raise HTTPException(
-                    status_code=502,
-                    detail="Capture Runtime status unavailable.",
-                ) from None
+        return _host_operation(
+            operation,
+            capture_id=capture_id,
+            document_id=viewed.session.document_id,
+        )
+    except Exception:
+        if viewed.session.is_active:
+            raise HTTPException(
+                status_code=502,
+                detail="Capture Runtime status unavailable.",
+            ) from None
     return _operation_for_session(
         db,
         project_id=project_id,
-        session=session,
-        document=document,
+        session=viewed.session,
+        document=viewed.document,
     )
 
 
@@ -544,20 +523,23 @@ def get_partial(
 ) -> PartialCapture:
     coordinator = get_capture_coordinator(request)
     cleanup_expired_review_sessions(db, coordinator=coordinator)
-    session = _session_or_404(db, project_id, capture_id)
-    if session.status != CaptureReviewStatus.PENDING:
-        raise HTTPException(status_code=409, detail="OCR review is no longer available.")
-    runtime_id = session.runtime_capture_id
-    if not runtime_id:
-        raise HTTPException(status_code=409, detail="OCR extraction has not reached review state.")
     try:
-        partial = coordinator.get_partial(runtime_id)
+        partial = capture_reviews.view_partial_capture(
+            get_capture_review_store(request),
+            get_capture_runtime(request),
+            project_id=project_id,
+            session_id=capture_id,
+        )
         return PartialCapture.model_validate(
             {
                 **partial.model_dump(mode="json", by_alias=True),
                 "captureId": capture_id,
             }
         )
+    except NotFoundError as error:
+        raise not_found_error(str(error)) from error
+    except CaptureReviewConflict as error:
+        raise HTTPException(status_code=409, detail=str(error))
     except Exception as error:
         raise HTTPException(
             status_code=502,
@@ -574,14 +556,17 @@ def get_raw(
 ) -> RawCapture:
     coordinator = get_capture_coordinator(request)
     cleanup_expired_review_sessions(db, coordinator=coordinator)
-    session = _session_or_404(db, project_id, capture_id)
-    if session.status != CaptureReviewStatus.PENDING:
-        raise HTTPException(status_code=409, detail="OCR review is no longer available.")
-    runtime_id = session.runtime_capture_id
-    if not runtime_id:
-        raise HTTPException(status_code=409, detail="OCR extraction has not reached review state.")
     try:
-        return coordinator.get_raw(runtime_id)
+        return capture_reviews.view_raw_capture(
+            get_capture_review_store(request),
+            get_capture_runtime(request),
+            project_id=project_id,
+            session_id=capture_id,
+        )
+    except NotFoundError as error:
+        raise not_found_error(str(error)) from error
+    except CaptureReviewConflict as error:
+        raise HTTPException(status_code=409, detail=str(error))
     except Exception as error:
         raise HTTPException(
             status_code=502,
@@ -599,33 +584,27 @@ def structure_capture(
 ) -> CaptureDocument:
     coordinator = get_capture_coordinator(request)
     cleanup_expired_review_sessions(db, coordinator=coordinator)
-    session = _session_or_404(db, project_id, capture_id)
-    if session.status != CaptureReviewStatus.PENDING:
-        raise HTTPException(status_code=409, detail="Capture review is no longer pending.")
-    runtime_id = session.runtime_capture_id
-    if not runtime_id:
-        raise HTTPException(status_code=409, detail="OCR extraction has not reached review state.")
-    raw = coordinator.get_raw(runtime_id)
     try:
-        reviewed_text_overrides(raw, structure_request.review)
-    except ValueError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
-    try:
-        return coordinator.structure_capture(
-            operation_id=session.operation_id,
-            capture_id=runtime_id,
-            target_language=None,
+        return capture_reviews.preview_capture_structure(
+            get_capture_review_store(request),
+            get_capture_operations(request),
+            get_capture_runtime(request),
+            project_id=project_id,
+            session_id=capture_id,
             review=structure_request.review,
-            should_cancel=lambda: not _operation_active(
-                db,
-                project_id,
-                session.operation_id,
-            ),
         )
-    except CaptureRuntimeCanceledError as error:
-        raise HTTPException(status_code=409, detail="Capture review was cancelled.") from error
-    except Exception as error:
-        raise HTTPException(status_code=502, detail="Capture structuring failed.") from error
+    except NotFoundError as error:
+        raise not_found_error(str(error)) from error
+    except CaptureReviewConflict as error:
+        # Cancellation is raised from the runtime error. The other conflicts
+        # were direct responses and stay unchained.
+        if error.__cause__ is None:
+            raise HTTPException(status_code=409, detail=str(error))
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except CaptureReviewInputRejected as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except CaptureGatewayRejection as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
 
 
 @router.post(
@@ -1264,20 +1243,6 @@ def _review_ready(db: Database, project_id: str, session: CaptureReviewSession) 
     except Exception:
         return False
     return operation.phase == "awaiting_review"
-
-
-def _operation_active(db: Database, project_id: str, operation_id: str) -> bool:
-    try:
-        return (
-            operations.get_operation(
-                db,
-                project_id=project_id,
-                operation_id=operation_id,
-            ).status
-            == "running"
-        )
-    except Exception:
-        return False
 
 
 def _ocr_summary_session_or_404(

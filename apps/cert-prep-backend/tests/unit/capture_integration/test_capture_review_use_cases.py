@@ -7,6 +7,8 @@ import hashlib
 
 import pytest
 
+from capture_runtime_client import StreamingCaptureStatus
+
 from cert_prep_backend.capture_integration.application import use_cases
 from cert_prep_backend.capture_integration.application.errors import (
     CaptureAudioRejected,
@@ -16,6 +18,7 @@ from cert_prep_backend.capture_integration.application.errors import (
     CaptureGatewayRejection,
     CaptureRequirementUnavailable,
     CaptureReviewConflict,
+    CaptureReviewInputRejected,
     CaptureRuntimeCallFailed,
 )
 from cert_prep_backend.capture_integration.application.messages import PDF_OCR_UNAVAILABLE_MESSAGE
@@ -190,6 +193,7 @@ class FakeOperations:
         self.cancel_error: BaseException | None = None
         self.acknowledge_error: BaseException | None = None
         self.operation_error: BaseException | None = None
+        self.phase = DocumentOperationPhase.PROCESSING
 
     def claim_upload(self, project_id: str, operation_id: str) -> bool:
         self.trace.append(("claim_upload", project_id, operation_id))
@@ -219,7 +223,17 @@ class FakeOperations:
         self.trace.append(("operation", project_id, operation_id))
         if self.operation_error is not None:
             raise self.operation_error
-        return running_operation(self.status)
+        return DocumentOperation(
+            OPERATION,
+            PROJECT,
+            "document",
+            self.status,
+            self.phase,
+            True,
+            None,
+            "t",
+            "t",
+        )
 
 
 class FakeFiles:
@@ -267,6 +281,8 @@ class FakeSessions:
         self.session = session
         self.finish_error: BaseException | None = None
         self.get_error: BaseException | None = None
+        self.observe_error: BaseException | None = None
+        self.observed: CaptureReviewSession | None = None
 
     def get(self, *, project_id: str, session_id: str) -> CaptureReviewSession:
         self.trace.append(("get", project_id, session_id))
@@ -292,6 +308,18 @@ class FakeSessions:
         if self.finish_error is not None:
             raise self.finish_error
         self.session = replace(self.session, status=status)
+        return self.session
+
+    def observe(
+        self, *, project_id: str, session_id: str, sequence: int
+    ) -> CaptureReviewSession:
+        self.trace.append(("observe", project_id, session_id, sequence))
+        if self.observe_error is not None:
+            raise self.observe_error
+        if self.observed is not None:
+            self.session = self.observed
+            return self.session
+        self.session = replace(self.session, last_event_sequence=sequence)
         return self.session
 
 
@@ -397,14 +425,30 @@ class FakeDrafts:
             raise self.error
 
 
+class _RuntimeOperation:
+    def __init__(self, status: object, sequence: int) -> None:
+        self.status = status
+        self.last_event_sequence = sequence
+
+
 class FakeRuntime:
     def __init__(self, trace: list[tuple]) -> None:
         self.trace = trace
         self.error: BaseException | None = None
         self.delete_error: BaseException | None = None
+        self.read_error: BaseException | None = None
+        self.partial_error: BaseException | None = None
+        self.raw_error: BaseException | None = None
+        self.validate_error: BaseException | None = None
+        self.structure_error: BaseException | None = None
         self.terminal_sequence = 4
         self.cancellation_sequence: int | None = 5
         self.operation: object = "runtime-operation"
+        self.view = _RuntimeOperation(StreamingCaptureStatus.EXTRACTING, 4)
+        self.partial: object = "partial"
+        self.raw: object = "raw"
+        self.structured: object = "structured"
+        self.should_cancel = None
 
     def report_structuring_failure(
         self,
@@ -435,6 +479,51 @@ class FakeRuntime:
         self.trace.append(("delete", runtime_capture_id))
         if self.delete_error is not None:
             raise self.delete_error
+
+    def read_operation(self, runtime_capture_id: str) -> object:
+        self.trace.append(("read_operation", runtime_capture_id))
+        if self.read_error is not None:
+            raise self.read_error
+        return self.view
+
+    def read_partial(self, runtime_capture_id: str) -> object:
+        self.trace.append(("read_partial", runtime_capture_id))
+        if self.partial_error is not None:
+            raise self.partial_error
+        return self.partial
+
+    def read_raw(self, runtime_capture_id: str) -> object:
+        self.trace.append(("read_raw", runtime_capture_id))
+        if self.raw_error is not None:
+            raise self.raw_error
+        return self.raw
+
+    def validate_review(self, raw: object, review: object) -> None:
+        self.trace.append(("validate_review", raw, review))
+        if self.validate_error is not None:
+            raise self.validate_error
+
+    def structure(
+        self,
+        *,
+        operation_id: str,
+        capture_id: str,
+        review: object,
+        should_cancel,
+    ) -> object:
+        self.should_cancel = should_cancel
+        self.trace.append(("structure", operation_id, capture_id, review))
+        if self.structure_error is not None:
+            raise self.structure_error
+        return self.structured
+
+    def status_is(self, operation: object, token: str) -> bool:
+        self.trace.append(("status_is", token))
+        return operation.status is StreamingCaptureStatus(token)
+
+    def status_equals(self, operation: object, *tokens: str) -> bool:
+        self.trace.append(("status_equals", tokens))
+        return operation.status in {StreamingCaptureStatus(token) for token in tokens}
 
 
 class FakeWork:
@@ -565,10 +654,14 @@ def test_public_use_cases_are_the_review_lifecycle_names() -> None:
         "discard_capture_runtime",
         "expire_capture_reviews",
         "extract_capture_for_review",
+        "preview_capture_structure",
         "publish_reviewed_capture",
         "recover_capture_reviews",
         "report_structuring_failure",
         "start_capture_review",
+        "view_capture",
+        "view_partial_capture",
+        "view_raw_capture",
     ]
 
 
@@ -1566,3 +1659,475 @@ def test_runtime_delete_swallows_not_found_and_unexpected_errors() -> None:
     unexpected = _DeleteCoordinator(RuntimeError("socket"))
     CoordinatorCaptureRuntime(unexpected).delete("capture")
     assert unexpected.calls == ["capture"]
+
+
+RUNTIME = "runtime"
+STATUS_UNAVAILABLE = "Capture Runtime status unavailable."
+OCR_CLOSED = "OCR review is no longer available."
+EXTRACTION_NOT_READY = "OCR extraction has not reached review state."
+REVIEW_NOT_PENDING = "Capture review is no longer pending."
+REVIEW_CANCELLED = "Capture review was cancelled."
+STRUCTURE_FAILED = "Capture structuring failed."
+REVIEW = object()
+
+
+def with_runtime(
+    world: World,
+    *,
+    status: CaptureReviewStatus = CaptureReviewStatus.PENDING,
+    runtime_id: str | None = RUNTIME,
+) -> None:
+    world.sessions.session = replace(
+        review_session(),
+        status=status,
+        runtime_capture_id=runtime_id,
+    )
+
+
+def view(world: World):
+    return use_cases.view_capture(
+        world.sessions,
+        world.documents,
+        world.operations,
+        world.runtime,
+        project_id=PROJECT,
+        session_id="session",
+    )
+
+
+def view_partial(world: World):
+    return use_cases.view_partial_capture(
+        world.sessions,
+        world.runtime,
+        project_id=PROJECT,
+        session_id="session",
+    )
+
+
+def view_raw(world: World):
+    return use_cases.view_raw_capture(
+        world.sessions,
+        world.runtime,
+        project_id=PROJECT,
+        session_id="session",
+    )
+
+
+def preview(world: World):
+    return use_cases.preview_capture_structure(
+        world.sessions,
+        world.operations,
+        world.runtime,
+        project_id=PROJECT,
+        session_id="session",
+        review=REVIEW,
+    )
+
+
+def calls(world: World) -> list[object]:
+    return [item[0] for item in world.trace]
+
+
+def test_a_confirming_capture_does_not_call_the_runtime() -> None:
+    world = World()
+    with_runtime(world, status=CaptureReviewStatus.CONFIRMING)
+
+    viewed = view(world)
+
+    assert viewed.runtime_operation is None
+    assert viewed.report_extracting is False
+    assert viewed.session.status == CaptureReviewStatus.CONFIRMING
+    assert calls(world) == ["get", "document"]
+
+
+def test_a_capture_without_a_runtime_id_returns_the_session() -> None:
+    world = World()
+
+    viewed = view(world)
+
+    assert viewed.runtime_operation is None
+    assert viewed.report_extracting is False
+    assert viewed.document.id == "document"
+    assert calls(world) == ["get", "document"]
+
+    empty = World()
+    with_runtime(empty, runtime_id="")
+    assert view(empty).runtime_operation is None
+    assert calls(empty) == ["get", "document"]
+
+
+def test_view_capture_propagates_a_missing_session_or_document() -> None:
+    missing_session = World()
+    missing_session.sessions.get_error = NotFoundError("Capture review session not found.")
+
+    with pytest.raises(NotFoundError, match="Capture review session not found."):
+        view(missing_session)
+
+    assert missing_session.trace == [("get", PROJECT, "session")]
+
+    missing_document = World()
+    missing_document.documents.document_error = NotFoundError("Document not found.")
+
+    with pytest.raises(NotFoundError, match="Document not found."):
+        view(missing_document)
+
+    assert calls(missing_document) == ["get", "document"]
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        StreamingCaptureStatus.COMPLETED,
+        StreamingCaptureStatus.FAILED,
+        StreamingCaptureStatus.CANCELLED,
+    ],
+)
+def test_an_active_terminal_runtime_status_is_observed_then_hidden(status: object) -> None:
+    world = World()
+    with_runtime(world)
+    world.runtime.view = _RuntimeOperation(status, 6)
+
+    viewed = view(world)
+
+    assert viewed.runtime_operation is None
+    assert viewed.report_extracting is False
+    assert viewed.session.last_event_sequence == 6
+    read_at = world.trace.index(("read_operation", RUNTIME))
+    assert world.trace[read_at + 1] == ("observe", PROJECT, "session", 6)
+    assert ("status_equals", ("completed", "failed", "cancelled")) in world.trace
+    assert "status_is" not in calls(world)
+    assert all(not ("read_operation" in item and "observe" in item) for item in world.trace)
+
+
+def test_a_session_terminalized_by_observe_keeps_a_matching_operation() -> None:
+    world = World()
+    with_runtime(world)
+    world.runtime.view = _RuntimeOperation(StreamingCaptureStatus.COMPLETED, 11)
+    world.sessions.observed = replace(
+        world.sessions.session,
+        status=CaptureReviewStatus.COMPLETED,
+        last_event_sequence=11,
+    )
+
+    viewed = view(world)
+
+    assert viewed.session.status == CaptureReviewStatus.COMPLETED
+    assert viewed.runtime_operation is world.runtime.view
+    assert viewed.report_extracting is False
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        StreamingCaptureStatus.CREATED,
+        StreamingCaptureStatus.WAITING_INPUT,
+        StreamingCaptureStatus.EXTRACTING,
+        StreamingCaptureStatus.STRUCTURING,
+    ],
+)
+def test_a_pending_capture_returns_other_statuses_without_reporting_extracting(
+    status: object,
+) -> None:
+    world = World()
+    with_runtime(world)
+    world.runtime.view = _RuntimeOperation(status, 3)
+
+    viewed = view(world)
+
+    assert viewed.runtime_operation is world.runtime.view
+    assert viewed.report_extracting is False
+    assert "operation" not in calls(world)
+
+
+@pytest.mark.parametrize(
+    ("phase", "extracting"),
+    [
+        (DocumentOperationPhase.AWAITING_REVIEW, False),
+        (DocumentOperationPhase.PROCESSING, True),
+    ],
+)
+def test_pending_awaiting_structuring_reports_extracting_until_review(
+    phase: DocumentOperationPhase,
+    extracting: bool,
+) -> None:
+    world = World()
+    with_runtime(world)
+    world.runtime.view = _RuntimeOperation(StreamingCaptureStatus.AWAITING_STRUCTURING, 9)
+    world.operations.phase = phase
+
+    viewed = view(world)
+
+    assert viewed.report_extracting is extracting
+    assert viewed.runtime_operation is world.runtime.view
+    assert ("operation", PROJECT, OPERATION) in world.trace
+    assert ("observe", PROJECT, "session", 9) in world.trace
+
+
+def test_a_failed_phase_read_is_not_ready_and_reports_extracting() -> None:
+    world = World()
+    with_runtime(world)
+    world.runtime.view = _RuntimeOperation(StreamingCaptureStatus.AWAITING_STRUCTURING, 9)
+    world.operations.operation_error = RuntimeError("missing")
+
+    viewed = view(world)
+
+    assert viewed.report_extracting is True
+    assert viewed.runtime_operation is world.runtime.view
+
+
+def test_an_operation_read_that_raises_does_not_set_report_extracting() -> None:
+    world = World()
+    with_runtime(world)
+    world.runtime.read_error = RuntimeError("down")
+
+    with pytest.raises(CaptureGatewayRejection) as caught:
+        view(world)
+
+    assert str(caught.value) == STATUS_UNAVAILABLE
+    assert caught.value.__cause__ is None
+    assert "observe" not in calls(world)
+    assert "status_is" not in calls(world)
+
+
+def test_an_active_capture_whose_observe_fails_is_unavailable() -> None:
+    world = World()
+    with_runtime(world)
+    world.sessions.observe_error = RuntimeError("db")
+
+    with pytest.raises(CaptureGatewayRejection) as caught:
+        view(world)
+
+    assert str(caught.value) == STATUS_UNAVAILABLE
+    assert world.sessions.session.last_event_sequence == 0
+
+
+@pytest.mark.parametrize(
+    "status",
+    ["completed", StreamingCaptureStatus.FAILED],
+)
+def test_a_terminal_session_whose_status_is_fails_returns_no_operation(status: object) -> None:
+    world = World()
+    with_runtime(world, status=CaptureReviewStatus.COMPLETED)
+    world.runtime.view = _RuntimeOperation(status, 8)
+
+    viewed = view(world)
+
+    assert viewed.runtime_operation is None
+    assert viewed.report_extracting is False
+    assert ("observe", PROJECT, "session", 8) in world.trace
+    assert ("status_is", "completed") in world.trace
+
+
+def test_an_inactive_capture_tolerates_a_runtime_read_failure() -> None:
+    world = World()
+    with_runtime(world, status=CaptureReviewStatus.FAILED)
+    world.runtime.read_error = RuntimeError("gone")
+
+    viewed = view(world)
+
+    assert viewed.runtime_operation is None
+    assert viewed.report_extracting is False
+    assert viewed.session.status == CaptureReviewStatus.FAILED
+    assert "observe" not in calls(world)
+
+
+def test_an_inactive_capture_tolerates_an_observe_failure() -> None:
+    world = World()
+    original = replace(
+        review_session(),
+        status=CaptureReviewStatus.CANCELED,
+        runtime_capture_id=RUNTIME,
+        last_event_sequence=2,
+    )
+    world.sessions.session = original
+    world.sessions.observe_error = RuntimeError("db")
+    world.runtime.view = _RuntimeOperation(StreamingCaptureStatus.CANCELLED, 9)
+
+    viewed = view(world)
+
+    assert viewed.session is original
+    assert viewed.runtime_operation is None
+    assert viewed.report_extracting is False
+    assert ("read_operation", RUNTIME) in world.trace
+    assert ("observe", PROJECT, "session", 9) in world.trace
+
+
+def test_partial_and_raw_reject_a_closed_review_before_a_missing_id() -> None:
+    world = World()
+    with_runtime(world, status=CaptureReviewStatus.COMPLETED, runtime_id=None)
+
+    for read in (view_partial, view_raw):
+        with pytest.raises(CaptureReviewConflict) as caught:
+            read(world)
+        assert str(caught.value) == OCR_CLOSED
+
+    assert "read_partial" not in calls(world)
+    assert "read_raw" not in calls(world)
+
+
+def test_partial_and_raw_reject_a_pending_review_without_a_runtime_id() -> None:
+    world = World()
+
+    for read in (view_partial, view_raw):
+        with pytest.raises(CaptureReviewConflict) as caught:
+            read(world)
+        assert str(caught.value) == EXTRACTION_NOT_READY
+
+    assert "read_partial" not in calls(world)
+    assert "read_raw" not in calls(world)
+
+
+def test_partial_and_raw_return_the_runtime_value() -> None:
+    world = World()
+    with_runtime(world)
+    world.runtime.partial = "partial-body"
+    world.runtime.raw = "raw-body"
+
+    assert view_partial(world) == "partial-body"
+    assert view_raw(world) == "raw-body"
+    assert calls(world) == ["get", "read_partial", "get", "read_raw"]
+
+
+def test_partial_and_raw_runtime_errors_propagate_unwrapped() -> None:
+    world = World()
+    with_runtime(world)
+    world.runtime.partial_error = RuntimeError("partial down")
+
+    with pytest.raises(RuntimeError, match="partial down") as partial_caught:
+        view_partial(world)
+
+    assert type(partial_caught.value) is RuntimeError
+
+    world.runtime.raw_error = ValueError("raw down")
+
+    with pytest.raises(ValueError, match="raw down") as raw_caught:
+        view_raw(world)
+
+    assert type(raw_caught.value) is ValueError
+
+
+def test_structure_rejects_a_review_that_is_not_pending_before_a_missing_id() -> None:
+    world = World()
+    with_runtime(world, status=CaptureReviewStatus.CONFIRMING, runtime_id=None)
+
+    with pytest.raises(CaptureReviewConflict) as caught:
+        preview(world)
+
+    assert str(caught.value) == REVIEW_NOT_PENDING
+    assert str(caught.value) != OCR_CLOSED
+    assert "read_raw" not in calls(world)
+
+
+def test_structure_rejects_a_pending_review_without_a_runtime_id() -> None:
+    world = World()
+
+    with pytest.raises(CaptureReviewConflict) as caught:
+        preview(world)
+
+    assert str(caught.value) == EXTRACTION_NOT_READY
+    assert "read_raw" not in calls(world)
+
+
+def test_structure_validates_then_structures_without_finishing_the_session() -> None:
+    world = World()
+    with_runtime(world)
+
+    assert preview(world) == "structured"
+    assert calls(world) == ["get", "read_raw", "validate_review", "structure"]
+    assert "finish" not in calls(world)
+
+
+@pytest.mark.parametrize("error", [RuntimeError("raw down"), ValueError("raw value")])
+def test_a_raw_read_error_propagates_before_review_validation(error: Exception) -> None:
+    world = World()
+    with_runtime(world)
+    world.runtime.raw_error = error
+
+    with pytest.raises(type(error)) as caught:
+        preview(world)
+
+    assert caught.value is error
+    assert not isinstance(caught.value, CaptureReviewInputRejected)
+    assert "validate_review" not in calls(world)
+    assert "structure" not in calls(world)
+
+
+def test_a_rejected_review_edit_keeps_the_validation_text() -> None:
+    world = World()
+    with_runtime(world)
+    message = "review edit references unknown segmentId 'x'"
+    world.runtime.validate_error = ValueError(message)
+
+    with pytest.raises(CaptureReviewInputRejected) as caught:
+        preview(world)
+
+    assert str(caught.value) == message
+    assert caught.value.__cause__ is world.runtime.validate_error
+    assert "structure" not in calls(world)
+
+
+def test_a_canceled_structure_is_the_cancelled_conflict() -> None:
+    world = World()
+    with_runtime(world)
+    cause = CaptureExtractionCanceled("stopped")
+    world.runtime.structure_error = cause
+
+    with pytest.raises(CaptureReviewConflict) as caught:
+        preview(world)
+
+    assert str(caught.value) == REVIEW_CANCELLED
+    assert caught.value.__cause__ is cause
+    assert "finish" not in calls(world)
+
+
+@pytest.mark.parametrize("error", [RuntimeError("boom"), ValueError("second validation")])
+def test_any_other_structure_error_is_the_structuring_gateway(error: Exception) -> None:
+    world = World()
+    with_runtime(world)
+    world.runtime.structure_error = error
+
+    with pytest.raises(CaptureGatewayRejection) as caught:
+        preview(world)
+
+    assert str(caught.value) == STRUCTURE_FAILED
+    assert caught.value.__cause__ is error
+    assert "finish" not in calls(world)
+
+
+def test_structure_cancels_when_the_operation_is_not_running() -> None:
+    world = World()
+    with_runtime(world)
+
+    preview(world)
+
+    cancel = world.runtime.should_cancel
+    assert cancel is not None
+    assert cancel() is False
+    world.operations.status = DocumentOperationStatus.QUEUED
+    assert cancel() is True
+    world.operations.operation_error = RuntimeError("missing")
+    assert cancel() is True
+    assert "is_closed" not in calls(world)
+    assert "finish" not in calls(world)
+
+
+def test_runtime_status_predicates_keep_identity_apart_from_membership() -> None:
+    class _Operation:
+        def __init__(self, status: object) -> None:
+            self.status = status
+
+    runtime = CoordinatorCaptureRuntime(object())
+    member = _Operation(StreamingCaptureStatus.COMPLETED)
+    assert runtime.status_is(member, "completed") is True
+    assert runtime.status_equals(member, "completed", "failed", "cancelled") is True
+
+    text = _Operation("completed")
+    assert runtime.status_is(text, "completed") is False
+    assert runtime.status_equals(text, "completed", "failed", "cancelled") is True
+
+    extracting = _Operation(StreamingCaptureStatus.EXTRACTING)
+    assert runtime.status_is(extracting, "awaiting_structuring") is False
+    assert runtime.status_equals(extracting, "completed", "failed", "cancelled") is False
+
+    awaiting = _Operation(StreamingCaptureStatus.AWAITING_STRUCTURING)
+    assert runtime.status_is(awaiting, "awaiting_structuring") is True

@@ -39,6 +39,10 @@ class CaptureReviewConflict(Exception):
     """The review cannot accept this confirmation. The router answers 409."""
 
 
+class CaptureReviewInputRejected(Exception):
+    """A review edit does not match the raw capture. The router answers 422."""
+
+
 class CaptureCommitNotQueued(Exception):
     """The commit worker could not be queued. The router answers 503."""
 

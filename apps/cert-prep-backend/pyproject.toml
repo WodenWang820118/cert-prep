@@ -218,7 +218,6 @@ ignore_imports = [
   "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.capture_integration.infrastructure.client",
   "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.capture_integration.infrastructure.coordinator",
   "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.capture_integration.infrastructure.host_models",
-  "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.capture_integration.infrastructure.review",
   "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.capture_integration.infrastructure.review_sessions",
   "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.capture_integration.infrastructure.review_workflow",
   "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.capture_integration.infrastructure.runtime_policy",
