@@ -1,0 +1,35 @@
+"""Failures of a capture review that the router maps to today's HTTP responses.
+
+These are not BackendError subclasses: a broad handler for that base must not turn one of
+them into a different status.
+"""
+
+from __future__ import annotations
+
+
+class CaptureAudioRejected(Exception):
+    """The upload is audio, which capture review does not accept."""
+
+
+class CaptureExtractionCanceled(Exception):
+    """Extraction stopped because the operation was canceled."""
+
+
+class CaptureRequirementUnavailable(Exception):
+    """A source dependency was not ready, so no runtime operation was admitted."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+class CaptureExtractionFailed(Exception):
+    """Extraction failed. A runtime job supplies its code and terminal sequence."""
+
+    def __init__(self, code: str | None, terminal_sequence: int | None) -> None:
+        super().__init__("Capture Runtime extraction failed.")
+        self.code = code
+        self.terminal_sequence = terminal_sequence
+
+
+class CaptureRuntimeCallFailed(Exception):
+    """A runtime call failed for a reason the host does not treat as already gone."""

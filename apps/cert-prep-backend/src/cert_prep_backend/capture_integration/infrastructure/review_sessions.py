@@ -314,7 +314,44 @@ def _session(row: Row | None) -> CaptureReviewSession:
     )
 
 
+class CaptureReviewStoreAdapter:
+    """Review sessions as the capture review store port."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    def get(self, *, project_id: str, session_id: str) -> CaptureReviewSession:
+        return get(self._db, project_id=project_id, session_id=session_id)
+
+    def create(
+        self, *, project_id: str, document_id: str, operation_id: str
+    ) -> CaptureReviewSession:
+        return create(
+            self._db,
+            project_id=project_id,
+            document_id=document_id,
+            operation_id=operation_id,
+        )
+
+    def finish(
+        self,
+        *,
+        project_id: str,
+        session_id: str,
+        status: CaptureReviewStatus,
+        terminal_sequence: int | None = None,
+    ) -> CaptureReviewSession:
+        return finish(
+            self._db,
+            project_id=project_id,
+            session_id=session_id,
+            status=status,
+            terminal_sequence=terminal_sequence,
+        )
+
+
 __all__ = [
+    "CaptureReviewStoreAdapter",
     "begin_confirm",
     "begin_confirm_in_connection",
     "active",

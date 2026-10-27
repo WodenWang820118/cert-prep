@@ -24,11 +24,22 @@ from cert_prep_backend.capture_integration.infrastructure.runtime_policy import 
     SUPPORTED_API_VERSION,
     SUPPORTED_RUNTIME_VERSION,
 )
+from cert_prep_backend.capture_integration.application import use_cases as capture_reviews
+from cert_prep_backend.capture_integration.infrastructure.background import (
+    PoolCaptureBackgroundWork,
+)
 from cert_prep_backend.capture_integration.infrastructure.coordinator import (
     CertPrepCaptureCoordinator,
 )
+from cert_prep_backend.capture_integration.infrastructure.review_sessions import (
+    CaptureReviewStoreAdapter,
+)
 from cert_prep_backend.capture_integration.infrastructure.review_workflow import (
-    cleanup_active_review_sessions,
+    CaptureReviewMaintenanceAdapter,
+    CaptureReviewWorkflowAdapter,
+)
+from cert_prep_backend.capture_integration.infrastructure.runtime_gateway import (
+    CoordinatorCaptureRuntime,
 )
 from cert_prep_backend.capture_integration.infrastructure.structuring import (
     CertPrepCaptureStructuringAdapter,
@@ -102,10 +113,7 @@ def create_app(
             app.state.document_worker_pool.start()
             yield
         finally:
-            cleanup_active_review_sessions(
-                app.state.database,
-                coordinator=app.state.capture_coordinator,
-            )
+            capture_reviews.recover_capture_reviews(app.state.capture_review_maintenance)
             app.state.document_worker_pool.close(join_timeout_seconds=0)
             close_result = app.state.document_worker_pool.close(
                 join_timeout_seconds=DOCUMENT_WORKER_JOIN_TIMEOUT_SECONDS
@@ -168,14 +176,25 @@ def create_app(
         if app.state.capture_runtime_client is not None
         else None
     )
-    cleanup_active_review_sessions(
-        app.state.database,
-        coordinator=app.state.capture_coordinator,
+    app.state.capture_review_store = CaptureReviewStoreAdapter(app.state.database)
+    app.state.capture_review_workflow = CaptureReviewWorkflowAdapter(
+        app.state.database, app.state.capture_coordinator
     )
+    app.state.capture_review_maintenance = CaptureReviewMaintenanceAdapter(
+        app.state.database, app.state.capture_coordinator
+    )
+    app.state.capture_runtime = (
+        CoordinatorCaptureRuntime(app.state.capture_coordinator)
+        if app.state.capture_coordinator is not None
+        else None
+    )
+    app.state.capture_runtime_event_registry = capture_workbench.CaptureRuntimeEventRegistry()
+    capture_reviews.recover_capture_reviews(app.state.capture_review_maintenance)
     app.state.document_worker_pool = DocumentWorkerPool(
         app_settings.document_processing_parallelism,
         worker_name_prefix="capture-document-worker",
     )
+    app.state.capture_background_work = PoolCaptureBackgroundWork(app.state.document_worker_pool)
     app.state.document_processing_async_jobs = document_processing_async_jobs
     app.state.runtime_installation_async_jobs = runtime_installation_async_jobs
     app.state.streaming_draft_generation_manager = StreamingDraftGenerationManager(

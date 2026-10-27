@@ -6,6 +6,10 @@ from pathlib import Path
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.errors import InvalidSourceError
 from cert_prep_backend.source_library.domain.document import AUDIO_MEDIA_TYPES
+from cert_prep_backend.source_library.infrastructure.source_preparation import (
+    PreparedSource,
+    prepare_source,
+)
 
 
 def sha256_hex(content: bytes) -> str:
@@ -55,6 +59,43 @@ class LocalSourceFileStore:
             raise InvalidSourceError("The stored source file is unavailable.")
         return source_path
 
+    def prepare(
+        self,
+        content: bytes,
+        *,
+        max_pdf_pages: int,
+        max_image_pixels: int,
+        filename: str | None,
+    ) -> PreparedSource:
+        """Validate an upload envelope before capture review stores it."""
+
+        return prepare_source(
+            content,
+            max_pdf_pages=max_pdf_pages,
+            max_image_pixels=max_image_pixels,
+            filename=filename,
+        )
+
+    def store(
+        self,
+        *,
+        project_id: str,
+        sha256: str,
+        content: bytes,
+        canonical_suffix: str,
+    ) -> str:
+        """Store original bytes and return the path capture review records on the document."""
+
+        return str(
+            store_source_file(
+                self._settings,
+                project_id,
+                sha256,
+                content,
+                canonical_suffix=canonical_suffix,
+            )
+        )
+
     def sha256(self, source_path: Path) -> str:
         digest = hashlib.sha256()
         try:
@@ -64,6 +105,11 @@ class LocalSourceFileStore:
         except OSError as exc:
             raise InvalidSourceError("The stored source file is unavailable.") from exc
         return digest.hexdigest()
+
+    def read_bytes(self, storage_path: str) -> bytes:
+        """The stored upload. Missing files raise the same OSError as a direct read."""
+
+        return Path(storage_path).read_bytes()
 
     def verified_path(self, project_id: str, storage_path: str, expected_sha256: str) -> Path:
         source_path = self.resolve(project_id, storage_path)

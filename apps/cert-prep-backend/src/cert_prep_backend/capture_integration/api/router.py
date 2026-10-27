@@ -6,7 +6,6 @@ import asyncio
 from collections.abc import Iterator
 from functools import partial
 import json
-import logging
 from pathlib import Path
 import re
 from threading import Condition, Lock
@@ -65,12 +64,22 @@ from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeError,
     CaptureRuntimeProtocolError,
 )
+from cert_prep_backend.capture_integration.application import use_cases as capture_reviews
+from cert_prep_backend.capture_integration.application.errors import CaptureAudioRejected
+from cert_prep_backend.capture_integration.application.ports import (
+    CaptureBackgroundWork,
+    CaptureDocuments,
+    CaptureFileStore,
+    CaptureOperations,
+    CaptureReviewEvents,
+    CaptureReviewMaintenance,
+    CaptureReviewStore,
+    CaptureReviewWorkflow,
+    CaptureRuntime,
+)
 from cert_prep_backend.capture_integration.infrastructure.coordinator import (
     CaptureRuntimeCanceledError,
-    CaptureRuntimeJobError,
-    CaptureRuntimeRequirementUnavailableError,
     CertPrepCaptureCoordinator,
-    PDF_OCR_UNAVAILABLE_MESSAGE,
 )
 from cert_prep_backend.capture_integration.application.ocr_summary import (
     CaptureOcrSummaryRead,
@@ -80,7 +89,6 @@ from cert_prep_backend.capture_integration.application.ocr_summary import (
 from cert_prep_backend.capture_integration.infrastructure.review import reviewed_text_overrides
 from cert_prep_backend.capture_integration.infrastructure.review_workflow import (
     begin_capture_commit,
-    begin_review_capture,
     candidate_digest,
     cleanup_expired_review_sessions,
     commit_review_capture,
@@ -88,7 +96,7 @@ from cert_prep_backend.capture_integration.infrastructure.review_workflow import
 from cert_prep_backend.capture_integration.infrastructure.runtime_policy import (
     SUPPORTED_RUNTIME_VERSION,
 )
-from cert_prep_backend.projects.infrastructure import repository as projects_repository
+from cert_prep_backend.projects.application.ports import ProjectRepository
 from cert_prep_backend.source_library.domain.document import DocumentChunk, SourceDocument
 from cert_prep_backend.source_library.infrastructure import operations
 from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
@@ -96,8 +104,6 @@ from cert_prep_backend.platform.document_worker_pool import (
     DocumentWorkItem,
     DocumentWorkerPool,
 )
-from cert_prep_backend.source_library.infrastructure.source_preparation import prepare_source
-from cert_prep_backend.source_library.infrastructure.storage import store_source_file
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.routers.documents import _read_limited_upload
 
@@ -106,7 +112,6 @@ router = APIRouter(
     prefix="/projects/{project_id}/capture-workbench/captures",
     tags=["capture-workbench"],
 )
-logger = logging.getLogger(__name__)
 _OCR_SUMMARY_NOT_FOUND_RESPONSE = {
     "model": ApiErrorRead,
     "description": "The project-scoped capture was not found.",
@@ -224,6 +229,46 @@ class CaptureRuntimeEventRegistry:
             self._condition.notify_all()
 
 
+def get_project_repository(request: Request) -> ProjectRepository:
+    return request.app.state.project_repository
+
+
+def get_capture_documents(request: Request) -> CaptureDocuments:
+    return request.app.state.document_repository
+
+
+def get_capture_operations(request: Request) -> CaptureOperations:
+    return request.app.state.document_operation_repository
+
+
+def get_capture_file_store(request: Request) -> CaptureFileStore:
+    return request.app.state.source_file_store
+
+
+def get_capture_review_store(request: Request) -> CaptureReviewStore:
+    return request.app.state.capture_review_store
+
+
+def get_capture_review_workflow(request: Request) -> CaptureReviewWorkflow:
+    return request.app.state.capture_review_workflow
+
+
+def get_capture_review_maintenance(request: Request) -> CaptureReviewMaintenance:
+    return request.app.state.capture_review_maintenance
+
+
+def get_capture_runtime(request: Request) -> CaptureRuntime | None:
+    return request.app.state.capture_runtime
+
+
+def get_capture_background_work(request: Request) -> CaptureBackgroundWork:
+    return request.app.state.capture_background_work
+
+
+def get_capture_review_events(request: Request) -> CaptureReviewEvents:
+    return request.app.state.capture_runtime_event_registry
+
+
 @router.post(
     "",
     response_model=CaptureReviewOperationRead,
@@ -234,123 +279,69 @@ async def create_capture(
     project_id: str,
     file: UploadFile = File(...),
     operation_id_header: OperationIdHeader = None,
-    db: Database = Depends(get_database),
     settings: Settings = Depends(get_settings),
-    workers: DocumentWorkerPool = Depends(get_document_worker_pool),
+    projects: ProjectRepository = Depends(get_project_repository),
+    documents: CaptureDocuments = Depends(get_capture_documents),
+    operations: CaptureOperations = Depends(get_capture_operations),
+    files: CaptureFileStore = Depends(get_capture_file_store),
+    sessions: CaptureReviewStore = Depends(get_capture_review_store),
+    workflow: CaptureReviewWorkflow = Depends(get_capture_review_workflow),
+    maintenance: CaptureReviewMaintenance = Depends(get_capture_review_maintenance),
+    work: CaptureBackgroundWork = Depends(get_capture_background_work),
+    events: CaptureReviewEvents = Depends(get_capture_review_events),
 ) -> CaptureReviewOperationRead:
-    coordinator = get_capture_coordinator(request)
-    cleanup_expired_review_sessions(db, coordinator=coordinator)
-    registry = _event_registry(request)
+    get_capture_coordinator(request)
+    capture_reviews.expire_capture_reviews(maintenance)
     operation_id = operation_id_header or str(uuid4())
     try:
-        projects_repository.ensure_project_exists(db, project_id)
+        claim = capture_reviews.claim_capture_upload(
+            projects,
+            operations,
+            project_id=project_id,
+            operation_id=operation_id,
+        )
     except NotFoundError as error:
         raise not_found_error(str(error)) from error
-    claim = operations.claim_operation(
-        db,
-        project_id=project_id,
-        operation_id=operation_id,
-    )
     if not claim.acquired:
         raise HTTPException(status_code=409, detail="Document operation id is already in use.")
-    session: CaptureReviewSession | None = None
     try:
         content = await _read_limited_upload(file, settings.max_upload_bytes)
-        prepared = await asyncio.to_thread(
-            prepare_source,
-            content,
+    except Exception:
+        capture_reviews.abandon_capture_upload(
+            sessions,
+            operations,
+            events,
+            project_id=project_id,
+            operation_id=operation_id,
+            session_id=None,
+        )
+        raise
+    try:
+        started = await asyncio.to_thread(
+            capture_reviews.start_capture_review,
+            sessions,
+            documents,
+            operations,
+            files,
+            workflow,
+            work,
+            events,
+            project_id=project_id,
+            operation_id=operation_id,
+            filename=file.filename,
+            content=content,
             max_pdf_pages=settings.max_pdf_pages,
             max_image_pixels=settings.max_image_pixels,
-            filename=file.filename,
         )
-        if prepared.kind == "audio":
-            raise HTTPException(
-                status_code=422,
-                detail="Capture review supports PDF and image sources only.",
-            )
-        sha256 = _sha256(content)
-        storage_path = await asyncio.to_thread(
-            store_source_file,
-            settings,
-            project_id,
-            sha256,
-            content,
-            canonical_suffix=prepared.canonical_suffix,
-        )
-        document = operations.create_and_attach_document(
-            db,
-            project_id=project_id,
-            operation_id=operation_id,
-            filename=file.filename or f"{sha256}{prepared.canonical_suffix}",
-            sha256=sha256,
-            language_hint="auto",
-            storage_path=str(storage_path),
-            page_count=prepared.page_count,
-        )
-        session = review_sessions.create(
-            db,
-            project_id=project_id,
-            document_id=document.id,
-            operation_id=operation_id,
-        )
-        item = DocumentWorkItem(
-            operation_id=operation_id,
-            run=partial(
-                _run_begin,
-                db=db,
-                coordinator=coordinator,
-                project_id=project_id,
-                document_id=document.id,
-                operation_id=operation_id,
-                session_id=session.id,
-                registry=registry,
-                shutdown_requested=workers.is_closed,
-            ),
-            cancel_queued=partial(
-                _cancel_queued,
-                db,
-                project_id=project_id,
-                operation_id=operation_id,
-                session_id=session.id,
-                registry=registry,
-            ),
-        )
-        workers.submit(item)
-    except Exception:
-        try:
-            operations.finish_failed(
-                db,
-                project_id=project_id,
-                operation_id=operation_id,
-                error="Capture review creation failed.",
-            )
-        except Exception:
-            logger.exception(
-                "Could not mark capture operation as failed",
-                extra={"operation_id": operation_id},
-            )
-        if session is not None:
-            try:
-                review_sessions.finish(
-                    db,
-                    project_id=project_id,
-                    session_id=session.id,
-                    status=CaptureReviewStatus.FAILED,
-                )
-                registry.publish_terminal(project_id, session.id, CaptureReviewStatus.FAILED)
-            except Exception:
-                logger.exception(
-                    "Could not mark capture review session as failed",
-                    extra={"session_id": session.id},
-                )
-        raise
+    except CaptureAudioRejected as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
     return _operation_from_document(
-        session.id,
-        document,
+        started.session.id,
+        started.document,
         status_value=StreamingCaptureStatus.CREATED,
         progress=0,
-        bytes_count=len(content),
-        media_type=_media_type(document.filename, prepared.canonical_suffix),
+        bytes_count=started.content_length,
+        media_type=_media_type(started.document.filename, started.canonical_suffix),
     )
 
 
@@ -941,94 +932,6 @@ def delete_capture(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-def _run_begin(
-    *,
-    db: Database,
-    coordinator: CertPrepCaptureCoordinator,
-    project_id: str,
-    document_id: str,
-    operation_id: str,
-    session_id: str,
-    registry: CaptureRuntimeEventRegistry,
-    shutdown_requested,
-) -> None:
-    document = source_documents_repository.get_document(db, project_id, document_id)
-    source_file = source_documents_repository.get_source_file(db, project_id, document_id)
-    source_kind = _source_kind(
-        source_file.filename,
-        Path(source_file.storage_path).suffix,
-    )
-    try:
-        begin_review_capture(
-            db,
-            coordinator=coordinator,
-            project_id=project_id,
-            document_id=document_id,
-            operation_id=operation_id,
-            session_id=session_id,
-            file_name=document.filename,
-            content=Path(source_file.storage_path).read_bytes(),
-            media_type=_media_type(document.filename, Path(source_file.storage_path).suffix),
-            source_kind=source_kind,
-            should_cancel=lambda: (
-                shutdown_requested()
-                or not _operation_active(db, project_id, operation_id)
-            ),
-            on_runtime_started=lambda runtime_id: registry.publish_runtime(
-                project_id,
-                session_id,
-                runtime_id,
-            ),
-        )
-    except CaptureRuntimeCanceledError:
-        _finish_canceled(
-            db,
-            project_id,
-            operation_id,
-            session_id,
-            registry=registry,
-        )
-    except CaptureRuntimeRequirementUnavailableError as error:
-        _finish_begin_failure(
-            db,
-            project_id=project_id,
-            operation_id=operation_id,
-            session_id=session_id,
-            registry=registry,
-            error=(
-                PDF_OCR_UNAVAILABLE_MESSAGE
-                if source_kind is CaptureSourceKind.PDF
-                else str(error)
-            ),
-        )
-    except CaptureRuntimeJobError as error:
-        _finish_begin_failure(
-            db,
-            project_id=project_id,
-            operation_id=operation_id,
-            session_id=session_id,
-            registry=registry,
-            error=(
-                PDF_OCR_UNAVAILABLE_MESSAGE
-                if source_kind is CaptureSourceKind.PDF
-                and error.code == "requirement_unavailable"
-                else "Capture Runtime extraction failed."
-            ),
-            terminal_sequence=error.last_event_sequence,
-        )
-    except Exception:
-        _finish_begin_failure(
-            db,
-            project_id=project_id,
-            operation_id=operation_id,
-            session_id=session_id,
-            registry=registry,
-            error="Capture Runtime extraction failed.",
-        )
-    else:
-        registry.publish_review_ready(project_id, session_id)
-
-
 def _run_commit(
     *,
     db: Database,
@@ -1063,12 +966,13 @@ def _run_commit(
                 document_id=document_id,
             )
     except CaptureRuntimeCanceledError:
-        _finish_canceled(
-            db,
-            project_id,
-            operation_id,
-            session_id,
-            registry=registry,
+        capture_reviews.finish_canceled_capture(
+            review_sessions.CaptureReviewStoreAdapter(db),
+            source_documents_repository.SqliteDocumentOperationRepository(db),
+            registry,
+            project_id=project_id,
+            operation_id=operation_id,
+            session_id=session_id,
         )
     finally:
         try:
@@ -1082,32 +986,6 @@ def _run_commit(
         else:
             if not session.is_active:
                 registry.publish_terminal(project_id, session_id, session.status)
-
-
-def _finish_begin_failure(
-    db: Database,
-    *,
-    project_id: str,
-    operation_id: str,
-    session_id: str,
-    registry: CaptureRuntimeEventRegistry,
-    error: str,
-    terminal_sequence: int | None = None,
-) -> None:
-    review_sessions.finish(
-        db,
-        project_id=project_id,
-        session_id=session_id,
-        status=CaptureReviewStatus.FAILED,
-        terminal_sequence=terminal_sequence,
-    )
-    operations.finish_failed(
-        db,
-        project_id=project_id,
-        operation_id=operation_id,
-        error=error,
-    )
-    registry.publish_terminal(project_id, session_id, CaptureReviewStatus.FAILED)
 
 
 def _cancel_queued(
@@ -1136,31 +1014,6 @@ def _cancel_queued(
             registry.publish_terminal(project_id, session_id, CaptureReviewStatus.CANCELED)
         except Exception:
             pass
-
-
-def _finish_canceled(
-    db: Database,
-    project_id: str,
-    operation_id: str,
-    session_id: str,
-    *,
-    registry: CaptureRuntimeEventRegistry | None = None,
-) -> None:
-    try:
-        operations.acknowledge_cancellation(
-            db,
-            project_id=project_id,
-            operation_id=operation_id,
-        )
-    finally:
-        review_sessions.finish(
-            db,
-            project_id=project_id,
-            session_id=session_id,
-            status=CaptureReviewStatus.CANCELED,
-        )
-        if registry is not None:
-            registry.publish_terminal(project_id, session_id, CaptureReviewStatus.CANCELED)
 
 
 def _host_event_stream(
@@ -1714,12 +1567,6 @@ def _media_type(filename: str, canonical_suffix: str | None = None) -> str:
         ".jpeg": "image/jpeg",
         ".webp": "image/webp",
     }.get(suffix, "application/octet-stream")
-
-
-def _sha256(content: bytes) -> str:
-    import hashlib
-
-    return hashlib.sha256(content).hexdigest()
 
 
 __all__ = ["CaptureRuntimeEventRegistry", "router"]

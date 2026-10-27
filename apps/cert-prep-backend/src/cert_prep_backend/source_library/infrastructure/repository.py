@@ -55,6 +55,28 @@ class SqliteDocumentRepository:
     def recover_processing(self) -> int:
         return recover_processing_documents(self._db)
 
+    def attach_document(
+        self,
+        project_id: str,
+        operation_id: str,
+        *,
+        filename: str,
+        sha256: str,
+        language_hint: str,
+        storage_path: str,
+        page_count: int,
+    ) -> SourceDocument:
+        return operations.create_and_attach_document(
+            self._db,
+            project_id=project_id,
+            operation_id=operation_id,
+            filename=filename,
+            sha256=sha256,
+            language_hint=language_hint,
+            storage_path=storage_path,
+            page_count=page_count,
+        )
+
 
 class SqliteDocumentOperationRepository:
     """Document operations. Each transition is one transaction that stores what the
@@ -66,8 +88,25 @@ class SqliteDocumentOperationRepository:
     def operation(self, project_id: str, operation_id: str) -> DocumentOperation:
         return operations.get_operation(self._db, project_id=project_id, operation_id=operation_id)
 
+    def claim_upload(self, project_id: str, operation_id: str) -> bool:
+        return operations.claim_operation(
+            self._db, project_id=project_id, operation_id=operation_id
+        ).acquired
+
+    def fail(self, project_id: str, operation_id: str, *, error: str) -> DocumentOperation:
+        return operations.finish_failed(
+            self._db, project_id=project_id, operation_id=operation_id, error=error
+        )
+
     def cancel(self, project_id: str, operation_id: str) -> DocumentOperation:
         return operations.cancel_operation(
+            self._db, project_id=project_id, operation_id=operation_id
+        )
+
+    def acknowledge_cancellation(
+        self, project_id: str, operation_id: str
+    ) -> DocumentOperation:
+        return operations.acknowledge_cancellation(
             self._db, project_id=project_id, operation_id=operation_id
         )
 
