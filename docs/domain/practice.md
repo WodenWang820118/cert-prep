@@ -85,6 +85,7 @@ stateDiagram-v2
 | 查看練習   | `view_practice`        | 練習、題目快照與作答                                         |
 | 放棄練習   | `abandon_practice`     | 進行中的練習改為放棄；已完成的不能放棄                       |
 | 作答       | `answer_question`      | 評分並記錄作答，每題都答過時完成練習                         |
+| 重評作答   | `regrade_question`     | 用題目目前的答案重評這個專案裡該題的每一次作答               |
 | 列出錯題   | `list_wrong_answers`   | 目前的錯題，由新到舊                                         |
 | 錯題總覽   | `review_wrong_answers` | 目前錯題、已訂正、重複答錯與依頁分組                         |
 | 請求解說   | `request_explanation`  | 用 LLM 解說一題目前的錯題；沒有可用的 LLM 時給出固定格式說明 |
@@ -122,5 +123,5 @@ sequenceDiagram
 ## 規則與資料來源
 
 - 資料表：`practice_sessions`、`practice_session_questions`（題目快照）、`practice_attempts`；migration 在 `platform/database.py`。
-- HTTP：`/projects/{project_id}/practice-sessions`、`/projects/{project_id}/wrong-answers`（DTO 在 `practice/api/schemas.py`）。
+- HTTP：`/projects/{project_id}/practice-sessions`、`/projects/{project_id}/wrong-answers`、`POST /projects/{project_id}/practice-questions/{question_id}/regrade`（DTO 在 `practice/api/schemas.py`）。
 - API 的 `PracticeSessionStatus`、`PracticeSessionMode` 列舉值對應到概念集的 `practice.session-status.*`、`practice.session-mode.*`。

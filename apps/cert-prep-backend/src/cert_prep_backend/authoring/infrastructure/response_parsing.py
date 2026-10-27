@@ -7,13 +7,20 @@ from typing import Any
 from cert_prep_backend.authoring.domain.models import DraftSuggestion
 from cert_prep_backend.platform.errors import ProviderUnavailableError
 
+RATIONALE_LANGUAGE_INSTRUCTION = (
+    "Write the rationale in Traditional Chinese (繁體中文) as used in Taiwan, "
+    "and quote words from the source, such as the Japanese word being read, "
+    "in their original script."
+)
+
 
 def fast_first_prompt(candidate: DraftSuggestion) -> str:
     choices = "\n".join(str(choice) for choice in candidate.choices)
     return (
         "Return only compact JSON with keys answer, rationale, confidence. "
         "Answer must be one of the visible choices or its leading number. "
-        "Rationale must be concise and user-facing; do not include hidden reasoning.\n"
+        "Rationale must be concise and user-facing; do not include hidden reasoning. "
+        f"{RATIONALE_LANGUAGE_INSTRUCTION}\n"
         f"Question: {candidate.question}\n"
         f"Choices:\n{choices}\n"
         f"Source excerpt:\n{candidate.source_excerpt}\n"
@@ -25,7 +32,8 @@ def fast_first_retry_prompt(candidate: DraftSuggestion) -> str:
     choices = "\n".join(str(choice) for choice in candidate.choices)
     return (
         "Return one JSON object only with answer, rationale, and confidence. "
-        "Do not write Markdown, analysis, or prose. Answer must be one of the four visible choices.\n"
+        "Do not write Markdown, analysis, or prose. Answer must be one of the four visible choices. "
+        f"{RATIONALE_LANGUAGE_INSTRUCTION}\n"
         f"Question: {candidate.question[:800]}\n"
         f"Choices:\n{choices}\n"
         "Choose the best visible answer."

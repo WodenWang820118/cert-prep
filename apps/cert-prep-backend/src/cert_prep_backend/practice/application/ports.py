@@ -49,6 +49,18 @@ class PracticeRepository(Protocol):
 
     def add_attempt(self, attempt: PracticeAttempt) -> None: ...
 
+    def current_question(self, project_id: str, question_id: str) -> PracticeQuestion | None:
+        """The project's current draft of a question, including its answer key."""
+        ...
+
+    def attempts_for_question(self, project_id: str, question_id: str) -> list[PracticeAttempt]:
+        """Every stored attempt of one question, oldest first. The last one is the latest."""
+        ...
+
+    def save_attempt_grades(self, attempts: list[PracticeAttempt]) -> None:
+        """Store is_correct for attempts whose grade changed."""
+        ...
+
     def answered_question_ids(self, session: PracticeSession) -> set[str]: ...
 
     def save_status(self, session: PracticeSession) -> None:

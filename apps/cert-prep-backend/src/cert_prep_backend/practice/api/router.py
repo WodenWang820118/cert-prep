@@ -20,6 +20,7 @@ from cert_prep_backend.practice.api.schemas import (
     PracticeSessionQuestionRead,
     PracticeSessionRead,
     PracticeSessionSummaryRead,
+    QuestionRegradeRead,
     WrongAnswerClusterRead,
     WrongAnswerExplanationRead,
     WrongAnswerGroundedFields,
@@ -31,7 +32,10 @@ from cert_prep_backend.practice.api.schemas import (
 from cert_prep_backend.practice.application import use_cases
 from cert_prep_backend.practice.application.explanations import WrongAnswerExplanation
 from cert_prep_backend.practice.application.ports import PracticeStore
-from cert_prep_backend.practice.application.use_cases import PracticeSessionDetails
+from cert_prep_backend.practice.application.use_cases import (
+    PracticeSessionDetails,
+    QuestionRegrade,
+)
 from cert_prep_backend.practice.domain.attempt import PracticeAttempt
 from cert_prep_backend.practice.domain.exceptions import PracticeSessionConflict
 from cert_prep_backend.practice.domain.session import PracticeQuestion, PracticeSession
@@ -198,6 +202,22 @@ def explain_wrong_answer(
     return _explanation_read(explanation)
 
 
+@router.post(
+    "/practice-questions/{question_id}/regrade",
+    response_model=QuestionRegradeRead,
+)
+def regrade_practice_question(
+    project_id: str,
+    question_id: str,
+    store: PracticeStore = Depends(get_practice_store),
+) -> QuestionRegradeRead:
+    try:
+        result = use_cases.regrade_question(store, project_id, question_id)
+    except NotFoundError as exc:
+        raise not_found_error(str(exc)) from exc
+    return _regrade_read(result)
+
+
 def _practice_session_conflict_error(exc: PracticeSessionConflict) -> HTTPException:
     details = (
         {"active_session": _summary_read(exc.active_session).model_dump(mode="json")}
@@ -305,6 +325,14 @@ def _summary_of_wrong_answers(summary: WrongAnswerSummary) -> WrongAnswerSummary
             )
             for cluster in summary.clusters
         ],
+    )
+
+
+def _regrade_read(result: QuestionRegrade) -> QuestionRegradeRead:
+    return QuestionRegradeRead(
+        question_id=result.question_id,
+        regraded_attempts=result.regraded_attempts,
+        latest_attempt_wrong=result.latest_attempt_wrong,
     )
 
 
