@@ -50,6 +50,7 @@ class SourceChunk:
     line_end: int | None = None
     line_count: int = 0
     content_profile: ContentProfileValue = "unknown"
+    document_id: str | None = None
 
     def excerpt_or_text_prefix(self, max_chars: int = 500) -> str:
         return self.source_excerpt or self.text[:max_chars]
@@ -72,6 +73,7 @@ def source_chunk_from_document_chunk(chunk: DocumentChunk) -> SourceChunk:
         line_end=chunk.line_end,
         line_count=chunk.line_count,
         content_profile=chunk.content_profile,
+        document_id=chunk.document_id,
     )
 
 
