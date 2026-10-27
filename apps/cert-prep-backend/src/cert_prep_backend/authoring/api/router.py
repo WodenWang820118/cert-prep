@@ -10,6 +10,7 @@ from cert_prep_backend.api.dependencies import (
 from cert_prep_backend.platform.dependencies import get_database
 from cert_prep_backend.authoring.infrastructure import draft_jobs
 from cert_prep_backend.authoring.infrastructure import repository as mock_exams_repository
+from cert_prep_backend.authoring.domain.draft import DraftEdit, NewQuestionDraft, QuestionDraft
 from cert_prep_backend.authoring.domain.models import source_chunk_from_document_chunk
 from cert_prep_backend.ai_providers.domain.provider import LLMProvider
 from cert_prep_backend.authoring.infrastructure.draft_writing import generate_drafts_for_strategy
@@ -246,9 +247,11 @@ def create_question_draft(
     project_id: str,
     payload: QuestionDraftCreate,
     db: Database = Depends(get_database),
-) -> dict:
+) -> QuestionDraft:
     try:
-        return mock_exams_repository.create_draft(db, project_id, payload)
+        return mock_exams_repository.create_draft(
+            db, project_id, NewQuestionDraft(**payload.model_dump())
+        )
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
     except ValidationError as exc:
@@ -269,8 +272,10 @@ def update_question_draft(
     draft_id: str,
     payload: QuestionDraftUpdate,
     db: Database = Depends(get_database),
-) -> dict:
+) -> QuestionDraft:
     try:
-        return mock_exams_repository.update_draft(db, project_id, draft_id, payload)
+        return mock_exams_repository.update_draft(
+            db, project_id, draft_id, DraftEdit(**payload.model_dump())
+        )
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc

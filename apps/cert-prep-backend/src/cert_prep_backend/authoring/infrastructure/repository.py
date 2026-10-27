@@ -6,17 +6,19 @@ from collections.abc import Sequence
 from uuid import uuid4
 
 from cert_prep_backend.platform.database import Database, utc_now
+from cert_prep_backend.authoring.domain.draft import DraftEdit, NewQuestionDraft, QuestionDraft
 from cert_prep_backend.authoring.domain.models import DraftSuggestion, UnavailableDraftBlock
 from cert_prep_backend.authoring.infrastructure.draft_jobs import DraftJobCanceledError
-from cert_prep_backend.authoring.api.schemas import QuestionDraftCreate, QuestionDraftUpdate
 from cert_prep_backend.source_library.infrastructure import repository as documents_repository
 from cert_prep_backend.projects.infrastructure.repository import ensure_project_exists
-from cert_prep_backend.platform.errors import NotFoundError, ValidationError
+from cert_prep_backend.platform.errors import NotFoundError
 
 
-def create_draft(db: Database, project_id: str, payload: QuestionDraftCreate) -> dict:
+def create_draft(db: Database, project_id: str, payload: NewQuestionDraft) -> QuestionDraft:
     ensure_project_exists(db, project_id)
-    _validate_optional_source(db, project_id, payload.document_id, payload.chunk_id)
+    payload.ensure_source_is_complete()
+    if payload.cites_a_source:
+        documents_repository.get_chunk(db, project_id, payload.document_id, payload.chunk_id)
     draft_id = str(uuid4())
     now = utc_now()
     with db.connect() as connection:
@@ -36,7 +38,7 @@ def create_draft(db: Database, project_id: str, payload: QuestionDraftCreate) ->
                 payload.document_id,
                 payload.chunk_id,
                 payload.question,
-                json.dumps(payload.choices),
+                json.dumps(list(payload.choices)),
                 payload.answer,
                 payload.answer_key_source,
                 payload.rationale,
@@ -64,7 +66,7 @@ def create_generated_drafts(
     project_id: str,
     document_id: str,
     suggestions: list[DraftSuggestion],
-) -> list[dict]:
+) -> list[QuestionDraft]:
     ensure_project_exists(db, project_id)
     now = utc_now()
     draft_ids: list[str] = []
@@ -126,7 +128,7 @@ def append_generated_drafts(
     project_id: str,
     document_id: str,
     suggestions: list[DraftSuggestion],
-) -> list[dict]:
+) -> list[QuestionDraft]:
     """Append streaming draft suggestions without deleting in-review work."""
 
     ensure_project_exists(db, project_id)
@@ -150,7 +152,7 @@ def append_generated_drafts_and_complete_job(
     effective_provider: str | None,
     effective_model: str | None,
     fallback_reason: str | None,
-) -> list[dict]:
+) -> list[QuestionDraft]:
     """Commit generated drafts and their exact successful job attribution atomically."""
 
     ensure_project_exists(db, project_id)
@@ -242,7 +244,7 @@ def append_generated_drafts_and_complete_manual_operation(
     effective_model: str | None,
     fallback_reason: str | None,
     unavailable_blocks: Sequence[UnavailableDraftBlock] = (),
-) -> list[dict]:
+) -> list[QuestionDraft]:
     """Atomically publish manual drafts and the operation's final attribution."""
 
     ensure_project_exists(db, project_id)
@@ -376,7 +378,7 @@ def _append_generated_drafts(
     ]
 
 
-def list_drafts(db: Database, project_id: str) -> list[dict]:
+def list_drafts(db: Database, project_id: str) -> list[QuestionDraft]:
     ensure_project_exists(db, project_id)
     with db.connect() as connection:
         rows = connection.execute(
@@ -392,11 +394,9 @@ def list_drafts(db: Database, project_id: str) -> list[dict]:
 
 
 def update_draft(
-    db: Database, project_id: str, draft_id: str, payload: QuestionDraftUpdate
-) -> dict:
-    existing = get_draft(db, project_id, draft_id)
-    now = utc_now()
-    choices = payload.choices if payload.choices is not None else existing["choices"]
+    db: Database, project_id: str, draft_id: str, payload: DraftEdit
+) -> QuestionDraft:
+    edited = get_draft(db, project_id, draft_id).edited(payload, now=utc_now())
     with db.connect() as connection:
         connection.execute(
             """
@@ -408,48 +408,20 @@ def update_draft(
             WHERE project_id = ? AND id = ?
             """,
             (
-                payload.question if payload.question is not None else existing["question"],
-                json.dumps(choices),
-                payload.answer if payload.answer is not None else existing["answer"],
-                (
-                    payload.answer_key_source
-                    if payload.answer_key_source is not None
-                    else existing["answer_key_source"]
-                ),
-                payload.rationale if payload.rationale is not None else existing["rationale"],
-                (
-                    payload.citation_page
-                    if payload.citation_page is not None
-                    else existing["citation_page"]
-                ),
-                (
-                    payload.source_excerpt
-                    if payload.source_excerpt is not None
-                    else existing["source_excerpt"]
-                ),
-                (
-                    payload.confidence
-                    if payload.confidence is not None
-                    else existing["confidence"]
-                ),
-                (
-                    payload.source_order
-                    if payload.source_order is not None
-                    else existing["source_order"]
-                ),
-                (
-                    payload.source_question_number
-                    if payload.source_question_number is not None
-                    else existing["source_question_number"]
-                ),
-                payload.item_kind if payload.item_kind is not None else existing["item_kind"],
-                payload.group_key if payload.group_key is not None else existing["group_key"],
-                (
-                    payload.group_prompt
-                    if payload.group_prompt is not None
-                    else existing["group_prompt"]
-                ),
-                now,
+                edited.question,
+                json.dumps(list(edited.choices)),
+                edited.answer,
+                edited.answer_key_source,
+                edited.rationale,
+                edited.citation_page,
+                edited.source_excerpt,
+                edited.confidence,
+                edited.source_order,
+                edited.source_question_number,
+                edited.item_kind,
+                edited.group_key,
+                edited.group_prompt,
+                edited.updated_at,
                 project_id,
                 draft_id,
             ),
@@ -460,25 +432,12 @@ def update_draft(
     return _draft_from_row(row)
 
 
-def get_draft(db: Database, project_id: str, draft_id: str) -> dict:
+def get_draft(db: Database, project_id: str, draft_id: str) -> QuestionDraft:
     with db.connect() as connection:
         row = _draft_query(connection, project_id, draft_id)
     if row is None:
         raise NotFoundError("Question draft not found.")
     return _draft_from_row(row)
-
-
-def _validate_optional_source(
-    db: Database,
-    project_id: str,
-    document_id: str | None,
-    chunk_id: str | None,
-) -> None:
-    if document_id is None and chunk_id is None:
-        return
-    if document_id is None or chunk_id is None:
-        raise ValidationError("Document id and chunk id must be provided together.")
-    documents_repository.get_chunk(db, project_id, document_id, chunk_id)
 
 
 def _draft_query(connection, project_id: str, draft_id: str) -> Row | None:
@@ -536,30 +495,30 @@ def _matching_generated_draft_exists(
     return row is not None
 
 
-def _draft_from_row(row: Row) -> dict:
-    return {
-        "id": row["id"],
-        "project_id": row["project_id"],
-        "document_id": row["document_id"],
-        "chunk_id": row["chunk_id"],
-        "question": row["question"],
-        "choices": json.loads(row["choices_json"]),
-        "answer": row["answer"],
-        "answer_key_source": row["answer_key_source"],
-        "rationale": row["rationale"],
-        "citation_page": row["citation_page"],
-        "citation_locator_kind": row["citation_locator_kind"],
-        "citation_start_ms": row["citation_start_ms"],
-        "citation_end_ms": row["citation_end_ms"],
-        "source_excerpt": row["source_excerpt"],
-        "confidence": row["confidence"],
-        "source_order": row["source_order"],
-        "source_question_number": row["source_question_number"],
-        "item_kind": row["item_kind"],
-        "group_key": row["group_key"],
-        "group_prompt": row["group_prompt"],
-        "status": row["status"],
-        "rejection_reason": row["rejection_reason"],
-        "created_at": row["created_at"],
-        "updated_at": row["updated_at"],
-    }
+def _draft_from_row(row: Row) -> QuestionDraft:
+    return QuestionDraft(
+        id=row["id"],
+        project_id=row["project_id"],
+        document_id=row["document_id"],
+        chunk_id=row["chunk_id"],
+        question=row["question"],
+        choices=tuple(json.loads(row["choices_json"])),
+        answer=row["answer"],
+        answer_key_source=row["answer_key_source"],
+        rationale=row["rationale"],
+        citation_page=row["citation_page"],
+        citation_locator_kind=row["citation_locator_kind"],
+        citation_start_ms=row["citation_start_ms"],
+        citation_end_ms=row["citation_end_ms"],
+        source_excerpt=row["source_excerpt"],
+        confidence=row["confidence"],
+        source_order=row["source_order"],
+        source_question_number=row["source_question_number"],
+        item_kind=row["item_kind"],
+        group_key=row["group_key"],
+        group_prompt=row["group_prompt"],
+        status=row["status"],
+        rejection_reason=row["rejection_reason"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )

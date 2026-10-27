@@ -216,7 +216,7 @@ def test_streaming_append_preserves_existing_drafts_and_dedupes_retries(
     listed = client.get(f"/projects/{project_id}/question-drafts", headers=auth_headers)
     draft_ids = {item["id"] for item in listed.json()["items"]}
     assert existing["id"] in draft_ids
-    assert first[0]["id"] in draft_ids
+    assert first[0].id in draft_ids
 
 
 def test_custom_answer_key_source_remains_backward_compatible(
