@@ -98,6 +98,7 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
     assert _enum_values(openapi, "DocumentOperationRead", "phase") == [
         "uploading",
         "processing",
+        "awaiting_review",
         "transcribing",
         "translating",
         "canceling",

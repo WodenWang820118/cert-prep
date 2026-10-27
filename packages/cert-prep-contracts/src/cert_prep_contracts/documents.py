@@ -42,6 +42,7 @@ class DocumentOperationPhase(StrEnum):
 
     UPLOADING = "uploading"
     PROCESSING = "processing"
+    AWAITING_REVIEW = "awaiting_review"
     TRANSCRIBING = "transcribing"
     TRANSLATING = "translating"
     CANCELING = "canceling"
