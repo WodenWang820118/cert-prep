@@ -4,8 +4,8 @@
       <h2>{{ modeTitle() }}</h2>
       <p>{{ modeSummary() }}</p>
     </div>
-    @if (practice.practiceSession(); as session) {
-      <span class="practice-status-chip">{{ session.status }}</span>
+    @if (practice.practiceSession()) {
+      <span class="practice-status-chip">{{ sessionDetails().status }}</span>
     }
   </header>
 
@@ -186,7 +186,7 @@
                 />
                 <span>
                   <strong>{{ choiceKey($index) }}.</strong>
-                  {{ choice }}
+                  {{ displayChoice(question.choices, choice) }}
                 </span>
               </label>
             }
@@ -237,17 +237,17 @@
         <dl>
           <div>
             <dt>Session ID</dt>
-            <dd>
-              {{ practice.practiceSession()?.id ?? 'Not started' }}
+            <dd [attr.title]="sessionDetails().fullId">
+              {{ sessionDetails().id }}
             </dd>
           </div>
           <div>
             <dt>Status</dt>
-            <dd>{{ practice.practiceSession()?.status ?? 'Ready' }}</dd>
+            <dd>{{ sessionDetails().status }}</dd>
           </div>
           <div>
             <dt>Answered</dt>
-            <dd>{{ practice.sessionProgress() }}</dd>
+            <dd>{{ sessionDetails().answered }}</dd>
           </div>
         </dl>
       </section>

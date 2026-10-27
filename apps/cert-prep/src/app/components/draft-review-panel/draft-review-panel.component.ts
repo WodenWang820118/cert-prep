@@ -40,6 +40,10 @@ export class DraftReviewPanelComponent {
   protected readonly generationStatus =
     computed<DraftGenerationStatusViewModel>(() => {
       const operation = this.drafts.manualDraftOperation();
+      const generatedCount = operation && 'generatedCount' in operation
+        ? operation.generatedCount
+        : operation?.generated_count;
+      const document = this.sourceImport.activeDocument();
       const jobSummary = this.drafts.draftJobSummary();
       const hasQuestions =
         this.drafts.activeDocumentPlayableQuestions().length > 0;
@@ -67,6 +71,11 @@ export class DraftReviewPanelComponent {
         isPreparing,
         hasGenerationError,
         hasReviewEvidence: reviewEvidence.length > 0,
+        zeroDraftsGenerated:
+          operation?.status === 'succeeded' &&
+          operation.document_id === document?.id &&
+          operation.project_id === document?.project_id &&
+          generatedCount === 0,
       });
 
       return {

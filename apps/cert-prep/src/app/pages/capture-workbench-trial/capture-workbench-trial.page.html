@@ -11,7 +11,7 @@
       </p>
     </div>
     <div class="capture-trial-badge" [attr.data-state]="registrationState()">
-      {{ registrationState() === 'ready' ? 'Element registered' : registrationState() }}
+      {{ registrationStatusLabel() }}
     </div>
   </header>
 

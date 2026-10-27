@@ -10,6 +10,8 @@ import type {
   WrongAnswerRead,
 } from '../../contracts/api.contracts';
 import { OperationStore } from '../../stores/operation.store';
+import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
+import { editableAppQuestion } from '../../testing/app.spec-helpers';
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { WrongAnswerReviewStore } from '../../stores/wrong-answer-review.store';
@@ -202,6 +204,25 @@ describe('WrongAnswerReviewComponent', () => {
     expect(element.textContent).toContain('Retry');
     expect(element.textContent).toContain('Discuss mistake with AI');
     expect(refreshButton?.disabled).toBe(true);
+  });
+
+  it.each([
+    [['1. First', '2. Second'], 'Second', 'First'],
+    [['1. First', 'Second'], 'Second', '1. First'],
+    [[], '2. Second', '1. First'],
+  ] as const)('formats answers only when the complete question has sequential ordinals (%j)', (choices, selected, correct) => {
+    TestBed.inject(DraftReviewStore).drafts.set([
+      { ...editableAppQuestion, id: wrongAnswer.question_id, choices: [...choices] },
+    ]);
+    TestBed.inject(WrongAnswerReviewStore).wrongAnswers.set([{
+      ...wrongAnswer, selected_answer: choices[1] ?? '2. Second', correct_answer: '1. First',
+    }]);
+    const fixture = TestBed.createComponent(WrongAnswerReviewComponent);
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('[aria-label="Your answer"] p')?.textContent?.trim()).toBe(selected);
+    expect(root.querySelector('[aria-label="Correct answer"] p')?.textContent?.trim()).toBe(correct);
   });
 
   it('renders compact weak-area summary metrics', () => {

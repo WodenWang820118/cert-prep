@@ -37,6 +37,14 @@ export function formatDraftGenerationMessage(
     };
   }
 
+  if (input.zeroDraftsGenerated) {
+    return {
+      message:
+        'No questions were generated from this source. It has no recognizable multiple-choice questions, for example a listening transcript whose choices are spoken.',
+      tone: 'info',
+    };
+  }
+
   if (input.hasQuestions && input.hasReviewEvidence) {
     return {
       message: 'Questions are ready to edit. Check the source evidence below.',

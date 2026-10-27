@@ -9,6 +9,7 @@ import type {
   DraftQuestionEditorViewModel,
 } from './draft-review-panel.contracts';
 import { formatChoiceKey } from './draft-review-panel.formatters';
+import { displayChoice } from '../../services/choice-display';
 import { AppIconComponent } from '../ui/app-icon.component';
 import { HlmInput } from '@spartan-ng/helm/input';
 
@@ -21,6 +22,7 @@ import { HlmInput } from '@spartan-ng/helm/input';
 export class DraftQuestionEditorCardComponent {
   readonly model = input.required<DraftQuestionEditorViewModel>();
   readonly action = output<DraftQuestionEditorAction>();
+  protected readonly displayChoice = displayChoice;
 
   protected choiceKey(index: number): string {
     return formatChoiceKey(index);

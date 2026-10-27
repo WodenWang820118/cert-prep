@@ -58,6 +58,25 @@ describe('CaptureWorkbenchTrialPage', () => {
     });
   });
 
+  it.each([
+    ['runtime_unavailable', 'Capture Runtime unavailable'],
+    ['registering', 'Registering Capture Workbench'],
+    ['ready', 'Element registered'],
+    ['error', 'Capture Workbench could not start'],
+  ] as const)('displays a readable label for %s', (state, expected) => {
+    const fixture = TestBed.createComponent(CaptureWorkbenchTrialPage);
+    const page = fixture.componentInstance as unknown as {
+      registrationState: { set(value: typeof state): void };
+    };
+    page.registrationState.set(state);
+    fixture.detectChanges();
+
+    const badge = fixture.nativeElement.querySelector('.capture-trial-badge') as HTMLElement;
+    expect(badge.textContent?.trim()).toBe(expected);
+    expect(badge.textContent?.trim()).not.toBe(state);
+    expect(badge.textContent).not.toContain('_');
+  });
+
   it('renders the Capture Workbench surface with the real client contract', async () => {
     const fixture = TestBed.createComponent(CaptureWorkbenchTrialPage);
     fixture.detectChanges();

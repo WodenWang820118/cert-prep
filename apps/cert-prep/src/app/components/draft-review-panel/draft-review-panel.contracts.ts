@@ -12,6 +12,7 @@ export interface DraftGenerationMessageInput {
   readonly isPreparing: boolean;
   readonly hasGenerationError: boolean;
   readonly hasReviewEvidence: boolean;
+  readonly zeroDraftsGenerated: boolean;
 }
 
 export interface DraftGenerationMessage {

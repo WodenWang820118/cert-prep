@@ -1,6 +1,8 @@
 import { Component, computed, inject, ChangeDetectionStrategy } from '@angular/core';
 import type { WrongAnswerRead } from '../../contracts/api.contracts';
 import { ReviewDisplayService } from '../../services/review-display.service';
+import { displayChoice } from '../../services/choice-display';
+import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { OperationStore } from '../../stores/operation.store';
 import { ReviewRetryNavigationService } from '../../stores/practice/review-retry-navigation.service';
 import { ProjectStore } from '../../stores/project.store';
@@ -21,6 +23,7 @@ export class WrongAnswerReviewComponent {
   protected readonly review = inject(WrongAnswerReviewStore);
   protected readonly sourceImport = inject(SourceImportStore);
   private readonly display = inject(ReviewDisplayService);
+  private readonly drafts = inject(DraftReviewStore);
   private readonly retryNavigation = inject(ReviewRetryNavigationService);
 
   protected readonly busyActions = ['review', 'session'] as const;
@@ -50,6 +53,11 @@ export class WrongAnswerReviewComponent {
 
   protected lastWrongDateLabel(value: string | null): string {
     return this.display.reviewDateLabel(value);
+  }
+
+  protected answerLabel(wrong: WrongAnswerRead, answer: string): string {
+    const choices = this.drafts.drafts().find((draft) => draft.id === wrong.question_id)?.choices ?? [];
+    return displayChoice(choices, answer);
   }
 
   private startRetrySession(

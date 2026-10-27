@@ -44,6 +44,61 @@ describe('DraftReviewPanelComponent', () => {
       'Add a source file with text before generating questions.',
     );
     expect(text).toContain('No questions are ready yet.');
+    expect(text.replace(/\s+/g, ' ')).toContain(
+      'Add a source file with text, then generate questions when the source is ready.',
+    );
+    expect(text).not.toContain('Generate questions to create practice items from this source.');
+  });
+
+  it('shows the generation prompt when the selected source is ready and has no drafts', () => {
+    const projects = TestBed.inject(ProjectStore);
+    projects.projects.set([projectRead()]);
+    projects.select('project-1');
+    activateDocument(TestBed.inject(SourceImportStore), documentRead());
+    const fixture = TestBed.createComponent(DraftReviewPanelComponent);
+    fixture.detectChanges();
+
+    const text = (fixture.nativeElement.textContent as string).replace(/\s+/g, ' ');
+    expect(text).toContain('Generate questions to create practice items from this source.');
+    expect(text).not.toContain('Add a source file with text, then generate questions when the source is ready.');
+    expect(text).not.toContain('No questions were generated');
+  });
+
+  it.each(['generated_count', 'generatedCount'])('explains a successful manual operation with zero drafts (%s)', (countField) => {
+    const projects = TestBed.inject(ProjectStore);
+    projects.projects.set([projectRead()]);
+    projects.select('project-1');
+    activateDocument(TestBed.inject(SourceImportStore), documentRead());
+    TestBed.inject(DraftReviewStore).manualDraftOperation.set(Object.assign(
+      manualDraftOperation({ status: 'succeeded', generated_count: countField === 'generated_count' ? 0 : 1 }),
+      { [countField]: 0 },
+    ));
+    const fixture = TestBed.createComponent(DraftReviewPanelComponent);
+    fixture.detectChanges();
+
+    const status = fixture.nativeElement.querySelector('[data-testid="draft-generation-status"]') as HTMLElement;
+    expect(status.textContent).toContain(
+      'No questions were generated from this source. It has no recognizable multiple-choice questions, for example a listening transcript whose choices are spoken.',
+    );
+    expect(fixture.nativeElement.textContent).toContain('Generate questions to create practice items from this source.');
+    expect(fixture.nativeElement.textContent).not.toContain('Add a source file with text, then generate questions');
+  });
+
+  it.each([
+    { status: 'running', generated_count: 0 },
+    { status: 'failed', generated_count: 0 },
+    { status: 'canceled', generated_count: 0 },
+    { status: 'succeeded', generated_count: 1 },
+    { status: 'succeeded', generated_count: 0, document_id: 'other-document' },
+  ] as const)('does not show the zero-draft notice for $status / $generated_count / $document_id', (operation) => {
+    const projects = TestBed.inject(ProjectStore);
+    projects.projects.set([projectRead()]);
+    projects.select('project-1');
+    activateDocument(TestBed.inject(SourceImportStore), documentRead());
+    TestBed.inject(DraftReviewStore).manualDraftOperation.set(manualDraftOperation(operation));
+    const fixture = TestBed.createComponent(DraftReviewPanelComponent);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).not.toContain('No questions were generated');
   });
 
   it('shows human-only preparation status without generation telemetry', () => {
