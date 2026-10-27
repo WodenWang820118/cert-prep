@@ -87,3 +87,11 @@ class CaptureResultView:
 
     operation: object
     raw: object
+
+
+@dataclass(frozen=True, slots=True)
+class CaptureStreamHold:
+    """One pass of a stream hold. The router yields its comment only when waiting."""
+
+    session: CaptureReviewSession
+    waiting: bool

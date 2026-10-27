@@ -83,5 +83,13 @@ class CaptureResultMissing(Exception):
     """The runtime result is already gone. The stored projection is used instead."""
 
 
+class CaptureEventStreamFailed(Exception):
+    """The runtime event iterator failed. A 404 before any event can fall through."""
+
+    def __init__(self, status_code: int) -> None:
+        super().__init__("Capture event stream failed.")
+        self.status_code = status_code
+
+
 class CaptureSourceMissing(Exception):
     """A completed capture's document has lost its source record. It is not answered as 404."""

@@ -52,15 +52,12 @@ from cert_prep_backend.capture_integration.domain.review_session import (
     CaptureReviewSession,
     CaptureReviewStatus,
 )
-from cert_prep_backend.capture_integration.infrastructure import review_sessions
 from cert_prep_backend.capture_integration.infrastructure.host_models import CaptureReview
-from cert_prep_backend.capture_integration.infrastructure.client import (
-    CaptureRuntimeError,
-)
 from cert_prep_backend.capture_integration.application import use_cases as capture_reviews
 from cert_prep_backend.capture_integration.application.errors import (
     CaptureAudioRejected,
     CaptureCommitNotQueued,
+    CaptureEventStreamFailed,
     CaptureGatewayRejection,
     CaptureOcrClosed,
     CaptureOcrMissing,
@@ -75,6 +72,7 @@ from cert_prep_backend.capture_integration.application.errors import (
 from cert_prep_backend.capture_integration.application.ports import (
     CaptureBackgroundWork,
     CaptureDocuments,
+    CaptureEventSignal,
     CaptureFileStore,
     CaptureOperations,
     CaptureQuestionDrafting,
@@ -84,22 +82,14 @@ from cert_prep_backend.capture_integration.application.ports import (
     CaptureReviewWorkflow,
     CaptureRuntime,
 )
-from cert_prep_backend.capture_integration.infrastructure.coordinator import (
-    CertPrepCaptureCoordinator,
-)
 from cert_prep_backend.capture_integration.application.ocr_summary import (
     CaptureOcrSummaryRead,
-)
-from cert_prep_backend.capture_integration.infrastructure.review_workflow import (
-    cleanup_expired_review_sessions,
 )
 from cert_prep_backend.capture_integration.infrastructure.runtime_policy import (
     SUPPORTED_RUNTIME_VERSION,
 )
 from cert_prep_backend.projects.application.ports import ProjectRepository
 from cert_prep_backend.source_library.domain.document import DocumentChunk, SourceDocument
-from cert_prep_backend.source_library.infrastructure import operations
-from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.routers.documents import _read_limited_upload
 
@@ -265,6 +255,10 @@ def get_capture_review_events(request: Request) -> CaptureReviewEvents:
     return request.app.state.capture_runtime_event_registry
 
 
+def get_capture_event_signal(request: Request) -> CaptureEventSignal:
+    return _event_registry(request)
+
+
 def get_capture_question_drafting(request: Request) -> CaptureQuestionDrafting:
     return request.app.state.draft_generation_work
 
@@ -379,8 +373,8 @@ def get_capture(
     capture_id: str,
     db: Database = Depends(get_database),
 ) -> CaptureReviewOperationRead:
-    coordinator = get_capture_coordinator(request)
-    cleanup_expired_review_sessions(db, coordinator=coordinator)
+    get_capture_coordinator(request)
+    capture_reviews.expire_capture_reviews(get_capture_review_maintenance(request))
     try:
         viewed = capture_reviews.view_capture(
             get_capture_review_store(request),
@@ -394,9 +388,12 @@ def get_capture(
         raise not_found_error(str(error)) from error
     except CaptureGatewayRejection as error:
         raise HTTPException(status_code=502, detail=str(error)) from None
+    documents = get_capture_documents(request)
+    files = get_capture_file_store(request)
     if viewed.runtime_operation is None:
         return _operation_for_session(
-            db,
+            documents,
+            files,
             project_id=project_id,
             session=viewed.session,
             document=viewed.document,
@@ -421,7 +418,8 @@ def get_capture(
                 detail="Capture Runtime status unavailable.",
             ) from None
     return _operation_for_session(
-        db,
+        documents,
+        files,
         project_id=project_id,
         session=viewed.session,
         document=viewed.document,
@@ -490,16 +488,23 @@ def capture_events(
     last_event_id: LastEventIdHeader = None,
     db: Database = Depends(get_database),
 ) -> StreamingResponse:
-    coordinator = get_capture_coordinator(request)
+    get_capture_coordinator(request)
     event_cursor = _host_event_cursor(last_event_id)
-    cleanup_expired_review_sessions(db, coordinator=coordinator)
-    session = _session_or_404(db, project_id, capture_id)
-    document = _document_or_404(db, project_id, session.document_id)
+    capture_reviews.expire_capture_reviews(get_capture_review_maintenance(request))
+    sessions = get_capture_review_store(request)
+    session = _session_or_404(sessions, project_id, capture_id)
+    documents = get_capture_documents(request)
+    try:
+        document = documents.document(project_id, session.document_id)
+    except NotFoundError as error:
+        raise not_found_error(str(error)) from error
     return StreamingResponse(
         _host_event_stream(
-            coordinator=coordinator,
-            registry=_event_registry(request),
-            db=db,
+            runtime=get_capture_runtime(request),
+            sessions=sessions,
+            documents=documents,
+            operations=get_capture_operations(request),
+            signal=get_capture_event_signal(request),
             project_id=project_id,
             capture_id=capture_id,
             session=session,
@@ -521,8 +526,8 @@ def get_partial(
     capture_id: str,
     db: Database = Depends(get_database),
 ) -> PartialCapture:
-    coordinator = get_capture_coordinator(request)
-    cleanup_expired_review_sessions(db, coordinator=coordinator)
+    get_capture_coordinator(request)
+    capture_reviews.expire_capture_reviews(get_capture_review_maintenance(request))
     try:
         partial = capture_reviews.view_partial_capture(
             get_capture_review_store(request),
@@ -554,8 +559,8 @@ def get_raw(
     capture_id: str,
     db: Database = Depends(get_database),
 ) -> RawCapture:
-    coordinator = get_capture_coordinator(request)
-    cleanup_expired_review_sessions(db, coordinator=coordinator)
+    get_capture_coordinator(request)
+    capture_reviews.expire_capture_reviews(get_capture_review_maintenance(request))
     try:
         return capture_reviews.view_raw_capture(
             get_capture_review_store(request),
@@ -582,8 +587,8 @@ def structure_capture(
     structure_request: CaptureReviewStructureRequest,
     db: Database = Depends(get_database),
 ) -> CaptureDocument:
-    coordinator = get_capture_coordinator(request)
-    cleanup_expired_review_sessions(db, coordinator=coordinator)
+    get_capture_coordinator(request)
+    capture_reviews.expire_capture_reviews(get_capture_review_maintenance(request))
     try:
         return capture_reviews.preview_capture_structure(
             get_capture_review_store(request),
@@ -653,13 +658,19 @@ def commit_capture(
         raise HTTPException(status_code=503, detail=str(error)) from error
     if queued.replay_completed:
         return get_capture(request, project_id, capture_id, db)
+    content_length, media_type = capture_reviews.capture_source_display(
+        get_capture_documents(request),
+        get_capture_file_store(request),
+        project_id=project_id,
+        document_id=queued.document.id,
+    )
     return _operation_from_document(
         capture_id,
         queued.document,
         status_value=StreamingCaptureStatus.STRUCTURING,
         progress=0.75,
-        bytes_count=_document_bytes(db, project_id, queued.document.id),
-        media_type=_document_media_type(db, project_id, queued.document.id),
+        bytes_count=content_length,
+        media_type=media_type,
         last_event_sequence=int(queued.last_event_sequence),
     )
 
@@ -742,8 +753,8 @@ def get_result(
     capture_id: str,
     db: Database = Depends(get_database),
 ) -> CaptureStreamingResultRead:
-    coordinator = get_capture_coordinator(request)
-    cleanup_expired_review_sessions(db, coordinator=coordinator)
+    get_capture_coordinator(request)
+    capture_reviews.expire_capture_reviews(get_capture_review_maintenance(request))
     documents = get_capture_documents(request)
     files = get_capture_file_store(request)
     sessions = get_capture_review_store(request)
@@ -842,7 +853,7 @@ def delete_capture(
     maintenance: CaptureReviewMaintenance = Depends(get_capture_review_maintenance),
 ) -> Response:
     get_capture_coordinator(request)
-    session = _session_or_404(db, project_id, capture_id)
+    session = _session_or_404(sessions, project_id, capture_id)
     if session.is_active:
         cancel_capture(
             request,
@@ -855,7 +866,7 @@ def delete_capture(
             events,
             maintenance,
         )
-        session = _session_or_404(db, project_id, capture_id)
+        session = _session_or_404(sessions, project_id, capture_id)
     try:
         capture_reviews.discard_capture_runtime(
             runtime, runtime_capture_id=session.runtime_capture_id
@@ -867,9 +878,11 @@ def delete_capture(
 
 def _host_event_stream(
     *,
-    coordinator: CertPrepCaptureCoordinator,
-    registry: CaptureRuntimeEventRegistry,
-    db: Database,
+    runtime: CaptureRuntime,
+    sessions: CaptureReviewStore,
+    documents: CaptureDocuments,
+    operations: CaptureOperations,
+    signal: CaptureEventSignal,
     project_id: str,
     capture_id: str,
     session: CaptureReviewSession,
@@ -878,84 +891,90 @@ def _host_event_stream(
 ) -> Iterator[str]:
     runtime_id = session.runtime_capture_id
     while not runtime_id and session.is_active:
-        observed_revision = registry.revision()
-        session = _session_or_404(db, project_id, capture_id)
+        try:
+            held = capture_reviews.hold_capture_stream(
+                sessions,
+                operations,
+                signal,
+                project_id=project_id,
+                session_id=capture_id,
+                hold="identity",
+                timeout_seconds=5,
+            )
+        except NotFoundError as error:
+            raise not_found_error(str(error)) from error
+        session = held.session
         runtime_id = session.runtime_capture_id
-        if runtime_id or not session.is_active:
-            break
-        registry.wait_for_change(observed_revision, timeout_seconds=5)
-        session = _session_or_404(db, project_id, capture_id)
-        runtime_id = session.runtime_capture_id
-        if not runtime_id and session.is_active:
+        if held.waiting:
             yield ": cert-prep waiting for runtime identity\n\n"
     if runtime_id:
         emitted = False
         try:
-            for event in coordinator.capture_events(
+            for event in runtime.iter_events(
                 runtime_id,
                 last_event_id=last_event_id,
             ):
                 emitted = True
-                session = review_sessions.observe_event_sequence(
-                    db,
+                session = capture_reviews.note_capture_event(
+                    sessions,
                     project_id=project_id,
                     session_id=capture_id,
                     sequence=event.sequence,
                 )
-                if event.event_type in {
-                    StreamingEventType.COMPLETED,
-                    StreamingEventType.FAILED,
-                    StreamingEventType.CANCELLED,
-                }:
+                if runtime.event_is_terminal(event):
                     while session.is_active:
-                        observed_revision = registry.revision()
-                        session = _session_or_404(db, project_id, capture_id)
-                        if not session.is_active:
-                            break
-                        registry.wait_for_change(observed_revision, timeout_seconds=1)
-                        session = _session_or_404(db, project_id, capture_id)
-                        if session.is_active:
+                        held = capture_reviews.hold_capture_stream(
+                            sessions,
+                            operations,
+                            signal,
+                            project_id=project_id,
+                            session_id=capture_id,
+                            hold="terminal",
+                            timeout_seconds=1,
+                        )
+                        session = held.session
+                        if held.waiting:
                             yield ": cert-prep waiting for durable terminal state\n\n"
                     terminal = _terminal_host_event(
                         capture_id,
                         session,
                         document,
-                        source_kind=_document_source_kind(
-                            db,
-                            project_id,
-                            document.id,
+                        source_kind=_event_source_kind(
+                            documents,
+                            project_id=project_id,
+                            document_id=document.id,
                         ),
                     )
                     if _cursor_before(last_event_id, terminal.sequence):
                         yield _encode_sse_event(terminal)
                     return
-                if event.stage == StreamingCaptureStatus.AWAITING_STRUCTURING.value:
+                if runtime.event_awaits_structuring(event):
                     # Clients confirm as soon as they see this stage, so hold it until
                     # the host operation can take the review.
-                    while session.is_active and not _review_ready(
-                        db, project_id, session
+                    while session.is_active and not capture_reviews.capture_review_ready(
+                        operations, session
                     ):
-                        observed_revision = registry.revision()
-                        session = _session_or_404(db, project_id, capture_id)
-                        if not session.is_active or _review_ready(
-                            db, project_id, session
-                        ):
-                            break
-                        registry.wait_for_change(observed_revision, timeout_seconds=1)
-                        session = _session_or_404(db, project_id, capture_id)
-                        if session.is_active and not _review_ready(
-                            db, project_id, session
-                        ):
+                        held = capture_reviews.hold_capture_stream(
+                            sessions,
+                            operations,
+                            signal,
+                            project_id=project_id,
+                            session_id=capture_id,
+                            hold="review",
+                            timeout_seconds=1,
+                        )
+                        session = held.session
+                        if held.waiting:
                             yield ": cert-prep waiting for capture review\n\n"
                     if not session.is_active:
                         terminal = _terminal_host_event(
                             capture_id,
                             session,
                             document,
-                            source_kind=_document_source_kind(
-                                db,
-                                project_id,
-                                document.id,
+                            source_kind=_event_source_kind(
+                                documents,
+                                project_id=project_id,
+                                document_id=document.id,
                             ),
                         )
                         if _cursor_before(last_event_id, terminal.sequence):
@@ -973,22 +992,33 @@ def _host_event_stream(
             return
         except GeneratorExit:
             return
-        except CaptureRuntimeError as error:
+        except CaptureEventStreamFailed as error:
             if emitted or error.status_code != 404:
                 return
         except Exception:
             # Closing this listener must never mutate the runtime operation.
             return
-    session = _session_or_404(db, project_id, capture_id)
+    session = _session_or_404(sessions, project_id, capture_id)
     if not session.is_active:
         event = _terminal_host_event(
             capture_id,
             session,
             document,
-            source_kind=_document_source_kind(db, project_id, document.id),
+            source_kind=_event_source_kind(
+                documents, project_id=project_id, document_id=document.id
+            ),
         )
         if _cursor_before(last_event_id, event.sequence):
             yield _encode_sse_event(event)
+
+
+def _event_source_kind(
+    documents: CaptureDocuments, *, project_id: str, document_id: str
+) -> CaptureSourceKind:
+    kind = capture_reviews.capture_source_kind(
+        documents, project_id=project_id, document_id=document_id
+    )
+    return CaptureSourceKind.PDF if kind == "pdf" else CaptureSourceKind.IMAGE
 
 
 def _terminal_host_event(
@@ -1071,7 +1101,8 @@ def _event_registry(request: Request) -> CaptureRuntimeEventRegistry:
 
 
 def _operation_for_session(
-    db: Database,
+    documents: CaptureDocuments,
+    files: CaptureFileStore,
     *,
     project_id: str,
     session: CaptureReviewSession,
@@ -1091,13 +1122,19 @@ def _operation_for_session(
         StreamingCaptureStatus.CANCELLED: 1,
         StreamingCaptureStatus.FAILED: 1,
     }[status_value]
+    content_length, media_type = capture_reviews.capture_source_display(
+        documents,
+        files,
+        project_id=project_id,
+        document_id=document.id,
+    )
     return _operation_from_document(
         session.id,
         document,
         status_value=status_value,
         progress=progress,
-        bytes_count=_document_bytes(db, project_id, document.id),
-        media_type=_document_media_type(db, project_id, document.id),
+        bytes_count=content_length,
+        media_type=media_type,
         last_event_sequence=int(session.last_event_sequence),
     )
 
@@ -1247,86 +1284,13 @@ def _raw_projection(document: CaptureDocument) -> RawCapture:
     )
 
 
-def _review_ready(db: Database, project_id: str, session: CaptureReviewSession) -> bool:
-    """Whether the host operation can take a review confirmation.
-
-    The runtime reports awaiting_structuring before the background begin has moved
-    the host operation into review, and a confirmation in that window is rejected.
-    """
-
-    if session.status != CaptureReviewStatus.PENDING:
-        return True
+def _session_or_404(
+    sessions: CaptureReviewStore, project_id: str, capture_id: str
+) -> CaptureReviewSession:
     try:
-        operation = operations.get_operation(
-            db,
-            project_id=project_id,
-            operation_id=session.operation_id,
-        )
-    except Exception:
-        return False
-    return operation.phase == "awaiting_review"
-
-
-def _session_or_404(db: Database, project_id: str, capture_id: str) -> CaptureReviewSession:
-    try:
-        return review_sessions.get(db, project_id=project_id, session_id=capture_id)
+        return sessions.get(project_id=project_id, session_id=capture_id)
     except NotFoundError as error:
         raise not_found_error(str(error)) from error
-
-
-def _document_or_404(db: Database, project_id: str, document_id: str) -> SourceDocument:
-    try:
-        return source_documents_repository.get_document(db, project_id, document_id)
-    except NotFoundError as error:
-        raise not_found_error(str(error)) from error
-
-
-def _document_bytes(db: Database, project_id: str, document_id: str) -> int:
-    try:
-        source_file = source_documents_repository.get_source_file(
-            db,
-            project_id,
-            document_id,
-        )
-        return Path(source_file.storage_path).stat().st_size
-    except (OSError, KeyError):
-        return 1
-
-
-def _document_media_type(db: Database, project_id: str, document_id: str) -> str:
-    try:
-        source_file = source_documents_repository.get_source_file(
-            db,
-            project_id,
-            document_id,
-        )
-        return _media_type(source_file.filename, Path(source_file.storage_path).suffix)
-    except (OSError, KeyError, NotFoundError):
-        return "application/octet-stream"
-
-
-def _document_source_kind(
-    db: Database,
-    project_id: str,
-    document_id: str,
-) -> CaptureSourceKind:
-    source_file = source_documents_repository.get_source_file(
-        db,
-        project_id,
-        document_id,
-    )
-    return _source_kind(source_file.filename, Path(source_file.storage_path).suffix)
-
-
-def _source_kind(
-    filename: str,
-    canonical_suffix: str | None = None,
-) -> CaptureSourceKind:
-    return (
-        CaptureSourceKind.PDF
-        if (canonical_suffix or Path(filename).suffix).lower() == ".pdf"
-        else CaptureSourceKind.IMAGE
-    )
 
 
 def _media_type(filename: str, canonical_suffix: str | None = None) -> str:
