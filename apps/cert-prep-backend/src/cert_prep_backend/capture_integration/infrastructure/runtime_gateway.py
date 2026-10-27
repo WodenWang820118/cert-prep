@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import NoReturn
 
-from capture_runtime_client import StreamingCaptureStatus
+from capture_runtime_client import StreamingCaptureStatus, StreamingEventType
 
 from cert_prep_backend.capture_integration.application.errors import (
+    CaptureEventStreamFailed,
     CaptureExtractionCanceled,
     CaptureOcrMissing,
     CaptureOcrTransport,
@@ -160,6 +161,29 @@ class CoordinatorCaptureRuntime:
 
     def status_equals(self, operation: object, *tokens: str) -> bool:
         return operation.status in {_CAPTURE_STATUSES[token] for token in tokens}
+
+    def iter_events(
+        self, runtime_capture_id: str, *, last_event_id: int | None = None
+    ) -> Iterator[object]:
+        """Yield runtime events. Only a CaptureRuntimeError becomes a stream failure."""
+
+        try:
+            yield from self._coordinator.capture_events(
+                runtime_capture_id,
+                last_event_id=last_event_id,
+            )
+        except CaptureRuntimeError as error:
+            raise CaptureEventStreamFailed(error.status_code) from error
+
+    def event_is_terminal(self, event: object) -> bool:
+        return event.event_type in {
+            StreamingEventType.COMPLETED,
+            StreamingEventType.FAILED,
+            StreamingEventType.CANCELLED,
+        }
+
+    def event_awaits_structuring(self, event: object) -> bool:
+        return event.stage == StreamingCaptureStatus.AWAITING_STRUCTURING.value
 
 
 def _raise_ocr_failure(error: BaseException) -> NoReturn:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Protocol
 
 from cert_prep_backend.capture_integration.application.results import (
@@ -200,6 +200,14 @@ class CaptureRuntime(Protocol):
 
     def status_equals(self, operation: object, *tokens: str) -> bool: ...
 
+    def iter_events(
+        self, runtime_capture_id: str, *, last_event_id: int | None = None
+    ) -> Iterator[object]: ...
+
+    def event_is_terminal(self, event: object) -> bool: ...
+
+    def event_awaits_structuring(self, event: object) -> bool: ...
+
 
 class CaptureBackgroundWork(Protocol):
     def submit(
@@ -219,6 +227,14 @@ class CaptureReviewEvents(Protocol):
     def publish_terminal(self, project_id: str, session_id: str, terminal: str) -> None: ...
 
     def publish_review_ready(self, project_id: str, session_id: str) -> None: ...
+
+
+class CaptureEventSignal(Protocol):
+    """Wakes one event stream. Waiting stays off CaptureReviewEvents."""
+
+    def revision(self) -> int: ...
+
+    def wait_for_change(self, observed: int, *, timeout_seconds: float) -> int: ...
 
 
 class CaptureQuestionDrafting(Protocol):

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from pathlib import PurePath
+from typing import Literal
 
 from cert_prep_backend.capture_integration.application.errors import (
     CaptureAudioRejected,
@@ -31,6 +32,7 @@ from cert_prep_backend.capture_integration.application.ocr_summary import (
 from cert_prep_backend.capture_integration.application.ports import (
     CaptureBackgroundWork,
     CaptureDocuments,
+    CaptureEventSignal,
     CaptureFileStore,
     CaptureOperations,
     CaptureQuestionDrafting,
@@ -42,6 +44,7 @@ from cert_prep_backend.capture_integration.application.ports import (
 )
 from cert_prep_backend.capture_integration.application.results import (
     CaptureResultView,
+    CaptureStreamHold,
     CaptureUploadClaim,
     QueuedCaptureCommit,
     ReportedStructuringFailure,
@@ -66,7 +69,9 @@ __all__ = [
     "discard_capture_runtime",
     "expire_capture_reviews",
     "extract_capture_for_review",
+    "hold_capture_stream",
     "load_completed_capture",
+    "note_capture_event",
     "preview_capture_structure",
     "publish_reviewed_capture",
     "read_runtime_result",
@@ -894,6 +899,69 @@ def capture_source_display(
         document_id=document_id,
     )
     return content_length, media_type
+
+
+def note_capture_event(
+    sessions: CaptureReviewStore,
+    *,
+    project_id: str,
+    session_id: str,
+    sequence: int,
+) -> CaptureReviewSession:
+    """Record a streamed event's sequence before the router holds or emits it."""
+
+    return sessions.observe(
+        project_id=project_id,
+        session_id=session_id,
+        sequence=sequence,
+    )
+
+
+def hold_capture_stream(
+    sessions: CaptureReviewStore,
+    operations: CaptureOperations,
+    signal: CaptureEventSignal,
+    *,
+    project_id: str,
+    session_id: str,
+    hold: Literal["identity", "terminal", "review"],
+    timeout_seconds: float,
+) -> CaptureStreamHold:
+    """One reload of a stream hold. waiting is true only after a wait that still applies."""
+
+    observed = signal.revision()
+    session = sessions.get(project_id=project_id, session_id=session_id)
+    if not _stream_still_holding(operations, session, hold):
+        return CaptureStreamHold(session=session, waiting=False)
+    signal.wait_for_change(observed, timeout_seconds=timeout_seconds)
+    session = sessions.get(project_id=project_id, session_id=session_id)
+    return CaptureStreamHold(
+        session=session,
+        waiting=_stream_still_holding(operations, session, hold),
+    )
+
+
+def capture_source_kind(
+    documents: CaptureDocuments, *, project_id: str, document_id: str
+) -> str:
+    """pdf or image from the stored suffix. A missing source propagates."""
+
+    source_file = documents.source_file(project_id, document_id)
+    return _source_kind(source_file.filename, PurePath(source_file.storage_path).suffix)
+
+
+def _stream_still_holding(
+    operations: CaptureOperations,
+    session: CaptureReviewSession,
+    hold: Literal["identity", "terminal", "review"],
+) -> bool:
+    if hold == "identity":
+        return not session.runtime_capture_id and session.is_active
+    if hold == "terminal":
+        return session.is_active
+    if hold == "review":
+        return session.is_active and not capture_review_ready(operations, session)
+    raise ValueError(f"Unsupported capture stream hold: {hold}")
 
 
 def _stored_capture_view(

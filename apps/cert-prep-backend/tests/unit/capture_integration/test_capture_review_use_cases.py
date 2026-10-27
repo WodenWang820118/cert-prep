@@ -8,12 +8,17 @@ from types import SimpleNamespace
 
 import pytest
 
-from capture_runtime_client import CAPTURE_RUNTIME_VERSION, StreamingCaptureStatus
+from capture_runtime_client import (
+    CAPTURE_RUNTIME_VERSION,
+    StreamingCaptureStatus,
+    StreamingEventType,
+)
 
 from cert_prep_backend.capture_integration.application import use_cases
 from cert_prep_backend.capture_integration.application.errors import (
     CaptureAudioRejected,
     CaptureCommitNotQueued,
+    CaptureEventStreamFailed,
     CaptureExtractionCanceled,
     CaptureExtractionFailed,
     CaptureGatewayRejection,
@@ -743,7 +748,9 @@ def test_public_use_cases_are_the_review_lifecycle_names() -> None:
         "discard_capture_runtime",
         "expire_capture_reviews",
         "extract_capture_for_review",
+        "hold_capture_stream",
         "load_completed_capture",
+        "note_capture_event",
         "preview_capture_structure",
         "publish_reviewed_capture",
         "read_runtime_result",
@@ -1886,6 +1893,63 @@ def test_ocr_and_result_reads_classify_runtime_failures() -> None:
         CoordinatorCaptureRuntime(_DeleteCoordinator(rejected), object()).delete("capture")
 
 
+class _EventCoordinator:
+    def __init__(
+        self,
+        events: list[object] | None = None,
+        error: BaseException | None = None,
+    ) -> None:
+        self.events = [] if events is None else events
+        self.error = error
+        self.calls: list[tuple[str, object]] = []
+
+    def capture_events(self, capture_id: str, *, last_event_id: object = None):
+        self.calls.append((capture_id, last_event_id))
+        if self.error is not None:
+            raise self.error
+        yield from self.events
+
+
+def test_an_event_stream_runtime_error_keeps_its_status_code() -> None:
+    missing = CaptureRuntimeError(
+        status_code=404,
+        code="capture_not_found",
+        message="gone",
+    )
+    coordinator = _EventCoordinator(error=missing)
+    runtime = CoordinatorCaptureRuntime(coordinator, object())
+    with pytest.raises(CaptureEventStreamFailed) as caught:
+        list(runtime.iter_events("runtime", last_event_id=3))
+    assert caught.value.status_code == 404
+    assert caught.value.__cause__ is missing
+    assert coordinator.calls == [("runtime", 3)]
+
+    other = _EventCoordinator(error=RuntimeError("socket"))
+    with pytest.raises(RuntimeError, match="socket"):
+        list(CoordinatorCaptureRuntime(other, object()).iter_events("runtime", last_event_id=None))
+
+    stream = _EventCoordinator(events=["event"])
+    iterator = CoordinatorCaptureRuntime(stream, object()).iter_events(
+        "runtime", last_event_id=-1
+    )
+    assert next(iterator) == "event"
+    iterator.close()
+    assert stream.calls == [("runtime", -1)]
+
+    runtime = CoordinatorCaptureRuntime(object(), object())
+    terminal = SimpleNamespace(event_type=StreamingEventType.FAILED, stage="failed")
+    heartbeat = SimpleNamespace(event_type="checkpoint", stage="extracting")
+    awaiting = SimpleNamespace(
+        event_type="checkpoint",
+        stage=StreamingCaptureStatus.AWAITING_STRUCTURING.value,
+    )
+    assert runtime.event_is_terminal(terminal) is True
+    assert runtime.event_is_terminal(heartbeat) is False
+    assert runtime.event_is_terminal(awaiting) is False
+    assert runtime.event_awaits_structuring(awaiting) is True
+    assert runtime.event_awaits_structuring(terminal) is False
+
+
 RUNTIME = "runtime"
 STATUS_UNAVAILABLE = "Capture Runtime status unavailable."
 OCR_CLOSED = "OCR review is no longer available."
@@ -2883,3 +2947,194 @@ def test_a_missing_source_on_the_media_lookup_falls_back() -> None:
         ("source_file", PROJECT, "document"),
         ("byte_size", "uploads/scan.png"),
     ]
+
+
+class FakeSignal:
+    def __init__(self, trace: list[tuple]) -> None:
+        self.trace = trace
+
+    def revision(self) -> int:
+        self.trace.append(("revision", 0))
+        return 0
+
+    def wait_for_change(self, observed: int, *, timeout_seconds: float) -> int:
+        self.trace.append(("wait", observed, timeout_seconds))
+        return observed
+
+
+def stream_hold(world: World, signal: FakeSignal, kind: str, timeout_seconds: float):
+    return use_cases.hold_capture_stream(
+        world.sessions,
+        world.operations,
+        signal,
+        project_id=PROJECT,
+        session_id="session",
+        hold=kind,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def test_an_identity_hold_without_a_runtime_id_waits_five_seconds() -> None:
+    world = World()
+    signal = FakeSignal(world.trace)
+
+    held = stream_hold(world, signal, "identity", 5)
+
+    assert held.waiting is True
+    assert held.session.runtime_capture_id is None
+    assert world.trace == [
+        ("revision", 0),
+        ("get", PROJECT, "session"),
+        ("wait", 0, 5),
+        ("get", PROJECT, "session"),
+    ]
+
+
+def test_an_identity_hold_with_an_id_on_the_first_reload_does_not_wait() -> None:
+    world = World()
+    signal = FakeSignal(world.trace)
+    with_runtime(world)
+
+    held = stream_hold(world, signal, "identity", 5)
+
+    assert held.waiting is False
+    assert held.session.runtime_capture_id == RUNTIME
+    assert world.trace == [("revision", 0), ("get", PROJECT, "session")]
+
+
+def test_an_identity_hold_waits_but_waiting_is_false_once_the_id_appears() -> None:
+    world = World()
+    signal = FakeSignal(world.trace)
+    world.sessions.next_sessions = [replace(review_session(), runtime_capture_id=RUNTIME)]
+
+    held = stream_hold(world, signal, "identity", 5)
+
+    assert held.waiting is False
+    assert held.session.runtime_capture_id == RUNTIME
+    assert world.trace == [
+        ("revision", 0),
+        ("get", PROJECT, "session"),
+        ("wait", 0, 5),
+        ("get", PROJECT, "session"),
+    ]
+
+
+def test_a_terminal_hold_waits_one_second_only_while_the_session_is_active() -> None:
+    world = World()
+    signal = FakeSignal(world.trace)
+    with_runtime(world)
+
+    held = stream_hold(world, signal, "terminal", 1)
+
+    assert held.waiting is True
+    assert world.trace == [
+        ("revision", 0),
+        ("get", PROJECT, "session"),
+        ("wait", 0, 1),
+        ("get", PROJECT, "session"),
+    ]
+
+    finished = World()
+    finished_signal = FakeSignal(finished.trace)
+    with_runtime(finished, status=CaptureReviewStatus.COMPLETED)
+    done = stream_hold(finished, finished_signal, "terminal", 1)
+    assert done.waiting is False
+    assert finished.trace == [("revision", 0), ("get", PROJECT, "session")]
+
+
+def test_a_review_hold_waits_one_second_only_while_review_is_not_ready() -> None:
+    world = World()
+    signal = FakeSignal(world.trace)
+    with_runtime(world)
+    world.operations.phase = DocumentOperationPhase.PROCESSING
+
+    held = stream_hold(world, signal, "review", 1)
+
+    assert held.waiting is True
+    assert world.trace == [
+        ("revision", 0),
+        ("get", PROJECT, "session"),
+        ("operation", PROJECT, OPERATION),
+        ("wait", 0, 1),
+        ("get", PROJECT, "session"),
+        ("operation", PROJECT, OPERATION),
+    ]
+
+    ready = World()
+    ready_signal = FakeSignal(ready.trace)
+    with_runtime(ready)
+    ready.operations.phase = DocumentOperationPhase.AWAITING_REVIEW
+    opened = stream_hold(ready, ready_signal, "review", 1)
+    assert opened.waiting is False
+    assert ready.trace == [
+        ("revision", 0),
+        ("get", PROJECT, "session"),
+        ("operation", PROJECT, OPERATION),
+    ]
+
+    confirming = World()
+    confirming_signal = FakeSignal(confirming.trace)
+    with_runtime(confirming, status=CaptureReviewStatus.CONFIRMING)
+    closed = stream_hold(confirming, confirming_signal, "review", 1)
+    assert closed.waiting is False
+    assert confirming.trace == [("revision", 0), ("get", PROJECT, "session")]
+
+
+def test_a_missing_session_during_a_hold_propagates_before_the_wait() -> None:
+    world = World()
+    signal = FakeSignal(world.trace)
+    world.sessions.get_error = NotFoundError("Capture review session not found.")
+
+    with pytest.raises(NotFoundError, match="Capture review session not found."):
+        stream_hold(world, signal, "identity", 5)
+
+    assert world.trace == [("revision", 0), ("get", PROJECT, "session")]
+
+
+def test_noting_an_event_observes_before_the_hold() -> None:
+    world = World()
+    signal = FakeSignal(world.trace)
+    with_runtime(world)
+
+    noted = use_cases.note_capture_event(
+        world.sessions,
+        project_id=PROJECT,
+        session_id="session",
+        sequence=4,
+    )
+    held = stream_hold(world, signal, "terminal", 1)
+
+    assert noted.last_event_sequence == 4
+    assert held.waiting is True
+    assert world.trace[:3] == [
+        ("observe", PROJECT, "session", 4),
+        ("revision", 0),
+        ("get", PROJECT, "session"),
+    ]
+    assert ("wait", 0, 1) in world.trace
+
+
+def test_capture_source_kind_uses_the_stored_suffix() -> None:
+    world = World()
+    world.documents.source = SourceFile("scan.png", DIGEST, "uploads/page.pdf")
+
+    assert (
+        use_cases.capture_source_kind(
+            world.documents, project_id=PROJECT, document_id="document"
+        )
+        == "pdf"
+    )
+
+    world.documents.source = SourceFile("notes.pdf", DIGEST, "uploads/notes.png")
+    assert (
+        use_cases.capture_source_kind(
+            world.documents, project_id=PROJECT, document_id="document"
+        )
+        == "image"
+    )
+
+    world.documents.source_error = NotFoundError("Document not found.")
+    with pytest.raises(NotFoundError, match="Document not found."):
+        use_cases.capture_source_kind(
+            world.documents, project_id=PROJECT, document_id="document"
+        )
