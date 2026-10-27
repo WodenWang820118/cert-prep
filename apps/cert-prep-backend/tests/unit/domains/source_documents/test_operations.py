@@ -12,6 +12,7 @@ from cert_prep_backend.api.app import create_app
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.errors import (
     DocumentOperationConflictError,
+    DocumentOperationStateError,
     DocumentProcessingCanceledError,
     OperationNotCancellableError,
 )
@@ -44,12 +45,12 @@ def test_concurrent_global_operation_claim_has_exactly_one_owner(tmp_path: Path)
         claims = list(executor.map(lambda _index: claim(), range(8)))
 
     assert sum(claim.acquired for claim in claims) == 1
-    assert {claim.operation["id"] for claim in claims} == {"shared-operation"}
+    assert {claim.operation.id for claim in claims} == {"shared-operation"}
     assert operations.get_operation(
         db,
         project_id="project",
         operation_id="shared-operation",
-    )["status"] == "queued"
+    ).status == "queued"
 
 
 def test_concurrent_post_claim_and_delete_tombstone_never_create_duplicate_work(
@@ -81,13 +82,13 @@ def test_concurrent_post_claim_and_delete_tombstone_never_create_duplicate_work(
         claim_result = claim_future.result()
         cancel_result = cancel_future.result()
 
-    assert claim_result.operation["id"] == "racing-operation"
-    assert cancel_result["status"] == "canceled"
+    assert claim_result.operation.id == "racing-operation"
+    assert cancel_result.status == "canceled"
     assert operations.get_operation(
         db,
         project_id="project",
         operation_id="racing-operation",
-    )["status"] == "canceled"
+    ).status == "canceled"
     with db.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM documents").fetchone()[0] == 0
 
@@ -121,7 +122,7 @@ def test_global_operation_id_collision_does_not_cross_project_boundary(
         db,
         project_id="project-a",
         operation_id="global-id",
-    )["status"] == "queued"
+    ).status == "queued"
 
 
 def test_cancel_before_attach_is_terminal_and_creates_no_document(tmp_path: Path) -> None:
@@ -134,7 +135,7 @@ def test_cancel_before_attach_is_terminal_and_creates_no_document(tmp_path: Path
         operation_id="upload",
     )
 
-    assert canceled["status"] == "canceled"
+    assert canceled.status == "canceled"
     with pytest.raises(DocumentProcessingCanceledError):
         operations.create_and_attach_document(
             db,
@@ -226,7 +227,7 @@ def test_cancel_first_rolls_back_late_publication_and_preserves_draft_history(
         project_id="project",
         operation_id="upload",
     )
-    assert requested["status"] == "cancel_requested"
+    assert requested.status == "cancel_requested"
     with pytest.raises(DocumentProcessingCanceledError):
         operations.publish_success(
             db,
@@ -241,7 +242,7 @@ def test_cancel_first_rolls_back_late_publication_and_preserves_draft_history(
         operation_id="upload",
     )
 
-    assert terminal["status"] == "canceled"
+    assert terminal.status == "canceled"
     document = _document_row(db, "document")
     assert document["status"] == "canceled"
     assert document["storage_path"] == "C:/data/source.pdf"
@@ -331,7 +332,7 @@ def test_app_startup_recovers_durable_document_operations(
                 """
             ).fetchone()[0]
 
-    assert operation["status"] == expected_operation_status
+    assert operation.status == expected_operation_status
     assert document["status"] == expected_document_status
     assert active_count == 0
 
@@ -401,7 +402,7 @@ def test_audio_recovery_preserves_incremental_transcript_and_sets_specific_state
             "SELECT COUNT(*) FROM document_chunks WHERE document_id = 'audio-document'"
         ).fetchone()[0]
 
-    assert operation["status"] == "failed"
+    assert operation.status == "failed"
     assert document["status"] == expected_document_status
     assert document["transcription_status"] == (
         "succeeded" if transcription_status == "succeeded" else "failed"
@@ -433,18 +434,18 @@ def test_publication_is_atomic_and_terminal_finalizers_are_read_only(
         db,
         project_id="project",
         operation_id="upload",
-    )["status"] == "succeeded"
+    ).status == "succeeded"
     assert operations.finish_failed(
         db,
         project_id="project",
         operation_id="upload",
         error="late failure",
-    )["status"] == "succeeded"
+    ).status == "succeeded"
     assert operations.acknowledge_cancellation(
         db,
         project_id="project",
         operation_id="upload",
-    )["status"] == "succeeded"
+    ).status == "succeeded"
     assert _terminal_snapshot(db, "upload", "document") == before
 
 
@@ -480,7 +481,7 @@ def test_success_trigger_failure_rolls_back_commit_phase_document_and_chunks(
         project_id="project",
         operation_id="upload",
     )
-    assert (operation["status"], operation["phase"], operation["cancellable"]) == (
+    assert (operation.status, operation.phase, operation.cancellable) == (
         "running",
         "processing",
         True,
@@ -518,7 +519,7 @@ def test_real_cancel_vs_publish_race_has_only_two_legal_outcomes(tmp_path: Path)
             db,
             project_id="project",
             operation_id="upload",
-        )["status"]
+        ).status
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         publish_future = executor.submit(publish)
@@ -531,12 +532,12 @@ def test_real_cancel_vs_publish_race_has_only_two_legal_outcomes(tmp_path: Path)
         project_id="project",
         operation_id="upload",
     )
-    if operation["status"] == "succeeded":
+    if operation.status == "succeeded":
         assert publish_result == "succeeded"
         assert cancel_result == "succeeded"
         assert _document_row(db, "document")["status"] == "ready"
     else:
-        assert operation["status"] == "cancel_requested"
+        assert operation.status == "cancel_requested"
         assert publish_result == "canceled"
         assert cancel_result == "cancel_requested"
         operations.acknowledge_cancellation(
@@ -590,7 +591,7 @@ def test_concurrent_retry_has_one_owner_and_recovery_is_idempotent(
                 project_id="project",
                 document_id="document",
                 operation_id=operation_id,
-            )["id"]
+            ).id
         except DocumentOperationConflictError:
             return "conflict"
 
@@ -608,7 +609,7 @@ def test_concurrent_retry_has_one_owner_and_recovery_is_idempotent(
         db,
         project_id="project",
         operation_id=retry_id,
-    )["status"] == "failed"
+    ).status == "failed"
     document = _document_row(db, "document")
     assert document["status"] == "ocr_failed"
     assert document["storage_path"] == "C:/data/source.pdf"
@@ -619,6 +620,22 @@ def test_concurrent_retry_has_one_owner_and_recovery_is_idempotent(
         assert connection.execute(
             "SELECT COUNT(*) FROM draft_generation_jobs WHERE document_id = 'document'"
         ).fetchone()[0] == 0
+
+
+def test_cancel_names_an_unexpected_running_phase(tmp_path: Path) -> None:
+    db = _database(tmp_path)
+    _insert_project(db, "project")
+    _attach(db, operation_id="upload", document_id="document")
+    with db.connect() as connection:
+        connection.execute(
+            "UPDATE document_operations SET phase = 'committing', cancellable = 1 WHERE id = 'upload'"
+        )
+
+    with pytest.raises(
+        DocumentOperationStateError,
+        match="^Document operation cannot be canceled from running/committing.$",
+    ):
+        operations.cancel_operation(db, project_id="project", operation_id="upload")
 
 
 def _database(tmp_path: Path) -> Database:

@@ -1557,7 +1557,7 @@ def _review_ready(db: Database, project_id: str, session: dict) -> bool:
         )
     except Exception:
         return False
-    return operation["phase"] == "awaiting_review"
+    return operation.phase == "awaiting_review"
 
 
 def _operation_active(db: Database, project_id: str, operation_id: str) -> bool:
@@ -1567,7 +1567,7 @@ def _operation_active(db: Database, project_id: str, operation_id: str) -> bool:
                 db,
                 project_id=project_id,
                 operation_id=operation_id,
-            )["status"]
+            ).status
             == "running"
         )
     except Exception:

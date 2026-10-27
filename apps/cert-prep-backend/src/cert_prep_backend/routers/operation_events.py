@@ -56,7 +56,7 @@ def document_operation_events(
             notifier=notifier,
             snapshot=lambda: _document_operation_snapshot(db, project_id, operation_id),
             event_name="document-operation",
-            is_terminal=lambda value: value["operation"]["status"]
+            is_terminal=lambda value: value["operation"].status
             in {"canceled", "succeeded", "failed"},
             last_event_id=last_event_id,
         )
@@ -86,7 +86,7 @@ def current_document_operation_events(
                 db, project_id, operation_id
             ),
             event_name="document-operation",
-            is_terminal=lambda value: value["operation"]["status"]
+            is_terminal=lambda value: value["operation"].status
             in {"canceled", "succeeded", "failed"},
             last_event_id=last_event_id,
         )
@@ -219,11 +219,11 @@ def _document_operation_snapshot(
         operation_id=operation_id,
     )
     document = None
-    if operation["document_id"] is not None:
+    if operation.document_id is not None:
         document = source_documents_repository.get_document(
             db,
             project_id,
-            str(operation["document_id"]),
+            str(operation.document_id),
         )
     return {"operation": operation, "document": document}
 
