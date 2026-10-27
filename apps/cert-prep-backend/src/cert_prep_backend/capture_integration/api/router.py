@@ -85,6 +85,7 @@ from cert_prep_backend.capture_integration.infrastructure.runtime_policy import 
     SUPPORTED_RUNTIME_VERSION,
 )
 from cert_prep_backend.projects.infrastructure import repository as projects_repository
+from cert_prep_backend.source_library.domain.models import SourceDocument
 from cert_prep_backend.source_library.infrastructure import operations
 from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
 from cert_prep_backend.platform.document_worker_pool import (
@@ -285,7 +286,7 @@ async def create_capture(
         session = review_sessions.create(
             db,
             project_id=project_id,
-            document_id=document["id"],
+            document_id=document.id,
             operation_id=operation_id,
         )
         item = DocumentWorkItem(
@@ -295,7 +296,7 @@ async def create_capture(
                 db=db,
                 coordinator=coordinator,
                 project_id=project_id,
-                document_id=document["id"],
+                document_id=document.id,
                 operation_id=operation_id,
                 session_id=session["id"],
                 registry=registry,
@@ -345,7 +346,7 @@ async def create_capture(
         status_value=StreamingCaptureStatus.CREATED,
         progress=0,
         bytes_count=len(content),
-        media_type=_media_type(document["filename"], prepared.canonical_suffix),
+        media_type=_media_type(document.filename, prepared.canonical_suffix),
     )
 
 
@@ -666,7 +667,7 @@ def commit_capture(
     if session["status"] not in {review_sessions.PENDING, review_sessions.CONFIRMING}:
         raise HTTPException(status_code=409, detail="Capture review is no longer pending.")
     document = _document_or_404(db, project_id, session["document_id"])
-    if commit_request.candidate.source.sha256 != document["sha256"]:
+    if commit_request.candidate.source.sha256 != document.sha256:
         raise HTTPException(status_code=422, detail="Capture candidate source does not match.")
     try:
         claim = begin_capture_commit(
@@ -729,8 +730,8 @@ def commit_capture(
         document,
         status_value=StreamingCaptureStatus.STRUCTURING,
         progress=0.75,
-        bytes_count=_document_bytes(db, project_id, document["id"]),
-        media_type=_document_media_type(db, project_id, document["id"]),
+        bytes_count=_document_bytes(db, project_id, document.id),
+        media_type=_document_media_type(db, project_id, document.id),
         last_event_sequence=int(claim.session["last_event_sequence"]),
     )
 
@@ -898,8 +899,8 @@ def get_result(
             document,
             status_value=StreamingCaptureStatus.COMPLETED,
             progress=1,
-            bytes_count=_document_bytes(db, project_id, document["id"]),
-            media_type=_document_media_type(db, project_id, document["id"]),
+            bytes_count=_document_bytes(db, project_id, document.id),
+            media_type=_document_media_type(db, project_id, document.id),
             last_event_sequence=int(session["last_event_sequence"]),
         ),
         raw=_raw_projection(persisted),
@@ -961,9 +962,9 @@ def _run_begin(
             document_id=document_id,
             operation_id=operation_id,
             session_id=session_id,
-            file_name=document["filename"],
+            file_name=document.filename,
             content=Path(source_file.storage_path).read_bytes(),
-            media_type=_media_type(document["filename"], Path(source_file.storage_path).suffix),
+            media_type=_media_type(document.filename, Path(source_file.storage_path).suffix),
             source_kind=source_kind,
             should_cancel=lambda: (
                 shutdown_requested()
@@ -1051,7 +1052,7 @@ def _run_commit(
                 or not _operation_active(db, project_id, operation_id)
             ),
         )
-        if document["chunks_count"] > 0:
+        if document.chunks_count > 0:
             streaming_questions.enqueue_document(
                 db,
                 project_id=project_id,
@@ -1166,7 +1167,7 @@ def _host_event_stream(
     project_id: str,
     capture_id: str,
     session: dict,
-    document: dict,
+    document: SourceDocument,
     last_event_id: int | None,
 ) -> Iterator[str]:
     runtime_id = session.get("runtime_capture_id")
@@ -1216,7 +1217,7 @@ def _host_event_stream(
                         source_kind=_document_source_kind(
                             db,
                             project_id,
-                            document["id"],
+                            document.id,
                         ),
                     )
                     if _cursor_before(last_event_id, terminal.sequence):
@@ -1248,7 +1249,7 @@ def _host_event_stream(
                             source_kind=_document_source_kind(
                                 db,
                                 project_id,
-                                document["id"],
+                                document.id,
                             ),
                         )
                         if _cursor_before(last_event_id, terminal.sequence):
@@ -1278,7 +1279,7 @@ def _host_event_stream(
             capture_id,
             session,
             document,
-            source_kind=_document_source_kind(db, project_id, document["id"]),
+            source_kind=_document_source_kind(db, project_id, document.id),
         )
         if _cursor_before(last_event_id, event.sequence):
             yield _encode_sse_event(event)
@@ -1287,7 +1288,7 @@ def _host_event_stream(
 def _terminal_host_event(
     capture_id: str,
     session: dict,
-    document: dict,
+    document: SourceDocument,
     *,
     source_kind: CaptureSourceKind,
 ) -> CaptureEvent:
@@ -1317,7 +1318,7 @@ def _terminal_host_event(
         stage=event_type.value,
         progress=1,
         error=failure,
-        created_at=document["updated_at"],
+        created_at=document.updated_at,
     )
 
 
@@ -1368,7 +1369,7 @@ def _operation_for_session(
     *,
     project_id: str,
     session: dict,
-    document: dict,
+    document: SourceDocument,
 ) -> CaptureReviewOperationRead:
     status_value = {
         review_sessions.PENDING: StreamingCaptureStatus.CREATED,
@@ -1389,15 +1390,15 @@ def _operation_for_session(
         document,
         status_value=status_value,
         progress=progress,
-        bytes_count=_document_bytes(db, project_id, document["id"]),
-        media_type=_document_media_type(db, project_id, document["id"]),
+        bytes_count=_document_bytes(db, project_id, document.id),
+        media_type=_document_media_type(db, project_id, document.id),
         last_event_sequence=int(session["last_event_sequence"]),
     )
 
 
 def _operation_from_document(
     capture_id: str,
-    document: dict,
+    document: SourceDocument,
     *,
     status_value: StreamingCaptureStatus,
     progress: float,
@@ -1422,7 +1423,7 @@ def _operation_from_document(
     )
     return CaptureReviewOperationRead(
         capture_id=capture_id,
-        ingestion_id=document["id"],
+        ingestion_id=document.id,
         kind=(
             CaptureSourceKind.PDF
             if media_type == "application/pdf"
@@ -1433,16 +1434,16 @@ def _operation_from_document(
         partial_revision=0,
         last_event_sequence=last_event_sequence,
         source={
-            "sha256": document["sha256"],
-            "fileName": document["filename"],
+            "sha256": document.sha256,
+            "fileName": document.filename,
             "mediaType": media_type,
             "bytes": max(1, bytes_count),
         },
         error=failure,
-        created_at=document["created_at"],
-        updated_at=document["updated_at"],
-        completed_at=document["updated_at"] if terminal else None,
-        document_id=document["id"],
+        created_at=document.created_at,
+        updated_at=document.updated_at,
+        completed_at=document.updated_at if terminal else None,
+        document_id=document.id,
     )
 
 
@@ -1465,7 +1466,7 @@ def _host_operation(
 def _document_projection(
     db: Database,
     project_id: str,
-    document: dict,
+    document: SourceDocument,
     chunks: list[dict],
 ) -> CaptureDocument:
     segments = [
@@ -1490,17 +1491,17 @@ def _document_projection(
         for index, segment in enumerate(segments)
     ]
     source = {
-        "sha256": document["sha256"],
-        "fileName": document["filename"],
-        "mediaType": _document_media_type(db, project_id, document["id"]),
-        "bytes": max(1, _document_bytes(db, project_id, document["id"])),
+        "sha256": document.sha256,
+        "fileName": document.filename,
+        "mediaType": _document_media_type(db, project_id, document.id),
+        "bytes": max(1, _document_bytes(db, project_id, document.id)),
     }
-    digest = f"sha256:{document['sha256']}"
+    digest = f"sha256:{document.sha256}"
     extraction = CaptureEngine(
-        engine=document["extraction_method"] or "windowsml-ocr",
+        engine=document.extraction_method or "windowsml-ocr",
         model=f"capture-runtime@{SUPPORTED_RUNTIME_VERSION}",
         digest=digest,
-        device=document["ocr_device"],
+        device=document.ocr_device,
     )
     structuring = CaptureEngine(
         engine="cert-prep-host-structuring",
@@ -1517,12 +1518,12 @@ def _document_projection(
         extraction_engine=extraction,
         structuring_engine=structuring,
         warnings=(
-            [document["ocr_fallback_reason"]]
-            if document["ocr_fallback_reason"]
+            [document.ocr_fallback_reason]
+            if document.ocr_fallback_reason
             else []
         ),
-        created_at=document["created_at"],
-        completed_at=document["updated_at"],
+        created_at=document.created_at,
+        completed_at=document.updated_at,
     )
 
 
@@ -1645,7 +1646,7 @@ def _session_or_404(db: Database, project_id: str, capture_id: str) -> dict:
         raise not_found_error(str(error)) from error
 
 
-def _document_or_404(db: Database, project_id: str, document_id: str) -> dict:
+def _document_or_404(db: Database, project_id: str, document_id: str) -> SourceDocument:
     try:
         return source_documents_repository.get_document(db, project_id, document_id)
     except NotFoundError as error:

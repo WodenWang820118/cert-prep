@@ -529,7 +529,7 @@ def _create_capture_session(
     session = review_sessions.create(
         app.state.database,
         project_id=project_id,
-        document_id=document["id"],
+        document_id=document.id,
         operation_id=operation_id,
     )
     if runtime_capture_id is not None:

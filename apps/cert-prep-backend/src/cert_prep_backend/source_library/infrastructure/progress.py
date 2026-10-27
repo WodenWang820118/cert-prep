@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from cert_prep_backend.source_library.domain.models import SourceDocument
+
 from cert_prep_backend.platform.database import Database, utc_now
 from cert_prep_backend.source_library.infrastructure.chunks import sync_document_chunks, upsert_page_chunk
 from cert_prep_backend.source_library.domain.classification import (
@@ -27,7 +29,7 @@ def record_extraction_progress(
     ocr_worker_count: int | None = None,
     first_chunk_ms: int | None = None,
     operation_id: str | None = None,
-) -> dict:
+) -> SourceDocument:
     """Store incremental parsing progress and optional page text."""
 
     now = utc_now()
@@ -125,7 +127,7 @@ def complete_document_extraction_in_transaction(
     document_id: str,
     extraction: PdfExtractionResult,
     now: str,
-) -> dict:
+) -> SourceDocument:
     """Publish extraction results using the caller's transaction."""
 
     existing = document_query(connection, project_id, document_id)

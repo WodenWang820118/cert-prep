@@ -428,7 +428,7 @@ def test_publication_is_atomic_and_terminal_finalizers_are_read_only(
     )
     before = _terminal_snapshot(db, "upload", "document")
 
-    assert published["status"] == "ready"
+    assert published.status == "ready"
     assert operations.cancel_operation(
         db,
         project_id="project",

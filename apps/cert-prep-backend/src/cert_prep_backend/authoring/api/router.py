@@ -220,7 +220,7 @@ def generate_document_drafts(
             suggestions=suggestions,
         )
         document = source_documents_repository.get_document(db, project_id, document_id)
-        next_status = "processing" if document["status"] == "processing" else "ready"
+        next_status = "processing" if document.status == "processing" else "ready"
         source_documents_repository.update_exam_state(
             db,
             project_id=project_id,
