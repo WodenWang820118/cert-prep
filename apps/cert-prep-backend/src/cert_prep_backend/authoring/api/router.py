@@ -1,40 +1,36 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 
-from cert_prep_backend.platform.database import Database
-from cert_prep_backend.api.dependencies import (
-    get_llm_provider,
-    get_streaming_draft_generation_manager,
-)
-from cert_prep_backend.platform.dependencies import get_database
-from cert_prep_backend.authoring.infrastructure import draft_jobs
-from cert_prep_backend.authoring.infrastructure import repository as mock_exams_repository
-from cert_prep_backend.authoring.domain.draft import DraftEdit, NewQuestionDraft, QuestionDraft
-from cert_prep_backend.authoring.domain.generation import (
-    DraftGenerationJob,
-    DraftJobNotCancellableError,
-    ManualDraftOperation,
-)
-from cert_prep_backend.authoring.domain.models import source_chunk_from_document_chunk
 from cert_prep_backend.ai_providers.domain.provider import LLMProvider
-from cert_prep_backend.authoring.infrastructure.draft_writing import generate_drafts_for_strategy
+from cert_prep_backend.api.errors import (
+    api_error,
+    not_found_error,
+    validation_error,
+)
 from cert_prep_backend.authoring.api.schemas import (
     DraftGenerateRequest,
-    DraftGenerationJobRead,
     DraftGenerationJobList,
+    DraftGenerationJobRead,
     ManualDraftGenerationOperationRead,
     QuestionDraftCreate,
     QuestionDraftList,
     QuestionDraftRead,
     QuestionDraftUpdate,
 )
-from cert_prep_backend.authoring.infrastructure.streaming import StreamingDraftGenerationManager
-from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
-from cert_prep_backend.api.errors import (
-    api_error,
-    not_found_error,
-    validation_error,
+from cert_prep_backend.authoring.application import use_cases as authoring
+from cert_prep_backend.authoring.application.ports import (
+    DraftGenerationJobRepository,
+    DraftGenerationWork,
+    DraftSources,
+    DraftWriting,
+    QuestionDraftRepository,
+)
+from cert_prep_backend.authoring.domain.draft import DraftEdit, NewQuestionDraft, QuestionDraft
+from cert_prep_backend.authoring.domain.generation import (
+    DraftGenerationJob,
+    DraftJobNotCancellableError,
+    ManualDraftOperation,
 )
 from cert_prep_backend.platform.errors import (
     NotFoundError,
@@ -58,14 +54,38 @@ manual_operations_router = APIRouter(
 drafts_router = APIRouter(prefix="/projects/{project_id}/question-drafts", tags=["question-drafts"])
 
 
+def get_question_draft_repository(request: Request) -> QuestionDraftRepository:
+    return request.app.state.question_draft_repository
+
+
+def get_draft_generation_job_repository(request: Request) -> DraftGenerationJobRepository:
+    return request.app.state.draft_generation_job_repository
+
+
+def get_draft_generation_work(request: Request) -> DraftGenerationWork:
+    return request.app.state.draft_generation_work
+
+
+def get_draft_sources(request: Request) -> DraftSources:
+    return request.app.state.draft_sources
+
+
+def get_draft_writing(request: Request) -> DraftWriting:
+    return request.app.state.draft_writing
+
+
+def get_llm_provider(request: Request) -> LLMProvider:
+    return request.app.state.llm_provider
+
+
 @draft_jobs_router.get("", response_model=DraftGenerationJobList)
 def list_document_draft_jobs(
     project_id: str,
     document_id: str,
-    db: Database = Depends(get_database),
+    jobs: DraftGenerationJobRepository = Depends(get_draft_generation_job_repository),
 ) -> dict:
     try:
-        return {"items": draft_jobs.list_document_jobs(db, project_id, document_id)}
+        return {"items": authoring.list_generation_jobs(jobs, project_id, document_id)}
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
@@ -78,19 +98,10 @@ def list_document_draft_jobs(
 def retry_document_draft_jobs(
     project_id: str,
     document_id: str,
-    db: Database = Depends(get_database),
-    streaming_questions: StreamingDraftGenerationManager = Depends(
-        get_streaming_draft_generation_manager
-    ),
+    work: DraftGenerationWork = Depends(get_draft_generation_work),
 ) -> dict:
     try:
-        return {
-            "items": streaming_questions.retry_document_jobs(
-                db,
-                project_id=project_id,
-                document_id=document_id,
-            )
-        }
+        return {"items": authoring.retry_generation_jobs(work, project_id, document_id)}
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
@@ -100,15 +111,10 @@ def cancel_document_draft_job(
     project_id: str,
     document_id: str,
     job_id: str,
-    db: Database = Depends(get_database),
+    jobs: DraftGenerationJobRepository = Depends(get_draft_generation_job_repository),
 ) -> DraftGenerationJob:
     try:
-        return draft_jobs.request_cancel(
-            db,
-            project_id=project_id,
-            document_id=document_id,
-            job_id=job_id,
-        )
+        return authoring.cancel_generation_job(jobs, project_id, document_id, job_id)
     except DraftJobNotCancellableError as exc:
         raise api_error(
             status.HTTP_409_CONFLICT,
@@ -128,16 +134,13 @@ def start_manual_draft_operation(
     project_id: str,
     document_id: str,
     payload: DraftGenerateRequest,
-    db: Database = Depends(get_database),
-    streaming_questions: StreamingDraftGenerationManager = Depends(
-        get_streaming_draft_generation_manager
-    ),
+    work: DraftGenerationWork = Depends(get_draft_generation_work),
 ) -> ManualDraftOperation:
     try:
-        return streaming_questions.start_manual_operation(
-            db,
-            project_id=project_id,
-            document_id=document_id,
+        return authoring.start_manual_generation(
+            work,
+            project_id,
+            document_id,
             limit=payload.limit,
             strategy=payload.strategy,
         )
@@ -153,18 +156,10 @@ def get_manual_draft_operation(
     project_id: str,
     document_id: str,
     operation_id: str,
-    db: Database = Depends(get_database),
-    streaming_questions: StreamingDraftGenerationManager = Depends(
-        get_streaming_draft_generation_manager
-    ),
+    work: DraftGenerationWork = Depends(get_draft_generation_work),
 ) -> ManualDraftOperation:
     try:
-        return streaming_questions.get_manual_operation(
-            db,
-            project_id=project_id,
-            document_id=document_id,
-            operation_id=operation_id,
-        )
+        return authoring.view_manual_generation(work, project_id, document_id, operation_id)
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
@@ -177,18 +172,10 @@ def cancel_manual_draft_operation(
     project_id: str,
     document_id: str,
     operation_id: str,
-    db: Database = Depends(get_database),
-    streaming_questions: StreamingDraftGenerationManager = Depends(
-        get_streaming_draft_generation_manager
-    ),
+    work: DraftGenerationWork = Depends(get_draft_generation_work),
 ) -> ManualDraftOperation:
     try:
-        return streaming_questions.cancel_manual_operation(
-            db,
-            project_id=project_id,
-            document_id=document_id,
-            operation_id=operation_id,
-        )
+        return authoring.cancel_manual_generation(work, project_id, document_id, operation_id)
     except DraftJobNotCancellableError as exc:
         raise api_error(
             status.HTTP_409_CONFLICT,
@@ -204,37 +191,24 @@ def generate_document_drafts(
     project_id: str,
     document_id: str,
     payload: DraftGenerateRequest,
-    db: Database = Depends(get_database),
+    drafts: QuestionDraftRepository = Depends(get_question_draft_repository),
+    sources: DraftSources = Depends(get_draft_sources),
+    writing: DraftWriting = Depends(get_draft_writing),
     provider: LLMProvider = Depends(get_llm_provider),
 ) -> dict:
     try:
-        chunks = [
-            source_chunk_from_document_chunk(chunk)
-            for chunk in source_documents_repository.get_source_chunks(
-                db, project_id, document_id
+        return {
+            "items": authoring.generate_document_drafts(
+                drafts,
+                sources,
+                writing,
+                provider,
+                project_id=project_id,
+                document_id=document_id,
+                limit=payload.limit,
+                strategy=payload.strategy,
             )
-        ]
-        if not chunks:
-            raise ValidationError("Document has no extracted text chunks.")
-        suggestions = generate_drafts_for_strategy(
-            provider, chunks, payload.limit, payload.strategy
-        )
-        drafts = mock_exams_repository.create_generated_drafts(
-            db,
-            project_id=project_id,
-            document_id=document_id,
-            suggestions=suggestions,
-        )
-        document = source_documents_repository.get_document(db, project_id, document_id)
-        next_status = "processing" if document.status == "processing" else "ready"
-        source_documents_repository.update_exam_state(
-            db,
-            project_id=project_id,
-            document_id=document_id,
-            status=next_status,
-            exam_item_count=len(drafts),
-        )
-        return {"items": drafts}
+        }
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
     except ValidationError as exc:
@@ -251,12 +225,10 @@ def generate_document_drafts(
 def create_question_draft(
     project_id: str,
     payload: QuestionDraftCreate,
-    db: Database = Depends(get_database),
+    drafts: QuestionDraftRepository = Depends(get_question_draft_repository),
 ) -> QuestionDraft:
     try:
-        return mock_exams_repository.create_draft(
-            db, project_id, NewQuestionDraft(**payload.model_dump())
-        )
+        return authoring.write_draft(drafts, project_id, NewQuestionDraft(**payload.model_dump()))
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
     except ValidationError as exc:
@@ -264,9 +236,12 @@ def create_question_draft(
 
 
 @drafts_router.get("", response_model=QuestionDraftList)
-def list_question_drafts(project_id: str, db: Database = Depends(get_database)) -> dict:
+def list_question_drafts(
+    project_id: str,
+    drafts: QuestionDraftRepository = Depends(get_question_draft_repository),
+) -> dict:
     try:
-        return {"items": mock_exams_repository.list_drafts(db, project_id)}
+        return {"items": authoring.list_drafts(drafts, project_id)}
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
@@ -276,11 +251,9 @@ def update_question_draft(
     project_id: str,
     draft_id: str,
     payload: QuestionDraftUpdate,
-    db: Database = Depends(get_database),
+    drafts: QuestionDraftRepository = Depends(get_question_draft_repository),
 ) -> QuestionDraft:
     try:
-        return mock_exams_repository.update_draft(
-            db, project_id, draft_id, DraftEdit(**payload.model_dump())
-        )
+        return authoring.edit_draft(drafts, project_id, draft_id, DraftEdit(**payload.model_dump()))
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc

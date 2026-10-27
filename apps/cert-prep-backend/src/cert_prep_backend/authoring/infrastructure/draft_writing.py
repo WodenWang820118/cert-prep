@@ -34,6 +34,7 @@ from cert_prep_backend.platform.errors import ProviderUnavailableError
 from cert_prep_contracts.llm import LLMProviderName
 
 __all__ = [
+    "ProviderDraftWriting",
     "draft_writer_for",
     "generate_drafts_for_strategy",
     "generate_drafts_with_annotations_for_strategy",
@@ -184,3 +185,16 @@ def _playable_suggestions(
         for suggestion in suggestions
         if suggestion.answer and suggestion.answer in suggestion.choices and suggestion.rationale
     ][:limit]
+
+
+class ProviderDraftWriting:
+    """Writes drafts with the configured language model, through its draft writer."""
+
+    def suggestions(
+        self,
+        model: object,
+        chunks: Sequence[SourceChunk],
+        limit: int,
+        strategy: DraftGenerationStrategy,
+    ) -> list[DraftSuggestion]:
+        return generate_drafts_for_strategy(model, chunks, limit, strategy)

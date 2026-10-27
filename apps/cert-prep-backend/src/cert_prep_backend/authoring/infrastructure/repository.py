@@ -522,3 +522,29 @@ def _draft_from_row(row: Row) -> QuestionDraft:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
+
+
+class SqliteQuestionDraftRepository:
+    """Question drafts stored in SQLite."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    def drafts_of(self, project_id: str) -> list[QuestionDraft]:
+        return list_drafts(self._db, project_id)
+
+    def write(self, project_id: str, draft: NewQuestionDraft) -> QuestionDraft:
+        return create_draft(self._db, project_id, draft)
+
+    def edit(self, project_id: str, draft_id: str, edit: DraftEdit) -> QuestionDraft:
+        return update_draft(self._db, project_id, draft_id, edit)
+
+    def add_generated(
+        self, project_id: str, document_id: str, suggestions: Sequence[DraftSuggestion]
+    ) -> list[QuestionDraft]:
+        return create_generated_drafts(
+            self._db,
+            project_id=project_id,
+            document_id=document_id,
+            suggestions=list(suggestions),
+        )

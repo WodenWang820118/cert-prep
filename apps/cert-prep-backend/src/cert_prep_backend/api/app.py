@@ -36,7 +36,14 @@ from cert_prep_backend.capture_integration.infrastructure.structuring import (
 from cert_prep_backend.ai_providers.domain.provider import LLMProvider
 from cert_prep_backend.ai_providers.infrastructure.machine_inventory import OllamaMachineInventory
 from cert_prep_backend.ai_providers.infrastructure.provider import lazy_provider_from_settings
-from cert_prep_backend.authoring.infrastructure.streaming import StreamingDraftGenerationManager
+from cert_prep_backend.authoring.infrastructure.draft_jobs import SqliteDraftGenerationJobRepository
+from cert_prep_backend.authoring.infrastructure.draft_writing import ProviderDraftWriting
+from cert_prep_backend.authoring.infrastructure.repository import SqliteQuestionDraftRepository
+from cert_prep_backend.authoring.infrastructure.sources import SourceLibraryDraftSources
+from cert_prep_backend.authoring.infrastructure.streaming import (
+    StreamingDraftGenerationManager,
+    StreamingDraftGenerationWork,
+)
 from cert_prep_backend.runtime_provisioning.infrastructure import RuntimeInstallationManager
 from cert_prep_backend.source_library.application import use_cases as source_library
 from cert_prep_backend.source_library.infrastructure.audio import OllamaChunkTranslator
@@ -177,6 +184,17 @@ def create_app(
         async_jobs=streaming_draft_generation_async_jobs,
     )
     app.state.streaming_draft_generation_manager.recover_jobs(app.state.database)
+    app.state.question_draft_repository = SqliteQuestionDraftRepository(app.state.database)
+    app.state.draft_generation_job_repository = SqliteDraftGenerationJobRepository(
+        app.state.database
+    )
+    app.state.draft_generation_work = StreamingDraftGenerationWork(
+        app.state.streaming_draft_generation_manager, app.state.database
+    )
+    app.state.draft_sources = SourceLibraryDraftSources(
+        app.state.document_repository, app.state.database
+    )
+    app.state.draft_writing = ProviderDraftWriting()
     app.state.machine_inventory = OllamaMachineInventory(app_settings)
     app.state.runtime_installation_manager = runtime_installation_manager or RuntimeInstallationManager(
         settings=app_settings,

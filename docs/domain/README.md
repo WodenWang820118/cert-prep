@@ -28,7 +28,7 @@ flowchart LR
 | 學習專案   | [projects.md](projects.md)             | `cert_prep_backend/projects`、`app/projects`             | C4 完成 |
 | 教材來源   | [source_library.md](source_library.md) | `cert_prep_backend/source_library`、`app/source-library` | C4 完成 |
 | 擷取整合   | 待補（C3、C6）                         | `cert_prep_backend/capture_integration`、`app/capture`   | 規劃中  |
-| 題目編寫   | 待補（C3）                             | `cert_prep_backend/authoring`、`app/authoring`           | 規劃中  |
+| 題目編寫   | [authoring.md](authoring.md)           | `cert_prep_backend/authoring`、`app/authoring`           | C4 完成 |
 | 練習與複習 | [practice.md](practice.md)             | `cert_prep_backend/practice`、`app/practice`             | C4 完成 |
 | AI 供應    | [ai_providers.md](ai_providers.md)     | `cert_prep_backend/ai_providers`                         | C4 完成 |
 | 執行環境   | 待補（C3、C8）                         | `cert_prep_backend/runtime_provisioning`、`app/runtime`  | 規劃中  |
