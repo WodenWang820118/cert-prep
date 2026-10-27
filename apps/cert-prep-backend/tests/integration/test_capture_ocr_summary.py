@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.platform.config import Settings
+from cert_prep_backend.capture_integration.domain.review_session import CaptureReviewStatus
 from cert_prep_backend.capture_integration.infrastructure import review_sessions
 from cert_prep_backend.capture_integration.infrastructure.client import CaptureRuntimeError
 from cert_prep_backend.platform.database import utc_now
@@ -73,7 +75,7 @@ def test_authenticated_completed_summary_is_read_only_and_privacy_safe(
 
 @pytest.mark.parametrize(
     "session_status",
-    [review_sessions.PENDING, review_sessions.FAILED],
+    [CaptureReviewStatus.PENDING, CaptureReviewStatus.FAILED],
 )
 def test_failed_runtime_pair_returns_redacted_typed_evidence(
     tmp_path: Path,
@@ -112,7 +114,7 @@ def test_failed_durable_session_rejects_a_nonfailed_runtime_pair(tmp_path: Path)
     capture_id = _create_capture_session(
         app,
         project_id=project_id,
-        session_status=review_sessions.FAILED,
+        session_status=CaptureReviewStatus.FAILED,
     )
     client = TestClient(app)
     try:
@@ -127,9 +129,9 @@ def test_failed_durable_session_rejects_a_nonfailed_runtime_pair(tmp_path: Path)
 @pytest.mark.parametrize(
     "session_status",
     [
-        review_sessions.CONFIRMING,
-        review_sessions.COMPLETED,
-        review_sessions.CANCELED,
+        CaptureReviewStatus.CONFIRMING,
+        CaptureReviewStatus.COMPLETED,
+        CaptureReviewStatus.CANCELED,
     ],
 )
 def test_closed_capture_states_return_gone_without_runtime_reads(
@@ -371,7 +373,7 @@ def test_final_project_scoped_read_closes_a_remote_race(
         calls += 1
         session = original_get(*args, **kwargs)
         if calls == 2:
-            return {**session, "status": review_sessions.COMPLETED}
+            return dataclasses.replace(session, status=CaptureReviewStatus.COMPLETED)
         return session
 
     monkeypatch.setattr(review_sessions, "get", racing_get)
@@ -506,7 +508,7 @@ def _create_capture_session(
     app,
     *,
     project_id: str,
-    session_status: str = review_sessions.PENDING,
+    session_status: str = CaptureReviewStatus.PENDING,
     runtime_capture_id: str | None = "runtime-capture-id",
 ) -> str:
     operation_id = str(uuid4())
@@ -536,16 +538,16 @@ def _create_capture_session(
         review_sessions.set_runtime_capture_id(
             app.state.database,
             project_id=project_id,
-            session_id=session["id"],
+            session_id=session.id,
             runtime_capture_id=runtime_capture_id,
         )
-    if session_status != review_sessions.PENDING:
+    if session_status != CaptureReviewStatus.PENDING:
         with app.state.database.connect() as connection:
             connection.execute(
                 "UPDATE capture_review_sessions SET status = ? WHERE project_id = ? AND id = ?",
-                (session_status, project_id, session["id"]),
+                (session_status, project_id, session.id),
             )
-    return session["id"]
+    return session.id
 
 
 def _record_session_reads(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:

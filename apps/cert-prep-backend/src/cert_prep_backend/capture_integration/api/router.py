@@ -54,6 +54,10 @@ from cert_prep_backend.platform.dependencies import (
 from cert_prep_backend.api.errors import ApiErrorRead, api_error, not_found_error
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.errors import BackendError, NotFoundError
+from cert_prep_backend.capture_integration.domain.review_session import (
+    CaptureReviewSession,
+    CaptureReviewStatus,
+)
 from cert_prep_backend.capture_integration.infrastructure import review_sessions
 from cert_prep_backend.capture_integration.infrastructure.host_models import CaptureReview
 from cert_prep_backend.capture_integration.infrastructure.client import (
@@ -249,7 +253,7 @@ async def create_capture(
     )
     if not claim.acquired:
         raise HTTPException(status_code=409, detail="Document operation id is already in use.")
-    session: dict | None = None
+    session: CaptureReviewSession | None = None
     try:
         content = await _read_limited_upload(file, settings.max_upload_bytes)
         prepared = await asyncio.to_thread(
@@ -298,7 +302,7 @@ async def create_capture(
                 project_id=project_id,
                 document_id=document.id,
                 operation_id=operation_id,
-                session_id=session["id"],
+                session_id=session.id,
                 registry=registry,
                 shutdown_requested=workers.is_closed,
             ),
@@ -307,7 +311,7 @@ async def create_capture(
                 db,
                 project_id=project_id,
                 operation_id=operation_id,
-                session_id=session["id"],
+                session_id=session.id,
                 registry=registry,
             ),
         )
@@ -330,18 +334,18 @@ async def create_capture(
                 review_sessions.finish(
                     db,
                     project_id=project_id,
-                    session_id=session["id"],
-                    status=review_sessions.FAILED,
+                    session_id=session.id,
+                    status=CaptureReviewStatus.FAILED,
                 )
-                registry.publish_terminal(project_id, session["id"], review_sessions.FAILED)
+                registry.publish_terminal(project_id, session.id, CaptureReviewStatus.FAILED)
             except Exception:
                 logger.exception(
                     "Could not mark capture review session as failed",
-                    extra={"session_id": session["id"]},
+                    extra={"session_id": session.id},
                 )
         raise
     return _operation_from_document(
-        session["id"],
+        session.id,
         document,
         status_value=StreamingCaptureStatus.CREATED,
         progress=0,
@@ -360,8 +364,8 @@ def get_capture(
     coordinator = get_capture_coordinator(request)
     cleanup_expired_review_sessions(db, coordinator=coordinator)
     session = _session_or_404(db, project_id, capture_id)
-    document = _document_or_404(db, project_id, session["document_id"])
-    if session["status"] == review_sessions.CONFIRMING:
+    document = _document_or_404(db, project_id, session.document_id)
+    if session.status == CaptureReviewStatus.CONFIRMING:
         # Runtime commit can become terminal before the durable document and
         # review session have been published atomically. The host operation is
         # still structuring throughout that window.
@@ -371,7 +375,7 @@ def get_capture(
             session=session,
             document=document,
         )
-    runtime_id = session.get("runtime_capture_id")
+    runtime_id = session.runtime_capture_id
     if runtime_id:
         try:
             operation = coordinator.get_capture(runtime_id)
@@ -381,7 +385,7 @@ def get_capture(
                 session_id=capture_id,
                 sequence=operation.last_event_sequence,
             )
-            if session["status"] in review_sessions.ACTIVE and operation.status in {
+            if session.is_active and operation.status in {
                 StreamingCaptureStatus.COMPLETED,
                 StreamingCaptureStatus.FAILED,
                 StreamingCaptureStatus.CANCELLED,
@@ -393,10 +397,10 @@ def get_capture(
                     document=document,
                 )
             expected_terminal = {
-                review_sessions.COMPLETED: StreamingCaptureStatus.COMPLETED,
-                review_sessions.CANCELED: StreamingCaptureStatus.CANCELLED,
-                review_sessions.FAILED: StreamingCaptureStatus.FAILED,
-            }.get(session["status"])
+                CaptureReviewStatus.COMPLETED: StreamingCaptureStatus.COMPLETED,
+                CaptureReviewStatus.CANCELED: StreamingCaptureStatus.CANCELLED,
+                CaptureReviewStatus.FAILED: StreamingCaptureStatus.FAILED,
+            }.get(session.status)
             if expected_terminal is None or operation.status is expected_terminal:
                 if (
                     operation.status is StreamingCaptureStatus.AWAITING_STRUCTURING
@@ -410,10 +414,10 @@ def get_capture(
                 return _host_operation(
                     operation,
                     capture_id=capture_id,
-                    document_id=session["document_id"],
+                    document_id=session.document_id,
                 )
         except Exception:
-            if session["status"] in review_sessions.ACTIVE:
+            if session.is_active:
                 raise HTTPException(
                     status_code=502,
                     detail="Capture Runtime status unavailable.",
@@ -447,9 +451,9 @@ def get_capture_ocr_summary(
 
     session = _ocr_summary_session_or_404(db, project_id, capture_id)
     _ensure_ocr_summary_session_open(session)
-    runtime_id = session.get("runtime_capture_id")
+    runtime_id = session.runtime_capture_id
     if not isinstance(runtime_id, str) or not runtime_id:
-        if session["status"] == review_sessions.PENDING:
+        if session.status == CaptureReviewStatus.PENDING:
             raise _ocr_summary_not_ready()
         raise _ocr_summary_bad_gateway()
 
@@ -473,13 +477,13 @@ def get_capture_ocr_summary(
     except Exception:
         raise _ocr_summary_bad_gateway() from None
     if (
-        session["status"] == review_sessions.PENDING
+        session.status == CaptureReviewStatus.PENDING
         and operation_status in {"created", "waiting_input", "extracting"}
     ):
         raise _ocr_summary_not_ready()
     if operation_status not in {"awaiting_structuring", "failed"}:
         raise _ocr_summary_bad_gateway()
-    if session["status"] == review_sessions.FAILED and operation_status != "failed":
+    if session.status == CaptureReviewStatus.FAILED and operation_status != "failed":
         raise _ocr_summary_bad_gateway()
 
     try:
@@ -503,9 +507,9 @@ def get_capture_ocr_summary(
 
     final_session = _ocr_summary_session_or_404(db, project_id, capture_id)
     _ensure_ocr_summary_session_open(final_session)
-    if final_session.get("runtime_capture_id") != runtime_id:
+    if final_session.runtime_capture_id != runtime_id:
         raise _ocr_summary_bad_gateway()
-    if final_session["status"] == review_sessions.FAILED and summary.status != "failed":
+    if final_session.status == CaptureReviewStatus.FAILED and summary.status != "failed":
         raise _ocr_summary_bad_gateway()
     return summary
 
@@ -522,7 +526,7 @@ def capture_events(
     event_cursor = _host_event_cursor(last_event_id)
     cleanup_expired_review_sessions(db, coordinator=coordinator)
     session = _session_or_404(db, project_id, capture_id)
-    document = _document_or_404(db, project_id, session["document_id"])
+    document = _document_or_404(db, project_id, session.document_id)
     return StreamingResponse(
         _host_event_stream(
             coordinator=coordinator,
@@ -552,9 +556,9 @@ def get_partial(
     coordinator = get_capture_coordinator(request)
     cleanup_expired_review_sessions(db, coordinator=coordinator)
     session = _session_or_404(db, project_id, capture_id)
-    if session["status"] != review_sessions.PENDING:
+    if session.status != CaptureReviewStatus.PENDING:
         raise HTTPException(status_code=409, detail="OCR review is no longer available.")
-    runtime_id = session.get("runtime_capture_id")
+    runtime_id = session.runtime_capture_id
     if not runtime_id:
         raise HTTPException(status_code=409, detail="OCR extraction has not reached review state.")
     try:
@@ -582,9 +586,9 @@ def get_raw(
     coordinator = get_capture_coordinator(request)
     cleanup_expired_review_sessions(db, coordinator=coordinator)
     session = _session_or_404(db, project_id, capture_id)
-    if session["status"] != review_sessions.PENDING:
+    if session.status != CaptureReviewStatus.PENDING:
         raise HTTPException(status_code=409, detail="OCR review is no longer available.")
-    runtime_id = session.get("runtime_capture_id")
+    runtime_id = session.runtime_capture_id
     if not runtime_id:
         raise HTTPException(status_code=409, detail="OCR extraction has not reached review state.")
     try:
@@ -607,9 +611,9 @@ def structure_capture(
     coordinator = get_capture_coordinator(request)
     cleanup_expired_review_sessions(db, coordinator=coordinator)
     session = _session_or_404(db, project_id, capture_id)
-    if session["status"] != review_sessions.PENDING:
+    if session.status != CaptureReviewStatus.PENDING:
         raise HTTPException(status_code=409, detail="Capture review is no longer pending.")
-    runtime_id = session.get("runtime_capture_id")
+    runtime_id = session.runtime_capture_id
     if not runtime_id:
         raise HTTPException(status_code=409, detail="OCR extraction has not reached review state.")
     raw = coordinator.get_raw(runtime_id)
@@ -619,14 +623,14 @@ def structure_capture(
         raise HTTPException(status_code=422, detail=str(error)) from error
     try:
         return coordinator.structure_capture(
-            operation_id=session["operation_id"],
+            operation_id=session.operation_id,
             capture_id=runtime_id,
             target_language=None,
             review=structure_request.review,
             should_cancel=lambda: not _operation_active(
                 db,
                 project_id,
-                session["operation_id"],
+                session.operation_id,
             ),
         )
     except CaptureRuntimeCanceledError as error:
@@ -652,11 +656,11 @@ def commit_capture(
     coordinator = get_capture_coordinator(request)
     cleanup_expired_review_sessions(db, coordinator=coordinator)
     session = _session_or_404(db, project_id, capture_id)
-    if session["status"] == review_sessions.COMPLETED:
-        stored_request_id = session.get("confirm_request_id")
+    if session.status == CaptureReviewStatus.COMPLETED:
+        stored_request_id = session.confirm_request_id
         if stored_request_id and (
             stored_request_id != commit_request.client_request_id
-            or session.get("confirm_review_digest")
+            or session.confirm_review_digest
             != candidate_digest(commit_request.candidate)
         ):
             raise HTTPException(
@@ -664,17 +668,17 @@ def commit_capture(
                 detail="Capture commit does not match the completed request.",
             )
         return get_capture(request, project_id, capture_id, db)
-    if session["status"] not in {review_sessions.PENDING, review_sessions.CONFIRMING}:
+    if not session.is_active:
         raise HTTPException(status_code=409, detail="Capture review is no longer pending.")
-    document = _document_or_404(db, project_id, session["document_id"])
+    document = _document_or_404(db, project_id, session.document_id)
     if commit_request.candidate.source.sha256 != document.sha256:
         raise HTTPException(status_code=422, detail="Capture candidate source does not match.")
     try:
         claim = begin_capture_commit(
             db,
             project_id=project_id,
-            document_id=session["document_id"],
-            operation_id=session["operation_id"],
+            document_id=session.document_id,
+            operation_id=session.operation_id,
             session_id=capture_id,
             candidate=commit_request.candidate,
             client_request_id=commit_request.client_request_id,
@@ -683,14 +687,14 @@ def commit_capture(
         raise HTTPException(status_code=409, detail=str(error)) from error
     if claim.acquired:
         item = DocumentWorkItem(
-            operation_id=session["operation_id"],
+            operation_id=session.operation_id,
             run=partial(
                 _run_commit,
                 db=db,
                 coordinator=coordinator,
                 project_id=project_id,
-                document_id=session["document_id"],
-                operation_id=session["operation_id"],
+                document_id=session.document_id,
+                operation_id=session.operation_id,
                 session_id=capture_id,
                 candidate=commit_request.candidate,
                 streaming_questions=streaming_questions,
@@ -701,7 +705,7 @@ def commit_capture(
                 _cancel_queued,
                 db,
                 project_id=project_id,
-                operation_id=session["operation_id"],
+                operation_id=session.operation_id,
                 session_id=capture_id,
                 registry=_event_registry(request),
             ),
@@ -712,14 +716,14 @@ def commit_capture(
             operations.finish_failed(
                 db,
                 project_id=project_id,
-                operation_id=session["operation_id"],
+                operation_id=session.operation_id,
                 error="Capture commit could not be queued.",
             )
             review_sessions.finish(
                 db,
                 project_id=project_id,
                 session_id=capture_id,
-                status=review_sessions.FAILED,
+                status=CaptureReviewStatus.FAILED,
             )
             raise HTTPException(
                 status_code=503,
@@ -732,7 +736,7 @@ def commit_capture(
         progress=0.75,
         bytes_count=_document_bytes(db, project_id, document.id),
         media_type=_document_media_type(db, project_id, document.id),
-        last_event_sequence=int(claim.session["last_event_sequence"]),
+        last_event_sequence=int(claim.session.last_event_sequence),
     )
 
 
@@ -749,29 +753,29 @@ def report_structuring_failure(
 ) -> CaptureReviewOperationRead:
     coordinator = get_capture_coordinator(request)
     session = _session_or_404(db, project_id, capture_id)
-    if session["status"] not in review_sessions.ACTIVE:
+    if not session.is_active:
         return get_capture(request, project_id, capture_id, db)
-    runtime_id = session.get("runtime_capture_id")
+    runtime_id = session.runtime_capture_id
     if not runtime_id:
         raise HTTPException(status_code=409, detail="Capture Runtime operation is not available.")
     try:
         operation = coordinator.report_structuring_failure(
             runtime_id,
-            operation_id=failure.client_request_id or session["operation_id"],
+            operation_id=failure.client_request_id or session.operation_id,
             code=failure.code,
             message=failure.message,
         )
         operations.finish_failed(
             db,
             project_id=project_id,
-            operation_id=session["operation_id"],
+            operation_id=session.operation_id,
             error="Capture host structuring failed.",
         )
         review_sessions.finish(
             db,
             project_id=project_id,
             session_id=capture_id,
-            status=review_sessions.FAILED,
+            status=CaptureReviewStatus.FAILED,
             terminal_sequence=operation.last_event_sequence,
         )
     except Exception as error:
@@ -782,7 +786,7 @@ def report_structuring_failure(
     return _host_operation(
         operation,
         capture_id=capture_id,
-        document_id=session["document_id"],
+        document_id=session.document_id,
     )
 
 
@@ -796,28 +800,28 @@ def cancel_capture(
     coordinator = get_capture_coordinator(request)
     cleanup_expired_review_sessions(db, coordinator=coordinator)
     session = _session_or_404(db, project_id, capture_id)
-    if session["status"] not in review_sessions.ACTIVE:
+    if not session.is_active:
         return get_capture(request, project_id, capture_id, db)
     try:
         runtime_operation: CaptureOperation | None = None
         operations.cancel_operation(
             db,
             project_id=project_id,
-            operation_id=session["operation_id"],
+            operation_id=session.operation_id,
         )
-        runtime_id = session.get("runtime_capture_id")
+        runtime_id = session.runtime_capture_id
         if runtime_id:
             runtime_operation = coordinator.cancel(runtime_id)
         operations.acknowledge_cancellation(
             db,
             project_id=project_id,
-            operation_id=session["operation_id"],
+            operation_id=session.operation_id,
         )
         review_sessions.finish(
             db,
             project_id=project_id,
             session_id=capture_id,
-            status=review_sessions.CANCELED,
+            status=CaptureReviewStatus.CANCELED,
             terminal_sequence=(
                 runtime_operation.last_event_sequence if runtime_operation is not None else None
             ),
@@ -825,7 +829,7 @@ def cancel_capture(
         _event_registry(request).publish_terminal(
             project_id,
             capture_id,
-            review_sessions.CANCELED,
+            CaptureReviewStatus.CANCELED,
         )
     except Exception as error:
         raise HTTPException(
@@ -845,12 +849,12 @@ def get_result(
     coordinator = get_capture_coordinator(request)
     cleanup_expired_review_sessions(db, coordinator=coordinator)
     session = _session_or_404(db, project_id, capture_id)
-    if session["status"] != review_sessions.COMPLETED:
+    if session.status != CaptureReviewStatus.COMPLETED:
         raise HTTPException(status_code=409, detail="Capture review is not complete.")
-    document = _document_or_404(db, project_id, session["document_id"])
-    chunks = source_documents_repository.list_chunks(db, project_id, session["document_id"])
+    document = _document_or_404(db, project_id, session.document_id)
+    chunks = source_documents_repository.list_chunks(db, project_id, session.document_id)
     persisted = _document_projection(db, project_id, document, chunks)
-    runtime_id = session.get("runtime_capture_id")
+    runtime_id = session.runtime_capture_id
     if runtime_id:
         try:
             runtime_result = coordinator.get_result(runtime_id)
@@ -864,7 +868,7 @@ def get_result(
                 operation=_host_operation(
                     runtime_result.operation,
                     capture_id=capture_id,
-                    document_id=session["document_id"],
+                    document_id=session.document_id,
                 ),
                 raw=runtime_result.raw,
                 result=persisted,
@@ -901,7 +905,7 @@ def get_result(
             progress=1,
             bytes_count=_document_bytes(db, project_id, document.id),
             media_type=_document_media_type(db, project_id, document.id),
-            last_event_sequence=int(session["last_event_sequence"]),
+            last_event_sequence=int(session.last_event_sequence),
         ),
         raw=_raw_projection(persisted),
         result=persisted,
@@ -917,10 +921,10 @@ def delete_capture(
 ) -> Response:
     coordinator = get_capture_coordinator(request)
     session = _session_or_404(db, project_id, capture_id)
-    if session["status"] in review_sessions.ACTIVE:
+    if session.is_active:
         cancel_capture(request, project_id, capture_id, db)
         session = _session_or_404(db, project_id, capture_id)
-    runtime_id = session.get("runtime_capture_id")
+    runtime_id = session.runtime_capture_id
     if runtime_id:
         try:
             coordinator.delete(runtime_id)
@@ -1076,8 +1080,8 @@ def _run_commit(
         except Exception:
             pass
         else:
-            if session["status"] not in review_sessions.ACTIVE:
-                registry.publish_terminal(project_id, session_id, session["status"])
+            if not session.is_active:
+                registry.publish_terminal(project_id, session_id, session.status)
 
 
 def _finish_begin_failure(
@@ -1094,7 +1098,7 @@ def _finish_begin_failure(
         db,
         project_id=project_id,
         session_id=session_id,
-        status=review_sessions.FAILED,
+        status=CaptureReviewStatus.FAILED,
         terminal_sequence=terminal_sequence,
     )
     operations.finish_failed(
@@ -1103,7 +1107,7 @@ def _finish_begin_failure(
         operation_id=operation_id,
         error=error,
     )
-    registry.publish_terminal(project_id, session_id, review_sessions.FAILED)
+    registry.publish_terminal(project_id, session_id, CaptureReviewStatus.FAILED)
 
 
 def _cancel_queued(
@@ -1127,9 +1131,9 @@ def _cancel_queued(
                 db,
                 project_id=project_id,
                 session_id=session_id,
-                status=review_sessions.CANCELED,
+                status=CaptureReviewStatus.CANCELED,
             )
-            registry.publish_terminal(project_id, session_id, review_sessions.CANCELED)
+            registry.publish_terminal(project_id, session_id, CaptureReviewStatus.CANCELED)
         except Exception:
             pass
 
@@ -1153,10 +1157,10 @@ def _finish_canceled(
             db,
             project_id=project_id,
             session_id=session_id,
-            status=review_sessions.CANCELED,
+            status=CaptureReviewStatus.CANCELED,
         )
         if registry is not None:
-            registry.publish_terminal(project_id, session_id, review_sessions.CANCELED)
+            registry.publish_terminal(project_id, session_id, CaptureReviewStatus.CANCELED)
 
 
 def _host_event_stream(
@@ -1166,21 +1170,21 @@ def _host_event_stream(
     db: Database,
     project_id: str,
     capture_id: str,
-    session: dict,
+    session: CaptureReviewSession,
     document: SourceDocument,
     last_event_id: int | None,
 ) -> Iterator[str]:
-    runtime_id = session.get("runtime_capture_id")
-    while not runtime_id and session["status"] in review_sessions.ACTIVE:
+    runtime_id = session.runtime_capture_id
+    while not runtime_id and session.is_active:
         observed_revision = registry.revision()
         session = _session_or_404(db, project_id, capture_id)
-        runtime_id = session.get("runtime_capture_id")
-        if runtime_id or session["status"] not in review_sessions.ACTIVE:
+        runtime_id = session.runtime_capture_id
+        if runtime_id or not session.is_active:
             break
         registry.wait_for_change(observed_revision, timeout_seconds=5)
         session = _session_or_404(db, project_id, capture_id)
-        runtime_id = session.get("runtime_capture_id")
-        if not runtime_id and session["status"] in review_sessions.ACTIVE:
+        runtime_id = session.runtime_capture_id
+        if not runtime_id and session.is_active:
             yield ": cert-prep waiting for runtime identity\n\n"
     if runtime_id:
         emitted = False
@@ -1201,14 +1205,14 @@ def _host_event_stream(
                     StreamingEventType.FAILED,
                     StreamingEventType.CANCELLED,
                 }:
-                    while session["status"] in review_sessions.ACTIVE:
+                    while session.is_active:
                         observed_revision = registry.revision()
                         session = _session_or_404(db, project_id, capture_id)
-                        if session["status"] not in review_sessions.ACTIVE:
+                        if not session.is_active:
                             break
                         registry.wait_for_change(observed_revision, timeout_seconds=1)
                         session = _session_or_404(db, project_id, capture_id)
-                        if session["status"] in review_sessions.ACTIVE:
+                        if session.is_active:
                             yield ": cert-prep waiting for durable terminal state\n\n"
                     terminal = _terminal_host_event(
                         capture_id,
@@ -1226,22 +1230,22 @@ def _host_event_stream(
                 if event.stage == StreamingCaptureStatus.AWAITING_STRUCTURING.value:
                     # Clients confirm as soon as they see this stage, so hold it until
                     # the host operation can take the review.
-                    while session["status"] in review_sessions.ACTIVE and not _review_ready(
+                    while session.is_active and not _review_ready(
                         db, project_id, session
                     ):
                         observed_revision = registry.revision()
                         session = _session_or_404(db, project_id, capture_id)
-                        if session["status"] not in review_sessions.ACTIVE or _review_ready(
+                        if not session.is_active or _review_ready(
                             db, project_id, session
                         ):
                             break
                         registry.wait_for_change(observed_revision, timeout_seconds=1)
                         session = _session_or_404(db, project_id, capture_id)
-                        if session["status"] in review_sessions.ACTIVE and not _review_ready(
+                        if session.is_active and not _review_ready(
                             db, project_id, session
                         ):
                             yield ": cert-prep waiting for capture review\n\n"
-                    if session["status"] not in review_sessions.ACTIVE:
+                    if not session.is_active:
                         terminal = _terminal_host_event(
                             capture_id,
                             session,
@@ -1274,7 +1278,7 @@ def _host_event_stream(
             # Closing this listener must never mutate the runtime operation.
             return
     session = _session_or_404(db, project_id, capture_id)
-    if session["status"] not in review_sessions.ACTIVE:
+    if not session.is_active:
         event = _terminal_host_event(
             capture_id,
             session,
@@ -1287,16 +1291,16 @@ def _host_event_stream(
 
 def _terminal_host_event(
     capture_id: str,
-    session: dict,
+    session: CaptureReviewSession,
     document: SourceDocument,
     *,
     source_kind: CaptureSourceKind,
 ) -> CaptureEvent:
-    status_value = session["status"]
+    status_value = session.status
     event_type = {
-        review_sessions.COMPLETED: StreamingEventType.COMPLETED,
-        review_sessions.CANCELED: StreamingEventType.CANCELLED,
-        review_sessions.FAILED: StreamingEventType.FAILED,
+        CaptureReviewStatus.COMPLETED: StreamingEventType.COMPLETED,
+        CaptureReviewStatus.CANCELED: StreamingEventType.CANCELLED,
+        CaptureReviewStatus.FAILED: StreamingEventType.FAILED,
     }[status_value]
     failure = (
         CaptureFailure(
@@ -1308,7 +1312,7 @@ def _terminal_host_event(
         if event_type is StreamingEventType.FAILED
         else None
     )
-    sequence = max(1, int(session.get("last_event_sequence", 0)))
+    sequence = max(1, int(session.last_event_sequence))
     return CaptureEvent(
         event_id=f"{capture_id}/{sequence}",
         sequence=sequence,
@@ -1368,16 +1372,16 @@ def _operation_for_session(
     db: Database,
     *,
     project_id: str,
-    session: dict,
+    session: CaptureReviewSession,
     document: SourceDocument,
 ) -> CaptureReviewOperationRead:
     status_value = {
-        review_sessions.PENDING: StreamingCaptureStatus.CREATED,
-        review_sessions.CONFIRMING: StreamingCaptureStatus.STRUCTURING,
-        review_sessions.COMPLETED: StreamingCaptureStatus.COMPLETED,
-        review_sessions.CANCELED: StreamingCaptureStatus.CANCELLED,
-        review_sessions.FAILED: StreamingCaptureStatus.FAILED,
-    }[session["status"]]
+        CaptureReviewStatus.PENDING: StreamingCaptureStatus.CREATED,
+        CaptureReviewStatus.CONFIRMING: StreamingCaptureStatus.STRUCTURING,
+        CaptureReviewStatus.COMPLETED: StreamingCaptureStatus.COMPLETED,
+        CaptureReviewStatus.CANCELED: StreamingCaptureStatus.CANCELLED,
+        CaptureReviewStatus.FAILED: StreamingCaptureStatus.FAILED,
+    }[session.status]
     progress = {
         StreamingCaptureStatus.CREATED: 0,
         StreamingCaptureStatus.STRUCTURING: 0.75,
@@ -1386,13 +1390,13 @@ def _operation_for_session(
         StreamingCaptureStatus.FAILED: 1,
     }[status_value]
     return _operation_from_document(
-        session["id"],
+        session.id,
         document,
         status_value=status_value,
         progress=progress,
         bytes_count=_document_bytes(db, project_id, document.id),
         media_type=_document_media_type(db, project_id, document.id),
-        last_event_sequence=int(session["last_event_sequence"]),
+        last_event_sequence=int(session.last_event_sequence),
     )
 
 
@@ -1540,20 +1544,20 @@ def _raw_projection(document: CaptureDocument) -> RawCapture:
     )
 
 
-def _review_ready(db: Database, project_id: str, session: dict) -> bool:
+def _review_ready(db: Database, project_id: str, session: CaptureReviewSession) -> bool:
     """Whether the host operation can take a review confirmation.
 
     The runtime reports awaiting_structuring before the background begin has moved
     the host operation into review, and a confirmation in that window is rejected.
     """
 
-    if session["status"] != review_sessions.PENDING:
+    if session.status != CaptureReviewStatus.PENDING:
         return True
     try:
         operation = operations.get_operation(
             db,
             project_id=project_id,
-            operation_id=session["operation_id"],
+            operation_id=session.operation_id,
         )
     except Exception:
         return False
@@ -1578,26 +1582,26 @@ def _ocr_summary_session_or_404(
     db: Database,
     project_id: str,
     capture_id: str,
-) -> dict:
+) -> CaptureReviewSession:
     try:
         return review_sessions.get(db, project_id=project_id, session_id=capture_id)
     except NotFoundError:
         raise not_found_error("Capture not found.") from None
 
 
-def _ensure_ocr_summary_session_open(session: dict) -> None:
-    session_status = session.get("status")
+def _ensure_ocr_summary_session_open(session: CaptureReviewSession) -> None:
+    session_status = session.status
     if session_status in {
-        review_sessions.CONFIRMING,
-        review_sessions.COMPLETED,
-        review_sessions.CANCELED,
+        CaptureReviewStatus.CONFIRMING,
+        CaptureReviewStatus.COMPLETED,
+        CaptureReviewStatus.CANCELED,
     }:
         raise api_error(
             status_code=status.HTTP_410_GONE,
             code="capture_closed",
             message="Capture review is closed.",
         )
-    if session_status not in {review_sessions.PENDING, review_sessions.FAILED}:
+    if session_status not in {CaptureReviewStatus.PENDING, CaptureReviewStatus.FAILED}:
         raise _ocr_summary_bad_gateway()
 
 
@@ -1639,7 +1643,7 @@ def _runtime_enum_value(value: object) -> str:
     return candidate
 
 
-def _session_or_404(db: Database, project_id: str, capture_id: str) -> dict:
+def _session_or_404(db: Database, project_id: str, capture_id: str) -> CaptureReviewSession:
     try:
         return review_sessions.get(db, project_id=project_id, session_id=capture_id)
     except NotFoundError as error:

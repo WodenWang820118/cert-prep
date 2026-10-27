@@ -11,6 +11,10 @@ from capture_runtime_client import (
     CaptureDocument,
     CaptureSourceKind,
 )
+from cert_prep_backend.capture_integration.domain.review_session import (
+    CaptureReviewSession,
+    CaptureReviewStatus,
+)
 from cert_prep_backend.capture_integration.infrastructure.coordinator import (
     CaptureRuntimeCanceledError,
     CaptureRuntimeJobError,
@@ -28,7 +32,7 @@ from cert_prep_backend.platform.database import Database
 
 @dataclass(frozen=True, slots=True)
 class CaptureCommitClaim:
-    session: dict
+    session: CaptureReviewSession
     acquired: bool
 
 
@@ -140,7 +144,7 @@ def commit_review_capture(
     should_cancel: Callable[[], bool],
 ) -> SourceDocument:
     session = review_sessions.get(db, project_id=project_id, session_id=session_id)
-    runtime_capture_id = session.get("runtime_capture_id")
+    runtime_capture_id = session.runtime_capture_id
     if not isinstance(runtime_capture_id, str) or not runtime_capture_id:
         raise RuntimeError("Capture Runtime has not reached the review state.")
     terminal_sequence: int | None = None
@@ -167,7 +171,7 @@ def commit_review_capture(
             db,
             project_id=project_id,
             session_id=session_id,
-            status=review_sessions.COMPLETED,
+            status=CaptureReviewStatus.COMPLETED,
             terminal_sequence=capture.last_event_sequence,
         )
         return document
@@ -176,7 +180,7 @@ def commit_review_capture(
             db,
             project_id=project_id,
             session_id=session_id,
-            status=review_sessions.CANCELED,
+            status=CaptureReviewStatus.CANCELED,
         )
         raise
     except Exception as error:
@@ -187,7 +191,7 @@ def commit_review_capture(
                 db,
                 project_id=project_id,
                 session_id=session_id,
-                status=review_sessions.FAILED,
+                status=CaptureReviewStatus.FAILED,
                 terminal_sequence=terminal_sequence,
             )
         finally:
@@ -232,13 +236,13 @@ def _cleanup_review_sessions(
     db: Database,
     *,
     coordinator: CertPrepCaptureCoordinator | None,
-    sessions: list[dict],
+    sessions: list[CaptureReviewSession],
 ) -> tuple[str, ...]:
     """Cancel the supplied durable sessions and their ephemeral runtime jobs."""
 
     cleaned: list[str] = []
     for session in sessions:
-        runtime_capture_id = session.get("runtime_capture_id")
+        runtime_capture_id = session.runtime_capture_id
         terminal_sequence: int | None = None
         if coordinator is not None and runtime_capture_id:
             try:
@@ -251,20 +255,20 @@ def _cleanup_review_sessions(
         try:
             operations.cancel_operation(
                 db,
-                project_id=session["project_id"],
-                operation_id=session["operation_id"],
+                project_id=session.project_id,
+                operation_id=session.operation_id,
             )
             operations.acknowledge_cancellation(
                 db,
-                project_id=session["project_id"],
-                operation_id=session["operation_id"],
+                project_id=session.project_id,
+                operation_id=session.operation_id,
             )
         except Exception:
             try:
                 operations.finish_failed(
                     db,
-                    project_id=session["project_id"],
-                    operation_id=session["operation_id"],
+                    project_id=session.project_id,
+                    operation_id=session.operation_id,
                     error="Capture review session was recovered after host shutdown.",
                 )
             except Exception:
@@ -272,14 +276,14 @@ def _cleanup_review_sessions(
         try:
             review_sessions.finish(
                 db,
-                project_id=session["project_id"],
-                session_id=session["id"],
-                status=review_sessions.CANCELED,
+                project_id=session.project_id,
+                session_id=session.id,
+                status=CaptureReviewStatus.CANCELED,
                 terminal_sequence=terminal_sequence,
             )
         except Exception:
             pass
-        cleaned.append(session["id"])
+        cleaned.append(session.id)
     return tuple(cleaned)
 
 
