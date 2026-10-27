@@ -1,35 +1,20 @@
 from __future__ import annotations
 
-from enum import StrEnum
+from collections.abc import Callable
 import json
 import sqlite3
-from sqlite3 import Row
+from sqlite3 import Connection, Row
+from typing import Any
 from uuid import uuid4
 
-from cert_prep_backend.platform.errors import NotFoundError
-from cert_prep_backend.authoring.infrastructure.draft_jobs import (
-    DraftJobCanceledError,
-    DraftJobNotCancellableError,
+from cert_prep_backend.authoring.domain.generation import (
+    ManualDraftOperation,
+    ManualDraftOperationStatus,
 )
+from cert_prep_backend.platform.errors import NotFoundError
 from cert_prep_backend.projects.infrastructure.repository import ensure_project_exists
 from cert_prep_backend.source_library.infrastructure import repository as documents_repository
 from cert_prep_backend.platform.database import Database, utc_now
-
-
-class ManualDraftOperationStatus(StrEnum):
-    QUEUED = "queued"
-    RUNNING = "running"
-    CANCEL_REQUESTED = "cancel_requested"
-    CANCELED = "canceled"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-
-
-TERMINAL_STATUSES = {
-    ManualDraftOperationStatus.CANCELED,
-    ManualDraftOperationStatus.SUCCEEDED,
-    ManualDraftOperationStatus.FAILED,
-}
 
 
 def create_operation(
@@ -41,11 +26,19 @@ def create_operation(
     strategy: str,
     provider: str,
     model: str,
-) -> dict:
+) -> ManualDraftOperation:
     ensure_project_exists(db, project_id)
     documents_repository.ensure_document_exists(db, project_id, document_id)
-    now = utc_now()
-    operation_id = str(uuid4())
+    queued = ManualDraftOperation.queue(
+        operation_id=str(uuid4()),
+        project_id=project_id,
+        document_id=document_id,
+        limit=limit,
+        strategy=strategy,
+        provider=provider,
+        model=model,
+        now=utc_now(),
+    )
     try:
         with db.connect() as connection:
             existing = _active_operation(connection, project_id, document_id)
@@ -58,23 +51,27 @@ def create_operation(
                     status, phase, cancellable, provider, model,
                     generated_count, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, 'queued', 'queued', 1, ?, ?, 0, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    operation_id,
-                    project_id,
-                    document_id,
-                    limit,
-                    strategy,
-                    provider,
-                    model,
-                    now,
-                    now,
+                    queued.id,
+                    queued.project_id,
+                    queued.document_id,
+                    queued.limit,
+                    queued.strategy,
+                    queued.status.value,
+                    queued.phase,
+                    int(queued.cancellable),
+                    queued.provider,
+                    queued.model,
+                    queued.generated_count,
+                    queued.created_at,
+                    queued.updated_at,
                 ),
             )
             row = connection.execute(
                 "SELECT * FROM manual_draft_generation_operations WHERE id = ?",
-                (operation_id,),
+                (queued.id,),
             ).fetchone()
     except sqlite3.IntegrityError:
         with db.connect() as connection:
@@ -90,21 +87,15 @@ def get_operation(
     project_id: str,
     document_id: str,
     operation_id: str,
-) -> dict:
+) -> ManualDraftOperation:
     with db.connect() as connection:
-        row = connection.execute(
-            """
-            SELECT * FROM manual_draft_generation_operations
-            WHERE id = ? AND project_id = ? AND document_id = ?
-            """,
-            (operation_id, project_id, document_id),
-        ).fetchone()
+        row = _operation_row(connection, operation_id, (project_id, document_id))
     if row is None:
         raise NotFoundError("Manual draft generation operation not found.")
     return operation_from_row(row)
 
 
-def recover_operations(db: Database) -> list[dict]:
+def recover_operations(db: Database) -> list[ManualDraftOperation]:
     now = utc_now()
     with db.connect() as connection:
         connection.execute(
@@ -136,67 +127,12 @@ def recover_operations(db: Database) -> list[dict]:
     return [operation_from_row(row) for row in rows]
 
 
-def mark_running(db: Database, operation_id: str) -> dict:
-    return _transition(
-        db,
-        operation_id,
-        expected=ManualDraftOperationStatus.QUEUED,
-        status=ManualDraftOperationStatus.RUNNING,
-        phase="generating",
-        cancellable=True,
-        error=None,
-    )
+def mark_running(db: Database, operation_id: str) -> ManualDraftOperation:
+    return _transition(db, operation_id, lambda operation, now: operation.start(now))
 
 
-def begin_commit(db: Database, operation_id: str) -> dict:
-    now = utc_now()
-    with db.connect() as connection:
-        updated = connection.execute(
-            """
-            UPDATE manual_draft_generation_operations
-            SET phase = 'committing', cancellable = 0,
-                commit_started_at = COALESCE(commit_started_at, ?),
-                updated_at = ?
-            WHERE id = ? AND status = 'running' AND cancellable = 1
-            """,
-            (now, now, operation_id),
-        )
-        row = connection.execute(
-            "SELECT * FROM manual_draft_generation_operations WHERE id = ?",
-            (operation_id,),
-        ).fetchone()
-        if row is None:
-            raise NotFoundError("Manual draft generation operation not found.")
-        if updated.rowcount != 1:
-            current = ManualDraftOperationStatus(row["status"])
-            if current in {
-                ManualDraftOperationStatus.CANCEL_REQUESTED,
-                ManualDraftOperationStatus.CANCELED,
-            }:
-                if current == ManualDraftOperationStatus.CANCEL_REQUESTED:
-                    connection.execute(
-                        """
-                        UPDATE manual_draft_generation_operations
-                        SET status = 'canceled', phase = 'canceled', cancellable = 0,
-                            error = NULL, updated_at = ?
-                        WHERE id = ? AND status = 'cancel_requested'
-                        """,
-                        (now, operation_id),
-                    )
-                raise DraftJobCanceledError("Manual draft generation was canceled.")
-            if current in TERMINAL_STATUSES:
-                return operation_from_row(row)
-            if (
-                current == ManualDraftOperationStatus.RUNNING
-                and row["phase"] == "committing"
-                and not bool(row["cancellable"])
-                and row["commit_started_at"] is not None
-            ):
-                return operation_from_row(row)
-            raise DraftJobNotCancellableError(
-                "Manual draft generation is not in a cancellable running phase."
-            )
-    return operation_from_row(row)
+def begin_commit(db: Database, operation_id: str) -> ManualDraftOperation:
+    return _transition(db, operation_id, lambda operation, now: operation.begin_commit(now))
 
 
 def request_cancel(
@@ -205,106 +141,51 @@ def request_cancel(
     project_id: str,
     document_id: str,
     operation_id: str,
-) -> dict:
+) -> ManualDraftOperation:
     documents_repository.ensure_document_exists(db, project_id, document_id)
-    now = utc_now()
-    with db.connect() as connection:
-        connection.execute("BEGIN IMMEDIATE")
-        row = connection.execute(
-            """
-            SELECT * FROM manual_draft_generation_operations
-            WHERE id = ? AND project_id = ? AND document_id = ?
-            """,
-            (operation_id, project_id, document_id),
-        ).fetchone()
-        if row is None:
-            raise NotFoundError("Manual draft generation operation not found.")
-        current = ManualDraftOperationStatus(row["status"])
-        if (
-            current == ManualDraftOperationStatus.SUCCEEDED
-            and row["commit_started_at"] is not None
-        ):
-            raise DraftJobNotCancellableError(
-                "Manual draft generation committed and can no longer be canceled."
-            )
-        if current in TERMINAL_STATUSES:
-            return operation_from_row(row)
-        if current == ManualDraftOperationStatus.CANCEL_REQUESTED:
-            return operation_from_row(row)
-        if not bool(row["cancellable"]):
-            raise DraftJobNotCancellableError(
-                "Manual draft generation is committing and can no longer be canceled."
-            )
-        if current == ManualDraftOperationStatus.QUEUED:
-            status = ManualDraftOperationStatus.CANCELED
-            phase = "canceled"
-            cancellable = 0
-        else:
-            status = ManualDraftOperationStatus.CANCEL_REQUESTED
-            phase = "canceling"
-            cancellable = 0
-        connection.execute(
-            """
-            UPDATE manual_draft_generation_operations
-            SET status = ?, phase = ?, cancellable = ?, error = NULL, updated_at = ?
-            WHERE id = ? AND status = ? AND cancellable = 1
-            """,
-            (status, phase, cancellable, now, operation_id, current),
-        )
-        row = connection.execute(
-            "SELECT * FROM manual_draft_generation_operations WHERE id = ?",
-            (operation_id,),
-        ).fetchone()
-    if row is None:
-        raise NotFoundError("Manual draft generation operation not found.")
-    return operation_from_row(row)
-
-
-def mark_canceled(db: Database, operation_id: str) -> dict:
-    return _finish(
+    return _transition(
         db,
         operation_id,
-        status=ManualDraftOperationStatus.CANCELED,
-        phase="canceled",
-        error=None,
+        lambda operation, now: operation.cancel(now),
+        owner=(project_id, document_id),
     )
 
 
-def mark_failed(db: Database, operation_id: str, detail: str) -> dict:
-    return _finish(
-        db,
-        operation_id,
-        status=ManualDraftOperationStatus.FAILED,
-        phase="failed",
-        error=detail,
+def mark_canceled(db: Database, operation_id: str) -> ManualDraftOperation:
+    return _transition(
+        db, operation_id, lambda operation, now: operation.acknowledge_cancellation(now)
     )
 
 
-def operation_from_row(row: Row) -> dict:
-    return {
-        "id": row["id"],
-        "project_id": row["project_id"],
-        "document_id": row["document_id"],
-        "limit": row["limit_count"],
-        "strategy": row["strategy"],
-        "status": row["status"],
-        "phase": row["phase"],
-        "cancellable": bool(row["cancellable"]),
-        "provider": row["provider"],
-        "model": row["model"],
-        "effective_provider": row["effective_provider"],
-        "effective_model": row["effective_model"],
-        "fallback_reason": row["fallback_reason"],
-        "generated_count": row["generated_count"],
-        "unavailable_blocks": _unavailable_blocks_from_row(row),
-        "error": row["error"],
-        "created_at": row["created_at"],
-        "updated_at": row["updated_at"],
-        "commit_started_at": row["commit_started_at"],
-    }
+def mark_failed(db: Database, operation_id: str, detail: str) -> ManualDraftOperation:
+    return _transition(db, operation_id, lambda operation, now: operation.fail(detail, now))
 
 
-def _unavailable_blocks_from_row(row: Row) -> list[dict]:
+def operation_from_row(row: Row) -> ManualDraftOperation:
+    return ManualDraftOperation(
+        id=row["id"],
+        project_id=row["project_id"],
+        document_id=row["document_id"],
+        limit=row["limit_count"],
+        strategy=row["strategy"],
+        status=ManualDraftOperationStatus(row["status"]),
+        phase=row["phase"],
+        cancellable=bool(row["cancellable"]),
+        provider=row["provider"],
+        model=row["model"],
+        effective_provider=row["effective_provider"],
+        effective_model=row["effective_model"],
+        fallback_reason=row["fallback_reason"],
+        generated_count=row["generated_count"],
+        unavailable_blocks=tuple(_unavailable_blocks_from_row(row)),
+        error=row["error"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        commit_started_at=row["commit_started_at"],
+    )
+
+
+def _unavailable_blocks_from_row(row: Row) -> list[dict[str, Any]]:
     if "unavailable_blocks_json" not in row.keys():
         return []
     try:
@@ -317,72 +198,72 @@ def _unavailable_blocks_from_row(row: Row) -> list[dict]:
 def _transition(
     db: Database,
     operation_id: str,
+    decide: Callable[[ManualDraftOperation, str], ManualDraftOperation],
     *,
-    expected: ManualDraftOperationStatus,
-    status: ManualDraftOperationStatus,
-    phase: str,
-    cancellable: bool,
-    error: str | None,
-) -> dict:
-    now = utc_now()
-    with db.connect() as connection:
-        connection.execute(
-            """
-            UPDATE manual_draft_generation_operations
-            SET status = ?, phase = ?, cancellable = ?, error = ?,
-                commit_started_at = NULL, updated_at = ?
-            WHERE id = ? AND status = ?
-            """,
-            (status, phase, int(cancellable), error, now, operation_id, expected),
-        )
-        row = connection.execute(
-            "SELECT * FROM manual_draft_generation_operations WHERE id = ?",
-            (operation_id,),
-        ).fetchone()
-    if row is None:
-        raise NotFoundError("Manual draft generation operation not found.")
-    return operation_from_row(row)
+    owner: tuple[str, str] | None = None,
+) -> ManualDraftOperation:
+    """Lock the operation, let the aggregate decide its next state, and store that state."""
 
-
-def _finish(
-    db: Database,
-    operation_id: str,
-    *,
-    status: ManualDraftOperationStatus,
-    phase: str,
-    error: str | None,
-) -> dict:
     now = utc_now()
     with db.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
-        row = connection.execute(
-            "SELECT * FROM manual_draft_generation_operations WHERE id = ?",
-            (operation_id,),
-        ).fetchone()
+        row = _operation_row(connection, operation_id, owner)
         if row is None:
             raise NotFoundError("Manual draft generation operation not found.")
-        current = ManualDraftOperationStatus(row["status"])
-        if current in TERMINAL_STATUSES:
-            return operation_from_row(row)
-        if current == ManualDraftOperationStatus.CANCEL_REQUESTED:
-            status = ManualDraftOperationStatus.CANCELED
-            phase = "canceled"
-            error = None
-        connection.execute(
-            """
-            UPDATE manual_draft_generation_operations
-            SET status = ?, phase = ?, cancellable = 0, error = ?, updated_at = ?
-            WHERE id = ? AND status = ?
-            """,
-            (status, phase, error, now, operation_id, current),
-        )
-        row = connection.execute(
-            "SELECT * FROM manual_draft_generation_operations WHERE id = ?",
-            (operation_id,),
-        ).fetchone()
+        operation = operation_from_row(row)
+        after = decide(operation, now)
+        if after is operation:
+            return operation
+        _apply(connection, operation, after)
+        row = _operation_row(connection, operation_id, None)
     if row is None:
         raise NotFoundError("Manual draft generation operation not found.")
     return operation_from_row(row)
+
+
+def _operation_row(
+    connection: Connection, operation_id: str, owner: tuple[str, str] | None
+) -> Row | None:
+    if owner is None:
+        return connection.execute(
+            "SELECT * FROM manual_draft_generation_operations WHERE id = ?",
+            (operation_id,),
+        ).fetchone()
+    project_id, document_id = owner
+    return connection.execute(
+        """
+        SELECT * FROM manual_draft_generation_operations
+        WHERE id = ? AND project_id = ? AND document_id = ?
+        """,
+        (operation_id, project_id, document_id),
+    ).fetchone()
+
+
+def _apply(
+    connection: Connection, before: ManualDraftOperation, after: ManualDraftOperation
+) -> None:
+    """Store a transition only if the operation is still in the state it was decided from."""
+
+    updated = connection.execute(
+        """
+        UPDATE manual_draft_generation_operations
+        SET status = ?, phase = ?, cancellable = ?, error = ?, commit_started_at = ?,
+            updated_at = ?
+        WHERE id = ? AND status = ?
+        """,
+        (
+            after.status.value,
+            after.phase,
+            int(after.cancellable),
+            after.error,
+            after.commit_started_at,
+            after.updated_at,
+            before.id,
+            before.status.value,
+        ),
+    )
+    if updated.rowcount != 1:
+        raise RuntimeError("Manual draft generation operation changed while it was locked.")
 
 
 def _active_operation(connection, project_id: str, document_id: str) -> Row | None:
@@ -399,7 +280,6 @@ def _active_operation(connection, project_id: str, document_id: str) -> Row | No
 
 
 __all__ = [
-    "ManualDraftOperationStatus",
     "begin_commit",
     "create_operation",
     "get_operation",

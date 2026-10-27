@@ -25,19 +25,19 @@ def test_detached_terminal_job_keeps_public_attribution_and_is_not_retried(
         provider="future-provider",
         model="qwen3.5:4b",
     )
-    terminal_before = draft_jobs.mark_failed(db, job["id"], detail="generation failed")
+    terminal_before = draft_jobs.mark_failed(db, job.id, detail="generation failed")
 
     with db.connect() as connection:
         connection.execute("DELETE FROM document_chunks WHERE id = 'chunk'")
         raw = connection.execute(
             "SELECT * FROM draft_generation_jobs WHERE id = ?",
-            (job["id"],),
+            (job.id,),
         ).fetchone()
 
     assert raw is not None
     assert raw["chunk_id"] is None
     assert raw["source_chunk_id"] == "chunk"
-    assert draft_jobs.get_job(db, job["id"]) == terminal_before
+    assert draft_jobs.get_job(db, job.id) == terminal_before
     assert draft_jobs.retry_document_jobs(
         db,
         project_id="project",
@@ -45,7 +45,7 @@ def test_detached_terminal_job_keeps_public_attribution_and_is_not_retried(
         provider="ollama",
         model="obsolete-model",
     ) == []
-    assert draft_jobs.get_job(db, job["id"]) == terminal_before
+    assert draft_jobs.get_job(db, job.id) == terminal_before
 
 
 @pytest.mark.parametrize("detached_status", ["pending", "running"])
@@ -75,7 +75,7 @@ def test_recovery_terminalizes_detached_nonterminal_jobs(
             (
                 detached_status,
                 "generating" if detached_status == "running" else "queued",
-                job["id"],
+                job.id,
             ),
         )
         connection.execute("DELETE FROM document_chunks WHERE id = 'chunk'")
@@ -84,7 +84,7 @@ def test_recovery_terminalizes_detached_nonterminal_jobs(
     with db.connect() as connection:
         recovered = connection.execute(
             "SELECT * FROM draft_generation_jobs WHERE id = ?",
-            (job["id"],),
+            (job.id,),
         ).fetchone()
     assert recovered is not None
     assert (recovered["status"], recovered["phase"], recovered["cancellable"]) == (
@@ -135,7 +135,7 @@ def test_draft_job_attribution_constraints_reject_cross_document_drift(
         with pytest.raises(sqlite3.IntegrityError):
             connection.execute(
                 "UPDATE draft_generation_jobs SET source_chunk_id = 'chunk-a' WHERE id = ?",
-                (job["id"],),
+                (job.id,),
             )
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
 

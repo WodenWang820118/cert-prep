@@ -9,8 +9,8 @@ from cert_prep_backend.authoring.domain.models import (
     DraftGenerationStrategy,
     DraftStatusValue,
 )
-from cert_prep_backend.authoring.infrastructure.draft_jobs import DraftGenerationJobStatus
-from cert_prep_backend.authoring.infrastructure.manual_operations import (
+from cert_prep_backend.authoring.domain.generation import (
+    DraftGenerationJobStatus,
     ManualDraftOperationStatus,
 )
 

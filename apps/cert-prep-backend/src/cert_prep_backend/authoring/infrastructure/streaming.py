@@ -34,6 +34,13 @@ from cert_prep_backend.authoring.domain.ports import (
     ReasoningDraftProvider,
 )
 from cert_prep_contracts.llm import GenerationAttribution
+from cert_prep_backend.authoring.domain.generation import (
+    DraftGenerationJob,
+    DraftGenerationJobStatus,
+    DraftJobCanceledError,
+    ManualDraftOperation,
+    ManualDraftOperationStatus,
+)
 from cert_prep_backend.authoring.infrastructure.draft_writing import (
     draft_writer_for,
     generate_drafts_for_strategy,
@@ -72,13 +79,13 @@ class StreamingDraftGenerationManager:
         *,
         project_id: str,
         document_id: str,
-    ) -> list[dict]:
+    ) -> list[DraftGenerationJob]:
         if not self._settings.streaming_draft_generation_on_upload:
             return []
 
         strategy = self._settings.streaming_draft_generation_strategy
         max_jobs = self._settings.streaming_draft_generation_page_limit
-        jobs: list[dict] = []
+        jobs: list[DraftGenerationJob] = []
         for chunk in documents_repository.get_source_chunks(db, project_id, document_id):
             if len(jobs) >= max_jobs:
                 break
@@ -114,7 +121,7 @@ class StreamingDraftGenerationManager:
             jobs = draft_jobs.recover_runnable_jobs(db)
             scheduled = self._schedule_jobs(db, jobs)
         for operation in manual_operations.recover_operations(db):
-            scheduled += self._schedule_manual_operation(db, operation["id"])
+            scheduled += self._schedule_manual_operation(db, operation.id)
         return scheduled
 
     def retry_document_jobs(
@@ -123,7 +130,7 @@ class StreamingDraftGenerationManager:
         *,
         project_id: str,
         document_id: str,
-    ) -> list[dict]:
+    ) -> list[DraftGenerationJob]:
         if not self._settings.streaming_draft_generation_on_upload:
             return draft_jobs.list_document_jobs(db, project_id, document_id)
 
@@ -145,7 +152,7 @@ class StreamingDraftGenerationManager:
         document_id: str,
         limit: int,
         strategy: DraftGenerationStrategy,
-    ) -> dict:
+    ) -> ManualDraftOperation:
         operation = manual_operations.create_operation(
             db,
             project_id=project_id,
@@ -155,13 +162,13 @@ class StreamingDraftGenerationManager:
             provider=str(getattr(self._provider, "provider", "unknown")),
             model=str(getattr(self._provider, "model", "")),
         )
-        if operation["status"] == manual_operations.ManualDraftOperationStatus.QUEUED:
-            self._schedule_manual_operation(db, operation["id"])
+        if operation.status == ManualDraftOperationStatus.QUEUED:
+            self._schedule_manual_operation(db, operation.id)
         return manual_operations.get_operation(
             db,
             project_id=project_id,
             document_id=document_id,
-            operation_id=operation["id"],
+            operation_id=operation.id,
         )
 
     def get_manual_operation(
@@ -171,7 +178,7 @@ class StreamingDraftGenerationManager:
         project_id: str,
         document_id: str,
         operation_id: str,
-    ) -> dict:
+    ) -> ManualDraftOperation:
         return manual_operations.get_operation(
             db,
             project_id=project_id,
@@ -186,7 +193,7 @@ class StreamingDraftGenerationManager:
         project_id: str,
         document_id: str,
         operation_id: str,
-    ) -> dict:
+    ) -> ManualDraftOperation:
         return manual_operations.request_cancel(
             db,
             project_id=project_id,
@@ -194,8 +201,8 @@ class StreamingDraftGenerationManager:
             operation_id=operation_id,
         )
 
-    def _schedule_jobs(self, db: Database, jobs: list[dict]) -> int:
-        runnable_jobs = [job for job in jobs if draft_jobs.should_run(job)]
+    def _schedule_jobs(self, db: Database, jobs: list[DraftGenerationJob]) -> int:
+        runnable_jobs = [job for job in jobs if job.should_run()]
         if not runnable_jobs:
             return 0
         if self._provider_unavailable_for_jobs(db, runnable_jobs):
@@ -205,25 +212,25 @@ class StreamingDraftGenerationManager:
         for job in runnable_jobs:
             scheduled_count += 1
             if self._async_jobs:
-                self._start_job_thread(db, job["id"], STREAMING_DRAFTS_PER_JOB_LIMIT)
+                self._start_job_thread(db, job.id, STREAMING_DRAFTS_PER_JOB_LIMIT)
             else:
-                self._run_job(db, job["id"], STREAMING_DRAFTS_PER_JOB_LIMIT)
+                self._run_job(db, job.id, STREAMING_DRAFTS_PER_JOB_LIMIT)
         return scheduled_count
 
     def _run_job(self, db: Database, job_id: str, limit: int) -> None:
         try:
             job = draft_jobs.get_job(db, job_id)
-            if not draft_jobs.should_run(job):
+            if not job.should_run():
                 return
             job = draft_jobs.mark_running(db, job_id)
-            if job["status"] != draft_jobs.DraftGenerationJobStatus.RUNNING:
+            if job.status != DraftGenerationJobStatus.RUNNING:
                 return
             if self._provider_unavailable(db, job):
                 return
             _reset_generation_attribution(self._provider)
 
             chunk = documents_repository.get_chunk(
-                db, job["project_id"], job["document_id"], job["chunk_id"]
+                db, job.project_id, job.document_id, job.chunk_id
             )
             source_chunk = source_chunk_from_document_chunk(chunk)
             suggestions = [
@@ -232,7 +239,7 @@ class StreamingDraftGenerationManager:
                     self._provider,
                     source_chunk,
                     limit,
-                    DraftGenerationStrategy(job["strategy"]),
+                    DraftGenerationStrategy(job.strategy),
                 )
             ]
             attribution = _generation_attribution(
@@ -243,14 +250,14 @@ class StreamingDraftGenerationManager:
             drafts_repository.append_generated_drafts_and_complete_job(
                 db,
                 job_id=job_id,
-                project_id=job["project_id"],
-                document_id=job["document_id"],
+                project_id=job.project_id,
+                document_id=job.document_id,
                 suggestions=suggestions,
                 effective_provider=attribution.effective_provider,
                 effective_model=attribution.effective_model,
                 fallback_reason=attribution.fallback_reason,
             )
-        except draft_jobs.DraftJobCanceledError:
+        except DraftJobCanceledError:
             draft_jobs.mark_canceled(db, job_id)
         except ProviderUnavailableError as exc:
             draft_jobs.mark_skipped_provider_unavailable(db, job_id, detail=str(exc))
@@ -259,7 +266,7 @@ class StreamingDraftGenerationManager:
         finally:
             self._release_provider_resources()
 
-    def _provider_unavailable(self, db: Database, job: dict) -> bool:
+    def _provider_unavailable(self, db: Database, job: DraftGenerationJob) -> bool:
         if _provider_starts_on_generation(self._provider):
             return False
         health = self._provider.health()
@@ -274,7 +281,7 @@ class StreamingDraftGenerationManager:
         )
         return True
 
-    def _provider_unavailable_for_jobs(self, db: Database, jobs: list[dict]) -> bool:
+    def _provider_unavailable_for_jobs(self, db: Database, jobs: list[DraftGenerationJob]) -> bool:
         if _provider_starts_on_generation(self._provider):
             return False
         health = self._provider.health()
@@ -338,14 +345,14 @@ class StreamingDraftGenerationManager:
     def _run_manual_operation(self, db: Database, operation_id: str) -> None:
         try:
             operation = manual_operations.mark_running(db, operation_id)
-            if operation["status"] != manual_operations.ManualDraftOperationStatus.RUNNING:
+            if operation.status != ManualDraftOperationStatus.RUNNING:
                 return
             chunks = [
                 source_chunk_from_document_chunk(chunk)
                 for chunk in documents_repository.get_source_chunks(
                     db,
-                    operation["project_id"],
-                    operation["document_id"],
+                    operation.project_id,
+                    operation.document_id,
                 )
             ]
             if not chunks:
@@ -354,8 +361,8 @@ class StreamingDraftGenerationManager:
             generation = generate_drafts_with_annotations_for_strategy(
                 self._provider,
                 chunks,
-                operation["limit"],
-                DraftGenerationStrategy(operation["strategy"]),
+                operation.limit,
+                DraftGenerationStrategy(operation.strategy),
             )
             suggestions = generation.suggestions
             attribution = _generation_attribution(
@@ -366,15 +373,15 @@ class StreamingDraftGenerationManager:
             drafts_repository.append_generated_drafts_and_complete_manual_operation(
                 db,
                 operation_id=operation_id,
-                project_id=operation["project_id"],
-                document_id=operation["document_id"],
+                project_id=operation.project_id,
+                document_id=operation.document_id,
                 suggestions=suggestions,
                 effective_provider=attribution.effective_provider,
                 effective_model=attribution.effective_model,
                 fallback_reason=attribution.fallback_reason,
                 unavailable_blocks=generation.unavailable_blocks,
             )
-        except draft_jobs.DraftJobCanceledError:
+        except DraftJobCanceledError:
             manual_operations.mark_canceled(db, operation_id)
         except Exception as exc:
             manual_operations.mark_failed(db, operation_id, str(exc))
@@ -389,16 +396,16 @@ class StreamingDraftGenerationManager:
 
 def _mark_provider_unavailable_job(
     db: Database,
-    job: dict,
+    job: DraftGenerationJob,
     unavailable_reason: str | None,
     detail: str,
 ) -> None:
     reason = unavailable_reason or "provider_unavailable"
     if reason == "model_missing":
-        draft_jobs.mark_skipped_missing_model(db, job["id"], detail=detail)
+        draft_jobs.mark_skipped_missing_model(db, job.id, detail=detail)
         return
 
-    draft_jobs.mark_skipped_provider_unavailable(db, job["id"], detail=detail)
+    draft_jobs.mark_skipped_provider_unavailable(db, job.id, detail=detail)
 
 
 def _generate_streaming_fast_first_drafts(
