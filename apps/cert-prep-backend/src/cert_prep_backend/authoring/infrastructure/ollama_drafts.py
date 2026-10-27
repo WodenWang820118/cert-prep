@@ -30,6 +30,7 @@ from cert_prep_backend.authoring.infrastructure.reasoning_parser import (
     json_payload,
 )
 from cert_prep_backend.authoring.infrastructure.response_parsing import (
+    RATIONALE_LANGUAGE_INSTRUCTION,
     answer_from_payload,
     confidence_from_payload,
     fast_first_prompt,
@@ -244,19 +245,7 @@ def _request_reasoning_payload(
     messages = [
         {
             "role": "system",
-            "content": (
-                "You convert OCR text from an uploaded JLPT exam into practice-ready "
-                "mock exam questions. Preserve actual exam questions and choices. "
-                "Ignore cover pages, title pages, notes, version notices, copyright "
-                "notices, and general instructions; do not invent questions from them. "
-                "Only output real multiple-choice exam items with a question stem and "
-                "visible choices. If an explicit answer key is present, use it. If it "
-                "is absent, infer the correct answer and mark answer_key_source as "
-                "ai_inferred. Do not include chain-of-thought, hidden reasoning, or "
-                "analysis. Only include a concise user-facing rationale. Return one "
-                "JSON object with an items array; never use Markdown or prose outside "
-                "that JSON object."
-            ),
+            "content": _reasoning_system_prompt(),
         },
         {"role": "user", "content": user_prompt},
     ]
@@ -321,6 +310,23 @@ def _prioritize_supplemental_chunks(
     ]
 
 
+def _reasoning_system_prompt() -> str:
+    return (
+        "You convert OCR text from an uploaded JLPT exam into practice-ready "
+        "mock exam questions. Preserve actual exam questions and choices. "
+        "Ignore cover pages, title pages, notes, version notices, copyright "
+        "notices, and general instructions; do not invent questions from them. "
+        "Only output real multiple-choice exam items with a question stem and "
+        "visible choices. If an explicit answer key is present, use it. If it "
+        "is absent, infer the correct answer and mark answer_key_source as "
+        "ai_inferred. Do not include chain-of-thought, hidden reasoning, or "
+        "analysis. Only include a concise user-facing rationale. "
+        f"{RATIONALE_LANGUAGE_INSTRUCTION} Return one "
+        "JSON object with an items array; never use Markdown or prose outside "
+        "that JSON object."
+    )
+
+
 def _reasoning_user_prompt(
     source: str,
     *,
@@ -334,7 +340,9 @@ def _reasoning_user_prompt(
         "Inspect the complete supplied source before responding. Each item must have a complete "
         "question stem and at least two visible choices, with each choice in a separate choices "
         "array element. For every item, set answer to the exact choice text, include a concise "
-        "user-facing rationale, include confidence as a number from 0 to 1, keep "
+        "user-facing rationale. "
+        f"{RATIONALE_LANGUAGE_INSTRUCTION} "
+        "Include confidence as a number from 0 to 1, keep "
         "citation_page from the source page, and include a source_excerpt copied exactly "
         "from the source text. If the source only contains title, note, version, or "
         f"instruction text, return an empty items array for that text.\n\n{source}"
@@ -367,7 +375,9 @@ def _supplemental_reasoning_user_prompt(
         f"exactly {limit}. Never invent, duplicate, or split an item to reach the count. Each "
         "item must have a complete question stem and at least two visible choices, with every "
         "choice in a separate choices array element. Set answer to the exact choice text, include "
-        "a concise user-facing rationale, include confidence from 0 to 1, keep citation_page from "
+        "a concise user-facing rationale. "
+        f"{RATIONALE_LANGUAGE_INSTRUCTION} "
+        "Include confidence from 0 to 1, keep citation_page from "
         "the source page, and copy source_excerpt exactly from the source text. "
         f"{accepted_context}{source}"
     )

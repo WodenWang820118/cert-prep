@@ -11,6 +11,7 @@ from cert_prep_backend.practice.domain import (
     PracticeSessionMode,
     PracticeSessionStatus,
     QuestionDraftStatus,
+    answer_matches_key,
     current_wrong_answers,
     select_questions,
 )
@@ -252,3 +253,54 @@ def test_current_wrong_answers_uses_latest_attempt_per_question() -> None:
         None,
         "2026-06-11T00:04:00Z",
     )
+
+
+def test_regrading_uses_the_same_key_match_as_answering() -> None:
+    session = PracticeSession(
+        id="session-1",
+        project_id="project-1",
+        question_ids=("question-1",),
+        created_at="2026-06-11T00:00:00Z",
+    )
+    question = PracticeQuestion(
+        id="question-1",
+        choices=("Ignore the cited source", "Apply the cited concept"),
+        correct_answer="Apply the cited concept",
+    )
+    attempt = session.answer(
+        attempt_id="attempt-1",
+        question=question,
+        selected_answer="Ignore the cited source",
+        now="2026-06-11T00:01:00Z",
+    )
+
+    assert attempt.is_correct is False
+    assert attempt.is_correct is question.is_correct(attempt.selected_answer)
+    assert attempt.is_correct is answer_matches_key(
+        attempt.selected_answer, question.correct_answer
+    )
+    assert answer_matches_key("Apply the cited concept", None) is False
+    assert answer_matches_key("Apply ", "Apply") is False
+
+    unchanged = attempt.regraded(question.correct_answer)
+    assert unchanged is attempt
+
+    corrected_key = PracticeQuestion(
+        id=question.id,
+        choices=question.choices,
+        correct_answer=attempt.selected_answer,
+    )
+    graded_again = session.answer(
+        attempt_id="attempt-2",
+        question=corrected_key,
+        selected_answer=attempt.selected_answer,
+        now="2026-06-11T00:02:00Z",
+    )
+    regraded = attempt.regraded(corrected_key.correct_answer)
+    assert regraded is not attempt
+    assert regraded.is_correct is graded_again.is_correct is True
+    assert regraded.selected_answer == attempt.selected_answer
+
+    marked_wrong = regraded.regraded(question.correct_answer)
+    assert marked_wrong.is_correct is False
+    assert marked_wrong is not regraded

@@ -36,6 +36,7 @@ __all__ = [
     "answer_question",
     "list_active_practice",
     "list_wrong_answers",
+    "regrade_question",
     "request_explanation",
     "review_wrong_answers",
     "start_practice",
@@ -49,6 +50,15 @@ class PracticeSessionDetails:
 
     session: PracticeSession
     attempts: tuple[PracticeAttempt, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class QuestionRegrade:
+    """How regrading one question changed the attempts stored for it."""
+
+    question_id: str
+    regraded_attempts: int
+    latest_attempt_wrong: bool
 
 
 def start_practice(
@@ -156,6 +166,31 @@ def answer_question(
         if completed is not session:
             practice.save_status(completed)
     return attempt
+
+
+def regrade_question(store: PracticeStore, project_id: str, question_id: str) -> QuestionRegrade:
+    """Re-evaluate every stored attempt of one question against its current answer key."""
+
+    with store.writing() as practice:
+        _require_project(practice, project_id)
+        question = practice.current_question(project_id, question_id)
+        if question is None:
+            raise NotFoundError("Question not found.")
+        attempts = practice.attempts_for_question(project_id, question_id)
+        regraded = [attempt.regraded(question.correct_answer) for attempt in attempts]
+        changed = [
+            updated
+            for original, updated in zip(attempts, regraded, strict=True)
+            if updated is not original
+        ]
+        if changed:
+            practice.save_attempt_grades(changed)
+        latest_attempt_wrong = bool(regraded) and not regraded[-1].is_correct
+    return QuestionRegrade(
+        question_id=question.id,
+        regraded_attempts=len(changed),
+        latest_attempt_wrong=latest_attempt_wrong,
+    )
 
 
 def list_wrong_answers(store: PracticeStore, project_id: str) -> tuple[WrongAnswer, ...]:

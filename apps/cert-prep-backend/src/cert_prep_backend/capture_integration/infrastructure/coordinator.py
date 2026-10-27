@@ -205,6 +205,7 @@ class CertPrepCaptureCoordinator:
             raise CaptureRuntimeCompatibilityError(
                 f"Capture Runtime does not support {kind.value.upper()} capture."
             )
+        ready = self._refresh_missing_ocr_preflight(kind, ready)
         self._assert_ocr_compute_preflight(kind, ready)
         self._assert_source_requirement_ready(kind)
         if should_cancel():
@@ -421,6 +422,27 @@ class CertPrepCaptureCoordinator:
             status=requirement.status if requirement is not None else None,
             detail=requirement.detail if requirement is not None else None,
         )
+
+    def _refresh_missing_ocr_preflight(
+        self,
+        source_kind: CaptureSourceKind,
+        ready: object,
+    ) -> object:
+        """Read discovery once more when a PDF or image has no OCR preflight.
+
+        The client keeps the first handshake until an installation reaches a
+        terminal status. An engine that finishes while that list is polled used
+        to leave the next capture with a stale, empty preflight.
+        """
+
+        if source_kind not in {CaptureSourceKind.PDF, CaptureSourceKind.IMAGE}:
+            return ready
+        if getattr(ready, "ocr_compute", None) is not None:
+            return ready
+        invalidate_discovery_cache = getattr(self._client, "invalidate_discovery_cache", None)
+        if callable(invalidate_discovery_cache):
+            invalidate_discovery_cache()
+        return self._client.handshake()
 
     def _assert_ocr_compute_preflight(
         self,

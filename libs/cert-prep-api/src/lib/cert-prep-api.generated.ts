@@ -90,6 +90,7 @@ export interface Components {
     QuestionDraftRead: { "id": string; "project_id": string; "document_id": string | null; "chunk_id": string | null; "question": string; "choices": string[]; "answer": string | null; "answer_key_source": Components['schemas']['AnswerKeySource'] | string; "rationale": string | null; "citation_page": number | null; "citation_locator_kind"?: string; "citation_start_ms"?: number | null; "citation_end_ms"?: number | null; "source_excerpt": string | null; "confidence": number | null; "source_order": number | null; "source_question_number": string | null; "item_kind": Components['schemas']['QuestionItemKind'] | string; "group_key": string | null; "group_prompt": string | null; "status": Components['schemas']['DraftStatus'] | string; "rejection_reason": string | null; "created_at": string; "updated_at": string };
     QuestionDraftUpdate: { "question"?: string | null; "choices"?: string[] | null; "answer"?: string | null; "answer_key_source"?: Components['schemas']['AnswerKeySource'] | string | null; "rationale"?: string | null; "citation_page"?: number | null; "source_excerpt"?: string | null; "confidence"?: number | null; "source_order"?: number | null; "source_question_number"?: string | null; "item_kind"?: Components['schemas']['QuestionItemKind'] | string | null; "group_key"?: string | null; "group_prompt"?: string | null };
     QuestionItemKind: string;
+    QuestionRegradeRead: { "question_id": string; "regraded_attempts": number; "latest_attempt_wrong": boolean };
     RawCapture: { "schemaVersion"?: "2"; "diagnosticOnly"?: true; "source": Components['schemas']['CaptureSource']; "segments": Components['schemas']['RawCaptureSegment'][]; "sourceText": string; "extractionEngine": Components['schemas']['CaptureEngine']; "diarizationEngine"?: Components['schemas']['CaptureEngine'] | null; "speakers"?: Components['schemas']['CaptureSpeaker'][]; "suggestedUnits"?: string[]; "warnings"?: string[]; "ocrPageScope"?: Components['schemas']['OcrPageScopeV2'] | null; "createdAt": string };
     RawCaptureSegment: { "segmentId": string; "order": number; "locator": Components['schemas']['PageLocator'] | Components['schemas']['TimeLocator']; "text": string; "speaker"?: string | null; "speakerOverlap"?: boolean };
     RuntimeArtifactDescriptorV2: { "artifactUrl": string; "artifactFileName": string; "bytes": number; "sha256": string };
@@ -206,6 +207,7 @@ export type QuestionDraftList = Components['schemas']['QuestionDraftList'];
 export type QuestionDraftRead = Components['schemas']['QuestionDraftRead'];
 export type QuestionDraftUpdate = Components['schemas']['QuestionDraftUpdate'];
 export type QuestionItemKind = Components['schemas']['QuestionItemKind'];
+export type QuestionRegradeRead = Components['schemas']['QuestionRegradeRead'];
 export type RawCapture = Components['schemas']['RawCapture'];
 export type RawCaptureSegment = Components['schemas']['RawCaptureSegment'];
 export type RuntimeArtifactDescriptorV2 = Components['schemas']['RuntimeArtifactDescriptorV2'];
@@ -294,6 +296,7 @@ export interface CertPrepGeneratedClient {
   listWrongAnswers(projectId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['WrongAnswerList']>;
   summarizeWrongAnswers(projectId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['WrongAnswerSummaryRead']>;
   explainWrongAnswer(projectId: string, attemptId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['WrongAnswerExplanationRead']>;
+  regradePracticeQuestion(projectId: string, questionId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['QuestionRegradeRead']>;
   llmHealth(options?: CertPrepRequestOptions): Observable<Components['schemas']['LLMHealthRead']>;
   llmProviderSelection(options?: CertPrepRequestOptions): Observable<Components['schemas']['LLMProviderSelectionRead']>;
   llmProfiles(options?: CertPrepRequestOptions): Observable<Components['schemas']['OllamaProfilesRead']>;
@@ -371,6 +374,7 @@ export interface CertPrepRequestFactory {
   listWrongAnswers(projectId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
   summarizeWrongAnswers(projectId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
   explainWrongAnswer(projectId: string, attemptId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  regradePracticeQuestion(projectId: string, questionId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
   llmHealth(options?: CertPrepRequestOptions): CertPrepHttpRequest;
   llmProviderSelection(options?: CertPrepRequestOptions): CertPrepHttpRequest;
   llmProfiles(options?: CertPrepRequestOptions): CertPrepHttpRequest;
@@ -522,6 +526,9 @@ export function createCertPrepRequestFactory(): CertPrepRequestFactory {
     },
     explainWrongAnswer: (projectId: string, attemptId: string, options?: CertPrepRequestOptions) => {
       return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/wrong-answers/${encodeURIComponent(attemptId)}/explanation`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    },
+    regradePracticeQuestion: (projectId: string, questionId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/practice-questions/${encodeURIComponent(questionId)}/regrade`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
     llmHealth: (options?: CertPrepRequestOptions) => {
       return { method: 'GET' as const, path: "/llm/health", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
@@ -716,6 +723,8 @@ export function createCertPrepGeneratedClient(
       transport.request<Components['schemas']['WrongAnswerSummaryRead']>(requests.summarizeWrongAnswers(projectId, options)),
     explainWrongAnswer: (projectId: string, attemptId: string, options?: CertPrepRequestOptions) =>
       transport.request<Components['schemas']['WrongAnswerExplanationRead']>(requests.explainWrongAnswer(projectId, attemptId, options)),
+    regradePracticeQuestion: (projectId: string, questionId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['QuestionRegradeRead']>(requests.regradePracticeQuestion(projectId, questionId, options)),
     llmHealth: (options?: CertPrepRequestOptions) =>
       transport.request<Components['schemas']['LLMHealthRead']>(requests.llmHealth(options)),
     llmProviderSelection: (options?: CertPrepRequestOptions) =>

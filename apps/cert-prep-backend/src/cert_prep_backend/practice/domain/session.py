@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from enum import Enum
 import random
 
-from cert_prep_backend.practice.domain.attempt import PracticeAttempt
+from cert_prep_backend.practice.domain.attempt import PracticeAttempt, answer_matches_key
 from cert_prep_backend.practice.domain.exceptions import (
     PracticeRuleViolation,
     PracticeSessionConflict,
@@ -58,7 +58,7 @@ class PracticeQuestion:
         return selected_answer in self.choices
 
     def is_correct(self, selected_answer: str) -> bool:
-        return selected_answer == self.correct_answer
+        return answer_matches_key(selected_answer, self.correct_answer)
 
     def is_playable(self) -> bool:
         """Approved, with a question, two real choices, the answer among them, a rationale

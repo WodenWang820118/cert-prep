@@ -336,6 +336,42 @@ class SqlitePracticeRepository:
             return question
         return None
 
+    def current_question(self, project_id: str, question_id: str) -> PracticeQuestion | None:
+        row = self._connection.execute(
+            f"""
+            SELECT {_QUESTION_DRAFT_COLUMNS}
+            FROM question_drafts
+            WHERE project_id = ? AND id = ?
+            """,
+            (project_id, question_id),
+        ).fetchone()
+        return None if row is None else _question_from_row(row)
+
+    def attempts_for_question(self, project_id: str, question_id: str) -> list[PracticeAttempt]:
+        rows = self._connection.execute(
+            """
+            SELECT *
+            FROM practice_attempts
+            WHERE project_id = ? AND question_id = ?
+            ORDER BY created_at ASC, rowid ASC
+            """,
+            (project_id, question_id),
+        ).fetchall()
+        return [_attempt_from_row(row) for row in rows]
+
+    def save_attempt_grades(self, attempts: list[PracticeAttempt]) -> None:
+        self._connection.executemany(
+            """
+            UPDATE practice_attempts
+            SET is_correct = ?
+            WHERE project_id = ? AND id = ?
+            """,
+            [
+                (int(attempt.is_correct), attempt.project_id, attempt.id)
+                for attempt in attempts
+            ],
+        )
+
     def add_attempt(self, attempt: PracticeAttempt) -> None:
         self._connection.execute(
             """
