@@ -18,23 +18,26 @@ from cert_prep_backend.authoring.domain.models import (
     source_chunk_from_document_chunk,
 )
 from cert_prep_backend.authoring.domain.normalization import as_editable_question
-from cert_prep_backend.authoring.domain.ports import (
-    DraftGenerationProvider,
-    FastFirstDraftProvider,
+from cert_prep_backend.ai_providers.domain.generation_errors import (
+    is_non_fatal_generation_error,
+)
+from cert_prep_backend.ai_providers.domain.provider import (
     GenerationAttributionProvider,
-    ReasoningDraftProvider,
+    LLMProvider,
     ResourceReleasingProvider,
     StartsOnGenerationProvider,
     StreamingGenerationOptionsProvider,
     provider_capability,
 )
+from cert_prep_backend.authoring.domain.ports import (
+    FastFirstDraftProvider,
+    ReasoningDraftProvider,
+)
 from cert_prep_contracts.llm import GenerationAttribution
-from cert_prep_backend.authoring.infrastructure.provider import (
+from cert_prep_backend.authoring.infrastructure.draft_writing import (
+    draft_writer_for,
     generate_drafts_for_strategy,
     generate_drafts_with_annotations_for_strategy,
-)
-from cert_prep_backend.authoring.infrastructure.response_parsing import (
-    is_non_fatal_generation_error,
 )
 from cert_prep_backend.source_library.infrastructure import repository as documents_repository
 from cert_prep_backend.platform.database import Database
@@ -52,7 +55,7 @@ class StreamingDraftGenerationManager:
         self,
         *,
         settings: Settings,
-        provider: DraftGenerationProvider,
+        provider: LLMProvider,
         async_jobs: bool = True,
     ) -> None:
         self._settings = settings
@@ -399,7 +402,7 @@ def _mark_provider_unavailable_job(
 
 
 def _generate_streaming_fast_first_drafts(
-    provider: DraftGenerationProvider,
+    provider: LLMProvider,
     source_chunk: SourceChunk,
     limit: int,
     strategy: DraftGenerationStrategy,
@@ -409,7 +412,8 @@ def _generate_streaming_fast_first_drafts(
         return []
     if strategy == DraftGenerationStrategy.HYBRID_REASONING:
         deterministic = extract_jlpt_question_blocks([source_chunk], 1)
-        fast_first_provider = provider_capability(provider, FastFirstDraftProvider)
+        writer = draft_writer_for(provider)
+        fast_first_provider = provider_capability(writer, FastFirstDraftProvider)
         if deterministic and fast_first_provider is not None:
             try:
                 suggestion = _call_streaming_provider_method(
@@ -425,7 +429,7 @@ def _generate_streaming_fast_first_drafts(
             if suggestion is not None:
                 return [suggestion]
 
-        reasoning_provider = provider_capability(provider, ReasoningDraftProvider)
+        reasoning_provider = provider_capability(writer, ReasoningDraftProvider)
         if reasoning_provider is not None:
             prompt_chunk = _compact_reasoning_chunk(source_chunk)
             try:
@@ -449,7 +453,7 @@ def _generate_streaming_fast_first_drafts(
 
 
 def _call_streaming_provider_method(
-    provider: DraftGenerationProvider,
+    provider: LLMProvider,
     method,
     *args,
     **kwargs,
@@ -458,26 +462,26 @@ def _call_streaming_provider_method(
     return method(*args, **kwargs)
 
 
-def _streaming_generation_kwargs(provider: DraftGenerationProvider) -> dict[str, object]:
+def _streaming_generation_kwargs(provider: LLMProvider) -> dict[str, object]:
     options_provider = provider_capability(provider, StreamingGenerationOptionsProvider)
     if options_provider is None:
         return {}
     return dict(options_provider.streaming_generation_kwargs())
 
 
-def _provider_starts_on_generation(provider: DraftGenerationProvider) -> bool:
+def _provider_starts_on_generation(provider: LLMProvider) -> bool:
     starts_provider = provider_capability(provider, StartsOnGenerationProvider)
     return bool(starts_provider and starts_provider.starts_on_generation)
 
 
-def _reset_generation_attribution(provider: DraftGenerationProvider) -> None:
+def _reset_generation_attribution(provider: LLMProvider) -> None:
     attribution_provider = provider_capability(provider, GenerationAttributionProvider)
     if attribution_provider is not None:
         attribution_provider.reset_generation_attribution()
 
 
 def _generation_attribution(
-    provider: DraftGenerationProvider,
+    provider: LLMProvider,
     *,
     generated: bool,
 ) -> GenerationAttribution:

@@ -33,7 +33,7 @@ from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeClient,
     CaptureRuntimeProtocolError,
 )
-from cert_prep_backend.authoring.domain.ports import (
+from cert_prep_backend.ai_providers.domain.provider import (
     StructuredJsonGenerationProvider,
     provider_capability,
 )

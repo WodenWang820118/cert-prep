@@ -10,14 +10,18 @@ from cert_prep_backend.authoring.domain.models import (
     source_chunk_from_document_chunk,
 )
 from cert_prep_backend.source_library.domain.document import DocumentChunk
-from cert_prep_backend.authoring.infrastructure.provider import (
+from cert_prep_backend.authoring.domain.deterministic_parser import (
     MAX_PROMPT_SOURCE_CHARS,
-    _draft_suggestion_from_item,
-    _extract_jlpt_question_blocks,
-    _json_response,
-    _source_text_for_prompt,
+    extract_jlpt_question_blocks,
+    source_text_for_prompt,
+)
+from cert_prep_backend.authoring.infrastructure.draft_writing import (
     generate_drafts_for_strategy,
     generate_drafts_with_annotations_for_strategy,
+)
+from cert_prep_backend.authoring.infrastructure.reasoning_parser import (
+    draft_suggestion_from_item,
+    json_payload,
 )
 
 
@@ -61,7 +65,7 @@ def test_draft_parser_accepts_jlpt_like_choice_item() -> None:
         source_excerpt="Mondai 1 Choose the correct reading.",
     )
 
-    suggestion = _draft_suggestion_from_item(
+    suggestion = draft_suggestion_from_item(
         {
             "chunk_id": "chunk-2",
             "citation_page": 3,
@@ -91,7 +95,7 @@ def test_draft_parser_accepts_exact_choice_text_without_its_visible_marker() -> 
         source_excerpt="Question 1 Choose the reading.",
     )
 
-    suggestion = _draft_suggestion_from_item(
+    suggestion = draft_suggestion_from_item(
         {
             "chunk_id": "chunk-2",
             "citation_page": 3,
@@ -119,7 +123,7 @@ def test_draft_parser_rejects_ambiguous_unmarked_choice_text() -> None:
         source_excerpt="Question 1 Choose the word.",
     )
 
-    suggestion = _draft_suggestion_from_item(
+    suggestion = draft_suggestion_from_item(
         {
             "chunk_id": "chunk-2",
             "citation_page": 3,
@@ -146,7 +150,7 @@ def test_draft_parser_rejects_answer_with_a_conflicting_visible_marker() -> None
         source_excerpt="Question 1 Choose the word.",
     )
 
-    suggestion = _draft_suggestion_from_item(
+    suggestion = draft_suggestion_from_item(
         {
             "chunk_id": "chunk-2",
             "citation_page": 3,
@@ -175,7 +179,7 @@ def test_draft_parser_aligns_whitespace_only_excerpt_to_original_source() -> Non
         source_excerpt=grounded_excerpt,
     )
 
-    suggestion = _draft_suggestion_from_item(
+    suggestion = draft_suggestion_from_item(
         {
             "chunk_id": "chunk-2",
             "citation_page": 3,
@@ -224,7 +228,7 @@ def test_draft_parser_rejects_non_whitespace_or_unsafe_excerpt_drift(
         source_excerpt=grounded_excerpt,
     )
 
-    suggestion = _draft_suggestion_from_item(
+    suggestion = draft_suggestion_from_item(
         {
             "chunk_id": "chunk-2",
             "citation_page": 3,
@@ -263,9 +267,9 @@ def test_draft_parser_rejects_invalid_json_and_grounding_mismatches() -> None:
     }
 
     with pytest.raises(ProviderUnavailableError, match="invalid JSON"):
-        _json_response({"message": {"content": "not-json"}})
+        json_payload("not-json")
     assert (
-        _draft_suggestion_from_item(
+        draft_suggestion_from_item(
             valid_item | {"citation_page": 99},
             {3: chunk},
             {"chunk-2": chunk},
@@ -273,7 +277,7 @@ def test_draft_parser_rejects_invalid_json_and_grounding_mismatches() -> None:
         is None
     )
     assert (
-        _draft_suggestion_from_item(
+        draft_suggestion_from_item(
             valid_item | {"source_excerpt": "not in source"},
             {3: chunk},
             {"chunk-2": chunk},
@@ -281,7 +285,7 @@ def test_draft_parser_rejects_invalid_json_and_grounding_mismatches() -> None:
         is None
     )
     assert (
-        _draft_suggestion_from_item(
+        draft_suggestion_from_item(
             valid_item | {"answer": "missing choice"},
             {3: chunk},
             {"chunk-2": chunk},
@@ -441,7 +445,7 @@ def test_ollama_prompt_source_skips_notice_pages_and_stays_bounded() -> None:
         source_excerpt="問題2",
     )
 
-    source = _source_text_for_prompt([notice, first_exam_page, long_exam_page], limit=3)
+    source = source_text_for_prompt([notice, first_exam_page, long_exam_page], limit=3)
 
     assert "chunk_id:cover" not in source
     assert "chunk_id:page-2" in source
@@ -461,7 +465,7 @@ def test_jlpt_question_blocks_extract_as_unanswered_candidates_without_ai() -> N
         source_excerpt="問題1 の言葉の読み方として最もよいのを選びなさい。",
     )
 
-    suggestions = _extract_jlpt_question_blocks([chunk], limit=2)
+    suggestions = extract_jlpt_question_blocks([chunk], limit=2)
 
     assert len(suggestions) == 2
     assert suggestions[0].question == "余暇の楽しみ方はいろいろある。"
@@ -484,7 +488,7 @@ def _assert_rejected_as_non_exam_item(rejected_text: str) -> None:
         source_excerpt=rejected_text,
     )
 
-    suggestion = _draft_suggestion_from_item(
+    suggestion = draft_suggestion_from_item(
         {
             "citation_page": 1,
             "question": rejected_text,

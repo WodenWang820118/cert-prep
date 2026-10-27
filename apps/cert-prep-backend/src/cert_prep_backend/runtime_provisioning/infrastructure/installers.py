@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from cert_prep_backend.platform.errors import ProviderUnavailableError
-from cert_prep_backend.authoring.domain.ports import (
+from cert_prep_backend.ai_providers.domain.provider import (
     ModelDownloadProvider,
     ModelOnboardingProvider,
     provider_capability,

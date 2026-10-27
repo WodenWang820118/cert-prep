@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 from cert_prep_backend.platform.errors import ProviderUnavailableError
-from cert_prep_backend.authoring.domain.ports import ProviderHealth, provider_capability
+from cert_prep_backend.ai_providers.domain.provider import ProviderHealth, provider_capability
 from cert_prep_backend.practice.domain.wrong_answer import WrongAnswer
 
 

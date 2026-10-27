@@ -4,8 +4,8 @@ from collections.abc import Sequence
 import json
 from typing import Any
 
-from cert_prep_backend.platform.errors import ProviderUnavailableError
 from cert_prep_backend.authoring.domain.models import DraftSuggestion
+from cert_prep_backend.platform.errors import ProviderUnavailableError
 
 
 def fast_first_prompt(candidate: DraftSuggestion) -> str:
@@ -32,12 +32,7 @@ def fast_first_retry_prompt(candidate: DraftSuggestion) -> str:
     )
 
 
-def json_object_response(response: Any) -> dict[str, Any]:
-    content = getattr(getattr(response, "message", None), "content", None)
-    if content is None and isinstance(response, dict):
-        message = response.get("message")
-        if isinstance(message, dict):
-            content = message.get("content")
+def json_object(content: object) -> dict[str, Any]:
     if not isinstance(content, str):
         return {}
     try:
@@ -47,8 +42,8 @@ def json_object_response(response: Any) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
-def json_object_response_or_unavailable(response: Any, *, provider_label: str) -> dict[str, Any]:
-    payload = json_object_response(response)
+def json_object_or_unavailable(content: object, *, provider_label: str) -> dict[str, Any]:
+    payload = json_object(content)
     if not payload:
         raise ProviderUnavailableError(f"{provider_label} returned invalid JSON.")
     return payload
@@ -94,32 +89,6 @@ def confidence_from_payload(value: Any) -> float | None:
         except ValueError:
             return None
     return None
-
-
-def short_error(exc: Exception) -> str:
-    return short_error_text(str(exc) or exc.__class__.__name__)
-
-
-def short_error_text(value: str) -> str:
-    return " ".join(value.split())[:240]
-
-
-def is_non_fatal_generation_error(exc: Exception) -> bool:
-    error = short_error(exc).lower()
-    return any(
-        marker in error
-        for marker in (
-            "invalid json",
-            "unreadable response",
-            "non-object json response",
-            "timed out",
-            "timeout",
-        )
-    )
-
-
-def is_runtime_model_failure(exc: Exception) -> bool:
-    return not is_non_fatal_generation_error(exc)
 
 
 def _normalize_answer(value: str) -> str:
