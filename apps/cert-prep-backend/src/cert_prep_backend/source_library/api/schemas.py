@@ -5,7 +5,7 @@ from dataclasses import asdict
 from pydantic import BaseModel
 
 from cert_prep_backend.source_library.domain.exam_content import ContentProfileValue
-from cert_prep_backend.source_library.domain.models import (
+from cert_prep_backend.source_library.domain.document import (
     DocumentStatus,
     DocumentChunk,
     ExtractionMethod,

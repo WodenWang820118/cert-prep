@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TypeAlias
 
-from cert_prep_backend.source_library.domain.models import DocumentChunk
+from cert_prep_backend.source_library.domain.document import DocumentChunk
 from cert_prep_backend.source_library.domain.exam_content import (
     ContentProfileValue,
     QuestionItemKind,

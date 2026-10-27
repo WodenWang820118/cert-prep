@@ -85,7 +85,7 @@ from cert_prep_backend.capture_integration.infrastructure.runtime_policy import 
     SUPPORTED_RUNTIME_VERSION,
 )
 from cert_prep_backend.projects.infrastructure import repository as projects_repository
-from cert_prep_backend.source_library.domain.models import DocumentChunk, SourceDocument
+from cert_prep_backend.source_library.domain.document import DocumentChunk, SourceDocument
 from cert_prep_backend.source_library.infrastructure import operations
 from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
 from cert_prep_backend.platform.document_worker_pool import (

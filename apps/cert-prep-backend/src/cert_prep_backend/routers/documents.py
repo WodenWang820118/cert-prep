@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import asdict
 
 import asyncio
-import hashlib
 import logging
 from collections.abc import Callable
 from functools import partial
@@ -57,15 +56,18 @@ from cert_prep_backend.authoring.domain.normalization import as_editable_questio
 from cert_prep_backend.authoring.domain.ports import DraftGenerationProvider as LLMProvider
 from cert_prep_backend.authoring.infrastructure.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.projects.infrastructure import repository as projects_repository
+from cert_prep_backend.source_library.application import use_cases as source_library
+from cert_prep_backend.source_library.application.ports import (
+    ChunkTranslator,
+    DocumentOperationRepository,
+    DocumentRepository,
+    SourceFileStore,
+)
+from cert_prep_backend.source_library.domain.document import AUDIO_MEDIA_TYPES
+from cert_prep_backend.source_library.domain.exceptions import SourceDocumentUnavailable
 from cert_prep_backend.source_library.domain.operation import DocumentOperation
 from cert_prep_backend.source_library.infrastructure import operations as document_operations
 from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
-from cert_prep_backend.source_library.infrastructure.audio import (
-    BATCH_TRANSLATION_KEEP_ALIVE,
-    OllamaTraditionalChineseTranslator,
-    translate_chunk,
-    translate_stale_chunks,
-)
 from cert_prep_backend.platform.document_worker_pool import (
     DocumentWorkerPool,
     DocumentWorkItem,
@@ -86,7 +88,11 @@ from cert_prep_backend.source_library.infrastructure.source_preparation import (
     StoredSourceReference,
     prepare_source,
 )
-from cert_prep_backend.source_library.infrastructure.storage import sha256_hex, store_source_file
+from cert_prep_backend.source_library.infrastructure.storage import (
+    LocalSourceFileStore,
+    sha256_hex,
+    store_source_file,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -110,8 +116,25 @@ OPERATION_CONFLICT_RESPONSE = {"model": ApiErrorRead, "description": "The reques
 CAPTURE_UNAVAILABLE_RESPONSE = {"model": ApiErrorRead, "description": "The configured Capture Runtime is unavailable."}
 VALIDATION_ERROR_RESPONSE = {"model": ApiErrorRead, "description": "Request validation failed."}
 AUDIO_SOURCE_CONTENT = {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}}
-AUDIO_MEDIA_TYPES = {".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4"}
 MARKDOWN_CONTENT = {"text/markdown": {"schema": {"type": "string", "format": "binary"}}}
+
+
+def get_document_repository(request: Request) -> DocumentRepository:
+    """The repositories, file store and translator create_app wires for this application."""
+
+    return request.app.state.document_repository
+
+
+def get_document_operation_repository(request: Request) -> DocumentOperationRepository:
+    return request.app.state.document_operation_repository
+
+
+def get_source_file_store(request: Request) -> SourceFileStore:
+    return request.app.state.source_file_store
+
+
+def get_chunk_translator(request: Request) -> ChunkTranslator:
+    return request.app.state.chunk_translator
 
 
 @operations_router.get(
@@ -119,9 +142,9 @@ MARKDOWN_CONTENT = {"text/markdown": {"schema": {"type": "string", "format": "bi
     response_model=DocumentOperationRead,
     responses={status.HTTP_404_NOT_FOUND: NOT_FOUND_RESPONSE, status.HTTP_422_UNPROCESSABLE_CONTENT: VALIDATION_ERROR_RESPONSE},
 )
-def get_document_operation(project_id: str, operation_id: OperationIdPath, db=Depends(get_database)) -> dict:
+def get_document_operation(project_id: str, operation_id: OperationIdPath, operations: DocumentOperationRepository = Depends(get_document_operation_repository)) -> dict:
     try:
-        return _operation_read(document_operations.get_operation(db, project_id=project_id, operation_id=operation_id))
+        return _operation_read(source_library.view_operation(operations, project_id, operation_id))
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
@@ -135,14 +158,11 @@ def get_document_operation(project_id: str, operation_id: OperationIdPath, db=De
 def cancel_document_operation(
     project_id: str,
     operation_id: OperationIdPath,
-    db=Depends(get_database),
+    operations: DocumentOperationRepository = Depends(get_document_operation_repository),
     worker_pool: DocumentWorkerPool = Depends(get_document_worker_pool),
 ) -> dict:
     try:
-        operation = document_operations.cancel_operation(db, project_id=project_id, operation_id=operation_id)
-        if _cancel_queued_document_work(worker_pool, operation_id):
-            return _operation_read(document_operations.get_operation(db, project_id=project_id, operation_id=operation_id))
-        return _operation_read(operation)
+        return _operation_read(source_library.cancel_operation(operations, worker_pool, project_id, operation_id))
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
     except DocumentOperationConflictError as exc:
@@ -154,9 +174,9 @@ def cancel_document_operation(
 
 
 @router.get("", response_model=DocumentList)
-def list_documents(project_id: str, db=Depends(get_database)) -> dict:
+def list_documents(project_id: str, documents: DocumentRepository = Depends(get_document_repository)) -> dict:
     try:
-        return {"items": source_documents_repository.list_documents(db, project_id)}
+        return {"items": source_library.list_documents(documents, project_id)}
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
@@ -288,52 +308,40 @@ async def upload_document(
 
 
 @router.get("/{document_id}", response_model=DocumentRead)
-def get_document(project_id: str, document_id: str, db=Depends(get_database)) -> dict:
+def get_document(project_id: str, document_id: str, documents: DocumentRepository = Depends(get_document_repository)) -> dict:
     try:
-        return source_documents_repository.get_document(db, project_id, document_id)
+        return source_library.view_document(documents, project_id, document_id)
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
 
 @router.get("/{document_id}/markdown", response_class=Response, responses={status.HTTP_200_OK: {"description": "The authenticated Markdown projection of a ready PDF.", "content": MARKDOWN_CONTENT}, status.HTTP_404_NOT_FOUND: NOT_FOUND_RESPONSE, status.HTTP_409_CONFLICT: OPERATION_CONFLICT_RESPONSE})
-def get_document_markdown(project_id: str, document_id: str, db=Depends(get_database)) -> Response:
+def get_document_markdown(project_id: str, document_id: str, documents: DocumentRepository = Depends(get_document_repository)) -> Response:
     try:
-        document = source_documents_repository.get_document(db, project_id, document_id)
-        if document.source_kind != "document" or FilePath(document.filename).suffix.lower() != ".pdf":
-            raise _markdown_unavailable_error("Markdown projection is currently available for PDF documents only.")
-        if document.status != "ready":
-            raise _markdown_unavailable_error("Markdown projection is available after document processing completes.")
-        chunks = source_documents_repository.list_chunks(db, project_id, document_id)
-        if not chunks:
-            raise _markdown_unavailable_error("Markdown projection requires at least one persisted document chunk.")
-        return Response(content=render_pdf_markdown(filename=document.filename, chunks=chunks), media_type="text/markdown", headers={"Cache-Control": "private, no-store", "Content-Disposition": markdown_content_disposition(document.filename)})
+        projection = source_library.export_markdown(documents, project_id, document_id)
+        filename = projection.document.filename
+        return Response(content=render_pdf_markdown(filename=filename, chunks=list(projection.chunks)), media_type="text/markdown", headers={"Cache-Control": "private, no-store", "Content-Disposition": markdown_content_disposition(filename)})
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
+    except SourceDocumentUnavailable as exc:
+        raise api_error(status.HTTP_409_CONFLICT, exc.code, exc.message) from exc
 
 
 @router.get("/{document_id}/source", response_class=FileResponse, responses={status.HTTP_200_OK: {"description": "The authenticated canonical audio source.", "content": AUDIO_SOURCE_CONTENT}, status.HTTP_404_NOT_FOUND: NOT_FOUND_RESPONSE, status.HTTP_409_CONFLICT: OPERATION_CONFLICT_RESPONSE})
-def get_document_audio_source(project_id: str, document_id: str, db=Depends(get_database), settings: Settings = Depends(get_settings)) -> FileResponse:
+def get_document_audio_source(project_id: str, document_id: str, documents: DocumentRepository = Depends(get_document_repository), files: SourceFileStore = Depends(get_source_file_store)) -> FileResponse:
     try:
-        document = source_documents_repository.get_document(db, project_id, document_id)
-        if document.source_kind != "audio":
-            raise _audio_source_unavailable_error("Only audio documents have a playable source.")
-        source_file = source_documents_repository.get_source_file(db, project_id, document_id)
-        source_path = _resolve_stored_source_path(settings, project_id=project_id, storage_path=source_file.storage_path)
-        media_type = AUDIO_MEDIA_TYPES.get(source_path.suffix.lower())
-        if media_type is None or _sha256_file(source_path) != source_file.sha256:
-            raise _audio_source_unavailable_error("The stored audio source failed integrity verification.")
-        return FileResponse(source_path, media_type=media_type, filename=source_file.filename, content_disposition_type="inline", headers={"Cache-Control": "private, no-store"})
+        source = source_library.open_audio_source(documents, files, project_id, document_id)
+        return FileResponse(source.path, media_type=source.media_type, filename=source.filename, content_disposition_type="inline", headers={"Cache-Control": "private, no-store"})
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
+    except SourceDocumentUnavailable as exc:
+        raise api_error(status.HTTP_409_CONFLICT, exc.code, exc.message) from exc
 
 
 @router.delete("/{document_id}/processing", response_model=DocumentOperationRead, status_code=status.HTTP_202_ACCEPTED, responses={status.HTTP_404_NOT_FOUND: NOT_FOUND_RESPONSE, status.HTTP_409_CONFLICT: OPERATION_CONFLICT_RESPONSE})
-def cancel_document_processing(project_id: str, document_id: str, db=Depends(get_database), worker_pool: DocumentWorkerPool = Depends(get_document_worker_pool)) -> dict:
+def cancel_document_processing(project_id: str, document_id: str, operations: DocumentOperationRepository = Depends(get_document_operation_repository), worker_pool: DocumentWorkerPool = Depends(get_document_worker_pool)) -> dict:
     try:
-        operation = document_operations.cancel_document_processing(db, project_id=project_id, document_id=document_id)
-        if _cancel_queued_document_work(worker_pool, operation.id):
-            return _operation_read(document_operations.get_operation(db, project_id=project_id, operation_id=operation.id))
-        return _operation_read(operation)
+        return _operation_read(source_library.cancel_processing(operations, worker_pool, project_id, document_id))
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
     except OperationNotCancellableError as exc:
@@ -359,7 +367,8 @@ async def retry_document_processing(
         capture_coordinator = get_capture_coordinator(request)
         document = source_documents_repository.get_document(db, project_id, document_id)
         source_file = source_documents_repository.get_source_file(db, project_id, document_id)
-        source_path = await asyncio.to_thread(_verify_stored_source_file, settings, project_id=project_id, storage_path=source_file.storage_path, expected_sha256=source_file.sha256)
+        files = LocalSourceFileStore(settings)
+        source_path = await asyncio.to_thread(files.verified_path, project_id, source_file.storage_path, source_file.sha256)
         canonical_suffix = source_path.suffix.lower()
         kind = "audio" if document.source_kind == "audio" else "pdf" if canonical_suffix == ".pdf" else "image"
         async_processing = bool(getattr(request.app.state, "document_processing_async_jobs", True))
@@ -367,7 +376,7 @@ async def retry_document_processing(
         if async_processing:
             source = StoredSourceReference(storage_path=str(source_path), sha256=source_file.sha256, canonical_suffix=canonical_suffix, filename=source_file.filename, kind=kind)
         else:
-            content = await asyncio.to_thread(_read_stored_source_file, settings, project_id=project_id, storage_path=source_file.storage_path, expected_sha256=source_file.sha256)
+            content = await asyncio.to_thread(files.verified_content, project_id, source_file.storage_path, source_file.sha256)
             source = await asyncio.to_thread(prepare_source, content, max_pdf_pages=settings.max_pdf_pages, max_image_pixels=settings.max_image_pixels, filename=source_file.filename)
         document_operations.start_retry_operation(db, project_id=project_id, document_id=document_id, operation_id=operation_id)
         if async_processing:
@@ -390,17 +399,17 @@ async def retry_document_processing(
 
 
 @router.get("/{document_id}/chunks", response_model=ChunkList)
-def list_document_chunks(project_id: str, document_id: str, db=Depends(get_database)) -> dict:
+def list_document_chunks(project_id: str, document_id: str, documents: DocumentRepository = Depends(get_document_repository)) -> dict:
     try:
-        return {"items": [ChunkRead.from_chunk(chunk) for chunk in source_documents_repository.list_chunks(db, project_id, document_id)]}
+        return {"items": [ChunkRead.from_chunk(chunk) for chunk in source_library.list_chunks(documents, project_id, document_id)]}
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
 
 @router.patch("/{document_id}/chunks/{chunk_id}", response_model=ChunkRead)
-def update_document_chunk(project_id: str, document_id: str, chunk_id: str, body: ChunkUpdate, db=Depends(get_database)) -> dict:
+def update_document_chunk(project_id: str, document_id: str, chunk_id: str, body: ChunkUpdate, documents: DocumentRepository = Depends(get_document_repository)) -> dict:
     try:
-        return ChunkRead.from_chunk(source_documents_repository.update_chunk_text(db, project_id, document_id, chunk_id, body.text))
+        return ChunkRead.from_chunk(source_library.edit_chunk(documents, project_id, document_id, chunk_id, body.text))
     except ValueError as exc:
         raise validation_error(str(exc)) from exc
     except NotFoundError as exc:
@@ -408,9 +417,9 @@ def update_document_chunk(project_id: str, document_id: str, chunk_id: str, body
 
 
 @router.post("/{document_id}/chunks/{chunk_id}/translation", response_model=ChunkRead)
-def translate_document_chunk(project_id: str, document_id: str, chunk_id: str, db=Depends(get_database), settings: Settings = Depends(get_settings)) -> dict:
+def translate_document_chunk(project_id: str, document_id: str, chunk_id: str, translator: ChunkTranslator = Depends(get_chunk_translator)) -> dict:
     try:
-        return ChunkRead.from_chunk(translate_chunk(db, translator=OllamaTraditionalChineseTranslator(settings), project_id=project_id, document_id=document_id, chunk_id=chunk_id))
+        return ChunkRead.from_chunk(source_library.translate_chunk(translator, project_id, document_id, chunk_id))
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
     except Exception as exc:
@@ -418,9 +427,9 @@ def translate_document_chunk(project_id: str, document_id: str, chunk_id: str, d
 
 
 @router.post("/{document_id}/translations", response_model=ChunkList)
-def translate_document_stale_chunks(project_id: str, document_id: str, db=Depends(get_database), settings: Settings = Depends(get_settings)) -> dict:
+def translate_document_stale_chunks(project_id: str, document_id: str, translator: ChunkTranslator = Depends(get_chunk_translator)) -> dict:
     try:
-        return {"items": [ChunkRead.from_chunk(chunk) for chunk in translate_stale_chunks(db, translator=OllamaTraditionalChineseTranslator(settings, keep_alive=BATCH_TRANSLATION_KEEP_ALIVE), project_id=project_id, document_id=document_id)]}
+        return {"items": [ChunkRead.from_chunk(chunk) for chunk in source_library.translate_stale_chunks(translator, project_id, document_id)]}
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
     except Exception as exc:
@@ -436,46 +445,6 @@ async def _read_limited_upload(file: UploadFile, max_bytes: int) -> bytes:
             raise validation_error(f"Source file is too large; the limit is {max_bytes} bytes.")
         chunks.append(chunk)
     return b"".join(chunks)
-
-
-def _read_stored_source_file(settings: Settings, *, project_id: str, storage_path: str, expected_sha256: str) -> bytes:
-    source_path = _resolve_stored_source_path(settings, project_id=project_id, storage_path=storage_path)
-    content = source_path.read_bytes()
-    if sha256_hex(content) != expected_sha256:
-        raise InvalidSourceError("The stored source file failed integrity verification.")
-    return content
-
-
-def _verify_stored_source_file(settings: Settings, *, project_id: str, storage_path: str, expected_sha256: str) -> FilePath:
-    source_path = _resolve_stored_source_path(settings, project_id=project_id, storage_path=storage_path)
-    if _sha256_file(source_path) != expected_sha256:
-        raise InvalidSourceError("The stored source file failed integrity verification.")
-    return source_path
-
-
-def _resolve_stored_source_path(settings: Settings, *, project_id: str, storage_path: str) -> FilePath:
-    expected_root = (settings.data_dir / "uploads" / project_id).resolve()
-    try:
-        source_path = FilePath(storage_path).resolve(strict=True)
-        source_path.relative_to(expected_root)
-        stat = source_path.stat()
-    except (OSError, ValueError) as exc:
-        raise InvalidSourceError("The stored source file is unavailable.") from exc
-    source_limit = settings.max_audio_upload_bytes if source_path.suffix.lower() in AUDIO_MEDIA_TYPES else settings.max_upload_bytes
-    if not source_path.is_file() or stat.st_size <= 0 or stat.st_size > source_limit:
-        raise InvalidSourceError("The stored source file is unavailable.")
-    return source_path
-
-
-def _sha256_file(source_path: FilePath) -> str:
-    digest = hashlib.sha256()
-    try:
-        with source_path.open("rb") as source:
-            while chunk := source.read(1024 * 1024):
-                digest.update(chunk)
-    except OSError as exc:
-        raise InvalidSourceError("The stored source file is unavailable.") from exc
-    return digest.hexdigest()
 
 
 def _store_uploaded_source(settings: Settings, *, project_id: str, content: bytes, canonical_suffix: str) -> tuple[str, FilePath]:
@@ -507,10 +476,6 @@ def _operation_read(operation: DocumentOperation) -> dict:
     """The operation as the DocumentOperationRead payload it has always been."""
 
     return asdict(operation)
-
-
-def _cancel_queued_document_work(worker_pool: DocumentWorkerPool, operation_id: str) -> bool:
-    return worker_pool.cancel(operation_id)
 
 
 def _cancel_queued_operation(db, *, project_id: str, operation_id: str) -> None:
@@ -574,7 +539,7 @@ def _process_document_upload(*, db, settings: Settings, llm_provider: LLMProvide
 
 def _process_capture_workbench_upload(*, db, settings: Settings, llm_provider: LLMProvider, streaming_questions: StreamingDraftGenerationManager, project_id: str, document_id: str, operation_id: str, source: PreparedSource | StoredSourceReference, coordinator: CertPrepCaptureCoordinator, should_shutdown: Callable[[], bool]) -> dict:
     if isinstance(source, StoredSourceReference):
-        source_bytes = _read_stored_source_file(settings, project_id=project_id, storage_path=source.storage_path, expected_sha256=source.sha256)
+        source_bytes = LocalSourceFileStore(settings).verified_content(project_id, source.storage_path, source.sha256)
         source_sha256, file_name, canonical_suffix = source.sha256, source.filename, source.canonical_suffix
     else:
         source_bytes = source.raw_bytes
@@ -671,11 +636,3 @@ def _operation_state_conflict_error(message: str) -> HTTPException:
 
 def _document_source_missing_error(message: str) -> HTTPException:
     return api_error(status.HTTP_409_CONFLICT, "document_source_missing", message)
-
-
-def _audio_source_unavailable_error(message: str) -> HTTPException:
-    return api_error(status.HTTP_409_CONFLICT, "audio_source_unavailable", message)
-
-
-def _markdown_unavailable_error(message: str) -> HTTPException:
-    return api_error(status.HTTP_409_CONFLICT, "markdown_unavailable", message)

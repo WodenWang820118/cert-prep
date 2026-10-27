@@ -16,7 +16,7 @@ from cert_prep_backend.platform.errors import (
     DocumentProcessingCanceledError,
     OperationNotCancellableError,
 )
-from cert_prep_backend.source_library.domain.models import (
+from cert_prep_backend.source_library.domain.document import (
     ExtractedPage,
     PdfExtraction,
 )

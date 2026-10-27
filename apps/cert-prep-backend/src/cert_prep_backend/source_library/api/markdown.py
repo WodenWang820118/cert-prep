@@ -9,7 +9,7 @@ import re
 import unicodedata
 from urllib.parse import quote
 
-from cert_prep_backend.source_library.domain.models import DocumentChunk
+from cert_prep_backend.source_library.domain.document import DocumentChunk
 
 def render_pdf_markdown(
     *,

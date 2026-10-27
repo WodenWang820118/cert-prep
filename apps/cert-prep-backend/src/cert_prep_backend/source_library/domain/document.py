@@ -1,14 +1,24 @@
+"""The SourceDocument aggregate: an imported PDF, image or recording, its chunks and its
+content profile."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import PurePath
+from typing import Final
 
 from cert_prep_backend.source_library.domain.exam_content import ContentProfileValue
+from cert_prep_backend.source_library.domain.exceptions import SourceDocumentUnavailable
 
 from cert_prep_backend.source_library.domain.statuses import PdfExtractionMethodValue, SourceDocumentStatus, SourceDocumentStatusValue
 
 
 DocumentStatus = SourceDocumentStatusValue
 ExtractionMethod = PdfExtractionMethodValue
+
+AUDIO_MEDIA_TYPES: Final = {".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4"}
+MARKDOWN_UNAVAILABLE: Final = "markdown_unavailable"
+AUDIO_SOURCE_UNAVAILABLE: Final = "audio_source_unavailable"
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +101,28 @@ class SourceDocument:
     transcription_device: str | None = None
     transcription_warning: str | None = None
 
+    def ensure_markdown_exportable(self) -> None:
+        """Only a PDF whose processing has completed has a Markdown projection."""
+
+        if self.source_kind != "document" or PurePath(self.filename).suffix.lower() != ".pdf":
+            raise SourceDocumentUnavailable(
+                MARKDOWN_UNAVAILABLE,
+                "Markdown projection is currently available for PDF documents only.",
+            )
+        if self.status != "ready":
+            raise SourceDocumentUnavailable(
+                MARKDOWN_UNAVAILABLE,
+                "Markdown projection is available after document processing completes.",
+            )
+
+    def ensure_playable(self) -> None:
+        """Only a recording has a source that can be played."""
+
+        if self.source_kind != "audio":
+            raise SourceDocumentUnavailable(
+                AUDIO_SOURCE_UNAVAILABLE, "Only audio documents have a playable source."
+            )
+
 
 @dataclass(frozen=True, slots=True)
 class DocumentChunk:
@@ -119,3 +151,27 @@ class DocumentChunk:
         """An audio transcript chunk edited since its translation was made."""
 
         return self.locator_kind == "time" and self.translation_source_revision != self.source_revision
+
+
+def edited_transcript_text(text: str) -> str:
+    """The text a transcript chunk is edited to: trimmed, and never empty."""
+
+    normalized = text.strip()
+    if not normalized:
+        raise ValueError("Japanese transcript text must not be empty.")
+    return normalized
+
+@dataclass(frozen=True, slots=True)
+class MarkdownProjection:
+    """A ready PDF with the chunks its Markdown is rendered from; never without chunks."""
+
+    document: SourceDocument
+    chunks: tuple[DocumentChunk, ...]
+
+    def __post_init__(self) -> None:
+        self.document.ensure_markdown_exportable()
+        if not self.chunks:
+            raise SourceDocumentUnavailable(
+                MARKDOWN_UNAVAILABLE,
+                "Markdown projection requires at least one persisted document chunk.",
+            )

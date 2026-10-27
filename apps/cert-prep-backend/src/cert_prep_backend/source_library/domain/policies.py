@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from cert_prep_backend.source_library.domain.models import ExtractedPage, PdfExtraction, SourceDocument
+from cert_prep_backend.source_library.domain.document import ExtractedPage, PdfExtraction, SourceDocument
 from cert_prep_backend.source_library.domain.statuses import PdfExtractionMethod, PdfExtractionMethodValue, SourceDocumentStatus
 
 

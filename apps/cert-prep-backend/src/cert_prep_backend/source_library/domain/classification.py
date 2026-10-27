@@ -5,7 +5,7 @@ from cert_prep_backend.source_library.domain.exam_content import (
     classification_summary,
     content_profile_from_value,
 )
-from cert_prep_backend.source_library.domain.models import ExtractedPage
+from cert_prep_backend.source_library.domain.document import ExtractedPage
 
 
 def document_extraction_method_from_db(

@@ -238,8 +238,6 @@ ignore_imports = [
   "cert_prep_backend.authoring.infrastructure.repository -> cert_prep_backend.projects.infrastructure.repository",
   "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.projects.infrastructure.repository",
   "cert_prep_backend.routers.documents -> cert_prep_backend.projects.infrastructure.repository",
-  "cert_prep_backend.source_library.infrastructure.documents -> cert_prep_backend.projects.infrastructure.repository",
-  "cert_prep_backend.source_library.infrastructure.operations -> cert_prep_backend.projects.infrastructure.repository",
 ]
 
 [[tool.importlinter.contracts]]
@@ -256,4 +254,45 @@ source_modules = [
 forbidden_modules = [
   "cert_prep_backend.practice.infrastructure",
   "cert_prep_backend.practice.api",
+]
+
+[[tool.importlinter.contracts]]
+name = "Other contexts reach Source Library only through its application and domain"
+type = "forbidden"
+source_modules = [
+  "cert_prep_backend.projects",
+  "cert_prep_backend.practice",
+  "cert_prep_backend.authoring",
+  "cert_prep_backend.capture_integration",
+  "cert_prep_backend.runtime_provisioning",
+  "cert_prep_backend.routers",
+]
+forbidden_modules = [
+  "cert_prep_backend.source_library.infrastructure",
+  "cert_prep_backend.source_library.api",
+]
+# Known until Question Authoring and Capture Integration get their own C4, and until C6 moves
+# routers.documents (still Source Library's HTTP layer) and the capture rules out of the
+# routers: they call Source Library's storage functions directly.
+ignore_imports = [
+  "cert_prep_backend.authoring.api.router -> cert_prep_backend.source_library.infrastructure.repository",
+  "cert_prep_backend.authoring.infrastructure.draft_jobs -> cert_prep_backend.source_library.infrastructure.repository",
+  "cert_prep_backend.authoring.infrastructure.manual_operations -> cert_prep_backend.source_library.infrastructure.repository",
+  "cert_prep_backend.authoring.infrastructure.repository -> cert_prep_backend.source_library.infrastructure.repository",
+  "cert_prep_backend.authoring.infrastructure.streaming -> cert_prep_backend.source_library.infrastructure.repository",
+  "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.source_library.infrastructure.operations",
+  "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.source_library.infrastructure.repository",
+  "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.source_library.infrastructure.source_preparation",
+  "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.source_library.infrastructure.storage",
+  "cert_prep_backend.capture_integration.infrastructure.persistence -> cert_prep_backend.source_library.infrastructure.operations",
+  "cert_prep_backend.capture_integration.infrastructure.review_workflow -> cert_prep_backend.source_library.infrastructure.operations",
+  "cert_prep_backend.capture_integration.infrastructure.review_workflow -> cert_prep_backend.source_library.infrastructure.repository",
+  "cert_prep_backend.routers.documents -> cert_prep_backend.source_library.api.markdown",
+  "cert_prep_backend.routers.documents -> cert_prep_backend.source_library.api.schemas",
+  "cert_prep_backend.routers.documents -> cert_prep_backend.source_library.infrastructure.operations",
+  "cert_prep_backend.routers.documents -> cert_prep_backend.source_library.infrastructure.repository",
+  "cert_prep_backend.routers.documents -> cert_prep_backend.source_library.infrastructure.source_preparation",
+  "cert_prep_backend.routers.documents -> cert_prep_backend.source_library.infrastructure.storage",
+  "cert_prep_backend.routers.operation_events -> cert_prep_backend.source_library.infrastructure.operations",
+  "cert_prep_backend.routers.operation_events -> cert_prep_backend.source_library.infrastructure.repository",
 ]

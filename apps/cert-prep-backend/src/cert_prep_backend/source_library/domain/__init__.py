@@ -1,4 +1,4 @@
-from cert_prep_backend.source_library.domain.models import (
+from cert_prep_backend.source_library.domain.document import (
     ExtractedPage,
     PdfExtraction,
     PdfExtractionResult,
@@ -7,7 +7,6 @@ from cert_prep_backend.source_library.domain.models import (
     SourceFile,
 )
 from cert_prep_backend.source_library.domain.policies import PdfExtractionPolicy, SourceDocumentLifecyclePolicy
-from cert_prep_backend.source_library.domain.ports import SourceDocumentRepository, SourceTextExtractor
 from cert_prep_backend.source_library.domain.statuses import (
     DOCUMENT_STATUS_VALUES,
     PDF_EXTRACTION_METHOD_VALUES,
@@ -23,11 +22,9 @@ __all__ = [
     "PdfExtractionResult",
     "PdfExtractionMethod",
     "PdfExtractionPolicy",
-    "SourceTextExtractor",
     "SourceDocument",
     "DocumentChunk",
     "SourceDocumentLifecyclePolicy",
-    "SourceDocumentRepository",
     "SourceDocumentStatus",
     "SourceFile",
 ]

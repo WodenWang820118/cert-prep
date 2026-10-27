@@ -4,7 +4,7 @@ from sqlite3 import Row
 
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.platform.errors import NotFoundError
-from cert_prep_backend.source_library.domain.models import SourceDocument
+from cert_prep_backend.source_library.domain.document import SourceDocument
 from cert_prep_backend.source_library.domain.statuses import SourceDocumentStatus
 
 
@@ -73,3 +73,13 @@ def ensure_document_exists(db: Database, project_id: str, document_id: str) -> N
         ).fetchone()
     if row is None:
         raise NotFoundError("Document not found.")
+
+
+def ensure_project_exists(db: Database, project_id: str) -> None:
+    """Raise unless the project exists. Documents only need its id, so this reads the projects
+    table instead of going through Study Projects; C5 settles which context owns each table."""
+
+    with db.connect() as connection:
+        row = connection.execute("SELECT 1 FROM projects WHERE id = ?", (project_id,)).fetchone()
+    if row is None:
+        raise NotFoundError("Project not found.")

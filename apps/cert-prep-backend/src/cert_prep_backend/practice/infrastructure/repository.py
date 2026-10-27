@@ -9,10 +9,10 @@ import json
 from sqlite3 import Connection, Row
 
 from cert_prep_backend.platform.database import Database
+from cert_prep_backend.platform.errors import NotFoundError
 from cert_prep_backend.practice.domain.attempt import PracticeAttempt
 from cert_prep_backend.practice.domain.session import PracticeQuestion, PracticeSession
 from cert_prep_backend.practice.domain.wrong_answer import AnsweredQuestion
-from cert_prep_backend.source_library.infrastructure import repository as documents_repository
 
 _QUESTION_DRAFT_COLUMNS = """
     id,
@@ -81,7 +81,13 @@ class SqlitePracticeStore:
             yield SqlitePracticeRepository(connection)
 
     def require_document(self, project_id: str, document_id: str) -> None:
-        documents_repository.ensure_document_exists(self._db, project_id, document_id)
+        with self._db.connect() as connection:
+            row = connection.execute(
+                "SELECT 1 FROM documents WHERE project_id = ? AND id = ?",
+                (project_id, document_id),
+            ).fetchone()
+        if row is None:
+            raise NotFoundError("Document not found.")
 
 
 class SqlitePracticeRepository:
