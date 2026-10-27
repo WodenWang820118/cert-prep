@@ -189,7 +189,6 @@ modules = [
 ignore_imports = [
   "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.api.dependencies",
   "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.routers.documents",
-  "cert_prep_backend.capture_integration.api.runtime_router -> cert_prep_backend.api.dependencies",
   "cert_prep_backend.practice.api.router -> cert_prep_backend.api.dependencies",
   "cert_prep_backend.runtime_provisioning.api.model_download_router -> cert_prep_backend.api.dependencies",
   "cert_prep_backend.runtime_provisioning.api.router -> cert_prep_backend.api.dependencies",
@@ -211,16 +210,13 @@ containers = [
 ]
 layers = ["(api) | (infrastructure)", "(application)", "(domain)"]
 # The capture workbench router still reads host models, the runtime policy, and an
-# upload helper of routers.documents. The runtime router stays on the client until B3.
+# upload helper of routers.documents. The runtime router still returns RuntimeReady.
 ignore_imports = [
   "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.api.dependencies",
   "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.capture_integration.infrastructure.host_models",
   "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.capture_integration.infrastructure.runtime_policy",
   "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.routers.documents",
-  "cert_prep_backend.capture_integration.api.runtime_router -> cert_prep_backend.api.dependencies",
-  "cert_prep_backend.capture_integration.api.runtime_router -> cert_prep_backend.capture_integration.infrastructure.client",
   "cert_prep_backend.capture_integration.api.runtime_router -> cert_prep_backend.capture_integration.infrastructure.host_models",
-  "cert_prep_backend.capture_integration.api.runtime_router -> cert_prep_backend.capture_integration.infrastructure.runtime_provenance",
   "cert_prep_backend.runtime_provisioning.api.model_download_router -> cert_prep_backend.api.dependencies",
   "cert_prep_backend.runtime_provisioning.api.model_download_router -> cert_prep_backend.runtime_provisioning.infrastructure",
   "cert_prep_backend.runtime_provisioning.api.router -> cert_prep_backend.api.dependencies",

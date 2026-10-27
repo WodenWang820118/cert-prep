@@ -9,28 +9,21 @@ from __future__ import annotations
 from typing import Annotated, Literal, NoReturn
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, status
+from fastapi import APIRouter, Depends, Header, Request, status
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
-from cert_prep_backend.api.dependencies import get_capture_runtime_client
-from cert_prep_backend.api.errors import api_error
-from cert_prep_backend.capture_integration.infrastructure.client import (
-    CaptureRuntimeClient,
-    CaptureRuntimeCompatibilityError,
-    CaptureRuntimeError,
-    CaptureRuntimeProtocolError,
-)
 from capture_runtime_client import (
     CaptureRequirementId,
     RuntimeInstallation,
     RuntimeInstallations,
     RuntimeRequirements,
 )
+from cert_prep_backend.api.errors import api_error
+from cert_prep_backend.capture_integration.application import use_cases as capture_reviews
+from cert_prep_backend.capture_integration.application.errors import CaptureRuntimeSetupRejected
+from cert_prep_backend.capture_integration.application.ports import CaptureRuntimeSetup
 from cert_prep_backend.capture_integration.infrastructure.host_models import RuntimeReady
-from cert_prep_backend.capture_integration.infrastructure.runtime_provenance import (
-    capture_runtime_attestation,
-)
 
 
 router = APIRouter(prefix="/capture-runtime", tags=["capture-runtime"])
@@ -49,25 +42,32 @@ class StartRuntimeInstallationRequest(BaseModel):
     consent: Literal[True]
 
 
+def get_capture_runtime_setup(request: Request) -> CaptureRuntimeSetup:
+    setup: CaptureRuntimeSetup | None = request.app.state.capture_runtime_setup
+    if setup is None:
+        raise api_error(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="capture_runtime_unavailable",
+            message="Capture Runtime is not configured for this process.",
+        )
+    return setup
+
+
 @router.get("/ready", response_model=RuntimeReady)
 def capture_runtime_ready(
-    client: CaptureRuntimeClient = Depends(get_capture_runtime_client),
+    setup: CaptureRuntimeSetup = Depends(get_capture_runtime_setup),
 ) -> RuntimeReady:
     """Expose sidecar readiness without serializing its process credential."""
 
     try:
-        return client.handshake()
-    except (
-        CaptureRuntimeCompatibilityError,
-        CaptureRuntimeError,
-        CaptureRuntimeProtocolError,
-    ) as error:
-        _raise_runtime_error(error)
+        return capture_reviews.view_runtime_ready(setup)
+    except CaptureRuntimeSetupRejected as error:
+        _raise_setup_rejected(error)
 
 
 @router.get("/provenance")
 def capture_runtime_provenance(
-    client: CaptureRuntimeClient = Depends(get_capture_runtime_client),
+    setup: CaptureRuntimeSetup = Depends(get_capture_runtime_setup),
 ) -> dict[str, object]:
     """Return candidate-bound build metadata and a live runtime handshake.
 
@@ -78,33 +78,19 @@ def capture_runtime_provenance(
     """
 
     try:
-        return capture_runtime_attestation(client)
-    except (
-        CaptureRuntimeCompatibilityError,
-        CaptureRuntimeError,
-        CaptureRuntimeProtocolError,
-    ) as error:
-        _raise_runtime_error(error)
-    except RuntimeError as error:
-        raise api_error(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            code="capture_runtime_provenance_unavailable",
-            message="Installed Capture Runtime provenance is unavailable.",
-        ) from error
+        return capture_reviews.view_runtime_provenance(setup)
+    except CaptureRuntimeSetupRejected as error:
+        _raise_setup_rejected(error)
 
 
 @router.get("/requirements", response_model=RuntimeRequirements)
 def capture_runtime_requirements(
-    client: CaptureRuntimeClient = Depends(get_capture_runtime_client),
+    setup: CaptureRuntimeSetup = Depends(get_capture_runtime_setup),
 ) -> RuntimeRequirements:
     try:
-        return client.get_requirements()
-    except (
-        CaptureRuntimeCompatibilityError,
-        CaptureRuntimeError,
-        CaptureRuntimeProtocolError,
-    ) as error:
-        _raise_runtime_error(error)
+        return capture_reviews.list_runtime_requirements(setup)
+    except CaptureRuntimeSetupRejected as error:
+        _raise_setup_rejected(error)
 
 
 @router.post(
@@ -115,48 +101,39 @@ def capture_runtime_requirements(
 def start_capture_runtime_installation(
     payload: StartRuntimeInstallationRequest,
     idempotency_key: Annotated[UUID, Header(alias="X-Idempotency-Key")],
-    client: CaptureRuntimeClient = Depends(get_capture_runtime_client),
+    setup: CaptureRuntimeSetup = Depends(get_capture_runtime_setup),
 ) -> RuntimeInstallation:
     try:
-        return client.start_installation(
-            payload.requirement_id,
+        return capture_reviews.start_runtime_installation(
+            setup,
+            requirement_id=payload.requirement_id,
             idempotency_key=idempotency_key,
         )
-    except (
-        CaptureRuntimeCompatibilityError,
-        CaptureRuntimeError,
-        CaptureRuntimeProtocolError,
-    ) as error:
-        _raise_runtime_error(error)
+    except CaptureRuntimeSetupRejected as error:
+        _raise_setup_rejected(error)
 
 
 @router.get("/installations", response_model=RuntimeInstallations)
 def capture_runtime_installations(
-    client: CaptureRuntimeClient = Depends(get_capture_runtime_client),
+    setup: CaptureRuntimeSetup = Depends(get_capture_runtime_setup),
 ) -> RuntimeInstallations:
     try:
-        return client.list_installations()
-    except (
-        CaptureRuntimeCompatibilityError,
-        CaptureRuntimeError,
-        CaptureRuntimeProtocolError,
-    ) as error:
-        _raise_runtime_error(error)
+        return capture_reviews.list_runtime_installations(setup)
+    except CaptureRuntimeSetupRejected as error:
+        _raise_setup_rejected(error)
 
 
 @router.get("/installations/{installation_id}", response_model=RuntimeInstallation)
 def capture_runtime_installation(
     installation_id: UUID,
-    client: CaptureRuntimeClient = Depends(get_capture_runtime_client),
+    setup: CaptureRuntimeSetup = Depends(get_capture_runtime_setup),
 ) -> RuntimeInstallation:
     try:
-        return client.get_installation(str(installation_id))
-    except (
-        CaptureRuntimeCompatibilityError,
-        CaptureRuntimeError,
-        CaptureRuntimeProtocolError,
-    ) as error:
-        _raise_runtime_error(error)
+        return capture_reviews.view_runtime_installation(
+            setup, installation_id=str(installation_id)
+        )
+    except CaptureRuntimeSetupRejected as error:
+        _raise_setup_rejected(error)
 
 
 @router.post(
@@ -165,38 +142,22 @@ def capture_runtime_installation(
 )
 def cancel_capture_runtime_installation(
     installation_id: UUID,
-    client: CaptureRuntimeClient = Depends(get_capture_runtime_client),
+    setup: CaptureRuntimeSetup = Depends(get_capture_runtime_setup),
 ) -> RuntimeInstallation:
     try:
-        return client.cancel_installation(str(installation_id))
-    except (
-        CaptureRuntimeCompatibilityError,
-        CaptureRuntimeError,
-        CaptureRuntimeProtocolError,
-    ) as error:
-        _raise_runtime_error(error)
+        return capture_reviews.cancel_runtime_installation(
+            setup, installation_id=str(installation_id)
+        )
+    except CaptureRuntimeSetupRejected as error:
+        _raise_setup_rejected(error)
 
 
-def _raise_runtime_error(
-    error: CaptureRuntimeCompatibilityError
-    | CaptureRuntimeError
-    | CaptureRuntimeProtocolError,
-) -> NoReturn:
-    if isinstance(error, CaptureRuntimeError):
-        raise api_error(
-            status_code=error.status_code,
-            code=error.code,
-            message=error.runtime_message,
-            details=error.details,
-        ) from error
-    if isinstance(error, CaptureRuntimeCompatibilityError):
-        code = "capture_runtime_incompatible"
-    else:
-        code = "capture_runtime_protocol_error"
+def _raise_setup_rejected(error: CaptureRuntimeSetupRejected) -> NoReturn:
     raise api_error(
-        status_code=status.HTTP_502_BAD_GATEWAY,
-        code=code,
-        message="Capture Runtime returned an incompatible setup response.",
+        status_code=error.status_code,
+        code=error.code,
+        message=error.setup_message,
+        details=error.details,
     ) from error
 
 

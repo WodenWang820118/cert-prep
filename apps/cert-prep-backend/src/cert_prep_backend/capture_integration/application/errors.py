@@ -93,3 +93,21 @@ class CaptureEventStreamFailed(Exception):
 
 class CaptureSourceMissing(Exception):
     """A completed capture's document has lost its source record. It is not answered as 404."""
+
+
+class CaptureRuntimeSetupRejected(Exception):
+    """A setup call the runtime refused. The router rebuilds today's api_error."""
+
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        code: str,
+        message: str,
+        details: object = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
+        self.setup_message = message
+        self.details = details
