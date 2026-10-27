@@ -14,6 +14,7 @@ from cert_prep_backend.capture_integration.application.errors import (
     CaptureGatewayRejection,
     CaptureRequirementUnavailable,
     CaptureReviewConflict,
+    CaptureReviewInputRejected,
     CaptureRuntimeCallFailed,
 )
 from cert_prep_backend.capture_integration.application.messages import PDF_OCR_UNAVAILABLE_MESSAGE
@@ -34,6 +35,7 @@ from cert_prep_backend.capture_integration.application.results import (
     QueuedCaptureCommit,
     ReportedStructuringFailure,
     StartedCaptureReview,
+    ViewedCapture,
 )
 from cert_prep_backend.capture_integration.domain.review_session import (
     CaptureReviewSession,
@@ -42,6 +44,7 @@ from cert_prep_backend.capture_integration.domain.review_session import (
 from cert_prep_backend.platform.errors import BackendError, ValidationError
 from cert_prep_backend.projects.application.ports import ProjectRepository
 from cert_prep_backend.projects.application.use_cases import require_project
+from cert_prep_backend.source_library.domain.document import SourceDocument
 
 __all__ = [
     "abandon_capture_upload",
@@ -51,10 +54,14 @@ __all__ = [
     "discard_capture_runtime",
     "expire_capture_reviews",
     "extract_capture_for_review",
+    "preview_capture_structure",
     "publish_reviewed_capture",
     "recover_capture_reviews",
     "report_structuring_failure",
     "start_capture_review",
+    "view_capture",
+    "view_partial_capture",
+    "view_raw_capture",
 ]
 
 logger = logging.getLogger(__name__)
@@ -69,6 +76,16 @@ _RUNTIME_UNAVAILABLE = "Capture Runtime operation is not available."
 _STRUCTURING_GATEWAY = "Capture structuring failure could not be confirmed."
 _CANCEL_GATEWAY = "Capture cancellation could not be confirmed."
 _DELETE_GATEWAY = "Capture Runtime deletion could not be confirmed."
+_STATUS_UNAVAILABLE = "Capture Runtime status unavailable."
+_OCR_REVIEW_UNAVAILABLE = "OCR review is no longer available."
+_EXTRACTION_NOT_READY = "OCR extraction has not reached review state."
+_REVIEW_CANCELLED = "Capture review was cancelled."
+_STRUCTURE_FAILED = "Capture structuring failed."
+_EXPECTED_TERMINAL = {
+    CaptureReviewStatus.COMPLETED: "completed",
+    CaptureReviewStatus.CANCELED: "cancelled",
+    CaptureReviewStatus.FAILED: "failed",
+}
 
 
 def claim_capture_upload(
@@ -570,6 +587,167 @@ def recover_capture_reviews(maintenance: CaptureReviewMaintenance) -> tuple[str,
     """Cancel review sessions still active when the process starts or stops."""
 
     return maintenance.recover()
+
+
+def view_capture(
+    sessions: CaptureReviewStore,
+    documents: CaptureDocuments,
+    operations: CaptureOperations,
+    runtime: CaptureRuntime,
+    *,
+    project_id: str,
+    session_id: str,
+) -> ViewedCapture:
+    """Choose the runtime operation to show, or the stored session when it stays hidden."""
+
+    session = sessions.get(project_id=project_id, session_id=session_id)
+    document = documents.document(project_id, session.document_id)
+    if session.status == CaptureReviewStatus.CONFIRMING:
+        # Runtime commit can become terminal before the durable document and
+        # review session have been published atomically. The host operation is
+        # still structuring throughout that window.
+        return _stored_capture_view(session, document)
+    if not session.runtime_capture_id:
+        return _stored_capture_view(session, document)
+    try:
+        operation = runtime.read_operation(session.runtime_capture_id)
+        session = sessions.observe(
+            project_id=project_id,
+            session_id=session_id,
+            sequence=operation.last_event_sequence,
+        )
+    except Exception:
+        if session.is_active:
+            raise CaptureGatewayRejection(_STATUS_UNAVAILABLE) from None
+        return _stored_capture_view(session, document)
+    if session.is_active and runtime.status_equals(
+        operation, "completed", "failed", "cancelled"
+    ):
+        return _stored_capture_view(session, document)
+    expected = _EXPECTED_TERMINAL.get(session.status)
+    if expected is None or runtime.status_is(operation, expected):
+        report_extracting = runtime.status_is(
+            operation, "awaiting_structuring"
+        ) and not capture_review_ready(operations, session)
+        return ViewedCapture(
+            session=session,
+            document=document,
+            runtime_operation=operation,
+            report_extracting=report_extracting,
+        )
+    return _stored_capture_view(session, document)
+
+
+def view_partial_capture(
+    sessions: CaptureReviewStore,
+    runtime: CaptureRuntime,
+    *,
+    project_id: str,
+    session_id: str,
+) -> object:
+    """Return the runtime partial extraction while the review is still pending."""
+
+    _review, runtime_id = _pending_runtime_review(
+        sessions,
+        project_id=project_id,
+        session_id=session_id,
+        closed=_OCR_REVIEW_UNAVAILABLE,
+    )
+    return runtime.read_partial(runtime_id)
+
+
+def view_raw_capture(
+    sessions: CaptureReviewStore,
+    runtime: CaptureRuntime,
+    *,
+    project_id: str,
+    session_id: str,
+) -> object:
+    """Return the runtime raw extraction while the review is still pending."""
+
+    _review, runtime_id = _pending_runtime_review(
+        sessions,
+        project_id=project_id,
+        session_id=session_id,
+        closed=_OCR_REVIEW_UNAVAILABLE,
+    )
+    return runtime.read_raw(runtime_id)
+
+
+def preview_capture_structure(
+    sessions: CaptureReviewStore,
+    operations: CaptureOperations,
+    runtime: CaptureRuntime,
+    *,
+    project_id: str,
+    session_id: str,
+    review: object,
+) -> object:
+    """Check a review edit and ask the runtime to structure it. The session is not written."""
+
+    session, runtime_id = _pending_runtime_review(
+        sessions,
+        project_id=project_id,
+        session_id=session_id,
+        closed=_REVIEW_NOT_PENDING,
+    )
+    raw = runtime.read_raw(runtime_id)
+    try:
+        runtime.validate_review(raw, review)
+    except ValueError as error:
+        raise CaptureReviewInputRejected(str(error)) from error
+    try:
+        return runtime.structure(
+            operation_id=session.operation_id,
+            capture_id=runtime_id,
+            review=review,
+            should_cancel=lambda: not _operation_is_running(
+                operations, project_id, session.operation_id
+            ),
+        )
+    except CaptureExtractionCanceled as error:
+        raise CaptureReviewConflict(_REVIEW_CANCELLED) from error
+    except Exception as error:
+        raise CaptureGatewayRejection(_STRUCTURE_FAILED) from error
+
+
+def capture_review_ready(operations: CaptureOperations, session: CaptureReviewSession) -> bool:
+    """Whether the host operation can take a review. A failed read is not ready."""
+
+    if session.status != CaptureReviewStatus.PENDING:
+        return True
+    try:
+        operation = operations.operation(session.project_id, session.operation_id)
+    except Exception:
+        return False
+    return operation.phase == "awaiting_review"
+
+
+def _stored_capture_view(
+    session: CaptureReviewSession, document: SourceDocument
+) -> ViewedCapture:
+    return ViewedCapture(
+        session=session,
+        document=document,
+        runtime_operation=None,
+        report_extracting=False,
+    )
+
+
+def _pending_runtime_review(
+    sessions: CaptureReviewStore,
+    *,
+    project_id: str,
+    session_id: str,
+    closed: str,
+) -> tuple[CaptureReviewSession, str]:
+    session = sessions.get(project_id=project_id, session_id=session_id)
+    if session.status != CaptureReviewStatus.PENDING:
+        raise CaptureReviewConflict(closed)
+    runtime_id = session.runtime_capture_id
+    if not runtime_id:
+        raise CaptureReviewConflict(_EXTRACTION_NOT_READY)
+    return session, runtime_id
 
 
 def _load_capture_session(

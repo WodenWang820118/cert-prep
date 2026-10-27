@@ -323,6 +323,16 @@ class CaptureReviewStoreAdapter:
     def get(self, *, project_id: str, session_id: str) -> CaptureReviewSession:
         return get(self._db, project_id=project_id, session_id=session_id)
 
+    def observe(
+        self, *, project_id: str, session_id: str, sequence: int
+    ) -> CaptureReviewSession:
+        return observe_event_sequence(
+            self._db,
+            project_id=project_id,
+            session_id=session_id,
+            sequence=sequence,
+        )
+
     def create(
         self, *, project_id: str, document_id: str, operation_id: str
     ) -> CaptureReviewSession:
