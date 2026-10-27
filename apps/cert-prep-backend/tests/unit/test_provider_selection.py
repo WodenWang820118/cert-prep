@@ -1,23 +1,23 @@
 from __future__ import annotations
 
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.ai_providers.infrastructure import ollama_profiles as ollama_profile_module
+from cert_prep_backend.ai_providers.infrastructure import machine_inventory as machine_inventory_module
 from cert_prep_backend.ai_providers.infrastructure.ollama_transport import OllamaProvider
 from cert_prep_backend.ai_providers.infrastructure.provider import (
     lazy_provider_from_settings,
     provider_from_settings,
 )
-from cert_prep_backend.ai_providers.infrastructure.provider_selection import (
-    provider_selection_from_settings,
-)
+from cert_prep_backend.ai_providers.domain.selection import select_provider
 from cert_prep_contracts.llm import LLMProviderName, LLMProviderPreference
 from cert_prep_contracts.runtime import RuntimeRequirementKind
 from llm_test_fakes import GIB, _profile_inventory
 
 
 def test_auto_policy_selects_the_ollama_alpha_lane(tmp_path) -> None:
-    selection = provider_selection_from_settings(
-        Settings(data_dir=tmp_path, llm_provider="auto")
+    settings = Settings(data_dir=tmp_path, llm_provider="auto")
+    selection = select_provider(
+        LLMProviderPreference(settings.llm_provider),
+        configured_model=settings.ollama_model,
     )
 
     assert selection.preference == LLMProviderPreference.AUTO
@@ -28,8 +28,10 @@ def test_auto_policy_selects_the_ollama_alpha_lane(tmp_path) -> None:
 
 
 def test_explicit_fake_policy_keeps_provider_neutral_selection_shape(tmp_path) -> None:
-    selection = provider_selection_from_settings(
-        Settings(data_dir=tmp_path, llm_provider="fake"),
+    settings = Settings(data_dir=tmp_path, llm_provider="fake")
+    selection = select_provider(
+        LLMProviderPreference(settings.llm_provider),
+        configured_model=settings.ollama_model,
         effective_provider="fake",
         effective_model="test-model",
     )
@@ -48,7 +50,7 @@ def test_provider_factory_uses_the_auto_selected_ollama_lane(
 ) -> None:
     inventory = _profile_inventory(total_ram=16 * GIB, free_disk=64 * GIB)
     monkeypatch.setattr(
-        ollama_profile_module,
+        machine_inventory_module,
         "collect_machine_inventory",
         lambda **_kwargs: inventory,
     )

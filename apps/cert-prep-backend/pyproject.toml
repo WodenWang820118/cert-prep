@@ -170,11 +170,6 @@ forbidden_modules = [
   "cert_prep_backend.capture_integration",
   "cert_prep_backend.runtime_provisioning",
 ]
-# Known until the routers take their providers from the contexts that own them: the router
-# reads the LLM provider from api.dependencies, which imports every context.
-ignore_imports = [
-  "cert_prep_backend.ai_providers.api.router -> cert_prep_backend.api.dependencies",
-]
 
 [[tool.importlinter.contracts]]
 name = "Capture Integration, Practice and Runtime Provisioning do not depend on each other"
@@ -212,14 +207,9 @@ containers = [
 layers = ["(api) | (infrastructure)", "(application)", "(domain)"]
 # Known before C4, which adds the use cases and the aggregates: the routers call the
 # repositories directly, the authoring repository takes the HTTP DTOs, and the
-# authoring DTOs use job and operation statuses that still live in infrastructure. The LLM
-# router reads the Ollama profiles and the provider selection directly until AI Providers gets
-# its use cases. The capture routers keep their workflow and an upload helper of
-# routers.documents until C6.
+# authoring DTOs use job and operation statuses that still live in infrastructure. The capture
+# routers keep their workflow and an upload helper of routers.documents until C6.
 ignore_imports = [
-  "cert_prep_backend.ai_providers.api.router -> cert_prep_backend.ai_providers.infrastructure.ollama_profiles",
-  "cert_prep_backend.ai_providers.api.router -> cert_prep_backend.ai_providers.infrastructure.provider_selection",
-  "cert_prep_backend.ai_providers.api.router -> cert_prep_backend.api.dependencies",
   "cert_prep_backend.authoring.api.router -> cert_prep_backend.api.dependencies",
   "cert_prep_backend.authoring.api.router -> cert_prep_backend.authoring.infrastructure.draft_jobs",
   "cert_prep_backend.authoring.api.router -> cert_prep_backend.authoring.infrastructure.draft_writing",
@@ -345,11 +335,8 @@ forbidden_modules = [
   "cert_prep_backend.ai_providers.infrastructure",
   "cert_prep_backend.ai_providers.api",
 ]
-# Known until AI Providers gets its use cases: Runtime Provisioning reads the machine inventory
-# and the Ollama profile selection from AI Providers' infrastructure, and shows the inventory
-# with AI Providers' DTO.
+# Runtime Provisioning shows AI Providers' machine inventory under /runtime with AI Providers'
+# DTO. The route stays in the runtime router so the API keeps its operation order (D6, D15).
 ignore_imports = [
   "cert_prep_backend.runtime_provisioning.api.router -> cert_prep_backend.ai_providers.api.schemas",
-  "cert_prep_backend.runtime_provisioning.api.router -> cert_prep_backend.ai_providers.infrastructure.ollama_profiles",
-  "cert_prep_backend.runtime_provisioning.infrastructure.manager -> cert_prep_backend.ai_providers.infrastructure.ollama_profiles",
 ]

@@ -8,6 +8,8 @@ from typing import Protocol
 from uuid import uuid4
 
 from cert_prep_backend.platform.config import Settings
+from cert_prep_backend.ai_providers.application.ports import MachineInventory
+from cert_prep_backend.ai_providers.application.use_cases import choose_ollama_profile
 from cert_prep_backend.ai_providers.domain.provider import (
     RuntimeInstallationProvider,
     provider_capability,
@@ -105,6 +107,7 @@ class RuntimeInstallationManager:
         *,
         settings: Settings,
         llm_provider: object,
+        machine_inventory: MachineInventory,
         db: Database | None = None,
         async_jobs: bool = True,
         installers: list[RuntimeInstaller] | None = None,
@@ -139,7 +142,7 @@ class RuntimeInstallationManager:
             provider_runtime_kind == RuntimeRequirementKind.OLLAMA
             and settings.ollama_profile_enabled
         ):
-            llm_model_installer = _LazyOllamaProfileInstaller(settings)
+            llm_model_installer = _LazyOllamaProfileInstaller(settings, machine_inventory)
         elif provider_runtime_kind == RuntimeRequirementKind.OLLAMA:
             profile_selection = getattr(llm_provider, "profile_selection", None)
             if profile_selection is not None:
@@ -674,8 +677,9 @@ class _LazyOllamaProfileInstaller:
     kind = RuntimeRequirementKind.OLLAMA_MODEL
     provider = "ollama"
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, machine_inventory: MachineInventory) -> None:
         self._settings = settings
+        self._machine_inventory = machine_inventory
         self._lock = Lock()
         self._installer: RuntimeInstaller | None = None
 
@@ -706,13 +710,11 @@ class _LazyOllamaProfileInstaller:
             return installer
         with self._lock:
             if self._installer is None:
-                from cert_prep_backend.ai_providers.infrastructure.ollama_profiles import (
-                    ollama_profile_selection_from_settings,
-                )
                 from cert_prep_ollama.profile_installer import OllamaProfileInstaller
 
-                profile_selection = ollama_profile_selection_from_settings(
+                profile_selection = choose_ollama_profile(
                     self._settings,
+                    self._machine_inventory.inventory,
                     provider_selected=True,
                 )
                 if profile_selection is None:

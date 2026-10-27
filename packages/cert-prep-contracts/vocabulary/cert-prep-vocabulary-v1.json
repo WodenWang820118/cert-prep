@@ -304,6 +304,69 @@
       "codeName": "DocumentOperationPhase.FAILED",
       "enum": { "enumId": "DocumentOperationPhase", "value": "failed" },
       "retired": false
+    },
+    {
+      "id": "ai-providers.execution-mode.auto",
+      "label": "自動選擇加速器",
+      "codeName": "LLMExecutionMode.AUTO",
+      "enum": { "enumId": "LLMExecutionMode", "value": "auto" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.execution-mode.cpu",
+      "label": "只用 CPU",
+      "codeName": "LLMExecutionMode.CPU",
+      "enum": { "enumId": "LLMExecutionMode", "value": "cpu" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.provider.ollama",
+      "label": "Ollama",
+      "codeName": "LLMProviderName.OLLAMA",
+      "enum": { "enumId": "LLMProviderName", "value": "ollama" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.provider.fake",
+      "label": "假供應者",
+      "codeName": "LLMProviderName.FAKE",
+      "enum": { "enumId": "LLMProviderName", "value": "fake" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.provider-preference.auto",
+      "label": "自動",
+      "codeName": "LLMProviderPreference.AUTO",
+      "enum": { "enumId": "LLMProviderPreference", "value": "auto" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.provider-preference.ollama",
+      "label": "Ollama",
+      "codeName": "LLMProviderPreference.OLLAMA",
+      "enum": { "enumId": "LLMProviderPreference", "value": "ollama" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.provider-preference.fake",
+      "label": "假供應者",
+      "codeName": "LLMProviderPreference.FAKE",
+      "enum": { "enumId": "LLMProviderPreference", "value": "fake" },
+      "retired": false
+    },
+    {
+      "id": "runtime-provisioning.requirement-kind.ollama",
+      "label": "Ollama 執行環境",
+      "codeName": "RuntimeRequirementKind.OLLAMA",
+      "enum": { "enumId": "RuntimeRequirementKind", "value": "ollama" },
+      "retired": false
+    },
+    {
+      "id": "runtime-provisioning.requirement-kind.ollama-model",
+      "label": "Ollama 模型",
+      "codeName": "RuntimeRequirementKind.OLLAMA_MODEL",
+      "enum": { "enumId": "RuntimeRequirementKind", "value": "ollama_model" },
+      "retired": false
     }
   ]
 }

@@ -3,18 +3,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from threading import Lock
 
+from cert_prep_backend.ai_providers.application.use_cases import choose_ollama_profile
+from cert_prep_backend.ai_providers.domain.selection import select_provider
 from cert_prep_backend.ai_providers.infrastructure.fake_provider import FakeLLMProvider
-from cert_prep_backend.ai_providers.infrastructure.ollama_profiles import (
-    collect_ollama_machine_inventory,
-    ollama_profile_selection_from_settings,
-)
+from cert_prep_backend.ai_providers.infrastructure.machine_inventory import OllamaMachineInventory
 from cert_prep_backend.ai_providers.infrastructure.ollama_transport import OllamaProvider
-from cert_prep_backend.ai_providers.infrastructure.provider_selection import (
-    provider_selection_from_settings,
-)
 from cert_prep_backend.platform.config import Settings
 from cert_prep_contracts.hardware import MachineInventorySnapshot
-from cert_prep_contracts.llm import LLMProviderName
+from cert_prep_contracts.llm import LLMProviderName, LLMProviderPreference
 from cert_prep_contracts.runtime import RuntimeRequirementKind
 from cert_prep_ollama.profiles import select_ollama_execution_policy
 
@@ -25,10 +21,10 @@ def provider_from_settings(settings: Settings):
     selected_provider = _selected_provider_from_settings(settings)
     if selected_provider == LLMProviderName.OLLAMA:
         inventory = _ollama_inventory_from_settings(settings)
-        profile_selection = ollama_profile_selection_from_settings(
+        profile_selection = choose_ollama_profile(
             settings,
+            lambda: inventory,
             provider_selected=True,
-            inventory=inventory,
         )
         model = (
             profile_selection.selected_profile.local_model
@@ -196,7 +192,10 @@ def _provider_model_hint(settings: Settings, selected_provider: str | None = Non
 
 def _selected_provider_from_settings(settings: Settings) -> LLMProviderName:
     if settings.llm_provider == "auto":
-        return provider_selection_from_settings(settings).selected_provider
+        return select_provider(
+            LLMProviderPreference(settings.llm_provider),
+            configured_model=settings.ollama_model,
+        ).selected_provider
     return LLMProviderName(settings.llm_provider)
 
 
@@ -204,7 +203,7 @@ def _ollama_inventory_from_settings(
     settings: Settings,
 ) -> MachineInventorySnapshot | None:
     try:
-        return collect_ollama_machine_inventory(settings)
+        return OllamaMachineInventory(settings).inventory()
     except Exception:
         return None
 

@@ -73,15 +73,27 @@
 
 ## AI 供應
 
-| 中文             | 程式名稱               | 意思                                                                 |
-| ---------------- | ---------------------- | -------------------------------------------------------------------- |
-| 供應者           | `LLMProvider`          | 使用者設定的語言模型：哪個供應者、哪個模型、目前能不能用             |
-| 供應者健康狀態   | `ProviderHealth`       | 供應者與模型是否可用、為什麼不能用、用哪個設定檔與執行模式           |
-| 供應者能力       | `provider_capability`  | 供應者除了回報健康之外能做的事（結構化 JSON、JSON 對話、下載模型等） |
-| JSON 對話        | `JsonChatProvider`     | 以 JSON 模式和設定的模型對話；一個工作階段內模型只檢查一次           |
-| 延遲建立的供應者 | `LazyLLMProvider`      | 第一次用到時才依設定建立的供應者，啟動 app 時不探測 Ollama           |
-| 模型設定         | LLM profile            | 一個 Ollama 模型與它的參數                                           |
-| 機器盤點         | `MachineInventoryRead` | CPU、記憶體、儲存空間與加速器；用來選 Ollama 設定檔與執行模式        |
+| 中文               | 程式名稱                                   | 意思                                                           |
+| ------------------ | ------------------------------------------ | -------------------------------------------------------------- |
+| 供應者             | `LLMProvider`                              | 使用者設定的語言模型：哪個供應者、哪個模型、目前能不能用       |
+| 供應者健康狀態     | `ProviderHealth`                           | 供應者與模型是否可用、為什麼不能用、用哪個設定檔與執行模式     |
+| 供應者能力         | `provider_capability`                      | 供應者除了回報健康之外能做的事；延遲建立的供應者在查詢時才建立 |
+| JSON 對話          | `JsonChatProvider`、`JsonChat`             | 以 JSON 模式和設定的模型對話；一個工作階段內模型只檢查一次     |
+| 結構化 JSON        | `StructuredJsonGenerationProvider`         | 依 JSON schema 產生一個候選結果，原樣回傳不修正                |
+| 模型下載           | `ModelDownloadProvider`                    | 使用者確認後下載設定的模型                                     |
+| 模型上線檢查       | `ModelOnboardingProvider`                  | 下載前檢查執行環境、下載後確認模型能回應                       |
+| 產生歸屬           | `GenerationAttributionProvider`            | 最近一次成功的產生實際用了哪個供應者與模型                     |
+| 釋放資源           | `ResourceReleasingProvider`                | 串流產生工作結束後讓模型卸載                                   |
+| 串流參數           | `StreamingGenerationOptionsProvider`       | 串流產生時供應者自己的呼叫參數，例如用完就卸載模型             |
+| 產生時才啟動       | `StartsOnGenerationProvider`               | 產生時才啟動還沒執行的供應者執行環境                           |
+| 需要安裝的執行環境 | `RuntimeInstallationProvider`              | 供應者需要在本機安裝的執行環境（Ollama）                       |
+| 延遲建立的供應者   | `LazyLLMProvider`                          | 第一次用到時才依設定建立的供應者                               |
+| 供應者偏好         | `LLMProviderPreference`                    | 使用者設定的偏好：自動、Ollama 或假供應者                      |
+| 供應者選擇         | `LLMProviderSelection`、`select_provider`  | 偏好選中的供應者、實際使用的供應者，以及它需要安裝什麼         |
+| 執行模式           | `LLMExecutionMode`                         | 模型用加速器（自動）或只用 CPU                                 |
+| 模型設定檔         | `OllamaModelProfile`                       | 一個 Ollama 模型與它的參數、需要的記憶體與磁碟空間             |
+| 設定檔選擇         | `OllamaProfileSelection`                   | 為這台機器選中的設定檔、備用設定檔與原因                       |
+| 機器盤點           | `MachineInventory`、`MachineInventoryRead` | CPU、記憶體、儲存空間與加速器；用來選設定檔與執行模式          |
 
 ## 執行環境
 

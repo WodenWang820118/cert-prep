@@ -9,6 +9,7 @@ from cert_prep_backend.api.errors import api_error
 from cert_prep_backend.platform.dependencies import get_settings
 from cert_prep_backend.capture_integration.infrastructure.client import CaptureRuntimeClient
 from cert_prep_backend.capture_integration.infrastructure.coordinator import CertPrepCaptureCoordinator
+from cert_prep_backend.ai_providers.application.ports import MachineInventory
 from cert_prep_backend.ai_providers.domain.provider import LLMProvider
 from cert_prep_backend.authoring.infrastructure.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.runtime_provisioning.infrastructure import RuntimeInstallationManager
@@ -44,6 +45,10 @@ def get_capture_coordinator(request: Request) -> CertPrepCaptureCoordinator:
 
 def get_llm_provider(request: Request) -> LLMProvider:
     return request.app.state.llm_provider
+
+
+def get_machine_inventory(request: Request) -> MachineInventory:
+    return request.app.state.machine_inventory
 
 
 def get_runtime_installation_manager(request: Request) -> RuntimeInstallationManager:
