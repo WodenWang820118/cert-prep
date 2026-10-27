@@ -6,16 +6,16 @@ from datetime import UTC, datetime, timedelta
 from sqlite3 import Connection, Row
 from uuid import uuid4
 
-from cert_prep_backend.platform.errors import NotFoundError
+from cert_prep_backend.capture_integration.domain.review_session import (
+    ACTIVE_CAPTURE_REVIEW_STATUSES,
+    CaptureReviewEnding,
+    CaptureReviewSession,
+    CaptureReviewStatus,
+    CaptureReviewTransitionError,
+    event_sequence,
+)
 from cert_prep_backend.platform.database import Database, utc_now
-
-
-PENDING = "pending"
-CONFIRMING = "confirming"
-COMPLETED = "completed"
-CANCELED = "canceled"
-FAILED = "failed"
-ACTIVE = (PENDING, CONFIRMING)
+from cert_prep_backend.platform.errors import NotFoundError
 
 
 def create(
@@ -25,7 +25,7 @@ def create(
     document_id: str,
     operation_id: str,
     expires_in_seconds: int = 1800,
-) -> dict:
+) -> CaptureReviewSession:
     now = utc_now()
     expires = (datetime.now(UTC) + timedelta(seconds=expires_in_seconds)).isoformat()
     session_id = str(uuid4())
@@ -37,24 +37,31 @@ def create(
                 status, review_revision, expires_at, created_at, updated_at
             ) VALUES (?, ?, ?, ?, NULL, ?, 0, ?, ?, ?)
             """,
-            (session_id, project_id, document_id, operation_id, PENDING, expires, now, now),
+            (
+                session_id,
+                project_id,
+                document_id,
+                operation_id,
+                CaptureReviewStatus.PENDING,
+                expires,
+                now,
+                now,
+            ),
         )
-        return _row(
+        return _session(
             connection.execute(
                 "SELECT * FROM capture_review_sessions WHERE id = ?", (session_id,)
             ).fetchone()
         )
 
 
-def get(db: Database, *, project_id: str, session_id: str) -> dict:
+def get(db: Database, *, project_id: str, session_id: str) -> CaptureReviewSession:
     with db.connect() as connection:
         row = connection.execute(
             "SELECT * FROM capture_review_sessions WHERE project_id = ? AND id = ?",
             (project_id, session_id),
         ).fetchone()
-    if row is None:
-        raise NotFoundError("Capture review session not found.")
-    return _row(row)
+    return _session(row)
 
 
 def set_runtime_capture_id(
@@ -63,20 +70,34 @@ def set_runtime_capture_id(
     project_id: str,
     session_id: str,
     runtime_capture_id: str,
-) -> dict:
-    now = utc_now()
+) -> CaptureReviewSession:
     with db.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            "SELECT * FROM capture_review_sessions WHERE project_id = ? AND id = ?",
+            (project_id, session_id),
+        ).fetchone()
+        if row is None:
+            raise CaptureReviewTransitionError("Capture review session is no longer pending.")
+        current = _session(row)
+        session = current.with_runtime_capture(runtime_capture_id, now=utc_now())
         updated = connection.execute(
             """
             UPDATE capture_review_sessions
             SET runtime_capture_id = ?, updated_at = ?
             WHERE project_id = ? AND id = ? AND status = ?
             """,
-            (runtime_capture_id, now, project_id, session_id, PENDING),
+            (
+                session.runtime_capture_id,
+                session.updated_at,
+                project_id,
+                session_id,
+                current.status,
+            ),
         )
         if updated.rowcount != 1:
-            raise RuntimeError("Capture review session is no longer pending.")
-        return _row(
+            raise CaptureReviewTransitionError("Capture review session is no longer pending.")
+        return _session(
             connection.execute(
                 "SELECT * FROM capture_review_sessions WHERE id = ?", (session_id,)
             ).fetchone()
@@ -89,9 +110,8 @@ def observe_event_sequence(
     project_id: str,
     session_id: str,
     sequence: int,
-) -> dict:
-    if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence < 0:
-        raise ValueError("Capture event sequence must be a non-negative integer.")
+) -> CaptureReviewSession:
+    observed = event_sequence(sequence)
     with db.connect() as connection:
         updated = connection.execute(
             """
@@ -99,11 +119,11 @@ def observe_event_sequence(
             SET last_event_sequence = MAX(last_event_sequence, ?)
             WHERE project_id = ? AND id = ?
             """,
-            (sequence, project_id, session_id),
+            (observed, project_id, session_id),
         )
         if updated.rowcount != 1:
             raise NotFoundError("Capture review session not found.")
-        return _row(
+        return _session(
             connection.execute(
                 "SELECT * FROM capture_review_sessions WHERE id = ?", (session_id,)
             ).fetchone()
@@ -118,7 +138,7 @@ def begin_confirm(
     review_revision: int,
     client_request_id: str | None = None,
     review_digest: str | None = None,
-) -> dict:
+) -> CaptureReviewSession:
     with db.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
         session, _acquired = begin_confirm_in_connection(
@@ -140,7 +160,7 @@ def begin_confirm_in_connection(
     review_revision: int,
     client_request_id: str | None,
     review_digest: str | None,
-) -> tuple[dict, bool]:
+) -> tuple[CaptureReviewSession, bool]:
     """Claim confirmation and report whether this request won the claim."""
 
     row = connection.execute(
@@ -149,19 +169,15 @@ def begin_confirm_in_connection(
     ).fetchone()
     if row is None:
         raise NotFoundError("Capture review session not found.")
-    if row["status"] == CONFIRMING:
-        if client_request_id is None and row["review_revision"] == review_revision:
-            return _row(row), False
-        if (
-            row["confirm_request_id"] == client_request_id
-            and row["confirm_review_digest"] == review_digest
-        ):
-            return _row(row), False
-        if row["confirm_request_id"] == client_request_id:
-            raise RuntimeError("The same client request id was reused with different review data.")
-        raise RuntimeError("Capture review session is not pending confirmation.")
-    if row["status"] != PENDING:
-        raise RuntimeError("Capture review session is not pending confirmation.")
+    session = _session(row)
+    claimed, acquired = session.claim_confirmation(
+        review_revision=review_revision,
+        client_request_id=client_request_id,
+        review_digest=review_digest,
+        now=utc_now(),
+    )
+    if not acquired:
+        return session, False
     updated = connection.execute(
         """
         UPDATE capture_review_sessions
@@ -170,19 +186,19 @@ def begin_confirm_in_connection(
         WHERE project_id = ? AND id = ? AND status = ?
         """,
         (
-            CONFIRMING,
-            review_revision,
-            client_request_id,
-            review_digest,
-            utc_now(),
+            claimed.status,
+            claimed.review_revision,
+            claimed.confirm_request_id,
+            claimed.confirm_review_digest,
+            claimed.updated_at,
             project_id,
             session_id,
-            PENDING,
+            session.status,
         ),
     )
     if updated.rowcount != 1:
-        raise RuntimeError("Capture review session changed while confirming.")
-    return _row(
+        raise CaptureReviewTransitionError("Capture review session changed while confirming.")
+    return _session(
         connection.execute(
             "SELECT * FROM capture_review_sessions WHERE id = ?", (session_id,)
         ).fetchone()
@@ -196,66 +212,51 @@ def finish(
     session_id: str,
     status: str,
     terminal_sequence: int | None = None,
-) -> dict:
-    if status not in {COMPLETED, CANCELED, FAILED}:
-        raise ValueError(f"Unsupported capture review terminal status: {status}")
-    if terminal_sequence is not None and (
-        not isinstance(terminal_sequence, int)
-        or isinstance(terminal_sequence, bool)
-        or terminal_sequence < 1
-    ):
-        raise ValueError("Terminal capture event sequence must be a positive integer.")
+) -> CaptureReviewSession:
+    ending = CaptureReviewEnding(status, terminal_sequence)
     with db.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
-        current = connection.execute(
+        row = connection.execute(
             "SELECT * FROM capture_review_sessions WHERE project_id = ? AND id = ?",
             (project_id, session_id),
         ).fetchone()
-        if current is None:
+        if row is None:
             raise NotFoundError("Capture review session not found.")
-        if current["status"] in {COMPLETED, CANCELED, FAILED}:
-            if (
-                terminal_sequence is not None
-                and terminal_sequence > int(current["last_event_sequence"])
-            ):
+        current = _session(row)
+        next_session = current.finished(ending, now=utc_now())
+        if current.is_terminal:
+            if next_session.last_event_sequence != current.last_event_sequence:
                 connection.execute(
                     """
                     UPDATE capture_review_sessions
                     SET last_event_sequence = ?
                     WHERE project_id = ? AND id = ?
                     """,
-                    (terminal_sequence, project_id, session_id),
+                    (next_session.last_event_sequence, project_id, session_id),
                 )
-                current = connection.execute(
-                    """
-                    SELECT * FROM capture_review_sessions
-                    WHERE project_id = ? AND id = ?
-                    """,
-                    (project_id, session_id),
-                ).fetchone()
-            return _row(current)
-        if current["status"] not in ACTIVE:
-            raise RuntimeError("Capture review session could not reach its terminal state.")
-        current_sequence = int(current["last_event_sequence"])
-        final_sequence = (
-            current_sequence + 1
-            if terminal_sequence is None
-            else max(current_sequence, terminal_sequence)
-        )
+                return _session(
+                    connection.execute(
+                        """
+                        SELECT * FROM capture_review_sessions
+                        WHERE project_id = ? AND id = ?
+                        """,
+                        (project_id, session_id),
+                    ).fetchone()
+                )
+            return next_session
         updated = connection.execute(
             """
             UPDATE capture_review_sessions
             SET status = ?, last_event_sequence = ?, updated_at = ?
-            WHERE project_id = ? AND id = ? AND status IN (?, ?)
+            WHERE project_id = ? AND id = ? AND status = ?
             """,
             (
-                status,
-                final_sequence,
-                utc_now(),
+                next_session.status,
+                next_session.last_event_sequence,
+                next_session.updated_at,
                 project_id,
                 session_id,
-                PENDING,
-                CONFIRMING,
+                current.status,
             ),
         )
         row = connection.execute(
@@ -264,45 +265,56 @@ def finish(
         ).fetchone()
         if row is None:
             raise NotFoundError("Capture review session not found.")
-        if updated.rowcount != 1 and row["status"] not in {COMPLETED, CANCELED, FAILED}:
-            raise RuntimeError("Capture review session could not reach its terminal state.")
-        return _row(row)
+        stored = _session(row)
+        if updated.rowcount != 1 and not stored.is_terminal:
+            raise CaptureReviewTransitionError(
+                "Capture review session could not reach its terminal state."
+            )
+        return stored
 
 
-def expired(db: Database) -> list[dict]:
+def expired(db: Database) -> list[CaptureReviewSession]:
     with db.connect() as connection:
         rows = connection.execute(
             """
             SELECT * FROM capture_review_sessions
             WHERE status IN (?, ?) AND expires_at <= ?
             """,
-            (*ACTIVE, utc_now()),
+            (*ACTIVE_CAPTURE_REVIEW_STATUSES, utc_now()),
         ).fetchall()
-    return [_row(row) for row in rows]
+    return [_session(row) for row in rows]
 
 
-def active(db: Database) -> list[dict]:
+def active(db: Database) -> list[CaptureReviewSession]:
     with db.connect() as connection:
         rows = connection.execute(
             "SELECT * FROM capture_review_sessions WHERE status IN (?, ?)",
-            ACTIVE,
+            tuple(ACTIVE_CAPTURE_REVIEW_STATUSES),
         ).fetchall()
-    return [_row(row) for row in rows]
+    return [_session(row) for row in rows]
 
 
-def _row(row: Row | None) -> dict:
+def _session(row: Row | None) -> CaptureReviewSession:
     if row is None:
         raise NotFoundError("Capture review session not found.")
-    return dict(row)
+    return CaptureReviewSession(
+        id=row["id"],
+        project_id=row["project_id"],
+        document_id=row["document_id"],
+        operation_id=row["operation_id"],
+        runtime_capture_id=row["runtime_capture_id"],
+        status=CaptureReviewStatus(row["status"]),
+        review_revision=row["review_revision"],
+        expires_at=row["expires_at"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        confirm_request_id=row["confirm_request_id"],
+        confirm_review_digest=row["confirm_review_digest"],
+        last_event_sequence=int(row["last_event_sequence"]),
+    )
 
 
 __all__ = [
-    "ACTIVE",
-    "CANCELED",
-    "COMPLETED",
-    "CONFIRMING",
-    "FAILED",
-    "PENDING",
     "begin_confirm",
     "begin_confirm_in_connection",
     "active",
