@@ -55,15 +55,20 @@ from cert_prep_backend.capture_integration.domain.review_session import (
 from cert_prep_backend.capture_integration.infrastructure import review_sessions
 from cert_prep_backend.capture_integration.infrastructure.host_models import CaptureReview
 from cert_prep_backend.capture_integration.infrastructure.client import (
-    CaptureRuntimeClient,
     CaptureRuntimeError,
-    CaptureRuntimeProtocolError,
 )
 from cert_prep_backend.capture_integration.application import use_cases as capture_reviews
 from cert_prep_backend.capture_integration.application.errors import (
     CaptureAudioRejected,
     CaptureCommitNotQueued,
     CaptureGatewayRejection,
+    CaptureOcrClosed,
+    CaptureOcrMissing,
+    CaptureOcrNotReady,
+    CaptureOcrTransport,
+    CaptureOcrUnavailable,
+    CaptureResultProtocolError,
+    CaptureResultUnavailable,
     CaptureReviewConflict,
     CaptureReviewInputRejected,
 )
@@ -84,8 +89,6 @@ from cert_prep_backend.capture_integration.infrastructure.coordinator import (
 )
 from cert_prep_backend.capture_integration.application.ocr_summary import (
     CaptureOcrSummaryRead,
-    OcrSummaryValidationError,
-    build_ocr_summary,
 )
 from cert_prep_backend.capture_integration.infrastructure.review_workflow import (
     cleanup_expired_review_sessions,
@@ -266,6 +269,33 @@ def get_capture_question_drafting(request: Request) -> CaptureQuestionDrafting:
     return request.app.state.draft_generation_work
 
 
+class _OcrRuntime:
+    """OCR runtime reads, reached only after the session gates inside the use case."""
+
+    def __init__(self, request: Request, runtime: CaptureRuntime | None) -> None:
+        self._request = request
+        self._runtime = runtime
+
+    def read_operation_for_ocr(self, runtime_capture_id: str) -> object:
+        return self._runtime_after_gates().read_operation_for_ocr(runtime_capture_id)
+
+    def read_ocr_projection(self, runtime_capture_id: str) -> object:
+        return self._runtime_after_gates().read_ocr_projection(runtime_capture_id)
+
+    def _runtime_after_gates(self) -> CaptureRuntime:
+        # A missing client answers 503 here, after those gates, and not with the
+        # coordinator's "not configured" message.
+        if self._request.app.state.capture_runtime_client is None:
+            raise api_error(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                code="capture_runtime_unavailable",
+                message="Capture Runtime is unavailable.",
+            )
+        runtime = self._runtime
+        assert runtime is not None
+        return runtime
+
+
 @router.post(
     "",
     response_model=CaptureReviewOperationRead,
@@ -417,69 +447,39 @@ def get_capture_ocr_summary(
 ) -> CaptureOcrSummaryRead:
     """Return stable OCR evidence without exposing diagnostic capture data."""
 
-    session = _ocr_summary_session_or_404(db, project_id, capture_id)
-    _ensure_ocr_summary_session_open(session)
-    runtime_id = session.runtime_capture_id
-    if not isinstance(runtime_id, str) or not runtime_id:
-        if session.status == CaptureReviewStatus.PENDING:
-            raise _ocr_summary_not_ready()
-        raise _ocr_summary_bad_gateway()
-
-    runtime: CaptureRuntimeClient | None = request.app.state.capture_runtime_client
-    if runtime is None:
+    try:
+        return capture_reviews.view_ocr_summary(
+            get_capture_review_store(request),
+            _OcrRuntime(request, get_capture_runtime(request)),
+            project_id=project_id,
+            session_id=capture_id,
+        )
+    except CaptureOcrMissing:
+        raise not_found_error("Capture not found.") from None
+    except CaptureOcrClosed:
+        raise api_error(
+            status_code=status.HTTP_410_GONE,
+            code="capture_closed",
+            message="Capture review is closed.",
+        )
+    except CaptureOcrNotReady:
+        raise api_error(
+            status_code=status.HTTP_409_CONFLICT,
+            code="ocr_summary_not_ready",
+            message="OCR summary is not ready.",
+        )
+    except CaptureOcrUnavailable:
+        raise api_error(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            code="capture_runtime_ocr_unavailable",
+            message="Capture Runtime OCR summary is unavailable.",
+        ) from None
+    except CaptureOcrTransport:
         raise api_error(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             code="capture_runtime_unavailable",
             message="Capture Runtime is unavailable.",
-        )
-
-    try:
-        operation = runtime.get_capture(runtime_id)
-    except CaptureRuntimeError as error:
-        raise _ocr_summary_runtime_error(error) from None
-    except Exception:
-        raise _ocr_summary_bad_gateway() from None
-
-    try:
-        operation_status = _runtime_enum_value(operation.status)
-    except Exception:
-        raise _ocr_summary_bad_gateway() from None
-    if (
-        session.status == CaptureReviewStatus.PENDING
-        and operation_status in {"created", "waiting_input", "extracting"}
-    ):
-        raise _ocr_summary_not_ready()
-    if operation_status not in {"awaiting_structuring", "failed"}:
-        raise _ocr_summary_bad_gateway()
-    if session.status == CaptureReviewStatus.FAILED and operation_status != "failed":
-        raise _ocr_summary_bad_gateway()
-
-    try:
-        projection = runtime.get_ocr(runtime_id)
-    except CaptureRuntimeError as error:
-        raise _ocr_summary_runtime_error(error) from None
-    except Exception:
-        raise _ocr_summary_bad_gateway() from None
-
-    try:
-        summary = build_ocr_summary(
-            host_capture_id=capture_id,
-            runtime_capture_id=runtime_id,
-            operation=operation,
-            projection=projection,
-        )
-    except OcrSummaryValidationError:
-        raise _ocr_summary_bad_gateway() from None
-    except Exception:
-        raise _ocr_summary_bad_gateway() from None
-
-    final_session = _ocr_summary_session_or_404(db, project_id, capture_id)
-    _ensure_ocr_summary_session_open(final_session)
-    if final_session.runtime_capture_id != runtime_id:
-        raise _ocr_summary_bad_gateway()
-    if final_session.status == CaptureReviewStatus.FAILED and summary.status != "failed":
-        raise _ocr_summary_bad_gateway()
-    return summary
+        ) from None
 
 
 @router.get("/{capture_id}/events")
@@ -744,64 +744,85 @@ def get_result(
 ) -> CaptureStreamingResultRead:
     coordinator = get_capture_coordinator(request)
     cleanup_expired_review_sessions(db, coordinator=coordinator)
-    session = _session_or_404(db, project_id, capture_id)
-    if session.status != CaptureReviewStatus.COMPLETED:
-        raise HTTPException(status_code=409, detail="Capture review is not complete.")
-    document = _document_or_404(db, project_id, session.document_id)
-    chunks = source_documents_repository.list_chunks(db, project_id, session.document_id)
-    persisted = _document_projection(db, project_id, document, chunks)
-    runtime_id = session.runtime_capture_id
+    documents = get_capture_documents(request)
+    files = get_capture_file_store(request)
+    sessions = get_capture_review_store(request)
+    try:
+        stored = capture_reviews.load_completed_capture(
+            sessions,
+            documents,
+            files,
+            project_id=project_id,
+            session_id=capture_id,
+        )
+    except NotFoundError as error:
+        raise not_found_error(str(error)) from error
+    except CaptureReviewConflict as error:
+        raise HTTPException(status_code=409, detail=str(error))
+    persisted = _document_projection(
+        stored.document,
+        stored.chunks,
+        content_length=stored.content_length,
+        media_type=stored.media_type,
+    )
+    runtime_id = stored.session.runtime_capture_id
     if runtime_id:
+        runtime = get_capture_runtime(request)
         try:
-            runtime_result = coordinator.get_result(runtime_id)
-            session = review_sessions.observe_event_sequence(
-                db,
+            viewed = capture_reviews.read_runtime_result(
+                sessions,
+                runtime,
                 project_id=project_id,
                 session_id=capture_id,
-                sequence=runtime_result.operation.last_event_sequence,
+                runtime_capture_id=runtime_id,
             )
-            response = CaptureStreamingResultRead(
-                operation=_host_operation(
-                    runtime_result.operation,
-                    capture_id=capture_id,
-                    document_id=session.document_id,
-                ),
-                raw=runtime_result.raw,
-                result=persisted,
-            )
-            try:
-                coordinator.delete(runtime_id)
-            except Exception:
-                pass
-            return response
-        except CaptureRuntimeProtocolError as error:
+            if viewed is not None:
+                response = CaptureStreamingResultRead(
+                    operation=_host_operation(
+                        viewed.operation,
+                        capture_id=capture_id,
+                        document_id=stored.session.document_id,
+                    ),
+                    raw=viewed.raw,
+                    result=persisted,
+                )
+                capture_reviews.release_capture_result(
+                    runtime, runtime_capture_id=runtime_id
+                )
+                return response
+        except CaptureResultProtocolError as error:
             raise api_error(
                 status.HTTP_502_BAD_GATEWAY,
                 "capture_runtime_protocol_error",
                 "Capture Runtime result violated the v2 contract.",
             ) from error
-        except CaptureRuntimeError as error:
-            if error.status_code != 404:
-                raise api_error(
-                    status.HTTP_502_BAD_GATEWAY,
-                    "capture_runtime_result_unavailable",
-                    "Capture Runtime result unavailable.",
-                ) from error
+        except CaptureResultUnavailable as error:
+            raise api_error(
+                status.HTTP_502_BAD_GATEWAY,
+                "capture_runtime_result_unavailable",
+                "Capture Runtime result unavailable.",
+            ) from error
         except Exception as error:
             raise api_error(
                 status.HTTP_502_BAD_GATEWAY,
                 "capture_runtime_result_unavailable",
                 "Capture Runtime result unavailable.",
             ) from error
+    content_length, media_type = capture_reviews.capture_source_display(
+        documents,
+        files,
+        project_id=project_id,
+        document_id=stored.document.id,
+    )
     return CaptureStreamingResultRead(
         operation=_operation_from_document(
             capture_id,
-            document,
+            stored.document,
             status_value=StreamingCaptureStatus.COMPLETED,
             progress=1,
-            bytes_count=_document_bytes(db, project_id, document.id),
-            media_type=_document_media_type(db, project_id, document.id),
-            last_event_sequence=int(session.last_event_sequence),
+            bytes_count=content_length,
+            media_type=media_type,
+            last_event_sequence=int(stored.session.last_event_sequence),
         ),
         raw=_raw_projection(persisted),
         result=persisted,
@@ -1149,10 +1170,11 @@ def _host_operation(
 
 
 def _document_projection(
-    db: Database,
-    project_id: str,
     document: SourceDocument,
     chunks: list[DocumentChunk],
+    *,
+    content_length: int,
+    media_type: str,
 ) -> CaptureDocument:
     segments = [
         RawCaptureSegment(
@@ -1178,8 +1200,8 @@ def _document_projection(
     source = {
         "sha256": document.sha256,
         "fileName": document.filename,
-        "mediaType": _document_media_type(db, project_id, document.id),
-        "bytes": max(1, _document_bytes(db, project_id, document.id)),
+        "mediaType": media_type,
+        "bytes": max(1, content_length),
     }
     digest = f"sha256:{document.sha256}"
     extraction = CaptureEngine(
@@ -1243,71 +1265,6 @@ def _review_ready(db: Database, project_id: str, session: CaptureReviewSession) 
     except Exception:
         return False
     return operation.phase == "awaiting_review"
-
-
-def _ocr_summary_session_or_404(
-    db: Database,
-    project_id: str,
-    capture_id: str,
-) -> CaptureReviewSession:
-    try:
-        return review_sessions.get(db, project_id=project_id, session_id=capture_id)
-    except NotFoundError:
-        raise not_found_error("Capture not found.") from None
-
-
-def _ensure_ocr_summary_session_open(session: CaptureReviewSession) -> None:
-    session_status = session.status
-    if session_status in {
-        CaptureReviewStatus.CONFIRMING,
-        CaptureReviewStatus.COMPLETED,
-        CaptureReviewStatus.CANCELED,
-    }:
-        raise api_error(
-            status_code=status.HTTP_410_GONE,
-            code="capture_closed",
-            message="Capture review is closed.",
-        )
-    if session_status not in {CaptureReviewStatus.PENDING, CaptureReviewStatus.FAILED}:
-        raise _ocr_summary_bad_gateway()
-
-
-def _ocr_summary_not_ready() -> HTTPException:
-    return api_error(
-        status_code=status.HTTP_409_CONFLICT,
-        code="ocr_summary_not_ready",
-        message="OCR summary is not ready.",
-    )
-
-
-def _ocr_summary_bad_gateway() -> HTTPException:
-    return api_error(
-        status_code=status.HTTP_502_BAD_GATEWAY,
-        code="capture_runtime_ocr_unavailable",
-        message="Capture Runtime OCR summary is unavailable.",
-    )
-
-
-def _ocr_summary_runtime_error(error: CaptureRuntimeError) -> HTTPException:
-    if getattr(error, "category", None) == "transport":
-        return api_error(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            code="capture_runtime_unavailable",
-            message="Capture Runtime is unavailable.",
-        )
-    if (
-        getattr(error, "status_code", None) == status.HTTP_404_NOT_FOUND
-        and getattr(error, "code", None) == "capture_not_found"
-    ):
-        return not_found_error("Capture not found.")
-    return _ocr_summary_bad_gateway()
-
-
-def _runtime_enum_value(value: object) -> str:
-    candidate = getattr(value, "value", value)
-    if not isinstance(candidate, str):
-        raise TypeError("Runtime status must be a string enum.")
-    return candidate
 
 
 def _session_or_404(db: Database, project_id: str, capture_id: str) -> CaptureReviewSession:

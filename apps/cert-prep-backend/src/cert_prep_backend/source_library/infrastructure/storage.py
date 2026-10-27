@@ -111,6 +111,11 @@ class LocalSourceFileStore:
 
         return Path(storage_path).read_bytes()
 
+    def byte_size(self, storage_path: str) -> int:
+        """The stored upload's size. Missing files raise the same OSError as a direct stat."""
+
+        return Path(storage_path).stat().st_size
+
     def verified_path(self, project_id: str, storage_path: str, expected_sha256: str) -> Path:
         source_path = self.resolve(project_id, storage_path)
         if self.sha256(source_path) != expected_sha256:

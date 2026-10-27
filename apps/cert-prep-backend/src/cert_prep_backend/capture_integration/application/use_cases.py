@@ -12,12 +12,22 @@ from cert_prep_backend.capture_integration.application.errors import (
     CaptureExtractionCanceled,
     CaptureExtractionFailed,
     CaptureGatewayRejection,
+    CaptureOcrClosed,
+    CaptureOcrMissing,
+    CaptureOcrNotReady,
+    CaptureOcrUnavailable,
     CaptureRequirementUnavailable,
+    CaptureResultMissing,
     CaptureReviewConflict,
     CaptureReviewInputRejected,
     CaptureRuntimeCallFailed,
+    CaptureSourceMissing,
 )
 from cert_prep_backend.capture_integration.application.messages import PDF_OCR_UNAVAILABLE_MESSAGE
+from cert_prep_backend.capture_integration.application.ocr_summary import (
+    CaptureOcrSummaryRead,
+    build_ocr_summary,
+)
 from cert_prep_backend.capture_integration.application.ports import (
     CaptureBackgroundWork,
     CaptureDocuments,
@@ -31,17 +41,19 @@ from cert_prep_backend.capture_integration.application.ports import (
     CaptureRuntime,
 )
 from cert_prep_backend.capture_integration.application.results import (
+    CaptureResultView,
     CaptureUploadClaim,
     QueuedCaptureCommit,
     ReportedStructuringFailure,
     StartedCaptureReview,
+    StoredCapture,
     ViewedCapture,
 )
 from cert_prep_backend.capture_integration.domain.review_session import (
     CaptureReviewSession,
     CaptureReviewStatus,
 )
-from cert_prep_backend.platform.errors import BackendError, ValidationError
+from cert_prep_backend.platform.errors import BackendError, NotFoundError, ValidationError
 from cert_prep_backend.projects.application.ports import ProjectRepository
 from cert_prep_backend.projects.application.use_cases import require_project
 from cert_prep_backend.source_library.domain.document import SourceDocument
@@ -54,12 +66,16 @@ __all__ = [
     "discard_capture_runtime",
     "expire_capture_reviews",
     "extract_capture_for_review",
+    "load_completed_capture",
     "preview_capture_structure",
     "publish_reviewed_capture",
+    "read_runtime_result",
     "recover_capture_reviews",
+    "release_capture_result",
     "report_structuring_failure",
     "start_capture_review",
     "view_capture",
+    "view_ocr_summary",
     "view_partial_capture",
     "view_raw_capture",
 ]
@@ -86,6 +102,26 @@ _EXPECTED_TERMINAL = {
     CaptureReviewStatus.CANCELED: "cancelled",
     CaptureReviewStatus.FAILED: "failed",
 }
+_REVIEW_NOT_COMPLETE = "Capture review is not complete."
+_OCR_MISSING = "Capture not found."
+_OCR_CLOSED = "Capture review is closed."
+_OCR_NOT_READY = "OCR summary is not ready."
+_OCR_UNAVAILABLE = "Capture Runtime OCR summary is unavailable."
+_OCR_CLOSED_STATUSES = frozenset(
+    {
+        CaptureReviewStatus.CONFIRMING,
+        CaptureReviewStatus.COMPLETED,
+        CaptureReviewStatus.CANCELED,
+    }
+)
+_OCR_OPEN_STATUSES = frozenset(
+    {
+        CaptureReviewStatus.PENDING,
+        CaptureReviewStatus.FAILED,
+    }
+)
+_OCR_EARLY_STATUSES = frozenset({"created", "waiting_input", "extracting"})
+_OCR_PUBLISHED_STATUSES = frozenset({"awaiting_structuring", "failed"})
 
 
 def claim_capture_upload(
@@ -723,6 +759,143 @@ def capture_review_ready(operations: CaptureOperations, session: CaptureReviewSe
     return operation.phase == "awaiting_review"
 
 
+def view_ocr_summary(
+    sessions: CaptureReviewStore,
+    runtime: CaptureRuntime,
+    *,
+    project_id: str,
+    session_id: str,
+) -> CaptureOcrSummaryRead:
+    """Return stable OCR evidence while the review can still show it. This read does not expire."""
+
+    session = _ocr_session(sessions, project_id=project_id, session_id=session_id)
+    runtime_capture_id = session.runtime_capture_id
+    if not isinstance(runtime_capture_id, str) or not runtime_capture_id:
+        if session.status == CaptureReviewStatus.PENDING:
+            raise CaptureOcrNotReady(_OCR_NOT_READY)
+        raise CaptureOcrUnavailable(_OCR_UNAVAILABLE)
+    operation = runtime.read_operation_for_ocr(runtime_capture_id)
+    try:
+        operation_status = _runtime_status_value(operation)
+    except Exception:
+        raise CaptureOcrUnavailable(_OCR_UNAVAILABLE) from None
+    if (
+        session.status == CaptureReviewStatus.PENDING
+        and operation_status in _OCR_EARLY_STATUSES
+    ):
+        raise CaptureOcrNotReady(_OCR_NOT_READY)
+    if operation_status not in _OCR_PUBLISHED_STATUSES:
+        raise CaptureOcrUnavailable(_OCR_UNAVAILABLE)
+    if session.status == CaptureReviewStatus.FAILED and operation_status != "failed":
+        raise CaptureOcrUnavailable(_OCR_UNAVAILABLE)
+    projection = runtime.read_ocr_projection(runtime_capture_id)
+    try:
+        summary = build_ocr_summary(
+            host_capture_id=session_id,
+            runtime_capture_id=runtime_capture_id,
+            operation=operation,
+            projection=projection,
+        )
+    except Exception:
+        raise CaptureOcrUnavailable(_OCR_UNAVAILABLE) from None
+    final_session = _ocr_session(sessions, project_id=project_id, session_id=session_id)
+    if final_session.runtime_capture_id != runtime_capture_id:
+        raise CaptureOcrUnavailable(_OCR_UNAVAILABLE)
+    if final_session.status == CaptureReviewStatus.FAILED and summary.status != "failed":
+        raise CaptureOcrUnavailable(_OCR_UNAVAILABLE)
+    return summary
+
+
+def load_completed_capture(
+    sessions: CaptureReviewStore,
+    documents: CaptureDocuments,
+    files: CaptureFileStore,
+    *,
+    project_id: str,
+    session_id: str,
+) -> StoredCapture:
+    """Load a completed review's document and chunks, and stat its source once."""
+
+    session = sessions.get(project_id=project_id, session_id=session_id)
+    if session.status != CaptureReviewStatus.COMPLETED:
+        raise CaptureReviewConflict(_REVIEW_NOT_COMPLETE)
+    document = documents.document(project_id, session.document_id)
+    chunks = documents.chunks_of(project_id, session.document_id)
+    try:
+        content_length, media_type = capture_source_display(
+            documents,
+            files,
+            project_id=project_id,
+            document_id=document.id,
+        )
+    except NotFoundError as error:
+        # A document without its source row was never a 404 here; it stays a server error.
+        raise CaptureSourceMissing(str(error)) from error
+    return StoredCapture(
+        session=session,
+        document=document,
+        chunks=chunks,
+        content_length=content_length,
+        media_type=media_type,
+    )
+
+
+def read_runtime_result(
+    sessions: CaptureReviewStore,
+    runtime: CaptureRuntime,
+    *,
+    project_id: str,
+    session_id: str,
+    runtime_capture_id: str,
+) -> CaptureResultView | None:
+    """Read a runtime result and advance its sequence. A missing result is left stored."""
+
+    try:
+        result = runtime.fetch_result(runtime_capture_id)
+    except CaptureResultMissing:
+        return None
+    sessions.observe(
+        project_id=project_id,
+        session_id=session_id,
+        sequence=result.operation.last_event_sequence,
+    )
+    return CaptureResultView(operation=result.operation, raw=result.raw)
+
+
+def release_capture_result(runtime: CaptureRuntime, *, runtime_capture_id: str) -> None:
+    """Delete the runtime job after the result model exists. A failure is still a result."""
+
+    try:
+        runtime.release_result(runtime_capture_id)
+    except Exception:
+        return
+
+
+def capture_source_display(
+    documents: CaptureDocuments,
+    files: CaptureFileStore,
+    *,
+    project_id: str,
+    document_id: str,
+) -> tuple[int, str]:
+    """The source size and media type, with each helper's own fallback.
+
+    Media type is resolved first, matching the stored document projection. A missing
+    source raises from the size lookup after the media lookup has already fallen back.
+    """
+
+    media_type = _capture_source_media_type(
+        documents, project_id=project_id, document_id=document_id
+    )
+    content_length = _capture_source_bytes(
+        documents,
+        files,
+        project_id=project_id,
+        document_id=document_id,
+    )
+    return content_length, media_type
+
+
 def _stored_capture_view(
     session: CaptureReviewSession, document: SourceDocument
 ) -> ViewedCapture:
@@ -824,3 +997,49 @@ def _media_type(filename: str, canonical_suffix: str | None = None) -> str:
         ".jpeg": "image/jpeg",
         ".webp": "image/webp",
     }.get(suffix, "application/octet-stream")
+
+
+def _ocr_session(
+    sessions: CaptureReviewStore, *, project_id: str, session_id: str
+) -> CaptureReviewSession:
+    try:
+        session = sessions.get(project_id=project_id, session_id=session_id)
+    except NotFoundError:
+        raise CaptureOcrMissing(_OCR_MISSING) from None
+    if session.status in _OCR_CLOSED_STATUSES:
+        raise CaptureOcrClosed(_OCR_CLOSED)
+    if session.status not in _OCR_OPEN_STATUSES:
+        raise CaptureOcrUnavailable(_OCR_UNAVAILABLE)
+    return session
+
+
+def _runtime_status_value(operation: object) -> str:
+    value = getattr(operation, "status")
+    candidate = getattr(value, "value", value)
+    if not isinstance(candidate, str):
+        raise TypeError("Runtime status must be a string enum.")
+    return candidate
+
+
+def _capture_source_bytes(
+    documents: CaptureDocuments,
+    files: CaptureFileStore,
+    *,
+    project_id: str,
+    document_id: str,
+) -> int:
+    try:
+        source_file = documents.source_file(project_id, document_id)
+        return files.byte_size(source_file.storage_path)
+    except (OSError, KeyError):
+        return 1
+
+
+def _capture_source_media_type(
+    documents: CaptureDocuments, *, project_id: str, document_id: str
+) -> str:
+    try:
+        source_file = documents.source_file(project_id, document_id)
+        return _media_type(source_file.filename, PurePath(source_file.storage_path).suffix)
+    except (OSError, KeyError, NotFoundError):
+        return "application/octet-stream"
