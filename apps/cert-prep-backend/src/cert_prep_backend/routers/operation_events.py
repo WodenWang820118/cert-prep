@@ -20,6 +20,7 @@ from cert_prep_backend.authoring.domain.generation import DraftGenerationJob, Ma
 from cert_prep_backend.authoring.infrastructure import draft_jobs
 from cert_prep_backend.authoring.infrastructure.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.runtime_provisioning.infrastructure import RuntimeInstallationManager
+from cert_prep_backend.source_library.domain.operation import DocumentOperation
 from cert_prep_backend.source_library.infrastructure import operations as document_operations
 from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
 from cert_prep_backend.platform.change_notifications import DatabaseChangeNotifier
@@ -78,7 +79,7 @@ def current_document_operation_events(
     initial_operation = _active_document_operation(db, project_id, document_id)
     if initial_operation is None:
         raise not_found_error("Active document operation was not found.")
-    operation_id = str(initial_operation["id"])
+    operation_id = initial_operation.id
     _document_operation_snapshot(db, project_id, operation_id)
     return streaming_response(
         operation_snapshot_stream(
@@ -233,7 +234,7 @@ def _active_document_operation(
     db: Database,
     project_id: str,
     document_id: str,
-) -> dict | None:
+) -> DocumentOperation | None:
     return document_operations.get_active_operation_for_document(
         db,
         project_id=project_id,
