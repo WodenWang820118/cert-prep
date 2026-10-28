@@ -321,9 +321,8 @@ def _reasoning_system_prompt() -> str:
         "is absent, infer the correct answer and mark answer_key_source as "
         "ai_inferred. Do not include chain-of-thought, hidden reasoning, or "
         "analysis. Only include a concise user-facing rationale. "
-        f"{RATIONALE_LANGUAGE_INSTRUCTION} Return one "
-        "JSON object with an items array; never use Markdown or prose outside "
-        "that JSON object."
+        "Return one JSON object with an items array; never use Markdown or "
+        f"prose outside that JSON object. {RATIONALE_LANGUAGE_INSTRUCTION}"
     )
 
 
@@ -340,12 +339,11 @@ def _reasoning_user_prompt(
         "Inspect the complete supplied source before responding. Each item must have a complete "
         "question stem and at least two visible choices, with each choice in a separate choices "
         "array element. For every item, set answer to the exact choice text, include a concise "
-        "user-facing rationale. "
-        f"{RATIONALE_LANGUAGE_INSTRUCTION} "
-        "Include confidence as a number from 0 to 1, keep "
+        "user-facing rationale. Include confidence as a number from 0 to 1, keep "
         "citation_page from the source page, and include a source_excerpt copied exactly "
         "from the source text. If the source only contains title, note, version, or "
-        f"instruction text, return an empty items array for that text.\n\n{source}"
+        f"instruction text, return an empty items array for that text.\n\n{source}\n"
+        f"{RATIONALE_LANGUAGE_INSTRUCTION}"
     )
 
 
@@ -375,9 +373,8 @@ def _supplemental_reasoning_user_prompt(
         f"exactly {limit}. Never invent, duplicate, or split an item to reach the count. Each "
         "item must have a complete question stem and at least two visible choices, with every "
         "choice in a separate choices array element. Set answer to the exact choice text, include "
-        "a concise user-facing rationale. "
-        f"{RATIONALE_LANGUAGE_INSTRUCTION} "
-        "Include confidence from 0 to 1, keep citation_page from "
+        "a concise user-facing rationale. Include confidence from 0 to 1, keep citation_page from "
         "the source page, and copy source_excerpt exactly from the source text. "
-        f"{accepted_context}{source}"
+        f"{accepted_context}{source}\n"
+        f"{RATIONALE_LANGUAGE_INSTRUCTION}"
     )
