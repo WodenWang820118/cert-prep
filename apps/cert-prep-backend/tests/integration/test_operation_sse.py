@@ -318,3 +318,60 @@ def test_document_operation_events_active_route_does_not_expose_recovered_operat
     payload = json.loads(body.split("data: ", 1)[1].strip())
     assert payload["operation"]["status"] == "failed"
     assert payload["document"]["status"] == "ocr_failed"
+
+
+def test_document_operation_events_streams_an_active_operation(tmp_path) -> None:
+    """The active-operation route reads the DocumentOperation the repository returns.
+
+    A learner whose page reconnects while a document is still processing reaches this route;
+    it used to fail with "'DocumentOperation' object is not subscriptable".
+    """
+
+    import asyncio
+
+    from cert_prep_backend.routers.operation_events import current_document_operation_events
+
+    token = "active-token"
+    settings = Settings(data_dir=tmp_path, api_token=token, llm_provider="fake")
+    app = create_app(settings=settings)
+    with TestClient(app) as client:
+        project_id = client.post(
+            "/projects",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"name": "Active operation events"},
+        ).json()["id"]
+        operation_id = "active-operation"
+        document_operations.claim_operation(
+            app.state.database, project_id=project_id, operation_id=operation_id
+        )
+        document = document_operations.create_and_attach_document(
+            app.state.database,
+            project_id=project_id,
+            operation_id=operation_id,
+            filename="active.pdf",
+            sha256="b" * 64,
+            language_hint="en",
+            storage_path=str(tmp_path / "active.pdf"),
+            page_count=1,
+        )
+
+        response = current_document_operation_events(
+            project_id,
+            document.id,
+            last_event_id=None,
+            db=app.state.database,
+            notifier=app.state.database_change_notifier,
+        )
+        async def first(iterator):
+            try:
+                return await anext(iterator)
+            finally:
+                await iterator.aclose()
+
+        first_event = asyncio.run(first(response.body_iterator))
+
+    text = first_event if isinstance(first_event, str) else first_event.decode()
+    assert "event: document-operation" in text
+    payload = json.loads(text.split("data: ", 1)[1].strip())
+    assert payload["operation"]["id"] == operation_id
+    assert payload["operation"]["status"] == "running"
