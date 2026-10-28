@@ -61,6 +61,7 @@ describe('WrongAnswerDashboardComponent', () => {
     source_excerpt: 'Relevant source excerpt.',
     document_id: document.id,
     created_at: '2026-06-23T00:00:00Z',
+    answer_key_source: null,
   };
   const fallbackDocumentWrongAnswer: WrongAnswerRead = {
     ...wrongAnswer,
@@ -134,6 +135,7 @@ describe('WrongAnswerDashboardComponent', () => {
         citation_page: wrongAnswer.citation_page,
         source_excerpt: wrongAnswer.source_excerpt,
         document_id: wrongAnswer.document_id,
+        answer_key_source: null,
       },
     ],
     mode: 'review_retry',

@@ -6,6 +6,7 @@
     >
       {{ model().statusLabel }}
     </span>
+    <app-ai-inferred-answer-badge [source]="model().answerKeySource" />
     @if (model().citationPage !== null) {
       <span>Page {{ model().citationPage }}</span>
     }
@@ -112,7 +113,10 @@
       </div>
     }
     <div class="workbench-rationale">
-      <strong>Answer</strong>
+      <div class="flex flex-wrap items-center gap-2">
+        <strong>Answer</strong>
+        <app-ai-inferred-answer-badge [source]="model().answerKeySource" />
+      </div>
       <p>{{ displayChoice(model().choices, model().answer) || 'No answer selected.' }}</p>
     </div>
   }

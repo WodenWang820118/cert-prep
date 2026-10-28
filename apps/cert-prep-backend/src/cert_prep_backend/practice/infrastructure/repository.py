@@ -23,7 +23,8 @@ _QUESTION_DRAFT_COLUMNS = """
     rationale,
     citation_page,
     source_excerpt,
-    document_id
+    document_id,
+    answer_key_source
 """
 # The question an attempt answered: the session's snapshot when it has one, else the draft.
 _ANSWERED_QUESTION_COLUMNS = """
@@ -61,7 +62,8 @@ _ANSWERED_QUESTION_COLUMNS = """
         WHEN practice_session_questions.document_id IS NOT NULL
         THEN practice_session_questions.document_id
         ELSE question_drafts.document_id
-    END AS document_id
+    END AS document_id,
+    question_drafts.answer_key_source AS answer_key_source
 """
 
 
@@ -359,6 +361,24 @@ class SqlitePracticeRepository:
         ).fetchall()
         return [_attempt_from_row(row) for row in rows]
 
+    def refresh_snapshot_keys(self, project_id: str, question: PracticeQuestion) -> int:
+        updated = self._connection.execute(
+            """
+            UPDATE practice_session_questions
+            SET correct_answer = ?, rationale = ?
+            WHERE project_id = ? AND question_id = ? AND question = ? AND choices_json = ?
+            """,
+            (
+                question.correct_answer,
+                question.rationale,
+                project_id,
+                question.id,
+                question.question,
+                json.dumps(list(question.choices)),
+            ),
+        )
+        return updated.rowcount
+
     def save_attempt_grades(self, attempts: list[PracticeAttempt]) -> None:
         self._connection.executemany(
             """
@@ -431,7 +451,8 @@ class SqlitePracticeRepository:
                 practice_session_questions.citation_page,
                 practice_session_questions.source_excerpt,
                 COALESCE(practice_session_questions.document_id, question_drafts.document_id)
-                    AS document_id
+                    AS document_id,
+                question_drafts.answer_key_source AS answer_key_source
             FROM practice_session_questions
             LEFT JOIN question_drafts
                 ON question_drafts.project_id = practice_session_questions.project_id
@@ -450,7 +471,7 @@ class SqlitePracticeRepository:
                 f"""
                 SELECT
                     id, question, choices_json, answer, rationale, citation_page,
-                    source_excerpt, document_id
+                    source_excerpt, document_id, answer_key_source
                 FROM question_drafts
                 WHERE project_id = ? AND id IN ({placeholders})
                 """,
@@ -492,6 +513,7 @@ def _question_from_row(row: Row) -> PracticeQuestion:
         citation_page=row["citation_page"],
         source_excerpt=row["source_excerpt"],
         document_id=row["document_id"],
+        answer_key_source=_optional_text(row, "answer_key_source"),
     )
 
 
@@ -527,5 +549,13 @@ def _answered_question_from_row(project_id: str, row: Row) -> AnsweredQuestion:
             citation_page=row["citation_page"],
             source_excerpt=row["source_excerpt"],
             document_id=row["document_id"],
+            answer_key_source=_optional_text(row, "answer_key_source"),
         ),
     )
+
+
+def _optional_text(row: Row, column: str) -> str | None:
+    if column not in row.keys():
+        return None
+    value = row[column]
+    return value if isinstance(value, str) else None

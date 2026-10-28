@@ -171,6 +171,7 @@ describe('DraftReviewPanelComponent', () => {
     expect(text).toContain('Page 1');
     expect(text).toContain('Answer');
     expect(text).toContain('Ready for practice');
+    expect(text).toContain('AI-inferred answer');
     expect(text).not.toContain('draft-1');
     expect(text).not.toContain('ai_inferred');
     expect(text).not.toContain('rejection_reason');

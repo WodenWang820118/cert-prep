@@ -54,6 +54,7 @@ class FakePractice:
         self.question = question
         self.attempts = list(attempts or [])
         self.saved: list[PracticeAttempt] = []
+        self.refreshed: list[tuple[str, str, str | None]] = []
         self.question_queries: list[tuple[str, str]] = []
         self.attempt_queries: list[tuple[str, str]] = []
 
@@ -76,6 +77,10 @@ class FakePractice:
 
     def save_attempt_grades(self, attempts: list[PracticeAttempt]) -> None:
         self.saved.extend(attempts)
+
+    def refresh_snapshot_keys(self, project_id: str, question: PracticeQuestion) -> int:
+        self.refreshed.append((project_id, question.id, question.correct_answer))
+        return 0
 
 
 class FakeStore:

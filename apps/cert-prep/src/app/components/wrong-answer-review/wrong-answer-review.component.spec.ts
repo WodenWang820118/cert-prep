@@ -1,11 +1,12 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
 import type {
   DocumentRead,
   PracticeSessionRead,
   ProjectRead,
+  QuestionDraftRead,
   WrongAnswerExplanationRead,
   WrongAnswerRead,
 } from '../../contracts/api.contracts';
@@ -15,6 +16,7 @@ import { editableAppQuestion } from '../../testing/app.spec-helpers';
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { WrongAnswerReviewStore } from '../../stores/wrong-answer-review.store';
+import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
 import { WrongAnswerReviewComponent } from './wrong-answer-review.component';
 
 describe('WrongAnswerReviewComponent', () => {
@@ -37,6 +39,7 @@ describe('WrongAnswerReviewComponent', () => {
     source_excerpt: 'Relevant source excerpt.',
     document_id: 'document-1',
     created_at: '2026-06-23T00:00:00Z',
+    answer_key_source: null,
   };
   const document: DocumentRead = {
     id: wrongAnswer.document_id ?? 'document-1',
@@ -103,6 +106,7 @@ describe('WrongAnswerReviewComponent', () => {
         citation_page: wrongAnswer.citation_page,
         source_excerpt: wrongAnswer.source_excerpt,
         document_id: wrongAnswer.document_id,
+        answer_key_source: null,
       },
     ],
     mode: 'review_retry',
@@ -139,6 +143,8 @@ describe('WrongAnswerReviewComponent', () => {
     explainWrongAnswer: ReturnType<typeof vi.fn>;
     listWrongAnswers: ReturnType<typeof vi.fn>;
     summarizeWrongAnswers: ReturnType<typeof vi.fn>;
+    updateQuestionDraft: ReturnType<typeof vi.fn>;
+    regradePracticeQuestion: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
@@ -150,12 +156,21 @@ describe('WrongAnswerReviewComponent', () => {
         .mockReturnValue(throwError(() => new Error('AI provider unavailable'))),
       listWrongAnswers: vi.fn().mockReturnValue(of({ items: [wrongAnswer] })),
       summarizeWrongAnswers: vi.fn().mockReturnValue(of(summary)),
+      updateQuestionDraft: vi.fn().mockReturnValue(of(editableAppQuestion)),
+      regradePracticeQuestion: vi.fn().mockReturnValue(
+        of({
+          question_id: wrongAnswer.question_id,
+          regraded_attempts: 0,
+          latest_attempt_wrong: true,
+        }),
+      ),
     };
     TestBed.configureTestingModule({
       imports: [WrongAnswerReviewComponent],
       providers: [
         provideRouter([]),
         { provide: CERT_PREP_API, useValue: apiClient },
+        provideCertPrepHttpResourceClientFake(apiClient),
       ],
     });
   });
@@ -369,6 +384,170 @@ describe('WrongAnswerReviewComponent', () => {
     expect(fixture.nativeElement.textContent).toContain(
       'AI result grounded in the recorded source excerpt.',
     );
+  });
+
+  it('marks an AI-inferred correct answer and offers to replace the key', () => {
+    const fixture = TestBed.createComponent(WrongAnswerReviewComponent);
+    TestBed.inject(WrongAnswerReviewStore).wrongAnswers.set([
+      { ...wrongAnswer, answer_key_source: 'ai_inferred' },
+    ]);
+    fixture.detectChanges();
+
+    const correct = fixture.nativeElement.querySelector(
+      '[aria-label="Correct answer"]',
+    ) as HTMLElement;
+    const badge = correct.querySelector('[data-testid="ai-inferred-answer"]');
+    expect(badge?.textContent?.trim()).toBe('AI-inferred answer');
+    expect(badge?.getAttribute('aria-description')).toBe(
+      'The answer was inferred by the local AI model and has not been confirmed. Check it against the source.',
+    );
+    expect(buttonByText(fixture.nativeElement, 'Answer key is wrong')).not.toBeNull();
+  });
+
+  it('hides the inferred-key marker and correction for a confirmed key', () => {
+    const fixture = TestBed.createComponent(WrongAnswerReviewComponent);
+    TestBed.inject(WrongAnswerReviewStore).wrongAnswers.set([
+      { ...wrongAnswer, answer_key_source: 'manual' },
+    ]);
+    fixture.detectChanges();
+
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="ai-inferred-answer"]'),
+    ).toBeNull();
+    expect(buttonByText(fixture.nativeElement, 'Answer key is wrong')).toBeNull();
+  });
+
+  it('saves the original choice, regrades, reloads, and reports the result', () => {
+    const updated = new Subject<QuestionDraftRead>();
+    apiClient.updateQuestionDraft.mockReturnValue(updated.asObservable());
+    apiClient.regradePracticeQuestion.mockReturnValue(
+      of({
+        question_id: wrongAnswer.question_id,
+        regraded_attempts: 2,
+        latest_attempt_wrong: false,
+      }),
+    );
+    apiClient.listWrongAnswers.mockReturnValue(of({ items: [] }));
+    apiClient.summarizeWrongAnswers.mockReturnValue(
+      of({ ...summary, current_wrong_count: 0 }),
+    );
+    const fixture = TestBed.createComponent(WrongAnswerReviewComponent);
+    selectProject();
+    TestBed.inject(DraftReviewStore).drafts.set([
+      {
+        ...editableAppQuestion,
+        id: wrongAnswer.question_id,
+        choices: ['1. First', '2. Second'],
+        answer: '1. First',
+      },
+    ]);
+    const review = TestBed.inject(WrongAnswerReviewStore);
+    review.wrongAnswers.set([
+      {
+        ...wrongAnswer,
+        answer_key_source: 'ai_inferred',
+        selected_answer: '1. First',
+        correct_answer: '1. First',
+      },
+    ]);
+    fixture.detectChanges();
+
+    buttonByText(fixture.nativeElement, 'Answer key is wrong')?.click();
+    fixture.detectChanges();
+    const radio = Array.from(
+      fixture.nativeElement.querySelectorAll('input[type="radio"]'),
+    ).find((input) => (input as HTMLInputElement).value === '2. Second') as
+      | HTMLInputElement
+      | undefined;
+    expect(radio?.closest('label')?.textContent).toContain('Second');
+    expect(radio?.closest('label')?.textContent).not.toContain('2. Second');
+    radio?.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    buttonByText(fixture.nativeElement, 'Save correct answer')?.click();
+    fixture.detectChanges();
+
+    expect(buttonByText(fixture.nativeElement, 'Save correct answer')?.disabled).toBe(true);
+    expect(buttonByText(fixture.nativeElement, 'Cancel')?.disabled).toBe(true);
+    expect(buttonByText(fixture.nativeElement, 'Retry')?.disabled).toBe(true);
+    expect(buttonByText(fixture.nativeElement, 'Discuss mistake with AI')?.disabled).toBe(true);
+    expect(apiClient.regradePracticeQuestion).not.toHaveBeenCalled();
+
+    TestBed.tick();
+    updated.next({
+      ...editableAppQuestion,
+      id: wrongAnswer.question_id,
+      answer: '2. Second',
+      answer_key_source: 'manual',
+    });
+    updated.complete();
+    TestBed.tick();
+    TestBed.flushEffects();
+    TestBed.tick();
+    fixture.detectChanges();
+
+    expect(apiClient.updateQuestionDraft).toHaveBeenCalledWith(
+      project.id,
+      wrongAnswer.question_id,
+      { answer: '2. Second', answer_key_source: 'manual', rationale: '' },
+      { signal: expect.any(AbortSignal) },
+    );
+    expect(apiClient.regradePracticeQuestion).toHaveBeenCalledWith(
+      project.id,
+      wrongAnswer.question_id,
+      { signal: expect.any(AbortSignal) },
+    );
+    expect(apiClient.updateQuestionDraft.mock.invocationCallOrder[0]).toBeLessThan(
+      apiClient.regradePracticeQuestion.mock.invocationCallOrder[0],
+    );
+    expect(apiClient.listWrongAnswers).toHaveBeenCalledWith(project.id);
+    expect(apiClient.summarizeWrongAnswers).toHaveBeenCalledWith(project.id);
+    expect(review.wrongAnswers()).toEqual([]);
+    expect(fixture.nativeElement.textContent).toContain(
+      'Answer key corrected. 2 attempt(s) regraded.',
+    );
+    expect(fixture.nativeElement.textContent).not.toContain(wrongAnswer.question);
+  });
+
+  it('shows the API error and does not regrade when the key update fails', () => {
+    apiClient.updateQuestionDraft.mockReturnValue(
+      throwError(() => ({ error: { message: 'Draft update failed' } })),
+    );
+    const fixture = TestBed.createComponent(WrongAnswerReviewComponent);
+    selectProject();
+    TestBed.inject(DraftReviewStore).drafts.set([
+      {
+        ...editableAppQuestion,
+        id: wrongAnswer.question_id,
+        choices: ['1. First', '2. Second'],
+      },
+    ]);
+    TestBed.inject(WrongAnswerReviewStore).wrongAnswers.set([
+      { ...wrongAnswer, answer_key_source: 'ai_inferred' },
+    ]);
+    fixture.detectChanges();
+
+    buttonByText(fixture.nativeElement, 'Answer key is wrong')?.click();
+    fixture.detectChanges();
+    const radio = fixture.nativeElement.querySelector(
+      'input[type="radio"]',
+    ) as HTMLInputElement;
+    radio.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    buttonByText(fixture.nativeElement, 'Save correct answer')?.click();
+    TestBed.tick();
+    fixture.detectChanges();
+
+    expect(apiClient.updateQuestionDraft).toHaveBeenCalledWith(
+      project.id,
+      wrongAnswer.question_id,
+      { answer: '1. First', answer_key_source: 'manual', rationale: '' },
+      { signal: expect.any(AbortSignal) },
+    );
+    expect(apiClient.regradePracticeQuestion).not.toHaveBeenCalled();
+    expect(apiClient.listWrongAnswers).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.textContent).toContain('Draft update failed');
+    expect(fixture.nativeElement.textContent).not.toContain('Answer key corrected');
+    expect(buttonByText(fixture.nativeElement, 'Save correct answer')).not.toBeNull();
   });
 
   it('labels backend fallback explanation results', () => {

@@ -55,6 +55,10 @@
     </dl>
   }
 
+  @if (clearedCorrectionMessage(); as message) {
+    <p class="answer-key-result" role="status">{{ message }}</p>
+  }
+
   <div class="wrong-answer-list">
     @for (wrong of review.wrongAnswers(); track wrong.attempt_id) {
       <article class="wrong-answer-card">
@@ -76,10 +80,13 @@
           </section>
 
           <section class="answer-panel is-correct" aria-label="Correct answer">
-            <span>
-              <app-icon name="lucideCircleCheck" />
-              Correct Answer
-            </span>
+            <div class="answer-key-heading">
+              <span>
+                <app-icon name="lucideCircleCheck" />
+                Correct Answer
+              </span>
+              <app-ai-inferred-answer-badge [source]="wrong.answer_key_source" />
+            </div>
             <p>{{ wrong.correct_answer === null ? 'Not set' : answerLabel(wrong, wrong.correct_answer) }}</p>
           </section>
         </div>
@@ -105,7 +112,8 @@
               type="button"
               [disabled]="
                 operations.isBusyFor(busyActions) ||
-                projects.selectedProject() === null
+                projects.selectedProject() === null ||
+                correctionBusy(wrong)
               "
               (click)="retryWrongAnswer(wrong)"
             >
@@ -113,10 +121,23 @@
               <span>Retry</span>
             </button>
 
+            @if (wrong.answer_key_source === 'ai_inferred') {
+              <button
+                class="workbench-secondary-button answer-key-button"
+                type="button"
+                [disabled]="
+                  correctionBusy(wrong) || projects.selectedProject() === null
+                "
+                (click)="beginAnswerKeyCorrection(wrong.question_id)"
+              >
+                Answer key is wrong
+              </button>
+            }
+
             <button
               class="workbench-secondary-button ai-discuss-button"
               type="button"
-              [disabled]="explanation.loading"
+              [disabled]="explanation.loading || correctionBusy(wrong)"
               (click)="review.discussMistake(wrong)"
             >
               <app-icon name="lucideMessagesSquare" [busy]="explanation.loading" />
@@ -129,6 +150,54 @@
               </span>
             </button>
           </div>
+
+          @if (correctionError(wrong); as error) {
+            <p class="answer-key-error" role="alert">{{ error }}</p>
+          }
+          @if (correctionMessage(wrong); as message) {
+            <p class="answer-key-result" role="status">{{ message }}</p>
+          }
+          @if (
+            correctingQuestionId() === wrong.question_id &&
+            correctionMessage(wrong) === null
+          ) {
+            <fieldset class="answer-key-correction">
+              <legend>Choose the correct answer</legend>
+              @for (choice of correctionChoices(wrong); track $index) {
+                <label>
+                  <input
+                    type="radio"
+                    [name]="'answer-key-' + wrong.question_id"
+                    [value]="choice"
+                    [checked]="selectedCorrection() === choice"
+                    [disabled]="correctionBusy(wrong)"
+                    (change)="selectedCorrection.set(choice)"
+                  />
+                  <span>{{ answerLabel(wrong, choice) }}</span>
+                </label>
+              }
+              <div class="answer-key-correction-actions">
+                <button
+                  class="workbench-action-button"
+                  type="button"
+                  [disabled]="
+                    selectedCorrection().length === 0 || correctionBusy(wrong)
+                  "
+                  (click)="saveCorrectAnswer(wrong)"
+                >
+                  Save correct answer
+                </button>
+                <button
+                  class="workbench-secondary-button"
+                  type="button"
+                  [disabled]="correctionBusy(wrong)"
+                  (click)="cancelAnswerKeyCorrection()"
+                >
+                  Cancel
+                </button>
+              </div>
+            </fieldset>
+          }
 
           @if (explanation.result) {
             <div

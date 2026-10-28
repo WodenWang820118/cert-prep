@@ -185,6 +185,7 @@ def regrade_question(store: PracticeStore, project_id: str, question_id: str) ->
         ]
         if changed:
             practice.save_attempt_grades(changed)
+        practice.refresh_snapshot_keys(project_id, question)
         latest_attempt_wrong = bool(regraded) and not regraded[-1].is_correct
     return QuestionRegrade(
         question_id=question.id,

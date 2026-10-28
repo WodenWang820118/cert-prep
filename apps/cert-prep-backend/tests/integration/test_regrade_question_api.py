@@ -57,3 +57,44 @@ def test_regrade_clears_a_wrong_answer_after_the_draft_key_is_corrected(
     assert question["id"] not in {
         item["question_id"] for item in wrong_answers.json()["items"]
     }
+
+
+def test_a_corrected_key_reaches_the_wrong_answer_that_was_graded_against_the_old_key(
+    client: TestClient, auth_headers
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    question = _create_manual_question(client, auth_headers, project_id, document_id)
+    session = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json={"question_count": 1},
+    ).json()
+    attempt = client.post(
+        f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
+        headers=auth_headers,
+        json={"question_id": question["id"], "selected_answer": "Use least privilege"},
+    )
+    assert attempt.json()["is_correct"] is True
+
+    corrected = client.patch(
+        f"/projects/{project_id}/question-drafts/{question['id']}",
+        headers=auth_headers,
+        json={
+            "answer": "Allow unrestricted access",
+            "answer_key_source": "manual",
+            "rationale": "",
+        },
+    )
+    assert corrected.status_code == 200
+    regrade = client.post(
+        f"/projects/{project_id}/practice-questions/{question['id']}/regrade",
+        headers=auth_headers,
+    )
+    assert regrade.json()["latest_attempt_wrong"] is True
+
+    items = client.get(f"/projects/{project_id}/wrong-answers", headers=auth_headers).json()["items"]
+    assert [item["question_id"] for item in items] == [question["id"]]
+    assert items[0]["correct_answer"] == "Allow unrestricted access"
+    assert not items[0]["rationale"]
+    assert items[0]["answer_key_source"] == "manual"

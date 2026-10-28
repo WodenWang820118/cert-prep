@@ -77,7 +77,7 @@ export interface Components {
     PracticeSessionCreate: { "mode"?: Components['schemas']['PracticeSessionMode']; "document_id"?: string | null; "question_count"?: number | null; "random_seed"?: number | null; "wrong_attempt_ids"?: string[] | null };
     PracticeSessionList: { "items": Components['schemas']['PracticeSessionSummaryRead'][] };
     PracticeSessionMode: string;
-    PracticeSessionQuestionRead: { "id": string; "question": string; "choices": string[]; "answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "document_id": string | null };
+    PracticeSessionQuestionRead: { "id": string; "question": string; "choices": string[]; "answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "document_id": string | null; "answer_key_source": string | null };
     PracticeSessionRead: { "id": string; "project_id": string; "question_ids": string[]; "questions": Components['schemas']['PracticeSessionQuestionRead'][]; "mode": Components['schemas']['PracticeSessionMode']; "document_id": string | null; "question_count": number; "random_seed": number | null; "status": Components['schemas']['PracticeSessionStatus']; "created_at": string; "completed_at": string | null; "abandoned_at": string | null; "attempts": Components['schemas']['PracticeAttemptRead'][] };
     PracticeSessionStatus: string;
     PracticeSessionSummaryRead: { "id": string; "project_id": string; "mode": Components['schemas']['PracticeSessionMode']; "document_id": string | null; "status": Components['schemas']['PracticeSessionStatus']; "created_at": string };
@@ -115,7 +115,7 @@ export interface Components {
     WrongAnswerExplanationRead: { "attempt_id": string; "explanation": string; "provider": string; "model": string; "grounded_fields": Components['schemas']['WrongAnswerGroundedFields']; "fallback": boolean };
     WrongAnswerGroundedFields: { "question": string; "selected_answer": string; "correct_answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null };
     WrongAnswerList: { "items": Components['schemas']['WrongAnswerRead'][] };
-    WrongAnswerRead: { "attempt_id": string; "session_id": string; "question_id": string; "question": string; "selected_answer": string; "correct_answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "document_id": string | null; "created_at": string };
+    WrongAnswerRead: { "attempt_id": string; "session_id": string; "question_id": string; "question": string; "selected_answer": string; "correct_answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "document_id": string | null; "created_at": string; "answer_key_source": string | null };
     WrongAnswerRepeatedMissRead: { "question_id": string; "question": string; "document_id": string | null; "citation_page": number | null; "source_excerpt": string | null; "miss_count": number; "last_wrong_at": string };
     WrongAnswerSummaryRead: { "current_wrong_count": number; "cleared_count": number; "last_wrong_date": string | null; "repeated_misses": Components['schemas']['WrongAnswerRepeatedMissRead'][]; "clusters": Components['schemas']['WrongAnswerClusterRead'][] };
     capture_runtime_client__private__generated_models__RuntimeInstallationStatus: string;

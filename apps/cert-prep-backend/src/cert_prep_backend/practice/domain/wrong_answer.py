@@ -26,6 +26,7 @@ class WrongAnswer:
     source_excerpt: str | None
     document_id: str | None
     created_at: str
+    answer_key_source: str | None = None
 
     @classmethod
     def from_attempt_and_question(
@@ -44,6 +45,7 @@ class WrongAnswer:
             source_excerpt=question.source_excerpt,
             document_id=question.document_id,
             created_at=attempt.created_at,
+            answer_key_source=question.answer_key_source,
         )
 
     def as_question(self) -> PracticeQuestion:
@@ -58,6 +60,7 @@ class WrongAnswer:
             citation_page=self.citation_page,
             source_excerpt=self.source_excerpt,
             document_id=self.document_id,
+            answer_key_source=self.answer_key_source,
         )
 
 

@@ -22,6 +22,7 @@ class PracticeSessionQuestionRead(BaseModel):
     citation_page: int | None
     source_excerpt: str | None
     document_id: str | None
+    answer_key_source: str | None
 
 
 class PracticeAttemptRead(BaseModel):
@@ -80,6 +81,7 @@ class WrongAnswerRead(BaseModel):
     source_excerpt: str | None
     document_id: str | None
     created_at: str
+    answer_key_source: str | None
 
 
 class WrongAnswerList(BaseModel):
