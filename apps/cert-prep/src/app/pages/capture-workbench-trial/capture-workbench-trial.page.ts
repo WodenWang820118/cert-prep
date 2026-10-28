@@ -7,6 +7,7 @@ import {
   inject,
   OnDestroy,
   ViewChild,
+  computed,
   effect,
   signal,
 } from '@angular/core';
@@ -50,6 +51,18 @@ export class CaptureWorkbenchTrialPage implements AfterViewInit, OnDestroy {
   protected readonly registrationState = signal<
     'runtime_unavailable' | 'registering' | 'ready' | 'error'
   >('runtime_unavailable');
+  protected readonly registrationStatusLabel = computed(() => {
+    switch (this.registrationState()) {
+      case 'runtime_unavailable':
+        return 'Capture Runtime unavailable';
+      case 'registering':
+        return 'Registering Capture Workbench';
+      case 'ready':
+        return 'Element registered';
+      case 'error':
+        return 'Capture Workbench could not start';
+    }
+  });
   protected readonly desktopRuntime = inject(DesktopRuntimeStore);
   protected readonly ocrPreflight = inject(CaptureRuntimePreflightStore);
   protected readonly trialStatus = signal(

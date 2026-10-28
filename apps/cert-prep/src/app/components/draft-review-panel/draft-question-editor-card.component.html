@@ -73,7 +73,7 @@
             <option value="">Select answer</option>
             @for (choice of edit.choices; track $index) {
               <option [value]="choice">
-                {{ choice || 'Choice ' + ($index + 1) }}
+                {{ displayChoice(edit.choices, choice) || 'Choice ' + ($index + 1) }}
               </option>
             }
           </select>
@@ -98,7 +98,7 @@
           [class.is-answer]="choice === model().answer"
         >
           <span class="workbench-choice-key">{{ choiceKey($index) }}</span>
-          <span>{{ choice }}</span>
+          <span>{{ displayChoice(model().choices, choice) }}</span>
           @if (choice === model().answer) {
             <app-icon name="lucideCheck" />
           }
@@ -113,7 +113,7 @@
     }
     <div class="workbench-rationale">
       <strong>Answer</strong>
-      <p>{{ model().answer || 'No answer selected.' }}</p>
+      <p>{{ displayChoice(model().choices, model().answer) || 'No answer selected.' }}</p>
     </div>
   }
 

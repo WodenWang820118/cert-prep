@@ -600,7 +600,8 @@ async function expectCurrentSessionVisible(
   const session = api.currentSession();
   expect(session).not.toBeNull();
   await expect(
-    page.getByText(session?.id ?? '', { exact: true }),
+    // Session details show a short id; the full id is the element's title.
+    page.locator(`[title="${session?.id ?? ''}"]`),
   ).toBeVisible();
 }
 
@@ -610,7 +611,7 @@ async function expectSessionProgress(
   total: number,
 ): Promise<void> {
   await expect(
-    page.getByLabel('Session details').getByText(`${answeredCount}/${total}`),
+    page.getByLabel('Session details').getByText(`${answeredCount} of ${total}`),
   ).toBeVisible();
 }
 

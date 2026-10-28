@@ -26,6 +26,39 @@ describe('DraftQuestionEditorCardComponent', () => {
     expect(text).toContain('Ready for practice');
   });
 
+  it('strips source ordinals in the choice list and answer while retaining letter labels', () => {
+    const fixture = TestBed.createComponent(DraftQuestionEditorCardComponent);
+    fixture.componentRef.setInput('model', {
+      ...questionModel(), choices: ['１ からかって', '２ ためらって'], answer: '１ からかって',
+    });
+    fixture.detectChanges();
+
+    const choices = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('.workbench-choice-list li'));
+    expect(choices.map((choice) => choice.textContent?.replace(/\s+/g, ''))).toEqual(['Aからかって', 'Bためらって']);
+    expect(fixture.nativeElement.textContent).not.toContain('１ からかって');
+    expect(fixture.nativeElement.querySelector('.is-answer app-icon')).not.toBeNull();
+  });
+
+  it('keeps original choice values in the editor and answer selector', () => {
+    const fixture = TestBed.createComponent(DraftQuestionEditorCardComponent);
+    const model = editingQuestionModel();
+    fixture.componentRef.setInput('model', {
+      ...model,
+      edit: { ...model.edit, question: model.question, rationale: model.rationale, choices: ['1. First', '2. Second'], answer: '1. First' },
+    });
+    const actions: DraftQuestionEditorAction[] = [];
+    fixture.componentInstance.action.subscribe((action) => actions.push(action));
+    fixture.detectChanges();
+
+    const selector = fixture.nativeElement.querySelector('select') as HTMLSelectElement;
+    expect(selector.options[1].textContent?.trim()).toBe('First');
+    expect(selector.options[1].value).toBe('1. First');
+    expect((fixture.nativeElement.querySelector('fieldset input') as HTMLInputElement).value).toBe('1. First');
+    selector.value = '2. Second';
+    selector.dispatchEvent(new Event('change'));
+    expect(actions).toEqual([{ type: 'set-answer', value: '2. Second' }]);
+  });
+
   it('renders an editable card and emits typed edit actions', () => {
     const fixture = TestBed.createComponent(DraftQuestionEditorCardComponent);
     const actions: DraftQuestionEditorAction[] = [];

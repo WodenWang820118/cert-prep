@@ -59,8 +59,12 @@
           <span class="workbench-tag">Questions</span>
           <h3>No questions are ready yet.</h3>
           <p>
+            @if (sourceImport.canGenerateDrafts()) {
+            Generate questions to create practice items from this source.
+            } @else {
             Add a source file with text, then generate questions when the source
             is ready.
+            }
           </p>
         </article>
       }

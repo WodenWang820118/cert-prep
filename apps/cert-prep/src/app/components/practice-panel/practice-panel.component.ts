@@ -16,6 +16,7 @@ import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import type { QuestionNavigatorItem } from './contracts/practice-panel.contracts';
 import { ChoiceKeyService } from '../../services/choice-key.service';
+import { displayChoice } from '../../services/choice-display';
 import { AppIconComponent } from '../ui/app-icon.component';
 
 @Component({
@@ -23,7 +24,7 @@ import { AppIconComponent } from '../ui/app-icon.component';
   imports: [FormsModule, AppIconComponent],
   templateUrl: './practice-panel.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
-  styleUrl: './practice-panel.component.css',
+  styleUrls: ['./practice-panel.component.css', './practice-panel-session.component.css'],
 })
 export class PracticePanelComponent implements OnInit {
   readonly sessionMode = input<PracticeSessionMode>('random_draw');
@@ -35,6 +36,7 @@ export class PracticePanelComponent implements OnInit {
 
   protected readonly operations = inject(OperationStore);
   protected readonly practice = inject(PracticeStore);
+  protected readonly displayChoice = displayChoice;
   private readonly inputErrorSync = effect(() => {
     if (this.drafts.draftsError() !== undefined || this.sourceImport.documentsError() !== undefined) {
       this.operations.fail(
@@ -74,9 +76,36 @@ export class PracticePanelComponent implements OnInit {
       : this.practice.effectiveRandomQuestionCount();
   });
 
-  protected readonly answeredCount = computed(
-    () => this.practice.answeredQuestionIds().size,
-  );
+  protected readonly answeredCount = computed(() => new Set([
+    ...this.practice.answeredQuestionIds(),
+    ...(this.practice.practiceSession()?.attempts ?? []).map((attempt) => attempt.question_id),
+  ]).size);
+
+  protected readonly sessionDetails = computed(() => {
+    const session = this.practice.practiceSession();
+    let status = 'Ready';
+    if (session !== null) {
+      switch (session.status) {
+        case 'active':
+          status = this.practice.sessionComplete() ? 'Completed' : 'Active';
+          break;
+        case 'completed':
+          status = 'Completed';
+          break;
+        case 'abandoned':
+          status = 'Abandoned';
+          break;
+        default:
+          status = 'Unknown';
+      }
+    }
+    return {
+      id: session?.id.slice(0, 8) ?? 'Not started',
+      fullId: session?.id ?? null,
+      status,
+      answered: session === null ? '0 of 0' : `${this.answeredCount()} of ${this.sessionTotal()}`,
+    };
+  });
 
   protected readonly progressPercent = computed(() => {
     const total = this.sessionTotal();

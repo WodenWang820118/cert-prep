@@ -57,6 +57,8 @@ describe('SourceDocumentStatusComponent', () => {
 
     expect(processingActions).toEqual([{ type: 'cancel-processing' }]);
     expect(failedActions).toEqual([{ type: 'retry-processing' }]);
+    expect(failedFixture.nativeElement.querySelector('h3')?.textContent?.trim()).toBe('Source could not be read');
+    expect(failedFixture.nativeElement.textContent).toContain('Retry source processing');
   });
 
   it('keeps internal stream and fallback details out of the human-facing status', () => {

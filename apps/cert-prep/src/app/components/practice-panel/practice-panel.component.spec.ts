@@ -43,6 +43,74 @@ describe('PracticePanelComponent', () => {
     expect(fixture.nativeElement.textContent).toContain(
       'Select a project before starting practice.',
     );
+    expect(sessionDetail(fixture.nativeElement, 'Session ID')?.textContent?.trim()).toBe('Not started');
+    expect(sessionDetail(fixture.nativeElement, 'Session ID')?.hasAttribute('title')).toBe(false);
+    expect(sessionDetail(fixture.nativeElement, 'Status')?.textContent?.trim()).toBe('Ready');
+    expect(sessionDetail(fixture.nativeElement, 'Answered')?.textContent?.trim()).toBe('0 of 0');
+  });
+
+  describe.each(['random_draw', 'full_document'] as const)('%s session details and choices', (mode) => {
+    it.each(['active', 'completed', 'abandoned'] as const)('shows the shortened id, %s status, and unique answered count', (status) => {
+      const questions = Array.from({ length: 5 }, (_, index) => editableQuestion(`draft-${index + 1}`));
+      const store = arrangeActiveSession(questions);
+      const id = '12345678-1234-1234-1234-123456789abc';
+      store.practiceSession.set({
+        ...practiceSession(questions.map((question) => question.id)),
+        id, mode, status,
+        attempts: [questions[0], questions[1], questions[0]].map((question, index) => ({
+          id: `attempt-${index}`, session_id: id, project_id: appProject.id,
+          question_id: question.id, selected_answer: question.choices[0],
+          is_correct: false, created_at: '2026-10-28T00:00:00Z',
+        })),
+      });
+      // The first answered id is also tracked locally after submission.
+      store.answeredQuestionIds.set(new Set([questions[0].id]));
+      const fixture = TestBed.createComponent(PracticePanelComponent);
+      fixture.componentRef.setInput('sessionMode', mode);
+      fixture.detectChanges();
+
+      expect(sessionDetail(fixture.nativeElement, 'Session ID')?.textContent?.trim()).toBe('12345678');
+      expect(sessionDetail(fixture.nativeElement, 'Session ID')?.getAttribute('title')).toBe(id);
+      expect(sessionDetail(fixture.nativeElement, 'Status')?.textContent?.trim()).toBe({
+        active: 'Active', completed: 'Completed', abandoned: 'Abandoned',
+      }[status]);
+      expect(sessionDetail(fixture.nativeElement, 'Answered')?.textContent?.trim()).toBe('2 of 5');
+    });
+
+    it('shows completion when every answer is recorded locally', () => {
+      const store = arrangeActiveSession([editableAppQuestion]);
+      store.answeredQuestionIds.set(new Set([editableAppQuestion.id]));
+      const fixture = TestBed.createComponent(PracticePanelComponent);
+      fixture.componentRef.setInput('sessionMode', mode);
+      fixture.detectChanges();
+      expect(sessionDetail(fixture.nativeElement, 'Status')?.textContent?.trim()).toBe('Completed');
+      expect(sessionDetail(fixture.nativeElement, 'Answered')?.textContent?.trim()).toBe('1 of 1');
+    });
+
+    it('hides source ordinals but submits the exact original answer', () => {
+      const question = editableQuestion('draft-1', {
+        choices: ['１ からかって', '２ ためらって'], answer: '１ からかって',
+      });
+      const store = arrangeActiveSession([question]);
+      apiClient.recordPracticeAttempt.mockReturnValue(of(null));
+      const fixture = TestBed.createComponent(PracticePanelComponent);
+      fixture.componentRef.setInput('sessionMode', mode);
+      fixture.detectChanges();
+
+      const root = fixture.nativeElement as HTMLElement;
+      const firstChoice = root.querySelector<HTMLInputElement>('#practice-choice-0');
+      expect(firstChoice?.closest('label')?.textContent?.trim().replace(/\s+/g, ' ')).toBe('A. からかって');
+      expect(root.textContent).not.toContain('１ からかって');
+      firstChoice?.click();
+      fixture.detectChanges();
+      TestBed.tick();
+      expect(store.selectedAnswer()).toBe('１ からかって');
+      buttonByText(root, 'Submit answer')?.click();
+      TestBed.tick();
+      expect(apiClient.recordPracticeAttempt).toHaveBeenCalledWith(appProject.id, 'session-1', {
+        question_id: question.id, selected_answer: '１ からかって',
+      }, { signal: expect.any(AbortSignal) });
+    });
   });
 
   it('shows the effective random draw total before a session starts', () => {
@@ -270,6 +338,12 @@ describe('PracticePanelComponent', () => {
     ).toBeNull();
   });
 });
+
+function sessionDetail(root: ParentNode, label: string): HTMLElement | null {
+  const row = Array.from(root.querySelectorAll('.practice-session-rail dl div'))
+    .find((item) => item.querySelector('dt')?.textContent?.trim() === label);
+  return row?.querySelector('dd') ?? null;
+}
 
 function metricValue(root: ParentNode, label: string): string | null {
   const metric = Array.from(

@@ -72,7 +72,7 @@
         <div class="answer-comparison">
           <section class="answer-panel is-selected" aria-label="Your answer">
             <span>Your Answer</span>
-            <p>{{ wrong.selected_answer }}</p>
+            <p>{{ answerLabel(wrong, wrong.selected_answer) }}</p>
           </section>
 
           <section class="answer-panel is-correct" aria-label="Correct answer">
@@ -80,7 +80,7 @@
               <app-icon name="lucideCircleCheck" />
               Correct Answer
             </span>
-            <p>{{ wrong.correct_answer ?? 'Not set' }}</p>
+            <p>{{ wrong.correct_answer === null ? 'Not set' : answerLabel(wrong, wrong.correct_answer) }}</p>
           </section>
         </div>
 
