@@ -247,8 +247,8 @@ def test_ollama_reasoning_requests_exact_distinct_count_when_source_supports_it(
     prompt = fake_client.chat_calls[0]["messages"][1]["content"]
     system_prompt = fake_client.chat_calls[0]["messages"][0]["content"]
     assert fake_client.chat_calls[0]["format"] == "json"
-    assert RATIONALE_LANGUAGE_INSTRUCTION in system_prompt
-    assert RATIONALE_LANGUAGE_INSTRUCTION in prompt
+    assert system_prompt.endswith(RATIONALE_LANGUAGE_INSTRUCTION)
+    assert prompt.endswith(RATIONALE_LANGUAGE_INSTRUCTION)
     assert "If at least 2 valid items are present, return exactly 2" in prompt
     assert "If fewer valid items are present, return only those items" in prompt
     assert "Never invent, duplicate, or split an item" in prompt
@@ -319,7 +319,7 @@ def test_ollama_reasoning_uses_one_supplemental_pass_for_a_short_grounded_result
     assert fake_client.chat_calls[0]["options"] == fake_client.chat_calls[1]["options"]
     assert fake_client.chat_calls[0]["keep_alive"] == fake_client.chat_calls[1]["keep_alive"]
     supplemental_prompt = fake_client.chat_calls[1]["messages"][1]["content"]
-    assert RATIONALE_LANGUAGE_INSTRUCTION in supplemental_prompt
+    assert supplemental_prompt.endswith(RATIONALE_LANGUAGE_INSTRUCTION)
     assert "single supplemental pass" in supplemental_prompt
     assert "chunk_id=chunk-1" in supplemental_prompt
     assert "[[chunk_id:chunk-2 page:3]]" in supplemental_prompt
@@ -361,7 +361,7 @@ def test_ollama_reasoning_supplements_a_malformed_initial_item_once() -> None:
     assert [suggestion.source_question_number for suggestion in suggestions] == ["3", "1"]
     assert len(fake_client.chat_calls) == 2
     supplemental_prompt = fake_client.chat_calls[1]["messages"][1]["content"]
-    assert RATIONALE_LANGUAGE_INSTRUCTION in supplemental_prompt
+    assert supplemental_prompt.endswith(RATIONALE_LANGUAGE_INSTRUCTION)
     assert "No item from the prior response passed strict validation" in supplemental_prompt
     assert supplemental_prompt.index("[[chunk_id:chunk-3") < supplemental_prompt.index(
         "[[chunk_id:chunk-1"
@@ -731,7 +731,10 @@ def test_ollama_fast_first_draft_maps_compact_json_to_candidate_choice(
 ) -> None:
     fake_client = RecordingOllamaClient(
         models=["qwen3.5:4b"],
-        chat_content='{"answer":"2","rationale":"Qwen picked the closest reading.","confidence":"high"}',
+        chat_content=(
+            '{"target":"余暇","reading":"よか","answer":"2",'
+            '"rationale":"Qwen picked the closest reading.","confidence":"high"}'
+        ),
     )
     monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
     provider = OllamaProvider(
@@ -765,7 +768,12 @@ def test_ollama_fast_first_draft_maps_compact_json_to_candidate_choice(
     assert suggestion.rationale == "Qwen picked the closest reading."
     assert suggestion.confidence == 0.8
     assert fake_client.chat_calls[0]["format"] == "json"
-    assert RATIONALE_LANGUAGE_INSTRUCTION in fake_client.chat_calls[0]["messages"][0]["content"]
+    assert fake_client.chat_calls[0]["messages"][0]["content"].endswith(
+        RATIONALE_LANGUAGE_INSTRUCTION
+    )
+    assert "Return only compact JSON with keys target, reading, answer" in (
+        fake_client.chat_calls[0]["messages"][0]["content"]
+    )
     assert "num_gpu" not in fake_client.chat_calls[0]["options"]
     assert fake_client.pull_calls == 0
 
@@ -935,4 +943,12 @@ def test_ollama_fast_first_retries_invalid_json_with_the_same_model(
     assert suggestion.answer == "2 second"
     assert len(fake_client.chat_calls) == 2
     assert [call["model"] for call in fake_client.chat_calls] == ["qwen3.5:4b", "qwen3.5:4b"]
-    assert RATIONALE_LANGUAGE_INSTRUCTION in fake_client.chat_calls[1]["messages"][0]["content"]
+    assert fake_client.chat_calls[0]["messages"][0]["content"].endswith(
+        RATIONALE_LANGUAGE_INSTRUCTION
+    )
+    assert fake_client.chat_calls[1]["messages"][0]["content"].endswith(
+        RATIONALE_LANGUAGE_INSTRUCTION
+    )
+    assert "Return one JSON object only with answer, rationale, and confidence." in (
+        fake_client.chat_calls[1]["messages"][0]["content"]
+    )

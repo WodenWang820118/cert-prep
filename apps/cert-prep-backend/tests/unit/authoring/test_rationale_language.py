@@ -40,9 +40,7 @@ def test_every_rationale_prompt_requires_traditional_chinese() -> None:
     }
 
     assert RATIONALE_LANGUAGE_INSTRUCTION == (
-        "Write the rationale in Traditional Chinese (繁體中文) as used in Taiwan, "
-        "and quote words from the source, such as the Japanese word being read, "
-        "in their original script."
+        "解說（rationale）必須用繁體中文（台灣用語）撰寫，不可用日文或英文；日文原文只放在「」裡引用。"
     )
     for name, prompt in prompts.items():
         assert RATIONALE_LANGUAGE_INSTRUCTION in prompt, name

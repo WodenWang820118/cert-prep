@@ -2,41 +2,81 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 import json
+import re
 from typing import Any
 
 from cert_prep_backend.authoring.domain.models import DraftSuggestion
 from cert_prep_backend.platform.errors import ProviderUnavailableError
 
 RATIONALE_LANGUAGE_INSTRUCTION = (
-    "Write the rationale in Traditional Chinese (繁體中文) as used in Taiwan, "
-    "and quote words from the source, such as the Japanese word being read, "
-    "in their original script."
+    "解說（rationale）必須用繁體中文（台灣用語）撰寫，不可用日文或英文；日文原文只放在「」裡引用。"
 )
+
+_READING_CHOICE_PATTERN = re.compile(
+    r"^\s*(?:[0-9０-９]+[.．、\)）]?\s*)?"
+    r"[\u3040-\u309f\u30a0-\u30ffー][\u3040-\u309f\u30a0-\u30ffー \t\u3000]*$"
+)
+
+
+def is_reading_question(choices: Sequence[str]) -> bool:
+    if not choices:
+        return False
+    return all(
+        isinstance(choice, str) and bool(_READING_CHOICE_PATTERN.match(choice))
+        for choice in choices
+    )
 
 
 def fast_first_prompt(candidate: DraftSuggestion) -> str:
     choices = "\n".join(str(choice) for choice in candidate.choices)
+    if is_reading_question(candidate.choices):
+        return (
+            "Return only compact JSON with keys target, reading, answer, rationale, confidence. "
+            "First find the target word in the question (the word whose reading is asked). "
+            "Write its correct reading in hiragana in reading. "
+            "Then set answer to the visible choice whose text matches that reading, "
+            "exactly as shown. "
+            "Rationale must be concise and user-facing.\n"
+            f"Question: {candidate.question}\n"
+            f"Choices:\n{choices}\n"
+            f"Source excerpt:\n{candidate.source_excerpt}\n"
+            f"{RATIONALE_LANGUAGE_INSTRUCTION}"
+        )
     return (
         "Return only compact JSON with keys answer, rationale, confidence. "
-        "Answer must be one of the visible choices or its leading number. "
-        "Rationale must be concise and user-facing; do not include hidden reasoning. "
-        f"{RATIONALE_LANGUAGE_INSTRUCTION}\n"
+        "Answer must be one of the visible choices, exactly as shown, or its leading number. "
+        "Rationale must be concise and user-facing; do not include hidden reasoning.\n"
         f"Question: {candidate.question}\n"
         f"Choices:\n{choices}\n"
         f"Source excerpt:\n{candidate.source_excerpt}\n"
-        "Pick the best answer from the choices."
+        "Pick the best answer from the choices.\n"
+        f"{RATIONALE_LANGUAGE_INSTRUCTION}"
     )
 
 
 def fast_first_retry_prompt(candidate: DraftSuggestion) -> str:
     choices = "\n".join(str(choice) for choice in candidate.choices)
+    if is_reading_question(candidate.choices):
+        return (
+            "Return one JSON object only with target, reading, answer, rationale, "
+            "and confidence. Do not write Markdown, analysis, or prose. "
+            "First find the target word in the question (the word whose reading is asked). "
+            "Write its correct reading in hiragana in reading. "
+            "Then set answer to the visible choice whose text matches that reading, "
+            "exactly as shown. "
+            "Rationale must be concise and user-facing.\n"
+            f"Question: {candidate.question[:800]}\n"
+            f"Choices:\n{choices}\n"
+            f"{RATIONALE_LANGUAGE_INSTRUCTION}"
+        )
     return (
         "Return one JSON object only with answer, rationale, and confidence. "
-        "Do not write Markdown, analysis, or prose. Answer must be one of the four visible choices. "
-        f"{RATIONALE_LANGUAGE_INSTRUCTION}\n"
+        "Do not write Markdown, analysis, or prose. "
+        "Answer must be one of the four visible choices.\n"
         f"Question: {candidate.question[:800]}\n"
         f"Choices:\n{choices}\n"
-        "Choose the best visible answer."
+        "Choose the best visible answer.\n"
+        f"{RATIONALE_LANGUAGE_INSTRUCTION}"
     )
 
 
