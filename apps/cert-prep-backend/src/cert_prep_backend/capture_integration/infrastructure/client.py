@@ -150,8 +150,20 @@ class CaptureRuntimeClient:
             idempotency_key=idempotency_key,
         )
 
+    def invalidate_discovery_cache(self) -> None:
+        """Drop the cached discovery so the next handshake reads the runtime again."""
+
+        with self._discovery_lock:
+            _invalidate_sdk_discovery_cache(self._sdk)
+
     def list_installations(self) -> RuntimeInstallations:
-        return RuntimeInstallations(items=self._sdk.list_installations())
+        installations = RuntimeInstallations(items=self._sdk.list_installations())
+        if any(
+            _installation_status_value(installation) in _TERMINAL_INSTALLATION_STATUSES
+            for installation in installations.items
+        ):
+            self.invalidate_discovery_cache()
+        return installations
 
     def get_installation(self, installation_id: str) -> RuntimeInstallation:
         installation = self._sdk.get_installation(installation_id)

@@ -128,3 +128,9 @@ class WrongAnswerExplanationRead(BaseModel):
     model: str
     grounded_fields: WrongAnswerGroundedFields
     fallback: bool
+
+
+class QuestionRegradeRead(BaseModel):
+    question_id: str
+    regraded_attempts: int
+    latest_attempt_wrong: bool

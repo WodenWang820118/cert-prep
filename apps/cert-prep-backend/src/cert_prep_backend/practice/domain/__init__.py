@@ -1,6 +1,6 @@
 """Domain model of the Practice and Review context, one module per aggregate."""
 
-from cert_prep_backend.practice.domain.attempt import PracticeAttempt
+from cert_prep_backend.practice.domain.attempt import PracticeAttempt, answer_matches_key
 from cert_prep_backend.practice.domain.exceptions import (
     PracticeRuleViolation,
     PracticeSessionConflict,
@@ -47,6 +47,7 @@ __all__ = [
     "WrongAnswer",
     "WrongAnswerCluster",
     "WrongAnswerSummary",
+    "answer_matches_key",
     "current_wrong_answers",
     "current_wrong_answers_in",
     "select_questions",
