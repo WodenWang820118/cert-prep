@@ -171,19 +171,43 @@ def test_model_download_poll_returns_job_status(tmp_path) -> None:
     assert response.json()["id"] == started["id"]
     assert response.json()["status"] == "succeeded"
 
-def test_model_download_reuses_existing_running_job(tmp_path) -> None:
+def test_model_download_reuses_existing_running_job(tmp_path, monkeypatch) -> None:
     release_pull = Event()
+    progress_emitted = Event()
     provider = BlockingDownloadProvider(release_pull)
+    original_pull = provider.pull_model
+
+    def pull_model(progress):
+        def record(item):
+            progress(item)
+            progress_emitted.set()
+        original_pull(record)
+
+    monkeypatch.setattr(provider, "pull_model", pull_model)
     client = TestClient(
         create_app(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
             llm_provider=provider,
         )
     )
+    manager = client.app.state.runtime_installation_manager
+    original_start = manager.start_model_installation
 
-    first = client.post("/llm/model-downloads", headers=AUTH_HEADERS)
-    second = client.post("/llm/model-downloads", headers=AUTH_HEADERS)
-    release_pull.set()
+    def start_after_progress():
+        snapshot = original_start()
+        assert progress_emitted.wait(timeout=5)
+        return manager.get_installation(snapshot.id)
+
+    monkeypatch.setattr(manager, "start_model_installation", start_after_progress)
+    try:
+        first = client.post("/llm/model-downloads", headers=AUTH_HEADERS)
+        second = client.post("/llm/model-downloads", headers=AUTH_HEADERS)
+    finally:
+        release_pull.set()
+        for worker in manager._job_threads:
+            worker.join(timeout=5)
+            assert not worker.is_alive()
+        manager.close()
 
     assert first.status_code == 202
     assert second.status_code == 202
