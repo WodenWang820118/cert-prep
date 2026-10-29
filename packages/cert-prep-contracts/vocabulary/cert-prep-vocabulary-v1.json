@@ -369,6 +369,76 @@
       "retired": false
     },
     {
+      "id": "runtime-provisioning.installation-status.queued",
+      "label": "排隊",
+      "codeName": "RuntimeInstallationStatus.QUEUED",
+      "enum": {
+        "enumId": "cert_prep_contracts__runtime__RuntimeInstallationStatus",
+        "value": "queued"
+      },
+      "retired": false
+    },
+    {
+      "id": "runtime-provisioning.installation-status.running",
+      "label": "執行中",
+      "codeName": "RuntimeInstallationStatus.RUNNING",
+      "enum": {
+        "enumId": "cert_prep_contracts__runtime__RuntimeInstallationStatus",
+        "value": "running"
+      },
+      "retired": false
+    },
+    {
+      "id": "runtime-provisioning.installation-status.cancel-requested",
+      "label": "要求取消",
+      "codeName": "RuntimeInstallationStatus.CANCEL_REQUESTED",
+      "enum": {
+        "enumId": "cert_prep_contracts__runtime__RuntimeInstallationStatus",
+        "value": "cancel_requested"
+      },
+      "retired": false
+    },
+    {
+      "id": "runtime-provisioning.installation-status.canceled",
+      "label": "已取消",
+      "codeName": "RuntimeInstallationStatus.CANCELED",
+      "enum": {
+        "enumId": "cert_prep_contracts__runtime__RuntimeInstallationStatus",
+        "value": "canceled"
+      },
+      "retired": false
+    },
+    {
+      "id": "runtime-provisioning.installation-status.waiting-for-user",
+      "label": "等待使用者",
+      "codeName": "RuntimeInstallationStatus.WAITING_FOR_USER",
+      "enum": {
+        "enumId": "cert_prep_contracts__runtime__RuntimeInstallationStatus",
+        "value": "waiting_for_user"
+      },
+      "retired": false
+    },
+    {
+      "id": "runtime-provisioning.installation-status.succeeded",
+      "label": "成功",
+      "codeName": "RuntimeInstallationStatus.SUCCEEDED",
+      "enum": {
+        "enumId": "cert_prep_contracts__runtime__RuntimeInstallationStatus",
+        "value": "succeeded"
+      },
+      "retired": false
+    },
+    {
+      "id": "runtime-provisioning.installation-status.failed",
+      "label": "失敗",
+      "codeName": "RuntimeInstallationStatus.FAILED",
+      "enum": {
+        "enumId": "cert_prep_contracts__runtime__RuntimeInstallationStatus",
+        "value": "failed"
+      },
+      "retired": false
+    },
+    {
       "id": "authoring.draft-status.approved",
       "label": "已核可",
       "codeName": "DraftStatus.APPROVED",

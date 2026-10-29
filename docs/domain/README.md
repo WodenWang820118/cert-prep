@@ -31,7 +31,7 @@ flowchart LR
 | 題目編寫   | [authoring.md](authoring.md)                     | `cert_prep_backend/authoring`、`app/authoring`           | C4 完成 |
 | 練習與複習 | [practice.md](practice.md)                       | `cert_prep_backend/practice`、`app/practice`             | C4 完成 |
 | AI 供應    | [ai_providers.md](ai_providers.md)               | `cert_prep_backend/ai_providers`                         | C4 完成 |
-| 執行環境   | 待補（C3、C8）                                   | `cert_prep_backend/runtime_provisioning`、`app/runtime`  | 規劃中  |
+| 執行環境   | [runtime_provisioning.md](runtime_provisioning.md) | `cert_prep_backend/runtime_provisioning`、`app/runtime`  | C4 完成 |
 
 實線箭頭由上游指向下游：下游使用上游公開的介面與資料，上游不知道下游。
 
