@@ -14,7 +14,6 @@ from cert_prep_backend.runtime_provisioning.domain.installation import (
 )
 from cert_prep_backend.runtime_provisioning.domain.models import (
     RuntimeInstallationSnapshot,
-    utcnow,
 )
 
 __all__ = [
@@ -27,5 +26,4 @@ __all__ = [
     "RuntimeInstallationSnapshot",
     "RuntimeInstallationTarget",
     "UNSET",
-    "utcnow",
 ]

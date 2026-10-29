@@ -12,7 +12,6 @@ from cert_prep_backend.capture_integration.infrastructure.coordinator import Cer
 from cert_prep_backend.ai_providers.application.ports import MachineInventory
 from cert_prep_backend.ai_providers.domain.provider import LLMProvider
 from cert_prep_backend.authoring.infrastructure.streaming import StreamingDraftGenerationManager
-from cert_prep_backend.runtime_provisioning.infrastructure import RuntimeInstallationManager
 from cert_prep_backend.platform.document_worker_pool import (
     DocumentWorkerPool,
 )
@@ -49,10 +48,6 @@ def get_llm_provider(request: Request) -> LLMProvider:
 
 def get_machine_inventory(request: Request) -> MachineInventory:
     return request.app.state.machine_inventory
-
-
-def get_runtime_installation_manager(request: Request) -> RuntimeInstallationManager:
-    return request.app.state.runtime_installation_manager
 
 
 def get_streaming_draft_generation_manager(

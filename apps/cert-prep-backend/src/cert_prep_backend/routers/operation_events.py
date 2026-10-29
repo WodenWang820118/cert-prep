@@ -3,10 +3,9 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Path
+from fastapi import APIRouter, Depends, Header, Path, Request
 
 from cert_prep_backend.api.dependencies import (
-    get_runtime_installation_manager,
     get_streaming_draft_generation_manager,
 )
 from cert_prep_backend.platform.dependencies import (
@@ -19,7 +18,8 @@ from cert_prep_backend.platform.sse import operation_snapshot_stream, streaming_
 from cert_prep_backend.authoring.domain.generation import DraftGenerationJob, ManualDraftOperation
 from cert_prep_backend.authoring.infrastructure import draft_jobs
 from cert_prep_backend.authoring.infrastructure.streaming import StreamingDraftGenerationManager
-from cert_prep_backend.runtime_provisioning.infrastructure import RuntimeInstallationManager
+from cert_prep_backend.runtime_provisioning.application import use_cases as runtime_installations
+from cert_prep_backend.runtime_provisioning.application.ports import RuntimeInstallation
 from cert_prep_backend.source_library.domain.operation import DocumentOperation
 from cert_prep_backend.source_library.infrastructure import operations as document_operations
 from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
@@ -36,6 +36,10 @@ SSE_RESPONSES = {
 }
 OperationIdPath = Annotated[str, Path(min_length=1, max_length=128)]
 LastEventIdHeader = Annotated[str | None, Header(alias="Last-Event-ID")]
+
+
+def get_runtime_installation_manager(request: Request) -> RuntimeInstallation:
+    return request.app.state.runtime_installation_manager
 
 
 @router.get(
@@ -168,7 +172,7 @@ def draft_operation_events(
 def runtime_installation_events(
     job_id: str,
     last_event_id: LastEventIdHeader = None,
-    manager: RuntimeInstallationManager = Depends(get_runtime_installation_manager),
+    manager: RuntimeInstallation = Depends(get_runtime_installation_manager),
     notifier: DatabaseChangeNotifier = Depends(get_database_change_notifier),
 ):
     try:
@@ -191,7 +195,7 @@ def runtime_installation_events(
 def model_download_events(
     job_id: str,
     last_event_id: LastEventIdHeader = None,
-    manager: RuntimeInstallationManager = Depends(get_runtime_installation_manager),
+    manager: RuntimeInstallation = Depends(get_runtime_installation_manager),
     notifier: DatabaseChangeNotifier = Depends(get_database_change_notifier),
 ):
     try:
@@ -262,17 +266,17 @@ def _manual_operation_snapshot(
 
 
 def _runtime_installation_snapshot(
-    manager: RuntimeInstallationManager,
+    manager: RuntimeInstallation,
     job_id: str,
 ) -> dict:
-    return asdict(manager.get_installation(job_id))
+    return asdict(runtime_installations.view_runtime_installation(manager, job_id))
 
 
 def _model_download_snapshot(
-    manager: RuntimeInstallationManager,
+    manager: RuntimeInstallation,
     job_id: str,
 ) -> dict:
-    snapshot = asdict(manager.get_installation(job_id))
+    snapshot = asdict(runtime_installations.view_runtime_installation(manager, job_id))
     snapshot.pop("kind", None)
     return snapshot
 

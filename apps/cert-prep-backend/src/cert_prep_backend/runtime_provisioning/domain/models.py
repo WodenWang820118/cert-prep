@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeRequirementKind,
@@ -9,7 +8,6 @@ from cert_prep_contracts.runtime import (
 
 __all__ = [
     "RuntimeInstallationSnapshot",
-    "utcnow",
 ]
 
 
@@ -31,8 +29,3 @@ class RuntimeInstallationSnapshot:
     updated_at: str
     commit_started_at: str | None = None
     error: str | None = None
-
-def utcnow() -> datetime:
-    """Return the timezone-aware timestamp used by runtime installation snapshots."""
-
-    return datetime.now(UTC)
