@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
-from datetime import datetime
-from threading import Event, Lock, Thread
+from dataclasses import replace
+from threading import Event, Lock, RLock, Thread
 from typing import Protocol
 from uuid import uuid4
 
@@ -14,12 +13,26 @@ from cert_prep_backend.ai_providers.domain.provider import (
     RuntimeInstallationProvider,
     provider_capability,
 )
+from cert_prep_backend.runtime_provisioning.domain.installation import (
+    RuntimeInstallationCanceledError,
+    RuntimeInstallationJob,
+    RuntimeInstallationPhase,
+    RuntimeInstallationProgress,
+    RuntimeInstallationTarget,
+    TERMINAL_JOB_STATUSES,
+)
 from cert_prep_backend.runtime_provisioning.domain.models import (
     RuntimeInstallationSnapshot,
     utcnow,
 )
+from cert_prep_backend.runtime_provisioning.infrastructure.repository import (
+    RuntimeInstallationJobRepository,
+)
 from cert_prep_backend.platform.database import Database
-from cert_prep_backend.platform.errors import OperationNotCancellableError, ProviderUnavailableError
+from cert_prep_backend.platform.errors import (
+    OperationNotCancellableError,
+    ProviderUnavailableError,
+)
 from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeInstallProgress,
@@ -47,45 +60,7 @@ class RuntimeInstaller(Protocol):
         pass
 
 
-@dataclass(slots=True)
-class _RuntimeInstallationJob:
-    id: str
-    kind: RuntimeRequirementKind
-    provider: str
-    model: str
-    status: RuntimeInstallationStatus
-    phase: str
-    cancellable: bool
-    detail: str
-    completed: int | None
-    total: int | None
-    created_at: datetime
-    updated_at: datetime
-    commit_started_at: datetime | None = None
-    error: str | None = None
-    cancellation: Event | None = None
-
-    def snapshot(self) -> RuntimeInstallationSnapshot:
-        return RuntimeInstallationSnapshot(
-            id=self.id,
-            kind=self.kind,
-            provider=self.provider,
-            model=self.model,
-            status=self.status,
-            phase=self.phase,
-            cancellable=self.cancellable,
-            detail=self.detail,
-            completed=self.completed,
-            total=self.total,
-            created_at=self.created_at.isoformat(),
-            updated_at=self.updated_at.isoformat(),
-            commit_started_at=(
-                self.commit_started_at.isoformat()
-                if self.commit_started_at is not None
-                else None
-            ),
-            error=self.error,
-        )
+_RuntimeInstallationJob = RuntimeInstallationJob
 
 
 class _Missing:
@@ -95,8 +70,12 @@ class _Missing:
 _MISSING = _Missing()
 
 
-class _RuntimeInstallationCanceled(RuntimeError):
+class _RuntimeInstallationCanceled(RuntimeInstallationCanceledError):
     pass
+
+
+_MAX_RETAINED_JOBS = 100
+_TERMINAL_JOB_STATUSES = set(TERMINAL_JOB_STATUSES)
 
 
 class RuntimeInstallationManager:
@@ -176,10 +155,22 @@ class RuntimeInstallationManager:
                 ),
                 preferred_model_kind,
             )
-        self._jobs: dict[str, _RuntimeInstallationJob] = {}
+        self._lock = RLock()
+        self._cancellation_signals: dict[str, Event] = {}
+        self._repository = RuntimeInstallationJobRepository(
+            db=self._db,
+            lock=self._lock,
+            on_evict=self._remove_cancellation_signal,
+        )
         self._job_threads: list[Thread] = []
-        self._lock = Lock()
         self._recover_persisted_jobs()
+
+    @property
+    def _jobs(self) -> dict[str, RuntimeInstallationJob]:
+        return self._repository._jobs
+
+    def _remove_cancellation_signal(self, job_id: str) -> None:
+        self._cancellation_signals.pop(job_id, None)
 
     def requirements(self) -> list[RuntimeRequirementSnapshot]:
         """Return runtime requirements without starting installation work."""
@@ -224,30 +215,27 @@ class RuntimeInstallationManager:
             except Exception as exc:
                 raise ProviderUnavailableError(str(exc)) from exc
 
-        with self._lock:
-            self._evict_terminal_jobs_locked()
-            existing = self._active_job_for(installer.kind)
-            if existing is not None:
-                return existing.snapshot()
+        target = RuntimeInstallationTarget(
+            kind=installer.kind,
+            provider=installer.provider,
+            model=installer.model,
+        )
 
+        def create_job() -> RuntimeInstallationJob:
             now = utcnow()
-            job = _RuntimeInstallationJob(
-                id=str(uuid4()),
-                kind=installer.kind,
-                provider=installer.provider,
-                model=installer.model,
-                status=RuntimeInstallationStatus.QUEUED,
-                phase="queued",
-                cancellable=True,
+            job_id = str(uuid4())
+            self._cancellation_signals[job_id] = Event()
+            return RuntimeInstallationJob.queue(
+                id=job_id,
+                target=target,
                 detail=f"{requirement.label} installation queued",
-                completed=None,
                 total=requirement.bytes,
-                created_at=now,
-                updated_at=now,
-                cancellation=Event(),
+                now=now,
             )
-            self._jobs[job.id] = job
-            self._persist_job_locked(job)
+
+        job, created = self._repository.find_active_or_create(target, create_job)
+        if not created:
+            return job.snapshot()
 
         if self._async_jobs:
             worker = Thread(
@@ -257,7 +245,9 @@ class RuntimeInstallationManager:
                 daemon=True,
             )
             with self._lock:
-                self._job_threads = [thread for thread in self._job_threads if thread.is_alive()]
+                self._job_threads = [
+                    thread for thread in self._job_threads if thread.is_alive()
+                ]
                 self._job_threads.append(worker)
             worker.start()
         else:
@@ -267,11 +257,8 @@ class RuntimeInstallationManager:
     def get_installation(self, job_id: str) -> RuntimeInstallationSnapshot:
         """Return the current job state, refreshing user-waiting jobs if possible."""
 
-        with self._lock:
-            job = self._jobs.get(job_id)
-            if job is None:
-                raise KeyError(job_id)
-            snapshot = job.snapshot()
+        job = self._repository.require(job_id)
+        snapshot = job.snapshot()
 
         if snapshot.status == RuntimeInstallationStatus.WAITING_FOR_USER:
             installer = self._installers.get(snapshot.kind)
@@ -296,9 +283,7 @@ class RuntimeInstallationManager:
 
         cancel_callback = None
         with self._lock:
-            job = self._jobs.get(job_id)
-            if job is None:
-                raise KeyError(job_id)
+            job = self._repository.require(job_id)
             if (
                 job.status == RuntimeInstallationStatus.SUCCEEDED
                 and job.commit_started_at is not None
@@ -314,25 +299,17 @@ class RuntimeInstallationManager:
                 raise OperationNotCancellableError(
                     "Runtime installation is committing and can no longer be canceled."
                 )
-            if job.cancellation is not None:
-                job.cancellation.set()
-            if job.status == RuntimeInstallationStatus.QUEUED:
-                job.status = RuntimeInstallationStatus.CANCELED
-                job.phase = "canceled"
-                job.cancellable = False
-                job.detail = "Runtime installation canceled"
-            else:
-                job.status = RuntimeInstallationStatus.CANCEL_REQUESTED
-                job.phase = "canceling"
-                job.cancellable = False
-                job.detail = "Runtime installation cancellation requested"
-            job.updated_at = utcnow()
-            self._persist_job_locked(job)
-            installer = self._installers.get(job.kind)
+            signal = self._cancellation_signals.get(job_id)
+            if signal is not None:
+                signal.set()
+            now = utcnow()
+            cancelled = job.cancel(now=now)
+            self._repository.save(cancelled)
+            installer = self._installers.get(cancelled.kind)
             candidate = getattr(installer, "cancel", None)
             if callable(candidate):
                 cancel_callback = candidate
-            snapshot = job.snapshot()
+            snapshot = cancelled.snapshot()
 
         if cancel_callback is not None:
             try:
@@ -348,8 +325,8 @@ class RuntimeInstallationManager:
         with self._lock:
             job_ids = [
                 job.id
-                for job in self._jobs.values()
-                if job.status not in _TERMINAL_JOB_STATUSES
+                for job in self._repository.list_all()
+                if not job.is_terminal
             ]
             workers = list(self._job_threads)
         for job_id in job_ids:
@@ -362,15 +339,12 @@ class RuntimeInstallationManager:
 
     def _run_installation(self, job_id: str, installer: RuntimeInstaller) -> None:
         with self._lock:
-            job = self._jobs[job_id]
+            job = self._repository.require(job_id)
             if job.status != RuntimeInstallationStatus.QUEUED:
                 return
-            job.status = RuntimeInstallationStatus.RUNNING
-            job.phase = "starting"
-            job.cancellable = True
-            job.detail = f"{installer.provider} installation running"
-            job.updated_at = utcnow()
-            self._persist_job_locked(job)
+            now = utcnow()
+            running = job.start(f"{installer.provider} installation running", now=now)
+            self._repository.save(running)
         try:
             status = installer.install(lambda progress: self._record_progress(job_id, progress))
         except _RuntimeInstallationCanceled:
@@ -419,43 +393,28 @@ class RuntimeInstallationManager:
                 == RuntimeRequirementKind.OLLAMA_MODEL
                 else snapshot.detail or f"{requirement.label} is ready"
             ),
-            completed=snapshot.completed if snapshot.completed is not None else requirement.bytes,
+            completed=(
+                snapshot.completed
+                if snapshot.completed is not None
+                else requirement.bytes
+            ),
             total=snapshot.total if snapshot.total is not None else requirement.bytes,
         )
 
     def _record_progress(self, job_id: str, progress: RuntimeInstallProgress) -> None:
         with self._lock:
-            job = self._jobs[job_id]
+            job = self._repository.require(job_id)
+            signal = self._cancellation_signals.get(job_id)
             if (
                 job.status == RuntimeInstallationStatus.CANCEL_REQUESTED
                 or job.status == RuntimeInstallationStatus.CANCELED
-                or (job.cancellation is not None and job.cancellation.is_set())
+                or (signal is not None and signal.is_set())
             ):
                 raise _RuntimeInstallationCanceled("Runtime installation was canceled.")
             now = utcnow()
-            phase = progress.phase or "installing"
-            cancellable = (
-                progress.cancellable
-                if progress.cancellable is not None
-                else True
-            )
-            if (
-                job.commit_started_at is None
-                and phase == "committing"
-                and not cancellable
-            ):
-                job.commit_started_at = now
-            if job.commit_started_at is not None:
-                phase = "committing"
-                cancellable = False
-            job.status = RuntimeInstallationStatus.RUNNING
-            job.phase = phase
-            job.cancellable = cancellable
-            job.detail = progress.detail
-            job.completed = progress.completed
-            job.total = progress.total
-            job.updated_at = now
-            self._persist_job_locked(job)
+            progress_vo = RuntimeInstallationProgress.from_install_progress(progress)
+            updated = job.record_progress(progress_vo, now=now)
+            self._repository.save(updated)
 
     def _update_job(
         self,
@@ -470,47 +429,49 @@ class RuntimeInstallationManager:
         error: str | None | object = _MISSING,
     ) -> None:
         with self._lock:
-            job = self._jobs[job_id]
-            if job.status in _TERMINAL_JOB_STATUSES:
+            job = self._repository.require(job_id)
+            if job.is_terminal:
                 return
+            target_status = status
+            target_phase = phase
+            target_cancellable = cancellable
+            target_detail = detail
+            target_completed = job.completed if completed is _MISSING else completed
+            target_total = job.total if total is _MISSING else total
+            target_error = (
+                job.error
+                if error is _MISSING
+                else (None if error is None else str(error))
+            )
             if (
                 job.status == RuntimeInstallationStatus.CANCEL_REQUESTED
-                and status
+                and target_status
                 not in {
                     RuntimeInstallationStatus.CANCEL_REQUESTED,
                     RuntimeInstallationStatus.CANCELED,
                 }
             ):
-                status = RuntimeInstallationStatus.CANCELED
-                phase = "canceled"
-                cancellable = False
-                detail = "Runtime installation canceled"
-                error = None
-            job.status = status
-            job.phase = phase
-            job.cancellable = cancellable
-            job.detail = detail
-            if completed is not _MISSING:
-                job.completed = completed  # type: ignore[assignment]
-            if total is not _MISSING:
-                job.total = total  # type: ignore[assignment]
-            if error is not _MISSING:
-                job.error = error  # type: ignore[assignment]
-            job.updated_at = utcnow()
-            self._persist_job_locked(job)
-            if job.status in _TERMINAL_JOB_STATUSES:
-                self._evict_terminal_jobs_locked()
+                target_status = RuntimeInstallationStatus.CANCELED
+                target_phase = "canceled"
+                target_cancellable = False
+                target_detail = "Runtime installation canceled"
+                target_error = None
+            now = utcnow()
+            updated = replace(
+                job,
+                status=target_status,
+                phase=RuntimeInstallationPhase.of(target_phase),
+                cancellable=target_cancellable,
+                detail=target_detail,
+                completed=target_completed,  # type: ignore[arg-type]
+                total=target_total,  # type: ignore[arg-type]
+                error=target_error,
+                updated_at=now,
+            )
+            self._repository.save(updated)
 
-    def _active_job_for(self, kind: RuntimeRequirementKind) -> _RuntimeInstallationJob | None:
-        for job in self._jobs.values():
-            if job.kind == kind and job.status in {
-                RuntimeInstallationStatus.QUEUED,
-                RuntimeInstallationStatus.RUNNING,
-                RuntimeInstallationStatus.CANCEL_REQUESTED,
-                RuntimeInstallationStatus.WAITING_FOR_USER,
-            }:
-                return job
-        return None
+    def _active_job_for(self, kind: RuntimeRequirementKind) -> RuntimeInstallationJob | None:
+        return self._repository.active_job_for(kind)
 
     def _installer(self, kind: RuntimeRequirementKind) -> RuntimeInstaller:
         installer = self._installers.get(kind)
@@ -522,155 +483,30 @@ class RuntimeInstallationManager:
         self, installer: RuntimeInstaller, requirement: RuntimeRequirementSnapshot
     ) -> RuntimeInstallationSnapshot:
         now = utcnow()
-        job = _RuntimeInstallationJob(
-            id=str(uuid4()),
+        target = RuntimeInstallationTarget(
             kind=installer.kind,
             provider=installer.provider,
             model=installer.model,
-            status=RuntimeInstallationStatus.SUCCEEDED,
-            phase="completed",
-            cancellable=False,
+        )
+        job = RuntimeInstallationJob.create_succeeded(
+            id=str(uuid4()),
+            target=target,
             detail=f"{requirement.label} is ready",
             completed=requirement.bytes,
             total=requirement.bytes,
-            created_at=now,
-            updated_at=now,
+            now=now,
         )
-        with self._lock:
-            self._jobs[job.id] = job
-            self._persist_job_locked(job)
-            self._evict_terminal_jobs_locked()
+        self._repository.add(job)
         return job.snapshot()
 
     def _recover_persisted_jobs(self) -> None:
         if self._db is None:
             return
-        now = utcnow().isoformat()
-        with self._db.connect() as connection:
-            connection.execute(
-                """
-                UPDATE runtime_installation_jobs
-                SET status = 'failed', phase = 'interrupted', cancellable = 0,
-                    detail = 'Runtime installation was interrupted by an app restart.',
-                    error = 'Runtime installation was interrupted by an app restart.',
-                    updated_at = ?
-                WHERE status IN ('queued', 'running')
-                """,
-                (now,),
-            )
-            connection.execute(
-                """
-                UPDATE runtime_installation_jobs
-                SET status = 'canceled', phase = 'canceled', cancellable = 0,
-                    detail = 'Runtime installation cancellation completed after restart.',
-                    error = NULL, updated_at = ?
-                WHERE status = 'cancel_requested'
-                """,
-                (now,),
-            )
-            rows = connection.execute(
-                """
-                SELECT * FROM runtime_installation_jobs
-                ORDER BY updated_at DESC, created_at DESC, id DESC
-                LIMIT ?
-                """,
-                (_MAX_RETAINED_JOBS,),
-            ).fetchall()
-        for row in reversed(rows):
-            status = RuntimeInstallationStatus(str(row["status"]))
-            job = _RuntimeInstallationJob(
-                id=str(row["id"]),
-                kind=RuntimeRequirementKind(str(row["kind"])),
-                provider=str(row["provider"]),
-                model=str(row["model"]),
-                status=status,
-                phase=str(row["phase"]),
-                cancellable=bool(row["cancellable"]),
-                detail=str(row["detail"]),
-                completed=row["completed"],
-                total=row["total"],
-                created_at=datetime.fromisoformat(str(row["created_at"])),
-                updated_at=datetime.fromisoformat(str(row["updated_at"])),
-                commit_started_at=(
-                    datetime.fromisoformat(str(row["commit_started_at"]))
-                    if row["commit_started_at"] is not None
-                    else None
-                ),
-                error=row["error"],
-                cancellation=(
-                    Event() if status not in _TERMINAL_JOB_STATUSES else None
-                ),
-            )
-            self._jobs[job.id] = job
-
-    def _persist_job_locked(self, job: _RuntimeInstallationJob) -> None:
-        if self._db is None:
-            return
-        with self._db.connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO runtime_installation_jobs(
-                    id, kind, provider, model, status, phase, cancellable,
-                    detail, completed, total, error, created_at, updated_at,
-                    commit_started_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    status = excluded.status,
-                    phase = excluded.phase,
-                    cancellable = excluded.cancellable,
-                    detail = excluded.detail,
-                    completed = excluded.completed,
-                    total = excluded.total,
-                    error = excluded.error,
-                    updated_at = excluded.updated_at,
-                    commit_started_at = excluded.commit_started_at
-                """,
-                (
-                    job.id,
-                    job.kind.value,
-                    job.provider,
-                    job.model,
-                    job.status.value,
-                    job.phase,
-                    int(job.cancellable),
-                    job.detail,
-                    job.completed,
-                    job.total,
-                    job.error,
-                    job.created_at.isoformat(),
-                    job.updated_at.isoformat(),
-                    (
-                        job.commit_started_at.isoformat()
-                        if job.commit_started_at is not None
-                        else None
-                    ),
-                ),
-            )
-
-    def _evict_terminal_jobs_locked(self) -> None:
-        if len(self._jobs) <= _MAX_RETAINED_JOBS:
-            return
-        terminal_jobs = sorted(
-            (
-                job
-                for job in self._jobs.values()
-                if job.status in _TERMINAL_JOB_STATUSES
-            ),
-            key=lambda job: job.updated_at,
-        )
-        for job in terminal_jobs:
-            if len(self._jobs) <= _MAX_RETAINED_JOBS:
-                break
-            self._jobs.pop(job.id, None)
-
-
-_MAX_RETAINED_JOBS = 100
-_TERMINAL_JOB_STATUSES = {
-    RuntimeInstallationStatus.SUCCEEDED,
-    RuntimeInstallationStatus.FAILED,
-    RuntimeInstallationStatus.CANCELED,
-}
+        now = utcnow()
+        recovered = self._repository.recover(now)
+        for job in recovered:
+            if not job.is_terminal:
+                self._cancellation_signals[job.id] = Event()
 
 
 class _LazyOllamaProfileInstaller:

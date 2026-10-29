@@ -5,10 +5,14 @@ from cert_prep_backend.runtime_provisioning.infrastructure.manager import (
     RuntimeInstallationManager,
     RuntimeInstaller,
 )
+from cert_prep_backend.runtime_provisioning.infrastructure.repository import (
+    RuntimeInstallationJobRepository,
+)
 from cert_prep_backend.runtime_provisioning.domain.models import RuntimeInstallationSnapshot
 
 __all__ = [
     "LLMModelInstaller",
+    "RuntimeInstallationJobRepository",
     "RuntimeInstallationManager",
     "RuntimeInstallationSnapshot",
     "RuntimeInstaller",
