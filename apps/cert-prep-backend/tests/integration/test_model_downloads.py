@@ -1,4 +1,7 @@
 from threading import Event
+from dataclasses import replace
+from datetime import UTC, datetime
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -6,6 +9,17 @@ from cert_prep_backend.api.app import create_app
 from cert_prep_backend.platform.config import DEFAULT_OLLAMA_MODEL, Settings
 from cert_prep_backend.ai_providers.infrastructure import machine_inventory as machine_inventory_module
 from cert_prep_ollama.profiles import DEFAULT_PROFILE_ID
+from cert_prep_backend.runtime_provisioning.application import use_cases as runtime_installations
+from cert_prep_backend.runtime_provisioning.application.ports import RuntimeInstallation
+from cert_prep_backend.runtime_provisioning.domain.installation import (
+    RuntimeInstallationJob,
+    RuntimeInstallationTarget,
+)
+from cert_prep_backend.runtime_provisioning.infrastructure.repository import (
+    RuntimeInstallationJobRepository,
+)
+from cert_prep_backend.runtime_provisioning.infrastructure.manager import ThreadRuntimeInstallationWork
+from cert_prep_contracts.runtime import RuntimeRequirementKind, RuntimeRequirementSnapshot
 from llm_test_fakes import (
     BlockingDownloadProvider,
     FailingDownloadProvider,
@@ -20,30 +34,40 @@ from llm_test_fakes import (
 AUTH_HEADERS = {"Authorization": "Bearer test-token"}
 
 
-class RecordingSelectedModelManager:
+class RecordingSelectedModelInstallers:
     def __init__(self) -> None:
         self.start_calls = 0
 
-    def start_model_installation(self, **_kwargs):
+    @property
+    def selected_model_kind(self):
         self.start_calls += 1
-        return {
-            "id": "selected-model-job",
-            "provider": "future-provider",
-            "model": "future-model",
-            "status": "queued",
-            "phase": "queued",
-            "cancellable": True,
-            "detail": "selected model installation queued",
-            "completed": 0,
-            "total": None,
-            "created_at": "2026-07-12T00:00:00Z",
-            "updated_at": "2026-07-12T00:00:00Z",
-            "error": None,
-        }
+        return RuntimeRequirementKind.OLLAMA
+
+    def get(self, kind):
+        assert kind == RuntimeRequirementKind.OLLAMA
+        return SimpleNamespace(
+            kind=kind, provider="future-provider", model="future-model",
+            requirement=lambda: RuntimeRequirementSnapshot(
+                kind=kind, label="selected model", available=False, detail="missing",
+                unavailable_reason="model_missing",
+            ),
+        )
+
+    def ordered(self):
+        return [self.get(RuntimeRequirementKind.OLLAMA)]
 
 
 def test_model_download_uses_the_selected_model_installer(tmp_path) -> None:
-    manager = RecordingSelectedModelManager()
+    catalog = RecordingSelectedModelInstallers()
+    jobs = RuntimeInstallationJobRepository()
+    jobs.add(replace(RuntimeInstallationJob.queue(
+        id="selected-model-job",
+        target=RuntimeInstallationTarget(RuntimeRequirementKind.OLLAMA, "future-provider", "future-model"),
+        detail="selected model installation queued", total=None,
+        now=datetime(2026, 7, 12, tzinfo=UTC),
+    ), completed=0))
+    work = ThreadRuntimeInstallationWork(jobs.lock, async_jobs=False)
+    runtime = RuntimeInstallation(jobs, catalog, work, work.clock, work.new_id)
     client = TestClient(
         create_app(
             settings=Settings(
@@ -51,7 +75,7 @@ def test_model_download_uses_the_selected_model_installer(tmp_path) -> None:
                 api_token="test-token",
                 llm_provider="fake",
             ),
-            runtime_installation_manager=manager,
+            runtime_installation_manager=runtime,
         )
     )
 
@@ -59,7 +83,7 @@ def test_model_download_uses_the_selected_model_installer(tmp_path) -> None:
 
     assert response.status_code == 202
     assert response.json()["provider"] == "future-provider"
-    assert manager.start_calls == 1
+    assert catalog.start_calls == 1
 
 
 def test_model_download_installs_selected_ollama_profile(
@@ -191,23 +215,23 @@ def test_model_download_reuses_existing_running_job(tmp_path, monkeypatch) -> No
         )
     )
     manager = client.app.state.runtime_installation_manager
-    original_start = manager.start_model_installation
+    original_start = runtime_installations.download_selected_model
 
-    def start_after_progress():
-        snapshot = original_start()
+    def start_after_progress(runtime):
+        snapshot = original_start(runtime)
         assert progress_emitted.wait(timeout=5)
-        return manager.get_installation(snapshot.id)
+        return runtime_installations.view_runtime_installation(runtime, snapshot.id)
 
-    monkeypatch.setattr(manager, "start_model_installation", start_after_progress)
+    monkeypatch.setattr(runtime_installations, "download_selected_model", start_after_progress)
     try:
         first = client.post("/llm/model-downloads", headers=AUTH_HEADERS)
         second = client.post("/llm/model-downloads", headers=AUTH_HEADERS)
     finally:
         release_pull.set()
-        for worker in manager._job_threads:
+        for worker in manager.work.workers():
             worker.join(timeout=5)
             assert not worker.is_alive()
-        manager.close()
+        runtime_installations.stop_runtime_installations(manager)
 
     assert first.status_code == 202
     assert second.status_code == 202

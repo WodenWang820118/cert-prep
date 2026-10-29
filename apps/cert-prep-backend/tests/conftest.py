@@ -36,6 +36,12 @@ from capture_runtime_client import (
     StructuringSessionStatus,
 )
 from cert_prep_backend.capture_integration.infrastructure.host_models import RuntimeReady
+from cert_prep_backend.runtime_provisioning.infrastructure import manager as runtime_manager_module
+from runtime_installation_compat import RuntimeInstallationManager
+
+
+# Keep frozen characterization imports intact without a production compatibility shim.
+runtime_manager_module.RuntimeInstallationManager = RuntimeInstallationManager
 
 
 AUTH_TOKEN = "test-token"

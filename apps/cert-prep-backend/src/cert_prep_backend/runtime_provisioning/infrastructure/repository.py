@@ -47,6 +47,10 @@ class RuntimeInstallationJobRepository:
     def lock(self) -> RLock:
         return self._lock
 
+    @property
+    def persistent(self) -> bool:
+        return self._db is not None
+
     def get(self, job_id: str) -> RuntimeInstallationJob | None:
         with self._lock:
             return self._jobs.get(job_id)

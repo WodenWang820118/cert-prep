@@ -5,6 +5,7 @@ import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
+from threading import RLock
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -14,9 +15,19 @@ from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from cert_prep_backend import __version__
-from cert_prep_backend.api.dependencies import require_bearer_auth
+from cert_prep_backend.ai_providers.infrastructure.runtime_installers import configured_installer_choices
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.database import Database
+from cert_prep_backend.runtime_provisioning.application.ports import RuntimeInstallation, RuntimeInstaller
+from cert_prep_backend.runtime_provisioning.infrastructure.installers import (
+    ConfiguredRuntimeInstallers,
+    LLMModelInstaller,
+)
+from cert_prep_backend.runtime_provisioning.infrastructure.manager import ThreadRuntimeInstallationWork
+from cert_prep_backend.runtime_provisioning.infrastructure.repository import (
+    RuntimeInstallationJobRepository,
+)
+from cert_prep_backend.api.dependencies import require_bearer_auth
 from cert_prep_backend.platform.change_notifications import DatabaseChangeNotifier
 from cert_prep_backend.capture_integration.infrastructure.client import CaptureRuntimeClient
 from cert_prep_backend.capture_integration.infrastructure.runtime_policy import (
@@ -48,6 +59,7 @@ from cert_prep_backend.capture_integration.infrastructure.structuring import (
     CertPrepCaptureStructuringAdapter,
 )
 from cert_prep_backend.ai_providers.domain.provider import LLMProvider
+from cert_prep_backend.ai_providers.application.ports import MachineInventory
 from cert_prep_backend.ai_providers.infrastructure.machine_inventory import OllamaMachineInventory
 from cert_prep_backend.ai_providers.infrastructure.provider import lazy_provider_from_settings
 from cert_prep_backend.authoring.infrastructure.draft_jobs import SqliteDraftGenerationJobRepository
@@ -58,7 +70,7 @@ from cert_prep_backend.authoring.infrastructure.streaming import (
     StreamingDraftGenerationManager,
     StreamingDraftGenerationWork,
 )
-from cert_prep_backend.runtime_provisioning.infrastructure import RuntimeInstallationManager
+from cert_prep_backend.runtime_provisioning.application import use_cases as runtime_installations
 from cert_prep_backend.source_library.application import use_cases as source_library
 from cert_prep_backend.source_library.infrastructure.audio import OllamaChunkTranslator
 from cert_prep_backend.source_library.infrastructure.repository import (
@@ -102,7 +114,7 @@ logger = logging.getLogger(__name__)
 def create_app(
     settings: Settings | None = None,
     llm_provider: LLMProvider | None = None,
-    runtime_installation_manager: RuntimeInstallationManager | None = None,
+    runtime_installation_manager: RuntimeInstallation | None = None,
     runtime_installation_async_jobs: bool = True,
     document_processing_async_jobs: bool = True,
     streaming_draft_generation_async_jobs: bool = True,
@@ -128,7 +140,7 @@ def create_app(
                     ",".join(close_result.unresolved_operation_ids),
                     extra={"operation_ids": close_result.unresolved_operation_ids},
                 )
-            app.state.runtime_installation_manager.close()
+            runtime_installations.stop_runtime_installations(app.state.runtime_installation_manager)
             app.state.streaming_draft_generation_manager.close()
             llm_provider_close = getattr(app.state.llm_provider, "close", None)
             if callable(llm_provider_close):
@@ -226,13 +238,17 @@ def create_app(
     )
     app.state.draft_writing = ProviderDraftWriting()
     app.state.machine_inventory = OllamaMachineInventory(app_settings)
-    app.state.runtime_installation_manager = runtime_installation_manager or RuntimeInstallationManager(
-        settings=app_settings,
-        llm_provider=app.state.llm_provider,
-        machine_inventory=app.state.machine_inventory,
-        db=app.state.database,
-        async_jobs=runtime_installation_async_jobs,
-    )
+    if runtime_installation_manager:
+        app.state.runtime_installation_manager = runtime_installation_manager
+    else:
+        app.state.runtime_installation_manager = build_runtime_installation(
+            settings=app_settings,
+            llm_provider=app.state.llm_provider,
+            machine_inventory=app.state.machine_inventory,
+            db=app.state.database,
+            async_jobs=runtime_installation_async_jobs,
+        )
+        runtime_installations.recover_runtime_installations(app.state.runtime_installation_manager)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=app_settings.allowed_origins,
@@ -366,3 +382,23 @@ def _default_error_code(status_code: int) -> str:
             return "provider_unavailable"
         case _:
             return "request_error"
+
+
+def build_runtime_installation(
+    *,
+    settings: Settings,
+    llm_provider: object,
+    machine_inventory: MachineInventory,
+    db: Database | None = None,
+    async_jobs: bool = True,
+    installers: list[RuntimeInstaller] | None = None,
+) -> RuntimeInstallation:
+    """Bootstrap concrete provider adapters into runtime-owned application ports."""
+    runtimes, model = configured_installer_choices(
+        settings, llm_provider, machine_inventory, lambda: LLMModelInstaller(llm_provider),
+    )
+    catalog = ConfiguredRuntimeInstallers([*runtimes, model], model.kind, installers)
+    lock = RLock()
+    work = ThreadRuntimeInstallationWork(lock, async_jobs=async_jobs)
+    jobs = RuntimeInstallationJobRepository(db=db, lock=lock, on_evict=work.forget)
+    return RuntimeInstallation(jobs, catalog, work, work.clock, work.new_id)
