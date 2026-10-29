@@ -49,6 +49,7 @@ class ParsedQuestionBlock:
     stem: str
     choices: tuple[str, ...]
     source_excerpt: str
+    section_instruction: str | None = None
 
 
 # A numbered OCR line is a structural boundary. Missing markers must not make
@@ -147,7 +148,12 @@ def parse_jlpt_question_blocks(
     page_number: int,
     chunk_index: int = 0,
 ) -> list[ParsedQuestionBlock]:
-    source_text = _question_block_source_text(without_page_footer(text, page_number))
+    chunk_text = without_page_footer(text, page_number)
+    source_text = _question_block_source_text(chunk_text)
+    source_offset = len(chunk_text) - len(source_text)
+    instructions = iter(_section_instructions(chunk_text))
+    next_instruction = next(instructions, None)
+    section_instruction = None
     group_prompt = _first_group_prompt(text)
     is_grouped_set = group_prompt is not None and _prompt_is_grouped_question_set(group_prompt[1])
     item_kind = (
@@ -160,8 +166,12 @@ def parse_jlpt_question_blocks(
 
     blocks: list[ParsedQuestionBlock] = []
     for index, match in enumerate(QUESTION_BLOCK_PATTERN.finditer(source_text), start=1):
+        while next_instruction is not None and next_instruction[0] < source_offset + match.start():
+            section_instruction = next_instruction[1]
+            next_instruction = next(instructions, None)
         stem = _clean_exam_text(match.group("stem"))
         if _looks_like_question_group_instruction(stem):
+            section_instruction = stem
             continue
         choices = tuple(
             choice
@@ -185,9 +195,41 @@ def parse_jlpt_question_blocks(
                 stem=stem,
                 choices=choices,
                 source_excerpt=source_excerpt[:500],
+                section_instruction=section_instruction,
             )
         )
     return blocks
+
+
+def _section_instructions(text: str) -> list[tuple[int, str]]:
+    headings = list(re.finditer(
+        r"(?m)^[ \t]*(?P<heading>問題[ \t]*[0-9０-９]+[^\r\n]*)", text,
+    ))
+    instructions = {}
+    for match in GROUP_PROMPT_PATTERN.finditer(text):
+        end = next(
+            (heading.start("heading") for heading in headings
+             if match.start() < heading.start("heading") < match.end()),
+            match.end(),
+        )
+        instructions[match.start()] = _clean_exam_text(text[match.start():end])
+    # A section heading need not use the group prompt's "choose" wording.
+    # Include wrapped instruction lines, stopping before a numbered item.
+    for heading in headings:
+        lines = []
+        for line in text[heading.start("heading"):].splitlines():
+            if lines and re.match(r"\s*(?:\d{1,3}(?:[.．](?!\d)|\s|$)|問題)", line):
+                break
+            sentence, full_stop, _ = line.partition("。")
+            lines.append(sentence + full_stop)
+            if full_stop:
+                break
+        instructions[heading.start("heading")] = _clean_exam_text("\n".join(lines))
+    # Unheaded instructions are also recognized by the existing parser.
+    prefix_length = len(text) - len(_question_block_source_text(text))
+    if prefix_length and _looks_like_question_group_instruction(text[:prefix_length]):
+        instructions.setdefault(0, _clean_exam_text(text[:prefix_length]))
+    return sorted(instructions.items())
 
 
 def content_profile_from_value(value: ContentProfileValue | None) -> ContentProfile:

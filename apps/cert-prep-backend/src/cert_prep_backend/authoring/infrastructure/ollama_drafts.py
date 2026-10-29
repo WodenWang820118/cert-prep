@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 import logging
 from typing import Any
 
@@ -25,6 +26,12 @@ from cert_prep_backend.authoring.domain.models import (
     SourceChunk,
 )
 from cert_prep_backend.authoring.domain.normalization import dedupe_suggestions
+from cert_prep_backend.authoring.application.ports import ReadingLexicon
+from cert_prep_backend.authoring.domain.reading_solver import (
+    ReadingSolution,
+    section_asks_for_reading,
+    solve_reading_question,
+)
 from cert_prep_backend.authoring.infrastructure.reasoning_parser import (
     draft_suggestion_from_item,
     json_payload,
@@ -46,8 +53,11 @@ _REASONING_JSON_ATTEMPTS = 4
 class OllamaDraftWriter:
     """Draft writer that asks an Ollama model for answers, rationales and missing items."""
 
-    def __init__(self, model: JsonChatProvider) -> None:
+    def __init__(
+        self, model: JsonChatProvider, *, reading_lexicon: ReadingLexicon | None = None
+    ) -> None:
         self._model = model
+        self._reading_lexicon = reading_lexicon
 
     def generate_drafts(self, chunks: Sequence[SourceChunk], limit: int) -> list[DraftSuggestion]:
         """Generate drafts by combining deterministic extraction with reasoning fallback."""
@@ -165,6 +175,26 @@ class OllamaDraftWriter:
     ) -> DraftSuggestion | None:
         """Ask Ollama to complete one extracted draft with answer/rationale JSON."""
 
+        if (
+            not candidate.answer
+            and self._reading_lexicon is not None
+            and section_asks_for_reading(candidate.section_instruction)
+        ):
+            solution = solve_reading_question(
+                candidate.question,
+                candidate.choices,
+                self._reading_lexicon.kanji_span_readings(candidate.question),
+            )
+            if isinstance(solution, ReadingSolution):
+                return replace(
+                    candidate,
+                    answer=candidate.choices[solution.choice_index],
+                    answer_key_source=AnswerKeySource.AI_INFERRED,
+                    rationale=solution.rationale,
+                    confidence=1.0,
+                    dictionary_generated=True,
+                )
+
         try:
             payload = None
             answer = None
@@ -231,6 +261,7 @@ class OllamaDraftWriter:
             item_kind=candidate.item_kind,
             group_key=candidate.group_key,
             group_prompt=candidate.group_prompt,
+            section_instruction=candidate.section_instruction,
         )
 
 

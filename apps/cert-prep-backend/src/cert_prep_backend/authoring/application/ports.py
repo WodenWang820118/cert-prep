@@ -3,7 +3,7 @@ the source chunks drafts are written from, and the language model that writes th
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Protocol
 
 from cert_prep_backend.authoring.domain.draft import DraftEdit, NewQuestionDraft, QuestionDraft
@@ -13,6 +13,11 @@ from cert_prep_backend.authoring.domain.models import (
     DraftSuggestion,
     SourceChunk,
 )
+from cert_prep_backend.authoring.domain.reading_solver import ReadingSpan
+
+
+class ReadingLexicon(Protocol):
+    def kanji_span_readings(self, text: str) -> Iterable[ReadingSpan]: ...
 
 
 class QuestionDraftRepository(Protocol):

@@ -59,6 +59,8 @@ def as_editable_question(suggestion: DraftSuggestion) -> DraftSuggestion:
         item_kind=suggestion.item_kind,
         group_key=suggestion.group_key,
         group_prompt=suggestion.group_prompt,
+        dictionary_generated=suggestion.dictionary_generated,
+        section_instruction=suggestion.section_instruction,
     )
 
 

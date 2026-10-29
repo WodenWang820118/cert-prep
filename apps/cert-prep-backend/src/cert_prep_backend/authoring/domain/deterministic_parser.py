@@ -211,6 +211,7 @@ def extract_jlpt_question_blocks(
                     item_kind=block.item_kind,
                     group_key=block.group_key,
                     group_prompt=block.group_prompt,
+                    section_instruction=block.section_instruction,
                 )
             )
             if len(suggestions) >= limit:
