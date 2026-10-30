@@ -121,6 +121,13 @@
 
 ## 執行環境
 
-| 中文         | 程式名稱                 | 意思                                                    |
-| ------------ | ------------------------ | ------------------------------------------------------- |
-| 執行環境安裝 | `RuntimeInstallationJob` | 安裝或檢查 Capture Runtime、Ollama 等本機元件的背景工作 |
+| 中文             | 程式名稱                      | 意思                                                           |
+| ---------------- | ----------------------------- | -------------------------------------------------------------- |
+| 執行環境安裝     | `RuntimeInstallationJob`      | 安裝或檢查 Ollama 執行環境與語言模型等本機元件的背景工作 |
+| 執行環境安裝目標 | `RuntimeInstallationTarget`   | 安裝工作的需求種類、供應者名稱與模型                           |
+| 執行環境安裝階段 | `RuntimeInstallationPhase`    | 安裝工作的技術階段，例如排隊、執行中、提交中等                 |
+| 執行環境安裝進度 | `RuntimeInstallationProgress` | 安裝工作的進度更新：說明、完成度、總量、階段與是否可取消       |
+| 執行環境安裝快照 | `RuntimeInstallationSnapshot` | 執行環境安裝工作對外的序列化檢視                               |
+| 執行環境安裝已取消 | `RuntimeInstallationCanceledError` | 安裝工作已取消而拒絕狀態轉換的錯誤                             |
+| 執行環境需求種類 | `RuntimeRequirementKind`      | 可安裝的本機相依類別，例如 Ollama 執行環境或模型               |
+| 執行環境安裝狀態 | `RuntimeInstallationStatus`   | 執行環境安裝工作的生命週期狀態                                 |

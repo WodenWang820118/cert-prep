@@ -84,6 +84,7 @@ source_modules = [
   "cert_prep_backend.capture_integration.application",
   "cert_prep_backend.capture_integration.infrastructure",
   "cert_prep_backend.runtime_provisioning.domain",
+  "cert_prep_backend.runtime_provisioning.application",
   "cert_prep_backend.runtime_provisioning.infrastructure",
   "cert_prep_backend.authoring.application",
   "cert_prep_backend.ai_providers.domain",
@@ -107,6 +108,7 @@ source_modules = [
   "cert_prep_backend.practice.domain",
   "cert_prep_backend.capture_integration.domain",
   "cert_prep_backend.ai_providers.domain",
+  "cert_prep_backend.runtime_provisioning.domain",
 ]
 forbidden_modules = [
   "fastapi",
@@ -192,8 +194,6 @@ ignore_imports = [
   "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.api.dependencies",
   "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.routers.documents",
   "cert_prep_backend.practice.api.router -> cert_prep_backend.api.dependencies",
-  "cert_prep_backend.runtime_provisioning.api.model_download_router -> cert_prep_backend.api.dependencies",
-  "cert_prep_backend.runtime_provisioning.api.router -> cert_prep_backend.api.dependencies",
 ]
 
 [[tool.importlinter.contracts]]
@@ -219,10 +219,6 @@ ignore_imports = [
   "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.capture_integration.infrastructure.runtime_policy",
   "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.routers.documents",
   "cert_prep_backend.capture_integration.api.runtime_router -> cert_prep_backend.capture_integration.infrastructure.host_models",
-  "cert_prep_backend.runtime_provisioning.api.model_download_router -> cert_prep_backend.api.dependencies",
-  "cert_prep_backend.runtime_provisioning.api.model_download_router -> cert_prep_backend.runtime_provisioning.infrastructure",
-  "cert_prep_backend.runtime_provisioning.api.router -> cert_prep_backend.api.dependencies",
-  "cert_prep_backend.runtime_provisioning.api.router -> cert_prep_backend.runtime_provisioning.infrastructure",
 ]
 
 [[tool.importlinter.contracts]]

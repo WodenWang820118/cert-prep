@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from cert_prep_backend.runtime_provisioning.application.ports import RuntimeInstaller
+
 from cert_prep_backend.platform.errors import ProviderUnavailableError
 from cert_prep_backend.ai_providers.domain.provider import (
     ModelDownloadProvider,
@@ -15,6 +17,32 @@ from cert_prep_contracts.runtime import (
     RuntimeRequirementKind,
     RuntimeRequirementSnapshot,
 )
+
+
+class ConfiguredRuntimeInstallers:
+    """Configured lanes, preserving enum order, override and selected-model behavior."""
+
+    def __init__(
+        self,
+        defaults: list[RuntimeInstaller],
+        preferred_model_kind: RuntimeRequirementKind,
+        overrides: list[RuntimeInstaller] | None = None,
+    ) -> None:
+        self._installers = {installer.kind: installer for installer in (overrides or defaults)}
+        self.selected_model_kind = (
+            preferred_model_kind
+            if preferred_model_kind in self._installers
+            else next(
+                (kind for kind in (RuntimeRequirementKind.OLLAMA_MODEL,) if kind in self._installers),
+                preferred_model_kind,
+            )
+        )
+
+    def ordered(self) -> list[RuntimeInstaller]:
+        return [self._installers[kind] for kind in RuntimeRequirementKind if kind in self._installers]
+
+    def get(self, kind: RuntimeRequirementKind) -> RuntimeInstaller | None:
+        return self._installers.get(kind)
 
 
 class LLMModelInstaller:

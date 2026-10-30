@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 
 from cert_prep_backend.ai_providers.application import use_cases as ai_providers
 from cert_prep_backend.ai_providers.application.ports import MachineInventory
-from cert_prep_backend.api.dependencies import (
-    get_machine_inventory,
-    get_runtime_installation_manager,
-)
 from cert_prep_backend.ai_providers.api.schemas import MachineInventoryRead
-from cert_prep_backend.runtime_provisioning.infrastructure import RuntimeInstallationManager
+from cert_prep_backend.runtime_provisioning.application import use_cases as runtime_installations
+from cert_prep_backend.runtime_provisioning.application.ports import RuntimeInstallation
 from cert_prep_backend.runtime_provisioning.api.schemas import (
     RuntimeInstallationRead,
     RuntimeRequirementsRead,
@@ -25,11 +22,19 @@ from cert_prep_contracts.runtime import RuntimeRequirementKind
 router = APIRouter(prefix="/runtime", tags=["runtime"])
 
 
+def get_runtime_installation_manager(request: Request) -> RuntimeInstallation:
+    return request.app.state.runtime_installation_manager
+
+
+def get_machine_inventory(request: Request) -> MachineInventory:
+    return request.app.state.machine_inventory
+
+
 @router.get("/requirements", response_model=RuntimeRequirementsRead)
 def runtime_requirements(
-    manager: RuntimeInstallationManager = Depends(get_runtime_installation_manager),
+    manager: RuntimeInstallation = Depends(get_runtime_installation_manager),
 ):
-    return {"items": manager.requirements()}
+    return {"items": runtime_installations.list_runtime_requirements(manager)}
 
 
 @router.get("/machine-inventory", response_model=MachineInventoryRead)
@@ -47,10 +52,10 @@ def machine_inventory(
 )
 def start_runtime_installation(
     kind: RuntimeRequirementKind,
-    manager: RuntimeInstallationManager = Depends(get_runtime_installation_manager),
+    manager: RuntimeInstallation = Depends(get_runtime_installation_manager),
 ):
     try:
-        return manager.start_installation(kind)
+        return runtime_installations.start_runtime_installation(manager, kind)
     except ProviderUnavailableError as exc:
         raise api_error(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -62,10 +67,10 @@ def start_runtime_installation(
 @router.get("/installations/{job_id}", response_model=RuntimeInstallationRead)
 def get_runtime_installation(
     job_id: str,
-    manager: RuntimeInstallationManager = Depends(get_runtime_installation_manager),
+    manager: RuntimeInstallation = Depends(get_runtime_installation_manager),
 ):
     try:
-        return manager.get_installation(job_id)
+        return runtime_installations.view_runtime_installation(manager, job_id)
     except KeyError as exc:
         raise not_found_error("Runtime installation job was not found.") from exc
 
@@ -73,10 +78,10 @@ def get_runtime_installation(
 @router.delete("/installations/{job_id}", response_model=RuntimeInstallationRead)
 def cancel_runtime_installation(
     job_id: str,
-    manager: RuntimeInstallationManager = Depends(get_runtime_installation_manager),
+    manager: RuntimeInstallation = Depends(get_runtime_installation_manager),
 ):
     try:
-        return manager.cancel_installation(job_id)
+        return runtime_installations.cancel_runtime_installation(manager, job_id)
     except KeyError as exc:
         raise not_found_error("Runtime installation job was not found.") from exc
     except OperationNotCancellableError as exc:
