@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-from difflib import SequenceMatcher
 import json
 import re
 from typing import Any
-import unicodedata
 
 from cert_prep_backend.source_library.domain.exam_content import question_item_kind_from_value
 from cert_prep_backend.authoring.domain.deterministic_parser import is_exam_source_chunk
 from cert_prep_backend.authoring.domain.models import DraftSuggestion, SourceChunk
+from cert_prep_backend.authoring.domain.question_admission import (
+    AdmissionRejection,
+    ExtractedQuestion,
+    admit_extracted_question,
+)
 from cert_prep_backend.authoring.domain.normalization import normalize_answer
 from cert_prep_backend.platform.errors import ProviderUnavailableError
 
@@ -74,8 +77,25 @@ def draft_suggestion_from_item(
 ) -> DraftSuggestion | None:
     """Validate one reasoning JSON item and map it to a grounded draft suggestion."""
 
+    admission = admit_reasoning_item(raw_item, chunks_by_page, chunks_by_id)
+    return admission if isinstance(admission, DraftSuggestion) else None
+
+
+def admit_reasoning_item(
+    raw_item: Any,
+    chunks_by_page: dict[int, SourceChunk],
+    chunks_by_id: dict[str, SourceChunk],
+) -> DraftSuggestion | AdmissionRejection:
+    """Map one reasoning JSON item to a draft, or name the first check it fails.
+
+    Order: the model's JSON shape, the source page it cites, the content rules of
+    ``admit_extracted_question`` (which may clean the stem), then answer and excerpt
+    grounding. Models differ in key names, so ``question_stem``/``stem`` are read as the
+    stem when ``question`` is absent (qwen3.5:9b answers with ``question_stem``).
+    """
+
     if not isinstance(raw_item, dict):
-        return None
+        return AdmissionRejection.INCOMPLETE_ITEM
 
     question = _text(
         raw_item.get("question", raw_item.get("question_stem", raw_item.get("stem")))
@@ -85,32 +105,35 @@ def draft_suggestion_from_item(
     rationale = _user_facing_rationale(raw_item.get("rationale"))
     confidence = _confidence(raw_item.get("confidence"))
     if not question or len(choices) < 2 or not answer:
-        return None
+        return AdmissionRejection.INCOMPLETE_ITEM
     if confidence is None:
-        return None
+        return AdmissionRejection.INVALID_CONFIDENCE
 
     chunk = _chunk_for_item(raw_item, chunks_by_page, chunks_by_id)
     if chunk is None:
-        return None
+        return AdmissionRejection.UNRESOLVED_SOURCE
 
-    source = chunk.raw_or_text()
-    if _is_printed_listening_page(source):
-        return None
-    question = _question_without_glued_choices(question, choices)
-    if not question or _is_section_instruction(question) or _stem_is_a_choice(question, choices):
-        return None
-    if is_exam_source_chunk(chunk) and _grounded_share(question, source) < _MIN_STEM_GROUNDING:
-        return None
+    admission = admit_extracted_question(
+        ExtractedQuestion(
+            question=question,
+            choices=tuple(choices),
+            source_text=chunk.raw_or_text(),
+            exam_page=is_exam_source_chunk(chunk),
+        )
+    )
+    if admission.rejection is not None or admission.question is None:
+        return admission.rejection or AdmissionRejection.INCOMPLETE_ITEM
+    question = admission.question
 
     answer = normalize_answer(answer, choices)
     if answer not in choices:
-        return None
+        return AdmissionRejection.ANSWER_NOT_IN_CHOICES
 
     source_excerpt = _source_excerpt(raw_item.get("source_excerpt"), chunk)
     if not source_excerpt:
-        return None
+        return AdmissionRejection.EXCERPT_NOT_IN_SOURCE
     if not _looks_like_exam_item(question, choices, source_excerpt):
-        return None
+        return AdmissionRejection.NOT_AN_EXAM_ITEM
 
     answer_key_source = _text(raw_item.get("answer_key_source"))
     if answer_key_source not in {"pdf", "ai_inferred"}:
@@ -206,59 +229,6 @@ def _whitespace_aligned_source_excerpt(excerpt: str, source: str) -> str:
         return ""
     end = start + len(excerpt_without_whitespace) - 1
     return source[source_indices[start] : source_indices[end] + 1]
-
-
-# Extracted items must quote the exam: at least this share of the stem's characters has
-# to appear in the source page (in runs of three or more), so rewritten, translated or
-# invented stems are rejected.
-_MIN_STEM_GROUNDING = 0.6
-_CHOICE_LABEL = re.compile(r"^\s*(?:[0-9０-９]|[A-DＡ-Ｄa-d])\s*[.．、)）:：]?\s*")
-_TRAILING_CHOICE_LABEL = re.compile(r"\s*(?:[0-9０-９]|[A-DＡ-Ｄ])\s*[.．、)）]?\s*$")
-_CHOICE_ENUMERATION = re.compile(r"[1１][・･][2２][・･][3３][・･][4４]")
-
-
-def _question_without_glued_choices(question: str, choices: list[str]) -> str:
-    """Cut the choices a model copied onto the end of the stem.
-
-    Only a tail that holds at least two of the item's own choices is removed, so a stem
-    that merely mentions one choice word stays intact.
-    """
-    bare = [text for text in (_CHOICE_LABEL.sub("", choice) for choice in choices) if len(text) >= 2]
-    for start in sorted(index for text in bare if (index := question.find(text)) > 0):
-        tail = question[start:]
-        if sum(1 for text in bare if text in tail) >= 2:
-            return _TRAILING_CHOICE_LABEL.sub("", question[:start]).strip()
-    return question.strip()
-
-
-def _is_section_instruction(stem: str) -> bool:
-    """A section instruction ("次の文章を読んで…1・2・3・4から…選びなさい") is not a question."""
-    if _CHOICE_ENUMERATION.search(stem):
-        return True
-    return bool(re.match(r"\s*(?:問題\s*\S{0,3}\s*)?(?:次の|つぎの)", stem)) and bool(
-        re.search(r"選びなさい|選んでください", stem)
-    )
-
-
-def _stem_is_a_choice(stem: str, choices: list[str]) -> bool:
-    core = stem.strip().rstrip("、。,.　 ")
-    return bool(core) and any(core in _CHOICE_LABEL.sub("", choice) for choice in choices)
-
-
-def _is_printed_listening_page(source: str) -> bool:
-    """Listening booklet pages print only choices; their items need the audio."""
-    return bool(re.search(r"聴解|聽解", source)) or ("問題用紙" in source and "聞いて" in source)
-
-
-def _grounded_share(stem: str, source: str) -> float:
-    def compact(text: str) -> str:
-        return re.sub(r"\s+", "", unicodedata.normalize("NFKC", text))
-
-    stem_text, source_text = compact(stem), compact(source)
-    if not stem_text:
-        return 0.0
-    blocks = SequenceMatcher(None, stem_text, source_text, autojunk=False).get_matching_blocks()
-    return sum(block.size for block in blocks if block.size >= 3) / len(stem_text)
 
 
 def _looks_like_exam_item(question: str, choices: list[str], source_excerpt: str) -> bool:

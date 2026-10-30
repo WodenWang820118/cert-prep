@@ -99,6 +99,13 @@ def generate_drafts_with_annotations_for_strategy(
 ) -> DraftGenerationResult:
     """Generate playable questions while retaining parsed blocks needing review.
 
+    Hybrid order per page (see docs/domain/authoring.md, "PDF 匯入的出題順序"):
+    pages with complete deterministic blocks only get answers (Sudachi for gated
+    reading items, otherwise the fast-first model call); pages without one are sent
+    once to model extraction, whose items pass the admission rules in
+    ``domain/question_admission.py``. The streaming path in ``streaming.py`` follows
+    the same order one page at a time; change both together.
+
     A non-fatal completion failure is scoped to the parsed block that caused it.
     Runtime/provider failures that are not safe to continue still propagate so
     the host remains fail-closed and never substitutes another provider.

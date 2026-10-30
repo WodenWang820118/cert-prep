@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import replace
 import logging
@@ -33,7 +34,7 @@ from cert_prep_backend.authoring.domain.reading_solver import (
     solve_reading_question,
 )
 from cert_prep_backend.authoring.infrastructure.reasoning_parser import (
-    draft_suggestion_from_item,
+    admit_reasoning_item,
     json_payload,
 )
 from cert_prep_backend.authoring.infrastructure.response_parsing import (
@@ -327,11 +328,21 @@ def _suggestions_from_reasoning_payload(
         return []
 
     suggestions: list[DraftSuggestion] = []
+    rejections: Counter[str] = Counter()
     for raw_item in raw_items:
-        suggestion = draft_suggestion_from_item(raw_item, chunks_by_page, chunks_by_id)
-        if suggestion is None:
-            continue
-        suggestions.append(suggestion)
+        admission = admit_reasoning_item(raw_item, chunks_by_page, chunks_by_id)
+        if isinstance(admission, DraftSuggestion):
+            suggestions.append(admission)
+        else:
+            rejections[admission.value] += 1
+    if rejections:
+        # Counts only, never source or question text: exam papers can be private.
+        _LOGGER.info(
+            "Reasoning extraction admitted %d of %d items; rejected by reason: %s",
+            len(suggestions),
+            len(raw_items),
+            dict(sorted(rejections.items())),
+        )
     return dedupe_suggestions(suggestions, limit)
 
 
