@@ -74,6 +74,7 @@ def select_ollama_execution_policy(
         return LLMExecutionPolicy()
     if inventory is not None and any(
         accelerator.kind.casefold() == "gpu"
+        and accelerator.classification != "software"
         for accelerator in inventory.accelerators
     ):
         return LLMExecutionPolicy()
@@ -222,11 +223,18 @@ def _selection(
 
 
 def _max_accelerator_memory(inventory: MachineInventorySnapshot) -> int | None:
-    values = [
-        accelerator.memory_bytes
-        for accelerator in inventory.accelerators
-        if accelerator.kind.lower() == "gpu" and accelerator.memory_bytes is not None
-    ]
+    values: list[int] = []
+    for accelerator in inventory.accelerators:
+        if accelerator.kind.casefold() != "gpu":
+            continue
+        if accelerator.classification == "dedicated":
+            memory = accelerator.dedicated_memory_bytes
+        elif accelerator.classification in (None, "unknown"):
+            memory = accelerator.memory_bytes
+        else:
+            continue
+        if memory is not None:
+            values.append(memory)
     if not values:
         return None
     return max(values)

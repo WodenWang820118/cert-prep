@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 import ctypes
+from dataclasses import replace
 import json
 import os
 import platform
@@ -21,6 +22,7 @@ from cert_prep_contracts.hardware import (
     MachineRamSnapshot,
     MachineStorageSnapshot,
 )
+from cert_prep_ollama._native_gpu_inventory import _native_gpu_accelerators
 
 
 def collect_machine_inventory(
@@ -176,12 +178,13 @@ def _accelerators(
     timeout_seconds: float,
     warnings: list[str],
 ) -> tuple[MachineAcceleratorSnapshot, ...]:
-    accelerators: list[MachineAcceleratorSnapshot] = []
-    accelerators.extend(_nvidia_smi_accelerators(timeout_seconds))
+    sources = [_nvidia_smi_accelerators(timeout_seconds)]
     if os.name == "nt":
-        accelerators.extend(_windows_video_accelerators(timeout_seconds, warnings))
-        accelerators.extend(_windows_npu_accelerators(timeout_seconds, warnings))
-    return _dedupe_accelerators(accelerators)
+        sources.append(_windows_video_accelerators(timeout_seconds, warnings))
+    sources.append(_native_gpu_accelerators(warnings))
+    if os.name == "nt":
+        sources.append(_windows_npu_accelerators(timeout_seconds, warnings))
+    return _merge_accelerator_sources(sources, warnings)
 
 
 def _nvidia_smi_accelerators(timeout_seconds: float) -> list[MachineAcceleratorSnapshot]:
@@ -190,7 +193,7 @@ def _nvidia_smi_accelerators(timeout_seconds: float) -> list[MachineAcceleratorS
         return []
     command = [
         executable,
-        "--query-gpu=name,memory.total,driver_version,uuid",
+        "--query-gpu=name,memory.total,driver_version,uuid,pci.device_id",
         "--format=csv,noheader,nounits",
     ]
     try:
@@ -214,6 +217,7 @@ def _nvidia_smi_accelerators(timeout_seconds: float) -> list[MachineAcceleratorS
         if len(parts) < 4 or not parts[0]:
             continue
         memory_mib = _int_or_none(parts[1])
+        pci_id = _nvidia_pci_id(parts[4] if len(parts) > 4 else "")
         accelerators.append(
             MachineAcceleratorSnapshot(
                 kind="gpu",
@@ -222,6 +226,8 @@ def _nvidia_smi_accelerators(timeout_seconds: float) -> list[MachineAcceleratorS
                 memory_bytes=memory_mib * 1024 * 1024 if memory_mib is not None else None,
                 driver_version=parts[2] or None,
                 device_id=parts[3] or None,
+                pci_vendor_id=pci_id[0],
+                pci_device_id=pci_id[1],
             )
         )
     return accelerators
@@ -246,6 +252,8 @@ def _windows_video_accelerators(
         if not name:
             continue
         memory_bytes = _int_or_none(item.get("AdapterRAM"))
+        pnp_id = _string_or_none(item.get("PNPDeviceID"))
+        pci_id = _pnp_pci_id(pnp_id)
         accelerators.append(
             MachineAcceleratorSnapshot(
                 kind="gpu",
@@ -253,7 +261,10 @@ def _windows_video_accelerators(
                 name=name,
                 memory_bytes=memory_bytes if memory_bytes and memory_bytes > 0 else None,
                 driver_version=_string_or_none(item.get("DriverVersion")),
-                device_id=_string_or_none(item.get("PNPDeviceID")),
+                device_id=pnp_id,
+                pnp_device_id=pnp_id,
+                pci_vendor_id=pci_id[0],
+                pci_device_id=pci_id[1],
             )
         )
     return accelerators
@@ -469,18 +480,104 @@ def _records(payload: Any) -> list[dict[str, Any]]:
     return []
 
 
-def _dedupe_accelerators(
-    accelerators: list[MachineAcceleratorSnapshot],
+def _pnp_pci_id(device_id: str | None) -> tuple[str | None, str | None]:
+    match = re.search(r"VEN_([0-9a-f]{4})&DEV_([0-9a-f]{4})", device_id or "", re.IGNORECASE)
+    return (match[1].lower(), match[2].lower()) if match else (None, None)
+
+
+def _nvidia_pci_id(value: str) -> tuple[str | None, str | None]:
+    if not re.fullmatch(r"0x[0-9a-f]{8}", value, re.IGNORECASE):
+        return None, None
+    # nvidia-smi packs device in the high word and vendor in the low word.
+    return value[-4:].lower(), value[2:6].lower()
+
+
+def _matching_gpu(left: MachineAcceleratorSnapshot, right: MachineAcceleratorSnapshot) -> bool:
+    if left.kind.casefold() != "gpu" or right.kind.casefold() != "gpu":
+        return False
+    for attribute in ("vendor", "pci_vendor_id", "pci_device_id", "adapter_luid", "pnp_device_id"):
+        left_value, right_value = getattr(left, attribute), getattr(right, attribute)
+        if left_value and right_value and left_value.casefold() != right_value.casefold():
+            return False
+    if left.device_id and right.device_id:
+        if left.device_id.casefold() == right.device_id.casefold():
+            return True
+        # Different IDs in the same namespace identify distinct physical devices.
+        if left.device_id.startswith("GPU-") and right.device_id.startswith("GPU-"):
+            return False
+    same_pci = bool(
+        left.pci_vendor_id and left.pci_device_id
+        and left.pci_vendor_id == right.pci_vendor_id and left.pci_device_id == right.pci_device_id
+    )
+    def normalized(name: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", re.sub(r"\((?:r|tm)\)", "", name.casefold()))
+    return same_pci or normalized(left.name) == normalized(right.name)
+
+
+def _merge_accelerator_sources(
+    sources: Iterable[list[MachineAcceleratorSnapshot]], warnings: list[str],
 ) -> tuple[MachineAcceleratorSnapshot, ...]:
-    seen: set[tuple[str, str, str | None]] = set()
-    deduped: list[MachineAcceleratorSnapshot] = []
-    for accelerator in accelerators:
-        key = (accelerator.kind.lower(), accelerator.name.lower(), accelerator.device_id)
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(accelerator)
-    return tuple(deduped)
+    merged: list[MachineAcceleratorSnapshot] = []
+    memory_priorities: dict[int, int] = {}
+    # Native rows establish physical adapters even when two identical models make
+    # backend identity ambiguous. Keep their LUIDs rather than creating extra GPUs.
+    ordered = sorted(sources, key=lambda source: not any(
+        item.classification_source == "native_dxgi" for item in source
+    ))
+    for source in ordered:
+        # Only join across sources, never collapse two identical GPUs in one table.
+        available = set(range(len(merged)))
+        for observation in source:
+            memory_priority = (
+                0 if observation.classification_source == "native_dxgi"
+                else 2 if (observation.device_id or "").startswith("GPU-") else 1
+            ) if observation.memory_bytes is not None else -1
+            candidates = [i for i in available if _matching_gpu(merged[i], observation)]
+            if len(candidates) != 1:
+                if candidates:
+                    identifier = observation.device_id or observation.pnp_device_id or observation.name
+                    warnings.append(
+                        f"Ambiguous GPU identity for {observation.name}: {identifier}; "
+                        "backend identifier left unassigned to avoid duplicate physical GPUs."
+                    )
+                    continue
+                memory_priorities[len(merged)] = memory_priority
+                merged.append(observation)
+                continue
+            index = candidates[0]
+            available.remove(index)
+            previous = merged[index]
+            native = observation if observation.classification_source == "native_dxgi" else previous
+            # Preserve legacy source precedence: NVIDIA, then CIM, then native-only.
+            preferred = observation if (
+                (observation.device_id or "").startswith("GPU-")
+                or previous.device_id is None and previous.classification_source == "native_dxgi"
+            ) else previous
+            memory_bytes = previous.memory_bytes
+            if memory_priority > memory_priorities[index]:
+                memory_bytes = observation.memory_bytes
+                memory_priorities[index] = memory_priority
+            merged[index] = replace(
+                previous,
+                vendor=previous.vendor or observation.vendor,
+                memory_bytes=memory_bytes,
+                driver_version=preferred.driver_version or previous.driver_version or observation.driver_version,
+                device_id=preferred.device_id or previous.device_id or observation.device_id,
+                pnp_device_id=previous.pnp_device_id or observation.pnp_device_id,
+                pci_vendor_id=previous.pci_vendor_id or observation.pci_vendor_id,
+                pci_device_id=previous.pci_device_id or observation.pci_device_id,
+                adapter_luid=previous.adapter_luid or observation.adapter_luid,
+                classification=native.classification,
+                classification_source=native.classification_source,
+                dedicated_memory_bytes=native.dedicated_memory_bytes,
+                shared_memory_bytes=native.shared_memory_bytes,
+            )
+    return tuple(
+        replace(item, classification="unknown", classification_source="unknown")
+        if item.kind.casefold() == "gpu" and item.classification_source != "native_dxgi"
+        else item
+        for item in merged
+    )
 
 
 def _vendor_from_name(name: str) -> str | None:
