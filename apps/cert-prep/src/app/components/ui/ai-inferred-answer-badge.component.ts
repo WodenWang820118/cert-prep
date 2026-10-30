@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 
 const AI_INFERRED_ANSWER_DESCRIPTION =
-  'The answer was inferred by the local AI model and has not been confirmed. Check it against the source.';
+  'The answer was inferred automatically, by the local AI model or a dictionary rule, and has not been confirmed. Check it against the source.';
 
 /** Marks an answer key the local model inferred and nobody has confirmed. */
 @Component({
@@ -14,7 +14,7 @@ const AI_INFERRED_ANSWER_DESCRIPTION =
         data-testid="ai-inferred-answer"
         [attr.aria-description]="description"
       >
-        AI-inferred answer
+        System-inferred answer
       </span>
     }
   `,
