@@ -24,7 +24,7 @@ describe('DraftQuestionEditorCardComponent', () => {
     expect(text).toContain('Page 3');
     expect(text).toContain('Relevant source excerpt.');
     expect(text).toContain('Ready for practice');
-    expect(text).not.toContain('AI-inferred answer');
+    expect(text).not.toContain('System-inferred answer');
   });
 
   it.each(['manual', 'pdf', null] as const)(
@@ -52,9 +52,9 @@ describe('DraftQuestionEditorCardComponent', () => {
       '[data-testid="ai-inferred-answer"]',
     );
     expect(badges).toHaveLength(2);
-    expect(badges[0]?.textContent?.trim()).toBe('AI-inferred answer');
+    expect(badges[0]?.textContent?.trim()).toBe('System-inferred answer');
     expect(badges[0]?.getAttribute('aria-description')).toBe(
-      'The answer was inferred by the local AI model and has not been confirmed. Check it against the source.',
+      'The answer was inferred automatically, by the local AI model or a dictionary rule, and has not been confirmed. Check it against the source.',
     );
     expect(
       fixture.nativeElement.querySelector('.workbench-question-meta [data-testid="ai-inferred-answer"]'),

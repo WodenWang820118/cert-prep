@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     )
     streaming_draft_generation_page_limit: int = Field(default=3, ge=1, le=20)
     streaming_draft_workers: int = Field(default=1, ge=1, le=4)
+    reading_solver_enabled: bool = True
     ollama_timeout_seconds: float = 120.0
     allowed_origins: list[str] = Field(
         default_factory=lambda: [

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from threading import BoundedSemaphore, Lock, Thread
 
+from cert_prep_backend.authoring.application.ports import ReadingLexicon
+
 from cert_prep_backend.platform.errors import ProviderUnavailableError
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.authoring.infrastructure import draft_jobs
@@ -64,10 +66,12 @@ class StreamingDraftGenerationManager:
         settings: Settings,
         provider: LLMProvider,
         async_jobs: bool = True,
+        reading_lexicon: ReadingLexicon | None = None,
     ) -> None:
         self._settings = settings
         self._provider = provider
         self._async_jobs = async_jobs
+        self._reading_lexicon = reading_lexicon if settings.reading_solver_enabled else None
         self._job_slots = BoundedSemaphore(settings.streaming_draft_workers)
         self._job_threads: list[Thread] = []
         self._manual_schedule_lock = Lock()
@@ -240,11 +244,15 @@ class StreamingDraftGenerationManager:
                     source_chunk,
                     limit,
                     DraftGenerationStrategy(job.strategy),
+                    reading_lexicon=self._reading_lexicon,
                 )
             ]
             attribution = _generation_attribution(
                 self._provider,
                 generated=bool(suggestions),
+                dictionary_only=bool(suggestions) and all(
+                    suggestion.dictionary_generated for suggestion in suggestions
+                ),
             )
             draft_jobs.begin_commit(db, job_id)
             drafts_repository.append_generated_drafts_and_complete_job(
@@ -363,11 +371,15 @@ class StreamingDraftGenerationManager:
                 chunks,
                 operation.limit,
                 DraftGenerationStrategy(operation.strategy),
+                reading_lexicon=self._reading_lexicon,
             )
             suggestions = generation.suggestions
             attribution = _generation_attribution(
                 self._provider,
                 generated=bool(suggestions),
+                dictionary_only=bool(suggestions) and all(
+                    suggestion.dictionary_generated for suggestion in suggestions
+                ),
             )
             manual_operations.begin_commit(db, operation_id)
             drafts_repository.append_generated_drafts_and_complete_manual_operation(
@@ -413,13 +425,15 @@ def _generate_streaming_fast_first_drafts(
     source_chunk: SourceChunk,
     limit: int,
     strategy: DraftGenerationStrategy,
+    *,
+    reading_lexicon: ReadingLexicon | None = None,
 ) -> list[DraftSuggestion]:
     first_limit = min(limit, 1)
     if first_limit <= 0:
         return []
     if strategy == DraftGenerationStrategy.HYBRID_REASONING:
         deterministic = extract_jlpt_question_blocks([source_chunk], 1)
-        writer = draft_writer_for(provider)
+        writer = draft_writer_for(provider, reading_lexicon=reading_lexicon)
         fast_first_provider = provider_capability(writer, FastFirstDraftProvider)
         if deterministic and fast_first_provider is not None:
             try:
@@ -456,7 +470,9 @@ def _generate_streaming_fast_first_drafts(
                 return suggestions
             return []
 
-    return generate_drafts_for_strategy(provider, [source_chunk], first_limit, strategy)
+    return generate_drafts_for_strategy(
+        provider, [source_chunk], first_limit, strategy, reading_lexicon=reading_lexicon
+    )
 
 
 def _call_streaming_provider_method(
@@ -491,7 +507,10 @@ def _generation_attribution(
     provider: LLMProvider,
     *,
     generated: bool,
+    dictionary_only: bool = False,
 ) -> GenerationAttribution:
+    if dictionary_only:
+        return GenerationAttribution(None, None)
     attribution_provider = provider_capability(provider, GenerationAttributionProvider)
     if attribution_provider is not None:
         attribution = attribution_provider.generation_attribution()

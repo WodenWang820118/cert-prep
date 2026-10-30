@@ -34,15 +34,17 @@ LITE_EXCLUDES: list[str] = []
 
 COMMON_HIDDEN_IMPORTS = [
     "cert_prep_backend.api.app",
+    "sudachipy.sudachipy",
+    "sudachidict_core",
 ]
 
-COLLECT_BINARY_PACKAGES: list[str] = []
+COLLECT_BINARY_PACKAGES: list[str] = ["sudachipy"]
 
 # ``capture_runtime_client`` loads its private generated schemas through
 # ``importlib.resources`` at import time. PyInstaller collects the Python
 # modules automatically, but package data must be declared explicitly or the
 # packaged backend exits before it can expose its readiness endpoint.
-COLLECT_DATA_PACKAGES: list[str] = ["capture_runtime_client"]
+COLLECT_DATA_PACKAGES: list[str] = ["capture_runtime_client", "sudachipy", "sudachidict_core"]
 
 
 def main() -> None:

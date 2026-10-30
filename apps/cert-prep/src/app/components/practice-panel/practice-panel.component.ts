@@ -140,7 +140,7 @@ export class PracticePanelComponent implements OnInit {
       ? 'Last answer: Correct'
       : 'Last answer: Needs review';
     return this.answerKeySource(attempt.question_id) === 'ai_inferred'
-      ? `${verdict} (answer key inferred by AI, not confirmed)`
+      ? `${verdict} (answer key inferred automatically, not confirmed)`
       : verdict;
   }
 

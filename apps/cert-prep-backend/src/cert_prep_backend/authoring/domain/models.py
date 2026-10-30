@@ -94,6 +94,9 @@ class DraftSuggestion:
     item_kind: QuestionItemKindValue = QuestionItemKind.UNKNOWN
     group_key: str | None = None
     group_prompt: str | None = None
+    # Internal provenance only; deliberately absent from to_serialized and API DTOs.
+    dictionary_generated: bool = False
+    section_instruction: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "choices", tuple(self.choices))

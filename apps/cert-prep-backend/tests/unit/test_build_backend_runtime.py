@@ -23,6 +23,18 @@ def test_pyinstaller_command_collects_capture_contract_package_data() -> None:
     assert command[collect_data_index + 1] == "capture_runtime_client"
 
 
+def test_pyinstaller_command_includes_sudachi_native_module_and_dictionary() -> None:
+    command = _pyinstaller_command()
+    pairs = set(zip(command, command[1:]))
+    assert {
+        ("--hidden-import", "sudachipy.sudachipy"),
+        ("--hidden-import", "sudachidict_core"),
+        ("--collect-binaries", "sudachipy"),
+        ("--collect-data", "sudachipy"),
+        ("--collect-data", "sudachidict_core"),
+    } <= pairs
+
+
 def test_index_installed_candidate_without_direct_url_metadata_is_accepted(
     tmp_path: Path,
 ) -> None:

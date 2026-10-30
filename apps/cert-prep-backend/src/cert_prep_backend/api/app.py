@@ -66,6 +66,7 @@ from cert_prep_backend.authoring.infrastructure.draft_jobs import SqliteDraftGen
 from cert_prep_backend.authoring.infrastructure.draft_writing import ProviderDraftWriting
 from cert_prep_backend.authoring.infrastructure.repository import SqliteQuestionDraftRepository
 from cert_prep_backend.authoring.infrastructure.sources import SourceLibraryDraftSources
+from cert_prep_backend.authoring.infrastructure.sudachi_reading_lexicon import SudachiReadingLexicon
 from cert_prep_backend.authoring.infrastructure.streaming import (
     StreamingDraftGenerationManager,
     StreamingDraftGenerationWork,
@@ -220,10 +221,12 @@ def create_app(
     app.state.capture_background_work = PoolCaptureBackgroundWork(app.state.document_worker_pool)
     app.state.document_processing_async_jobs = document_processing_async_jobs
     app.state.runtime_installation_async_jobs = runtime_installation_async_jobs
+    reading_lexicon = SudachiReadingLexicon() if app_settings.reading_solver_enabled else None
     app.state.streaming_draft_generation_manager = StreamingDraftGenerationManager(
         settings=app_settings,
         provider=app.state.llm_provider,
         async_jobs=streaming_draft_generation_async_jobs,
+        reading_lexicon=reading_lexicon,
     )
     app.state.streaming_draft_generation_manager.recover_jobs(app.state.database)
     app.state.question_draft_repository = SqliteQuestionDraftRepository(app.state.database)
@@ -236,7 +239,7 @@ def create_app(
     app.state.draft_sources = SourceLibraryDraftSources(
         app.state.document_repository, app.state.database
     )
-    app.state.draft_writing = ProviderDraftWriting()
+    app.state.draft_writing = ProviderDraftWriting(reading_lexicon=reading_lexicon)
     app.state.machine_inventory = OllamaMachineInventory(app_settings)
     if runtime_installation_manager:
         app.state.runtime_installation_manager = runtime_installation_manager

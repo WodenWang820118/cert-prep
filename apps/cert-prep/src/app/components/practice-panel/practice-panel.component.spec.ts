@@ -132,14 +132,14 @@ describe('PracticePanelComponent', () => {
       fixture.detectChanges();
 
       expect(fixture.nativeElement.textContent).toContain(
-        'Last answer: Needs review (answer key inferred by AI, not confirmed)',
+        'Last answer: Needs review (answer key inferred automatically, not confirmed)',
       );
       expect(fixture.nativeElement.textContent).toContain(confirmed.question);
     });
 
     it.each([
-      [true, 'Last answer: Correct (answer key inferred by AI, not confirmed)'],
-      [false, 'Last answer: Needs review (answer key inferred by AI, not confirmed)'],
+      [true, 'Last answer: Correct (answer key inferred automatically, not confirmed)'],
+      [false, 'Last answer: Needs review (answer key inferred automatically, not confirmed)'],
     ] as const)('suffixes a %s last answer when the key was inferred', (isCorrect, expected) => {
       const question = editableQuestion('draft-1', { answer_key_source: 'pdf' });
       const store = arrangeActiveSession([question]);
@@ -187,7 +187,7 @@ describe('PracticePanelComponent', () => {
       fixture.detectChanges();
 
       expect(fixture.nativeElement.textContent).toContain(
-        'Last answer: Needs review (answer key inferred by AI, not confirmed)',
+        'Last answer: Needs review (answer key inferred automatically, not confirmed)',
       );
     });
   });

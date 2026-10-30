@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from cert_prep_backend.authoring.application.ports import ReadingLexicon
+
 from cert_prep_backend.ai_providers.domain.generation_errors import (
     is_non_fatal_generation_error,
 )
@@ -44,7 +46,9 @@ __all__ = [
 DraftWriter = DraftGenerationProvider | FastFirstDraftProvider | ReasoningDraftProvider
 
 
-def draft_writer_for(model: object) -> DraftWriter:
+def draft_writer_for(
+    model: object, *, reading_lexicon: ReadingLexicon | None = None
+) -> DraftWriter:
     """The writer that turns source chunks into drafts with this language model.
 
     A model with any draft capability of its own is its own writer. Otherwise drafts are
@@ -57,7 +61,7 @@ def draft_writer_for(model: object) -> DraftWriter:
             return writer
     json_chat = provider_capability(model, JsonChatProvider)
     if json_chat is not None:
-        return OllamaDraftWriter(json_chat)
+        return OllamaDraftWriter(json_chat, reading_lexicon=reading_lexicon)
     if getattr(model, "provider", None) == LLMProviderName.FAKE:
         return PlaceholderDraftWriter()
     raise ProviderUnavailableError(
@@ -70,6 +74,8 @@ def generate_drafts_for_strategy(
     chunks: Sequence[SourceChunk],
     limit: int,
     strategy: DraftGenerationStrategy,
+    *,
+    reading_lexicon: ReadingLexicon | None = None,
 ) -> list[DraftSuggestion]:
     """Generate immediately playable question suggestions for a document."""
 
@@ -78,6 +84,7 @@ def generate_drafts_for_strategy(
         chunks,
         limit,
         strategy,
+        reading_lexicon=reading_lexicon,
     ).suggestions
 
 
@@ -86,6 +93,8 @@ def generate_drafts_with_annotations_for_strategy(
     chunks: Sequence[SourceChunk],
     limit: int,
     strategy: DraftGenerationStrategy,
+    *,
+    reading_lexicon: ReadingLexicon | None = None,
 ) -> DraftGenerationResult:
     """Generate playable questions while retaining parsed blocks needing review.
 
@@ -109,7 +118,7 @@ def generate_drafts_with_annotations_for_strategy(
 
     generated: list[DraftSuggestion] = []
     unavailable_blocks: list[UnavailableDraftBlock] = []
-    writer = draft_writer_for(provider)
+    writer = draft_writer_for(provider, reading_lexicon=reading_lexicon)
     fast_first_provider = provider_capability(writer, FastFirstDraftProvider)
     if fast_first_provider is not None and deterministic:
         chunks_by_id = {chunk.id: chunk for chunk in chunks}
@@ -190,6 +199,9 @@ def _playable_suggestions(
 class ProviderDraftWriting:
     """Writes drafts with the configured language model, through its draft writer."""
 
+    def __init__(self, *, reading_lexicon: ReadingLexicon | None = None) -> None:
+        self._reading_lexicon = reading_lexicon
+
     def suggestions(
         self,
         model: object,
@@ -197,4 +209,6 @@ class ProviderDraftWriting:
         limit: int,
         strategy: DraftGenerationStrategy,
     ) -> list[DraftSuggestion]:
-        return generate_drafts_for_strategy(model, chunks, limit, strategy)
+        return generate_drafts_for_strategy(
+            model, chunks, limit, strategy, reading_lexicon=self._reading_lexicon
+        )
