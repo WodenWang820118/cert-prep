@@ -81,6 +81,13 @@ def classify_exam_text(text: str) -> TextClassification:
         if not _looks_like_question_group_instruction(_clean_exam_text(match.group("stem")))
     ]
 
+    # Recovery supplies classification inputs only when its whole-chunk selection wins.
+    from .ocr_exam_content import _recover_ocr_classification
+
+    question_blocks, group_prompts = _recover_ocr_classification(
+        raw_text, question_blocks, group_prompts,
+    )
+
     grouped_prompts = [
         prompt for _, prompt in group_prompts if _prompt_is_grouped_question_set(prompt)
     ]
@@ -198,7 +205,12 @@ def parse_jlpt_question_blocks(
                 section_instruction=section_instruction,
             )
         )
-    return blocks
+    # Keep the established parser above unchanged; recovery selects a whole chunk.
+    from .ocr_exam_content import _select_ocr_question_blocks
+
+    return _select_ocr_question_blocks(
+        primary=blocks, text=text, page_number=page_number, chunk_index=chunk_index,
+    )
 
 
 def _section_instructions(text: str) -> list[tuple[int, str]]:
