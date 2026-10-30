@@ -514,25 +514,72 @@ def _matching_gpu(left: MachineAcceleratorSnapshot, right: MachineAcceleratorSna
     return same_pci or normalized(left.name) == normalized(right.name)
 
 
+def _source_accelerator_matches(
+    source: list[MachineAcceleratorSnapshot],
+    merged: list[MachineAcceleratorSnapshot],
+    warnings: list[str],
+) -> list[tuple[MachineAcceleratorSnapshot, list[int]]]:
+    matches: list[tuple[MachineAcceleratorSnapshot, list[int]]] = []
+    seen: set[tuple[str, str, str]] = set()
+    contenders: dict[int, list[int]] = {}
+    for observation in source:
+        if observation.device_id:
+            key = (observation.kind.casefold(), observation.name.casefold(), observation.device_id)
+            if key in seen:
+                continue
+            seen.add(key)
+        candidates = [i for i, item in enumerate(merged) if _matching_gpu(item, observation)]
+        if len(candidates) == 1:
+            contenders.setdefault(candidates[0], []).append(len(matches))
+        matches.append((observation, candidates))
+
+    for index, positions in contenders.items():
+        if len(positions) < 2:
+            continue
+        exact = [
+            position for position in positions
+            if any(
+                (value := getattr(merged[index], attribute))
+                and value.casefold() == (getattr(matches[position][0], attribute) or "").casefold()
+                for attribute in ("device_id", "adapter_luid", "pnp_device_id")
+            )
+        ]
+        if len(exact) != 1:
+            identifiers = sorted(
+                matches[position][0].device_id or matches[position][0].pnp_device_id
+                or matches[position][0].name
+                for position in positions
+            )
+            warnings.append(
+                f"Ambiguous GPU identity for {merged[index].name}: {', '.join(identifiers)}; "
+                "multiple observations match one adapter; backend identifiers left unassigned."
+            )
+        for position in positions:
+            if len(exact) != 1 or position != exact[0]:
+                matches[position] = (matches[position][0], [])
+    # UUID order must not decide either the native join or the appended row order.
+    return sorted(matches, key=lambda match: match[0].device_id or "")
+
+
 def _merge_accelerator_sources(
     sources: Iterable[list[MachineAcceleratorSnapshot]], warnings: list[str],
 ) -> tuple[MachineAcceleratorSnapshot, ...]:
+    """Merge sources in legacy priority order, using native classification evidence."""
     merged: list[MachineAcceleratorSnapshot] = []
-    memory_priorities: dict[int, int] = {}
+    legacy_fields = ("memory_bytes", "driver_version", "device_id")
+    field_priorities: list[dict[str, int]] = []
     # Native rows establish physical adapters even when two identical models make
     # backend identity ambiguous. Keep their LUIDs rather than creating extra GPUs.
-    ordered = sorted(sources, key=lambda source: not any(
-        item.classification_source == "native_dxgi" for item in source
+    ordered = sorted(enumerate(sources), key=lambda entry: not any(
+        item.classification_source == "native_dxgi" for item in entry[1]
     ))
-    for source in ordered:
-        # Only join across sources, never collapse two identical GPUs in one table.
-        available = set(range(len(merged)))
-        for observation in source:
-            memory_priority = (
+    for source_index, source in ordered:
+        # Match the whole source before mutating rows or appending observations.
+        for observation, candidates in _source_accelerator_matches(source, merged, warnings):
+            priority = (
                 0 if observation.classification_source == "native_dxgi"
-                else 2 if (observation.device_id or "").startswith("GPU-") else 1
-            ) if observation.memory_bytes is not None else -1
-            candidates = [i for i in available if _matching_gpu(merged[i], observation)]
+                else len(ordered) - source_index
+            )
             if len(candidates) != 1:
                 if candidates:
                     identifier = observation.device_id or observation.pnp_device_id or observation.name
@@ -541,28 +588,26 @@ def _merge_accelerator_sources(
                         "backend identifier left unassigned to avoid duplicate physical GPUs."
                     )
                     continue
-                memory_priorities[len(merged)] = memory_priority
+                field_priorities.append({
+                    field: priority for field in legacy_fields
+                    if getattr(observation, field) is not None
+                })
                 merged.append(observation)
                 continue
             index = candidates[0]
-            available.remove(index)
             previous = merged[index]
             native = observation if observation.classification_source == "native_dxgi" else previous
             # Preserve legacy source precedence: NVIDIA, then CIM, then native-only.
-            preferred = observation if (
-                (observation.device_id or "").startswith("GPU-")
-                or previous.device_id is None and previous.classification_source == "native_dxgi"
-            ) else previous
-            memory_bytes = previous.memory_bytes
-            if memory_priority > memory_priorities[index]:
-                memory_bytes = observation.memory_bytes
-                memory_priorities[index] = memory_priority
+            legacy_values = {}
+            for field in legacy_fields:
+                value = getattr(observation, field)
+                if value is not None and priority > field_priorities[index].get(field, -1):
+                    legacy_values[field] = value
+                    field_priorities[index][field] = priority
             merged[index] = replace(
                 previous,
                 vendor=previous.vendor or observation.vendor,
-                memory_bytes=memory_bytes,
-                driver_version=preferred.driver_version or previous.driver_version or observation.driver_version,
-                device_id=preferred.device_id or previous.device_id or observation.device_id,
+                **legacy_values,
                 pnp_device_id=previous.pnp_device_id or observation.pnp_device_id,
                 pci_vendor_id=previous.pci_vendor_id or observation.pci_vendor_id,
                 pci_device_id=previous.pci_device_id or observation.pci_device_id,

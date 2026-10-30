@@ -181,6 +181,100 @@ def test_duplicate_names_and_ambiguous_identities_are_not_collapsed(laptop):
     assert "GPU-ambiguous" in warnings[0]
 
 
+def test_two_nvidia_uuids_contending_for_one_native_row_are_order_independent(laptop):
+    native_gpu = laptop[1].snapshot()
+    observations = [
+        MachineAcceleratorSnapshot(
+            kind="gpu",
+            name=native_gpu.name,
+            device_id=f"GPU-{number}",
+            pci_vendor_id=native_gpu.pci_vendor_id,
+            pci_device_id=native_gpu.pci_device_id,
+        )
+        for number in (1, 2)
+    ]
+    warnings = []
+    result = inventory._merge_accelerator_sources([observations, [native_gpu]], warnings)
+    reversed_warnings = []
+    reversed_result = inventory._merge_accelerator_sources(
+        [observations[::-1], [native_gpu]], reversed_warnings
+    )
+
+    assert result == reversed_result
+    assert len(result) == 3
+    assert result[0] == native_gpu
+    assert {item.device_id for item in result[1:]} == {"GPU-1", "GPU-2"}
+    assert all(item.adapter_luid is None for item in result[1:])
+    assert all(item.classification == "unknown" for item in result[1:])
+    assert warnings == reversed_warnings
+    assert len(warnings) == 1
+    assert all(value in warnings[0] for value in ("Ambiguous GPU identity", "GPU-1", "GPU-2"))
+
+
+@pytest.mark.parametrize("identifier", ["device_id", "adapter_luid", "pnp_device_id"])
+def test_exact_identifier_separates_observations_contending_for_one_row(laptop, identifier):
+    native_gpu = replace(laptop[1].snapshot(), **{identifier: "exact-identity"})
+    exact = MachineAcceleratorSnapshot(
+        kind="gpu", name=native_gpu.name, **{identifier: "exact-identity"}
+    )
+    unmatched = MachineAcceleratorSnapshot(kind="gpu", name=native_gpu.name, device_id="GPU-other")
+    warnings = []
+    result = inventory._merge_accelerator_sources([[unmatched, exact], [native_gpu]], warnings)
+    reversed_result = inventory._merge_accelerator_sources([[exact, unmatched], [native_gpu]], [])
+
+    assert result == reversed_result
+    assert len(result) == 2
+    assert result[0].classification == "dedicated"
+    assert getattr(result[0], identifier) == "exact-identity"
+    assert result[1].device_id == "GPU-other"
+    assert result[1].classification == "unknown"
+    assert warnings == []
+
+
+def test_repeated_exact_identity_is_deduplicated_within_one_source(laptop):
+    first = MachineAcceleratorSnapshot(kind="gpu", name=laptop[1].name, device_id="GPU-1")
+    repeated = replace(first, name=first.name.swapcase())
+    warnings = []
+    result = inventory._merge_accelerator_sources([[first, repeated], [laptop[1].snapshot()]], warnings)
+
+    assert len(result) == 1
+    assert result[0].device_id == "GPU-1"
+    assert result[0].classification == "dedicated"
+    assert warnings == []
+
+
+@pytest.mark.parametrize("device_ids", [("GPU-1", "GPU-2"), (None, None), ("", "")])
+def test_same_source_identical_gpus_without_a_shared_nonempty_id_stay_separate(device_ids):
+    observations = [
+        MachineAcceleratorSnapshot(kind="gpu", name="identical GPU", device_id=device_id)
+        for device_id in device_ids
+    ]
+    result = inventory._merge_accelerator_sources([observations], [])
+
+    assert len(result) == 2
+    assert [item.device_id for item in result] == list(device_ids)
+
+
+@pytest.mark.parametrize(
+    "nvidia_driver,cim_driver,expected",
+    [("581.80", "32.0.15.8180", "581.80"), (None, "32.0.15.8180", "32.0.15.8180"),
+     (None, None, "native-driver")],
+)
+def test_driver_precedence_without_nvidia_uuid(laptop, nvidia_driver, cim_driver, expected):
+    native_gpu = replace(laptop[1].snapshot(), driver_version="native-driver")
+    nvidia = MachineAcceleratorSnapshot(
+        kind="gpu", name=native_gpu.name, driver_version=nvidia_driver, memory_bytes=8 * GIB
+    )
+    cim = replace(nvidia, device_id="PCI-1", driver_version=cim_driver, memory_bytes=GIB)
+    result = inventory._merge_accelerator_sources([[nvidia], [cim], [native_gpu]], [])
+
+    assert len(result) == 1
+    assert result[0].driver_version == expected
+    assert result[0].memory_bytes == 8 * GIB
+    assert result[0].device_id == "PCI-1"
+    assert result[0].classification == "dedicated"
+
+
 def test_two_identical_gpus_stay_two_when_all_three_sources_report_them(laptop):
     first = laptop[1].snapshot()
     second = replace(first, adapter_luid="0000000000000002")
@@ -333,7 +427,7 @@ def test_d3d12_unavailability_retains_evidence_and_releases_device(monkeypatch, 
     "classification,memory,expected",
     [
         ("dedicated", 8 * GIB, True),
-        ("dedicated", None, False),
+        ("dedicated", None, True),
         ("integrated", 298_012_672, False),
         ("software", 0, False),
         ("unknown", None, True),
@@ -356,6 +450,59 @@ def test_profile_vram_uses_dedicated_memory_or_unknown_legacy_fallback(
     profile = replace(profile_by_id(DEFAULT_PROFILE_ID), min_vram_bytes=6 * GIB)
     warnings = profile_requirement_warnings(profile, _machine([gpu]))
     assert (not warnings) is expected
+
+
+def test_unknown_gpu_memory_cannot_outweigh_confirmed_dedicated_memory():
+    unknown = MachineAcceleratorSnapshot(
+        kind="gpu", name="unknown GPU", classification="unknown", memory_bytes=12 * GIB
+    )
+    dedicated = MachineAcceleratorSnapshot(
+        kind="gpu", name="dedicated GPU", classification="dedicated",
+        memory_bytes=12 * GIB, dedicated_memory_bytes=8 * GIB,
+    )
+    profile = replace(profile_by_id(DEFAULT_PROFILE_ID), min_vram_bytes=10 * GIB)
+
+    for accelerators in ([unknown, dedicated], [dedicated, unknown]):
+        assert profile_requirement_warnings(profile, _machine(accelerators)) == (
+            f"Accelerator memory is below {DEFAULT_PROFILE_ID} target ({8 * GIB} < {10 * GIB}).",
+        )
+
+
+@pytest.mark.parametrize("classification", [None, "unknown"])
+def test_unknown_only_gpu_keeps_legacy_memory_for_vram_requirements(classification):
+    gpu = MachineAcceleratorSnapshot(
+        kind="gpu", name="legacy GPU", classification=classification,
+        memory_bytes=12 * GIB, dedicated_memory_bytes=GIB,
+    )
+    profile = replace(profile_by_id(DEFAULT_PROFILE_ID), min_vram_bytes=10 * GIB)
+
+    assert profile_requirement_warnings(profile, _machine([gpu])) == ()
+
+
+def test_integrated_only_gpu_has_unknown_vram():
+    gpu = MachineAcceleratorSnapshot(
+        kind="gpu", name="integrated GPU", classification="integrated",
+        memory_bytes=12 * GIB, dedicated_memory_bytes=GIB,
+    )
+    profile = replace(profile_by_id(DEFAULT_PROFILE_ID), min_vram_bytes=10 * GIB)
+
+    assert profile_requirement_warnings(profile, _machine([gpu])) == (
+        "Accelerator memory is unknown.",
+    )
+
+
+def test_dedicated_gpu_without_any_memory_does_not_fall_back_to_unknown_gpu():
+    unknown = MachineAcceleratorSnapshot(
+        kind="gpu", name="unknown GPU", classification="unknown", memory_bytes=12 * GIB
+    )
+    dedicated = MachineAcceleratorSnapshot(
+        kind="gpu", name="dedicated GPU", classification="dedicated"
+    )
+    profile = replace(profile_by_id(DEFAULT_PROFILE_ID), min_vram_bytes=10 * GIB)
+
+    assert profile_requirement_warnings(profile, _machine([unknown, dedicated])) == (
+        "Accelerator memory is unknown.",
+    )
 
 
 def test_shared_igpu_memory_cannot_outweigh_rtx_and_fixed_profile_is_preserved(laptop):

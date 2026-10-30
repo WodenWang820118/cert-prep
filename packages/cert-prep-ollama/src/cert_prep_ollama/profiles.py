@@ -223,21 +223,17 @@ def _selection(
 
 
 def _max_accelerator_memory(inventory: MachineInventorySnapshot) -> int | None:
-    values: list[int] = []
-    for accelerator in inventory.accelerators:
-        if accelerator.kind.casefold() != "gpu":
-            continue
-        if accelerator.classification == "dedicated":
-            memory = accelerator.dedicated_memory_bytes
-        elif accelerator.classification in (None, "unknown"):
-            memory = accelerator.memory_bytes
-        else:
-            continue
-        if memory is not None:
-            values.append(memory)
-    if not values:
-        return None
-    return max(values)
+    gpus = [item for item in inventory.accelerators if item.kind.casefold() == "gpu"]
+    dedicated = [item for item in gpus if item.classification == "dedicated"]
+    if dedicated:
+        values = [
+            item.dedicated_memory_bytes
+            if item.dedicated_memory_bytes is not None else item.memory_bytes
+            for item in dedicated
+        ]
+    else:
+        values = [item.memory_bytes for item in gpus if item.classification in (None, "unknown")]
+    return max((value for value in values if value is not None), default=None)
 
 
 __all__ = [
