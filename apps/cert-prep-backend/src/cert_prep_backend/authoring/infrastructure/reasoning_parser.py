@@ -5,7 +5,13 @@ import re
 from typing import Any
 
 from cert_prep_backend.source_library.domain.exam_content import question_item_kind_from_value
+from cert_prep_backend.authoring.domain.deterministic_parser import is_exam_source_chunk
 from cert_prep_backend.authoring.domain.models import DraftSuggestion, SourceChunk
+from cert_prep_backend.authoring.domain.question_admission import (
+    AdmissionRejection,
+    ExtractedQuestion,
+    admit_extracted_question,
+)
 from cert_prep_backend.authoring.domain.normalization import normalize_answer
 from cert_prep_backend.platform.errors import ProviderUnavailableError
 
@@ -71,32 +77,63 @@ def draft_suggestion_from_item(
 ) -> DraftSuggestion | None:
     """Validate one reasoning JSON item and map it to a grounded draft suggestion."""
 
-    if not isinstance(raw_item, dict):
-        return None
+    admission = admit_reasoning_item(raw_item, chunks_by_page, chunks_by_id)
+    return admission if isinstance(admission, DraftSuggestion) else None
 
-    question = _text(raw_item.get("question"))
+
+def admit_reasoning_item(
+    raw_item: Any,
+    chunks_by_page: dict[int, SourceChunk],
+    chunks_by_id: dict[str, SourceChunk],
+) -> DraftSuggestion | AdmissionRejection:
+    """Map one reasoning JSON item to a draft, or name the first check it fails.
+
+    Order: the model's JSON shape, the source page it cites, the content rules of
+    ``admit_extracted_question`` (which may clean the stem), then answer and excerpt
+    grounding. Models differ in key names, so ``question_stem``/``stem`` are read as the
+    stem when ``question`` is absent (qwen3.5:9b answers with ``question_stem``).
+    """
+
+    if not isinstance(raw_item, dict):
+        return AdmissionRejection.INCOMPLETE_ITEM
+
+    question = _text(
+        raw_item.get("question", raw_item.get("question_stem", raw_item.get("stem")))
+    )
     choices = _unique_texts(raw_item.get("choices"))
     answer = _text(raw_item.get("answer"))
     rationale = _user_facing_rationale(raw_item.get("rationale"))
     confidence = _confidence(raw_item.get("confidence"))
     if not question or len(choices) < 2 or not answer:
-        return None
+        return AdmissionRejection.INCOMPLETE_ITEM
     if confidence is None:
-        return None
+        return AdmissionRejection.INVALID_CONFIDENCE
 
     chunk = _chunk_for_item(raw_item, chunks_by_page, chunks_by_id)
     if chunk is None:
-        return None
+        return AdmissionRejection.UNRESOLVED_SOURCE
+
+    admission = admit_extracted_question(
+        ExtractedQuestion(
+            question=question,
+            choices=tuple(choices),
+            source_text=chunk.raw_or_text(),
+            exam_page=is_exam_source_chunk(chunk),
+        )
+    )
+    if admission.rejection is not None or admission.question is None:
+        return admission.rejection or AdmissionRejection.INCOMPLETE_ITEM
+    question = admission.question
 
     answer = normalize_answer(answer, choices)
     if answer not in choices:
-        return None
+        return AdmissionRejection.ANSWER_NOT_IN_CHOICES
 
     source_excerpt = _source_excerpt(raw_item.get("source_excerpt"), chunk)
     if not source_excerpt:
-        return None
+        return AdmissionRejection.EXCERPT_NOT_IN_SOURCE
     if not _looks_like_exam_item(question, choices, source_excerpt):
-        return None
+        return AdmissionRejection.NOT_AN_EXAM_ITEM
 
     answer_key_source = _text(raw_item.get("answer_key_source"))
     if answer_key_source not in {"pdf", "ai_inferred"}:
@@ -130,7 +167,11 @@ def _chunk_for_item(
     chunks_by_id: dict[str, SourceChunk],
 ) -> SourceChunk | None:
     chunk_id = _text(raw_item.get("chunk_id"))
-    page_number = _optional_int(raw_item.get("citation_page"))
+    raw_page = raw_item.get("citation_page")
+    page_number = _citation_page(raw_page)
+    # A null or empty page is no claim; an unreadable one ("8 or 9") is rejected.
+    if raw_page not in (None, "") and page_number is None:
+        return None
     if chunk_id:
         chunk = chunks_by_id.get(chunk_id)
         if chunk is None:
@@ -141,6 +182,20 @@ def _chunk_for_item(
     if page_number is None:
         return None
     return chunks_by_page.get(page_number)
+
+
+def _citation_page(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        match = re.fullmatch(r"(?:page-|p\.)?([0-9]+)", value.strip())
+        if match is not None:
+            return int(match.group(1))
+    return None
 
 
 def _source_excerpt(raw_excerpt: Any, chunk: SourceChunk) -> str:

@@ -53,6 +53,9 @@
 | 漢字讀音片段     | `ReadingSpan`                 | 詞典提供的題幹原文片段與平假名讀音                              |
 | 讀音解答         | `ReadingSolution`             | 唯一讀音相符的選項、原文片段、讀音與固定的繁體中文解說          |
 | 讀音詞典         | `ReadingLexicon`              | 提供題幹內含漢字片段讀音的 application port                      |
+| 抽出題目         | `ExtractedQuestion`           | 模型從原文頁面抽出的題幹與選項，連同該頁原文，等待收錄判斷        |
+| 題目收錄         | `QuestionAdmission`           | 一題抽出題目的收錄結果：清理後的題幹，或拒收原因                  |
+| 拒收原因         | `AdmissionRejection`          | 抽出題目未被收錄的原因代碼；只記錄與量測，不進 API                |
 | 讀音題節規則     | `section_asks_for_reading`     | 題目前同段落的指示含「読み方」或「よみかた」才可使用讀音詞典    |
 | 題節指示         | `section_instruction`         | 同段落中題目前最近的題節指示，只在解析與草稿建議內部傳遞        |
 | 草稿編修         | `DraftEdit`                   | 學習者對草稿的修正；只改有給的欄位，出處與狀態不變              |

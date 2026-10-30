@@ -44,6 +44,7 @@ from cert_prep_backend.authoring.domain.generation import (
     ManualDraftOperationStatus,
 )
 from cert_prep_backend.authoring.infrastructure.draft_writing import (
+    _with_chunk_source_order,
     draft_writer_for,
     generate_drafts_for_strategy,
     generate_drafts_with_annotations_for_strategy,
@@ -450,6 +451,9 @@ def _generate_streaming_fast_first_drafts(
             if suggestion is not None:
                 return [suggestion]
 
+        # Same order as the batch path (draft_writing.generate_drafts_with_annotations_
+        # for_strategy): only a page without a usable parsed block goes to model
+        # extraction, and its items pass domain/question_admission.py.
         reasoning_provider = provider_capability(writer, ReasoningDraftProvider)
         if reasoning_provider is not None:
             prompt_chunk = _compact_reasoning_chunk(source_chunk)
@@ -467,7 +471,7 @@ def _generate_streaming_fast_first_drafts(
                     raise
                 return []
             if suggestions:
-                return suggestions
+                return _with_chunk_source_order(suggestions, source_chunk)
             return []
 
     return generate_drafts_for_strategy(
