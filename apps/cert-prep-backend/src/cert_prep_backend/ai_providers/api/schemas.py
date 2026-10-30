@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from cert_prep_contracts.llm import (
@@ -45,6 +47,13 @@ class MachineAcceleratorRead(BaseModel):
     memory_bytes: int | None = None
     driver_version: str | None = None
     device_id: str | None = None
+    classification: Literal["integrated", "dedicated", "software", "unknown"] | None = None
+    dedicated_memory_bytes: int | None = None
+    shared_memory_bytes: int | None = None
+    classification_source: Literal["native_dxgi", "vendor_tool", "unknown"] | None = None
+    pci_vendor_id: str | None = None
+    pci_device_id: str | None = None
+    adapter_luid: str | None = None
 
 
 class MachineInventoryRead(BaseModel):

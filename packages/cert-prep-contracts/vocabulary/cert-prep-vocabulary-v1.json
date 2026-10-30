@@ -595,6 +595,55 @@
       "codeName": "ManualDraftOperationStatus.FAILED",
       "enum": { "enumId": "ManualDraftOperationStatus", "value": "failed" },
       "retired": false
+    },
+    {
+      "id": "ai-providers.accelerator-classification.integrated",
+      "label": "Integrated GPU (native UMA)",
+      "codeName": "MachineAcceleratorRead.classification.integrated",
+      "enum": { "enumId": "MachineAcceleratorRead.classification", "value": "integrated" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.accelerator-classification.dedicated",
+      "label": "Dedicated GPU (native non-UMA)",
+      "codeName": "MachineAcceleratorRead.classification.dedicated",
+      "enum": { "enumId": "MachineAcceleratorRead.classification", "value": "dedicated" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.accelerator-classification.software",
+      "label": "Software adapter (DXGI software flag)",
+      "codeName": "MachineAcceleratorRead.classification.software",
+      "enum": { "enumId": "MachineAcceleratorRead.classification", "value": "software" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.accelerator-classification.unknown",
+      "label": "Unknown GPU classification (insufficient native evidence)",
+      "codeName": "MachineAcceleratorRead.classification.unknown",
+      "enum": { "enumId": "MachineAcceleratorRead.classification", "value": "unknown" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.accelerator-classification-source.native-dxgi",
+      "label": "Native DXGI and D3D12 architecture evidence",
+      "codeName": "MachineAcceleratorRead.classification_source.native_dxgi",
+      "enum": { "enumId": "MachineAcceleratorRead.classification_source", "value": "native_dxgi" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.accelerator-classification-source.vendor-tool",
+      "label": "Vendor tool classification evidence",
+      "codeName": "MachineAcceleratorRead.classification_source.vendor_tool",
+      "enum": { "enumId": "MachineAcceleratorRead.classification_source", "value": "vendor_tool" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.accelerator-classification-source.unknown",
+      "label": "Classification evidence unavailable",
+      "codeName": "MachineAcceleratorRead.classification_source.unknown",
+      "enum": { "enumId": "MachineAcceleratorRead.classification_source", "value": "unknown" },
+      "retired": false
     }
   ]
 }
