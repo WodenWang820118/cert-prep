@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from difflib import SequenceMatcher
 import json
 import re
 from typing import Any
+import unicodedata
 
 from cert_prep_backend.source_library.domain.exam_content import question_item_kind_from_value
+from cert_prep_backend.authoring.domain.deterministic_parser import is_exam_source_chunk
 from cert_prep_backend.authoring.domain.models import DraftSuggestion, SourceChunk
 from cert_prep_backend.authoring.domain.normalization import normalize_answer
 from cert_prep_backend.platform.errors import ProviderUnavailableError
@@ -74,7 +77,9 @@ def draft_suggestion_from_item(
     if not isinstance(raw_item, dict):
         return None
 
-    question = _text(raw_item.get("question"))
+    question = _text(
+        raw_item.get("question", raw_item.get("question_stem", raw_item.get("stem")))
+    )
     choices = _unique_texts(raw_item.get("choices"))
     answer = _text(raw_item.get("answer"))
     rationale = _user_facing_rationale(raw_item.get("rationale"))
@@ -86,6 +91,15 @@ def draft_suggestion_from_item(
 
     chunk = _chunk_for_item(raw_item, chunks_by_page, chunks_by_id)
     if chunk is None:
+        return None
+
+    source = chunk.raw_or_text()
+    if _is_printed_listening_page(source):
+        return None
+    question = _question_without_glued_choices(question, choices)
+    if not question or _is_section_instruction(question) or _stem_is_a_choice(question, choices):
+        return None
+    if is_exam_source_chunk(chunk) and _grounded_share(question, source) < _MIN_STEM_GROUNDING:
         return None
 
     answer = normalize_answer(answer, choices)
@@ -130,7 +144,11 @@ def _chunk_for_item(
     chunks_by_id: dict[str, SourceChunk],
 ) -> SourceChunk | None:
     chunk_id = _text(raw_item.get("chunk_id"))
-    page_number = _optional_int(raw_item.get("citation_page"))
+    raw_page = raw_item.get("citation_page")
+    page_number = _citation_page(raw_page)
+    # A null or empty page is no claim; an unreadable one ("8 or 9") is rejected.
+    if raw_page not in (None, "") and page_number is None:
+        return None
     if chunk_id:
         chunk = chunks_by_id.get(chunk_id)
         if chunk is None:
@@ -141,6 +159,20 @@ def _chunk_for_item(
     if page_number is None:
         return None
     return chunks_by_page.get(page_number)
+
+
+def _citation_page(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        match = re.fullmatch(r"(?:page-|p\.)?([0-9]+)", value.strip())
+        if match is not None:
+            return int(match.group(1))
+    return None
 
 
 def _source_excerpt(raw_excerpt: Any, chunk: SourceChunk) -> str:
@@ -174,6 +206,59 @@ def _whitespace_aligned_source_excerpt(excerpt: str, source: str) -> str:
         return ""
     end = start + len(excerpt_without_whitespace) - 1
     return source[source_indices[start] : source_indices[end] + 1]
+
+
+# Extracted items must quote the exam: at least this share of the stem's characters has
+# to appear in the source page (in runs of three or more), so rewritten, translated or
+# invented stems are rejected.
+_MIN_STEM_GROUNDING = 0.6
+_CHOICE_LABEL = re.compile(r"^\s*(?:[0-9０-９]|[A-DＡ-Ｄa-d])\s*[.．、)）:：]?\s*")
+_TRAILING_CHOICE_LABEL = re.compile(r"\s*(?:[0-9０-９]|[A-DＡ-Ｄ])\s*[.．、)）]?\s*$")
+_CHOICE_ENUMERATION = re.compile(r"[1１][・･][2２][・･][3３][・･][4４]")
+
+
+def _question_without_glued_choices(question: str, choices: list[str]) -> str:
+    """Cut the choices a model copied onto the end of the stem.
+
+    Only a tail that holds at least two of the item's own choices is removed, so a stem
+    that merely mentions one choice word stays intact.
+    """
+    bare = [text for text in (_CHOICE_LABEL.sub("", choice) for choice in choices) if len(text) >= 2]
+    for start in sorted(index for text in bare if (index := question.find(text)) > 0):
+        tail = question[start:]
+        if sum(1 for text in bare if text in tail) >= 2:
+            return _TRAILING_CHOICE_LABEL.sub("", question[:start]).strip()
+    return question.strip()
+
+
+def _is_section_instruction(stem: str) -> bool:
+    """A section instruction ("次の文章を読んで…1・2・3・4から…選びなさい") is not a question."""
+    if _CHOICE_ENUMERATION.search(stem):
+        return True
+    return bool(re.match(r"\s*(?:問題\s*\S{0,3}\s*)?(?:次の|つぎの)", stem)) and bool(
+        re.search(r"選びなさい|選んでください", stem)
+    )
+
+
+def _stem_is_a_choice(stem: str, choices: list[str]) -> bool:
+    core = stem.strip().rstrip("、。,.　 ")
+    return bool(core) and any(core in _CHOICE_LABEL.sub("", choice) for choice in choices)
+
+
+def _is_printed_listening_page(source: str) -> bool:
+    """Listening booklet pages print only choices; their items need the audio."""
+    return bool(re.search(r"聴解|聽解", source)) or ("問題用紙" in source and "聞いて" in source)
+
+
+def _grounded_share(stem: str, source: str) -> float:
+    def compact(text: str) -> str:
+        return re.sub(r"\s+", "", unicodedata.normalize("NFKC", text))
+
+    stem_text, source_text = compact(stem), compact(source)
+    if not stem_text:
+        return 0.0
+    blocks = SequenceMatcher(None, stem_text, source_text, autojunk=False).get_matching_blocks()
+    return sum(block.size for block in blocks if block.size >= 3) / len(stem_text)
 
 
 def _looks_like_exam_item(question: str, choices: list[str], source_excerpt: str) -> bool:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 
 from cert_prep_backend.authoring.application.ports import ReadingLexicon
 
@@ -148,8 +149,35 @@ def generate_drafts_with_annotations_for_strategy(
                     continue
                 failure_reason = "Capture Runtime question completion returned an incomplete answer."
             unavailable_blocks.append(_unavailable_block(candidate, failure_reason))
+        generated = dedupe_suggestions(generated, limit)
+        reasoning_provider = provider_capability(writer, ReasoningDraftProvider)
+        if reasoning_provider is not None:
+            parsed_chunk_ids = {candidate.chunk_id for candidate in deterministic}
+            for index, chunk in enumerate(chunks):
+                remaining = limit - len(generated)
+                if remaining <= 0:
+                    break
+                if chunk.id in parsed_chunk_ids:
+                    continue
+                # The document parser may have stopped at the limit. Check this
+                # page with its continuation before treating it as unparsed.
+                if any(
+                    candidate.chunk_id == chunk.id
+                    for candidate in extract_jlpt_question_blocks(chunks[index : index + 2], 1)
+                ):
+                    continue
+                try:
+                    suggestions = reasoning_provider.generate_reasoning_drafts([chunk], remaining)
+                except ProviderUnavailableError as exc:
+                    if not is_non_fatal_generation_error(exc):
+                        raise
+                    continue
+                suggestions = _with_chunk_source_order(suggestions, chunk)
+                generated = dedupe_suggestions(
+                    [*generated, *(as_editable_question(item) for item in suggestions)], limit
+                )
         return DraftGenerationResult(
-            suggestions=dedupe_suggestions(generated, limit),
+            suggestions=generated,
             unavailable_blocks=unavailable_blocks,
         )
 
@@ -173,6 +201,19 @@ def generate_drafts_with_annotations_for_strategy(
         ),
         unavailable_blocks=unavailable_blocks,
     )
+
+
+def _with_chunk_source_order(
+    suggestions: Sequence[DraftSuggestion], chunk: SourceChunk
+) -> list[DraftSuggestion]:
+    # Match the deterministic parser's page/chunk order without overriding model metadata.
+    base_order = chunk.page_number * 10_000 + chunk.chunk_index * 1_000
+    return [
+        replace(suggestion, source_order=base_order + index)
+        if suggestion.source_order is None
+        else suggestion
+        for index, suggestion in enumerate(suggestions, start=1)
+    ]
 
 
 def _unavailable_block(candidate: DraftSuggestion, reason: str) -> UnavailableDraftBlock:

@@ -48,6 +48,19 @@ from cert_prep_backend.platform.errors import ProviderUnavailableError
 
 _LOGGER = logging.getLogger(__name__)
 _REASONING_JSON_ATTEMPTS = 4
+_REASONING_ITEM_SHAPE = (
+    "Use these exact keys for each item: chunk_id, citation_page, question, choices, "
+    "answer, answer_key_source, rationale, source_excerpt, and confidence. "
+    "Set question to the question stem and chunk_id to its source chunk ID. "
+    "Use an integer for citation_page. Example object shape (replace the example values "
+    "with source-grounded content): "
+    '{"items": [{"chunk_id": "<source chunk ID>", "citation_page": 1, '
+    '"question": "<visible question stem>", '
+    '"choices": ["<first visible choice>", "<second visible choice>"], '
+    '"answer": "<first visible choice>", "answer_key_source": "ai_inferred", '
+    '"rationale": "<concise user-facing rationale>", '
+    '"source_excerpt": "<exact source text>", "confidence": 0.9}]}. '
+)
 
 
 class OllamaDraftWriter:
@@ -353,7 +366,8 @@ def _reasoning_system_prompt() -> str:
         "ai_inferred. Do not include chain-of-thought, hidden reasoning, or "
         "analysis. Only include a concise user-facing rationale. "
         "Return one JSON object with an items array; never use Markdown or "
-        f"prose outside that JSON object. {RATIONALE_LANGUAGE_INSTRUCTION}"
+        f"prose outside that JSON object. {_REASONING_ITEM_SHAPE}"
+        f"{RATIONALE_LANGUAGE_INSTRUCTION}"
     )
 
 
@@ -373,7 +387,8 @@ def _reasoning_user_prompt(
         "user-facing rationale. Include confidence as a number from 0 to 1, keep "
         "citation_page from the source page, and include a source_excerpt copied exactly "
         "from the source text. If the source only contains title, note, version, or "
-        f"instruction text, return an empty items array for that text.\n\n{source}\n"
+        "instruction text, return an empty items array for that text. "
+        f"{_REASONING_ITEM_SHAPE}\n\n{source}\n"
         f"{RATIONALE_LANGUAGE_INSTRUCTION}"
     )
 
@@ -406,6 +421,6 @@ def _supplemental_reasoning_user_prompt(
         "choice in a separate choices array element. Set answer to the exact choice text, include "
         "a concise user-facing rationale. Include confidence from 0 to 1, keep citation_page from "
         "the source page, and copy source_excerpt exactly from the source text. "
-        f"{accepted_context}{source}\n"
+        f"{_REASONING_ITEM_SHAPE}{accepted_context}{source}\n"
         f"{RATIONALE_LANGUAGE_INSTRUCTION}"
     )

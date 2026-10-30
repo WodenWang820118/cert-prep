@@ -44,6 +44,7 @@ from cert_prep_backend.authoring.domain.generation import (
     ManualDraftOperationStatus,
 )
 from cert_prep_backend.authoring.infrastructure.draft_writing import (
+    _with_chunk_source_order,
     draft_writer_for,
     generate_drafts_for_strategy,
     generate_drafts_with_annotations_for_strategy,
@@ -467,7 +468,7 @@ def _generate_streaming_fast_first_drafts(
                     raise
                 return []
             if suggestions:
-                return suggestions
+                return _with_chunk_source_order(suggestions, source_chunk)
             return []
 
     return generate_drafts_for_strategy(
