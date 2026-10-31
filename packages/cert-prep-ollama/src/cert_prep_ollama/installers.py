@@ -6,6 +6,7 @@ from collections.abc import Callable
 import os
 import shutil
 import subprocess
+from typing import TYPE_CHECKING
 
 from cert_prep_contracts.llm import ModelPullProgress
 from cert_prep_contracts.runtime import (
@@ -17,6 +18,9 @@ from cert_prep_contracts.runtime import (
 from cert_prep_ollama.exceptions import ProviderUnavailableError
 from cert_prep_ollama.models import DEFAULT_OLLAMA_MODEL
 from cert_prep_ollama.server import ensure_ollama_server_running, resolve_ollama_executable
+
+if TYPE_CHECKING:
+    from cert_prep_ollama.server_coordinator import OllamaServerCoordinator
 
 
 class OllamaRuntimeInstaller:
@@ -30,9 +34,11 @@ class OllamaRuntimeInstaller:
         self,
         ollama_host: str = "http://127.0.0.1:11434",
         runtime_install_timeout_seconds: float = 900.0,
+        server: OllamaServerCoordinator | None = None,
     ) -> None:
         self._ollama_host = ollama_host
         self._timeout = runtime_install_timeout_seconds
+        self._server = server
 
     def requirement(self) -> RuntimeRequirementSnapshot:
         """Return whether the Ollama executable can be resolved locally."""
@@ -83,10 +89,12 @@ class OllamaRuntimeInstaller:
         if executable is None:
             return RuntimeInstallationStatus.WAITING_FOR_USER
         progress(RuntimeInstallProgress("Starting the Ollama local API."))
-        if not ensure_ollama_server_running(
-            self._ollama_host,
-            executable=executable,
-        ):
+        server_running = (
+            self._server.ensure_running()
+            if self._server is not None
+            else ensure_ollama_server_running(self._ollama_host, executable=executable)
+        )
+        if not server_running:
             raise ProviderUnavailableError(
                 "Ollama was installed, but the local API did not become reachable."
             )

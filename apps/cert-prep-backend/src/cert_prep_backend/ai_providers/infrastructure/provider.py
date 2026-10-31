@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from threading import Lock
+from typing import TYPE_CHECKING
 
 from cert_prep_backend.ai_providers.application.use_cases import choose_ollama_profile
 from cert_prep_backend.ai_providers.domain.selection import select_provider
@@ -14,8 +15,14 @@ from cert_prep_contracts.llm import LLMProviderName, LLMProviderPreference
 from cert_prep_contracts.runtime import RuntimeRequirementKind
 from cert_prep_ollama.profiles import select_ollama_execution_policy
 
+if TYPE_CHECKING:
+    from cert_prep_ollama.server_coordinator import OllamaServerCoordinator
 
-def provider_from_settings(settings: Settings):
+
+def provider_from_settings(
+    settings: Settings,
+    server: OllamaServerCoordinator | None = None,
+):
     """Create the configured language model provider."""
 
     selected_provider = _selected_provider_from_settings(settings)
@@ -37,6 +44,7 @@ def provider_from_settings(settings: Settings):
             timeout_seconds=settings.ollama_timeout_seconds,
             profile_selection=profile_selection,
             execution_policy=select_ollama_execution_policy(inventory),
+            server=server,
         )
     return FakeLLMProvider(model=settings.ollama_model)
 
@@ -54,6 +62,7 @@ class LazyLLMProvider:
             "reset_generation_attribution",
             "verify_model_onboarding",
             "pull_model",
+            "device_execution",
         }
     )
 
@@ -167,12 +176,15 @@ class LazyLLMProvider:
         return getattr(self._resolved_provider(), name)
 
 
-def lazy_provider_from_settings(settings: Settings) -> LazyLLMProvider:
+def lazy_provider_from_settings(
+    settings: Settings,
+    server: OllamaServerCoordinator | None = None,
+) -> LazyLLMProvider:
     """Create a provider proxy that keeps app startup free of provider probes."""
 
     selected_provider = _selected_provider_from_settings(settings).value
     return LazyLLMProvider(
-        lambda: provider_from_settings(settings),
+        lambda: provider_from_settings(settings, server=server),
         provider=selected_provider,
         model=_provider_model_hint(settings, selected_provider),
         runtime_requirement_kind=(

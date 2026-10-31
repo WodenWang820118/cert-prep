@@ -4,7 +4,7 @@ from collections.abc import Callable, Mapping, Sequence
 from functools import partial
 import logging
 from threading import local
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from cert_prep_backend.ai_providers.domain.generation_errors import short_error
 from cert_prep_backend.ai_providers.domain.provider import (
@@ -23,6 +23,10 @@ from cert_prep_contracts.llm_profiles import OllamaProfileSelection
 from cert_prep_contracts.runtime import RuntimeRequirementKind
 from cert_prep_ollama.models import extract_model_names, pull_progress
 from cert_prep_ollama.server import ensure_ollama_server_running, resolve_ollama_executable
+
+if TYPE_CHECKING:
+    from cert_prep_ollama.device_verification import DeviceExecution
+    from cert_prep_ollama.server_coordinator import OllamaServerCoordinator
 
 
 STREAMING_PREWARM_KEEP_ALIVE = DEFAULT_KEEP_ALIVE
@@ -44,12 +48,14 @@ class OllamaProvider:
         profile_selection: OllamaProfileSelection | None = None,
         execution_policy: LLMExecutionPolicy | None = None,
         client: Any | None = None,
+        server: OllamaServerCoordinator | None = None,
     ) -> None:
         self.host = host
         self.model = model
         self.fallback_models: tuple[str, ...] = ()
         self.profile_selection = profile_selection
         self.execution_policy = execution_policy or LLMExecutionPolicy()
+        self._server = server
         self._generation_state = local()
         self._client = client or OllamaClient(host=host, timeout_seconds=timeout_seconds)
         if self.execution_policy.warning is not None:
@@ -77,6 +83,10 @@ class OllamaProvider:
             fallback_reason=None,
         )
 
+    def device_execution(self) -> DeviceExecution | None:
+        """Return the device execution status from the coordinator if one is attached."""
+        return self._server.device_execution() if self._server is not None else None
+
     def health(self) -> ProviderHealth:
         """Return Ollama process and configured-model availability."""
 
@@ -88,7 +98,12 @@ class OllamaProvider:
                 detail = "Ollama is not installed."
                 unavailable_reason = "ollama_missing"
             else:
-                if ensure_ollama_server_running(self.host, executable=executable):
+                server_ok = (
+                    self._server.ensure_running()
+                    if self._server is not None
+                    else ensure_ollama_server_running(self.host, executable=executable)
+                )
+                if server_ok:
                     try:
                         model_names = self._installed_model_names()
                     except Exception as retry_exc:
@@ -248,6 +263,20 @@ class OllamaProvider:
         raise ProviderUnavailableError(self._health_detail(None))
 
     def _with_primary_model(self, operation: Callable[[str], T]) -> T:
+        if self._server is not None:
+            # Check the model inside admission, so a corrective restart has finished first.
+            with self._server.admission():
+                model = self._available_primary_model()
+                try:
+                    result = operation(model)
+                except Exception as exc:
+                    raise ProviderUnavailableError(
+                        f"Ollama unavailable for configured model {model}: {short_error(exc)}"
+                    ) from exc
+                self._generation_state.model = model
+            self._server.after_model_load()
+            return result
+
         model = self._available_primary_model()
         try:
             result = operation(model)

@@ -24,6 +24,7 @@ from cert_prep_contracts.runtime import (
 if TYPE_CHECKING:
     from cert_prep_ollama.installers import OllamaRuntimeInstaller
     from cert_prep_ollama.profile_installer import OllamaProfileInstaller
+    from cert_prep_ollama.server_coordinator import OllamaServerCoordinator
 
 TInstaller = TypeVar("TInstaller")
 
@@ -33,6 +34,8 @@ def configured_installer_choices(
     provider: object,
     machine: MachineInventory,
     default_model: Callable[[], TInstaller],
+    *,
+    server: OllamaServerCoordinator | None = None,
 ) -> tuple[list[OllamaRuntimeInstaller], TInstaller | LazyOllamaProfileInstaller | OllamaProfileInstaller]:
     from cert_prep_ollama.installers import OllamaRuntimeInstaller
 
@@ -43,10 +46,11 @@ def configured_installer_choices(
         runtimes.append(OllamaRuntimeInstaller(
             ollama_host=settings.ollama_host,
             runtime_install_timeout_seconds=settings.runtime_install_timeout_seconds,
+            server=server,
         ))
     model = default_model()
     if runtime_kind == RuntimeRequirementKind.OLLAMA and settings.ollama_profile_enabled:
-        model = LazyOllamaProfileInstaller(settings, machine)
+        model = LazyOllamaProfileInstaller(settings, machine, server=server)
     elif runtime_kind == RuntimeRequirementKind.OLLAMA:
         selection = getattr(provider, "profile_selection", None)
         if selection is not None:
@@ -57,6 +61,7 @@ def configured_installer_choices(
                 host=settings.ollama_host,
                 timeout_seconds=settings.ollama_timeout_seconds,
                 runtime_install_timeout_seconds=settings.runtime_install_timeout_seconds,
+                server=server,
             )
     return runtimes, model
 
@@ -65,9 +70,15 @@ class LazyOllamaProfileInstaller:
     kind = RuntimeRequirementKind.OLLAMA_MODEL
     provider = "ollama"
 
-    def __init__(self, settings: Settings, machine_inventory: MachineInventory) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        machine_inventory: MachineInventory,
+        server: OllamaServerCoordinator | None = None,
+    ) -> None:
         self._settings = settings
         self._machine_inventory = machine_inventory
+        self._server = server
         self._lock = Lock()
         self._installer: OllamaProfileInstaller | None = None
 
@@ -109,5 +120,6 @@ class LazyOllamaProfileInstaller:
                     host=self._settings.ollama_host,
                     timeout_seconds=self._settings.ollama_timeout_seconds,
                     runtime_install_timeout_seconds=self._settings.runtime_install_timeout_seconds,
+                    server=self._server,
                 )
             return self._installer
