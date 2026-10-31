@@ -21,6 +21,8 @@ def is_non_fatal_generation_error(exc: Exception) -> bool:
             "non-object json response",
             "timed out",
             "timeout",
+            # Ollama aborts a model that keeps repeating itself; only this call's page is lost.
+            "token repeat limit",
         )
     )
 
