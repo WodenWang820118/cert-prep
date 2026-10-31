@@ -168,6 +168,7 @@ class CertPrepCaptureCoordinator:
         source_kind: CaptureSourceKind | str,
         target_language: str | None,
         should_cancel: Callable[[], bool],
+        spoken_language: str | None = None,
     ) -> CaptureRunResult:
         operation = self.begin_capture(
             operation_id=operation_id,
@@ -177,6 +178,7 @@ class CertPrepCaptureCoordinator:
             source_kind=source_kind,
             target_language=target_language,
             should_cancel=should_cancel,
+            spoken_language=spoken_language,
         )
         return self.confirm_capture(
             operation_id=operation_id,
@@ -197,6 +199,7 @@ class CertPrepCaptureCoordinator:
         target_language: str | None,
         should_cancel: Callable[[], bool],
         on_started: Callable[[CaptureOperation], None] | None = None,
+        spoken_language: str | None = None,
     ) -> CaptureOperation:
         kind = CaptureSourceKind(source_kind)
         ready = self._client.handshake()
@@ -217,6 +220,7 @@ class CertPrepCaptureCoordinator:
                 content=content,
                 media_type=media_type,
                 pdf_page_numbers=pdf_page_numbers,
+                spoken_language=spoken_language,
             ),
             source_kind=kind,
             client_request_id=operation_id,
