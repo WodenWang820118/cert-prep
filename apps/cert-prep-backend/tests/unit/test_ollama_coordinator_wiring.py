@@ -7,8 +7,10 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
+import pytest
 
 from cert_prep_backend.ai_providers.application.ports import MachineInventory
+from cert_prep_backend.ai_providers.infrastructure import ollama_transport
 from cert_prep_backend.ai_providers.infrastructure.ollama_transport import OllamaProvider
 from cert_prep_backend.ai_providers.infrastructure.provider import (
     lazy_provider_from_settings,
@@ -56,7 +58,13 @@ class _DummyInventory(MachineInventory):
         )
 
 
-def test_provider_uses_shared_coordinator_on_health_and_generation() -> None:
+def test_provider_uses_shared_coordinator_on_health_and_generation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Health only starts a server when Ollama is installed; CI machines have none.
+    monkeypatch.setattr(
+        ollama_transport, "resolve_ollama_executable", lambda: Path("C:\\Ollama\\ollama.exe")
+    )
     coordinator = _mock_coordinator()
     fake_client = MagicMock()
     fake_client.list.side_effect = [Exception("initial connection failed"), {"models": [{"name": "test-model"}]}]
