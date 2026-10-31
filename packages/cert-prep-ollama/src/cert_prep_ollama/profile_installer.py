@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import ollama
@@ -25,6 +25,9 @@ from cert_prep_ollama.server import (
     resolve_ollama_executable,
 )
 
+if TYPE_CHECKING:
+    from cert_prep_ollama.server_coordinator import OllamaServerCoordinator
+
 
 class OllamaProfileInstaller:
     """Installer and health snapshot for a selected cert-prep Ollama profile."""
@@ -41,6 +44,7 @@ class OllamaProfileInstaller:
         runtime_install_timeout_seconds: float = 900.0,
         client: object | None = None,
         ensure_server: bool = True,
+        server: OllamaServerCoordinator | None = None,
     ) -> None:
         self.profile = profile
         self.fallback_profiles: tuple[OllamaModelProfile, ...] = ()
@@ -49,6 +53,7 @@ class OllamaProfileInstaller:
         self._runtime_install_timeout_seconds = runtime_install_timeout_seconds
         self._client = client or ollama.Client(host=host, timeout=timeout_seconds)
         self._ensure_server = ensure_server
+        self._server = server
 
     def requirement(self) -> RuntimeRequirementSnapshot:
         """Return selected profile availability without pulling or creating it."""
@@ -203,6 +208,16 @@ class OllamaProfileInstaller:
     def _prepare_server(self) -> None:
         if not self._ensure_server:
             return
+        if self._server is not None:
+            if self._server.ensure_running(timeout_seconds=self._runtime_install_timeout_seconds):
+                return
+            executable = resolve_ollama_executable()
+            if executable is None:
+                raise ProviderUnavailableError("Ollama is not installed.", code="ollama_missing")
+            raise ProviderUnavailableError(
+                "Ollama local API did not become reachable.",
+                code="ollama_not_running",
+            )
         executable = resolve_ollama_executable()
         if ensure_ollama_server_running(
             self.host,

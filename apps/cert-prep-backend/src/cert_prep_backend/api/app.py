@@ -4,7 +4,10 @@ import sqlite3
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from cert_prep_ollama.server_coordinator import OllamaServerCoordinator
 from threading import RLock
 
 from fastapi import Depends, FastAPI, Request
@@ -61,6 +64,9 @@ from cert_prep_backend.capture_integration.infrastructure.structuring import (
 from cert_prep_backend.ai_providers.domain.provider import LLMProvider
 from cert_prep_backend.ai_providers.application.ports import MachineInventory
 from cert_prep_backend.ai_providers.infrastructure.machine_inventory import OllamaMachineInventory
+from cert_prep_backend.ai_providers.infrastructure.ollama_server import (
+    ollama_server_coordinator_from_settings,
+)
 from cert_prep_backend.ai_providers.infrastructure.provider import lazy_provider_from_settings
 from cert_prep_backend.authoring.infrastructure.draft_jobs import SqliteDraftGenerationJobRepository
 from cert_prep_backend.authoring.infrastructure.draft_writing import ProviderDraftWriting
@@ -146,6 +152,9 @@ def create_app(
             llm_provider_close = getattr(app.state.llm_provider, "close", None)
             if callable(llm_provider_close):
                 llm_provider_close()
+            ollama_server = getattr(app.state, "ollama_server", None)
+            if ollama_server is not None:
+                ollama_server.close()
             if app.state.owns_capture_runtime_client:
                 app.state.capture_runtime_client.close()
 
@@ -170,7 +179,13 @@ def create_app(
     source_library.recover_interrupted_work(
         app.state.document_operation_repository, app.state.document_repository
     )
-    app.state.llm_provider = llm_provider or lazy_provider_from_settings(app_settings)
+    app.state.machine_inventory = OllamaMachineInventory(app_settings)
+    app.state.ollama_server = ollama_server_coordinator_from_settings(
+        app_settings, app.state.machine_inventory
+    )
+    app.state.llm_provider = llm_provider or lazy_provider_from_settings(
+        app_settings, server=app.state.ollama_server
+    )
     app.state.capture_runtime_client = capture_runtime_client or _capture_runtime_client(
         app_settings
     )
@@ -250,6 +265,7 @@ def create_app(
             machine_inventory=app.state.machine_inventory,
             db=app.state.database,
             async_jobs=runtime_installation_async_jobs,
+            server=app.state.ollama_server,
         )
         runtime_installations.recover_runtime_installations(app.state.runtime_installation_manager)
     app.add_middleware(
@@ -395,10 +411,15 @@ def build_runtime_installation(
     db: Database | None = None,
     async_jobs: bool = True,
     installers: list[RuntimeInstaller] | None = None,
+    server: OllamaServerCoordinator | None = None,
 ) -> RuntimeInstallation:
     """Bootstrap concrete provider adapters into runtime-owned application ports."""
     runtimes, model = configured_installer_choices(
-        settings, llm_provider, machine_inventory, lambda: LLMModelInstaller(llm_provider),
+        settings,
+        llm_provider,
+        machine_inventory,
+        lambda: LLMModelInstaller(llm_provider),
+        server=server,
     )
     catalog = ConfiguredRuntimeInstallers([*runtimes, model], model.kind, installers)
     lock = RLock()

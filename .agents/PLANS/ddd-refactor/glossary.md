@@ -121,6 +121,9 @@
 | 模型設定檔         | `OllamaModelProfile`                       | 一個 Ollama 模型與它的參數、需要的記憶體與磁碟空間             |
 | 設定檔選擇         | `OllamaProfileSelection`                   | 為這台機器選中的設定檔、備用設定檔與原因                       |
 | 機器盤點           | `MachineInventory`、`MachineInventoryRead` | CPU、記憶體、儲存空間與加速器；用來選設定檔與執行模式          |
+| 裝置政策           | `OllamaDevicePolicy`                       | 依機器盤點決定的 Ollama 執行裝置目標、後端與環境變數           |
+| 伺服器協調者       | `OllamaServerCoordinator`                 | 管理 Cert Prep 啟動與擁有的 Ollama 伺服器生命週期、環境與重啟 |
+| 裝置執行狀態       | `DeviceExecution`                          | 模型載入時日誌解析驗證出的實際裝置、後端、層數與驗證狀態       |
 
 ## 執行環境
 
