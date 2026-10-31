@@ -124,6 +124,16 @@ def test_non_fatal_reasoning_failure_keeps_fast_first_and_other_pages():
     assert provider.reasoning_calls == [(["page-2"], 9), (["page-3"], 9)]
 
 
+def test_a_repeat_limit_abort_skips_only_that_page():
+    provider = RecordingHybridProvider(error=ProviderUnavailableError(
+        "Ollama unavailable for configured model lfm3:1.7b: "
+        "prediction aborted, token repeat limit reached (status code: 500)"
+    ))
+    result = _generate(provider, [_page(1, parsed=True), _page(2), _page(3)])
+    assert [item.chunk_id for item in result.suggestions] == ["page-1", "page-3"]
+    assert provider.reasoning_calls == [(["page-2"], 9), (["page-3"], 9)]
+
+
 @pytest.mark.parametrize("error", [
     ProviderUnavailableError("model missing"),
     DraftJobCanceledError("Draft generation was canceled."),
