@@ -103,6 +103,8 @@ operations_router = APIRouter(
     tags=["document-operations"],
 )
 LANGUAGE_HINTS = {"auto", "ja", "zh-Hant", "zh-Hans", "en", "mixed"}
+# Language hints Capture's speech recognition is told for audio; the rest keep its Chinese default.
+CAPTURE_SPOKEN_LANGUAGES = {"ja": "ja", "en": "en"}
 OPERATION_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
 OperationIdHeader = Annotated[
     str | None,
@@ -539,13 +541,14 @@ def _process_document_upload(*, db, settings: Settings, llm_provider: LLMProvide
 
 
 def _process_capture_workbench_upload(*, db, settings: Settings, llm_provider: LLMProvider, streaming_questions: StreamingDraftGenerationManager, project_id: str, document_id: str, operation_id: str, source: PreparedSource | StoredSourceReference, coordinator: CertPrepCaptureCoordinator, should_shutdown: Callable[[], bool]) -> dict:
+    document = source_documents_repository.get_document(db, project_id, document_id)
     if isinstance(source, StoredSourceReference):
         source_bytes = LocalSourceFileStore(settings).verified_content(project_id, source.storage_path, source.sha256)
         source_sha256, file_name, canonical_suffix = source.sha256, source.filename, source.canonical_suffix
     else:
         source_bytes = source.raw_bytes
         source_sha256 = sha256_hex(source_bytes)
-        file_name = source_documents_repository.get_document(db, project_id, document_id).filename
+        file_name = document.filename
         canonical_suffix = source.canonical_suffix
 
     def should_cancel() -> bool:
@@ -558,7 +561,7 @@ def _process_capture_workbench_upload(*, db, settings: Settings, llm_provider: L
         return False
 
     try:
-        capture = coordinator.capture(operation_id=operation_id, file_name=str(file_name), content=source_bytes, media_type=_capture_media_type(canonical_suffix), source_kind=CaptureSourceKind(source.kind), target_language="zh-Hant" if source.kind == "audio" else None, should_cancel=should_cancel)
+        capture = coordinator.capture(operation_id=operation_id, file_name=str(file_name), content=source_bytes, media_type=_capture_media_type(canonical_suffix), source_kind=CaptureSourceKind(source.kind), target_language="zh-Hant" if source.kind == "audio" else None, should_cancel=should_cancel, spoken_language=_capture_spoken_language(document.language_hint) if source.kind == "audio" else None)
     except CaptureRuntimeCanceledError as error:
         raise DocumentProcessingCanceledError(str(error)) from error
     except CaptureRuntimeRequirementUnavailableError as error:
@@ -617,6 +620,11 @@ def _update_document_exam_state(db, project_id: str, document_id: str, exam_item
 
 def _normalized_language_hint(language_hint: str) -> str:
     return language_hint if language_hint in LANGUAGE_HINTS else "auto"
+
+
+def _capture_spoken_language(language_hint: str) -> str | None:
+    """Capture's speech recognition assumes Chinese, so name only the other languages a hint states."""
+    return CAPTURE_SPOKEN_LANGUAGES.get(language_hint)
 
 
 def _operation_canceled_error(message: str) -> HTTPException:

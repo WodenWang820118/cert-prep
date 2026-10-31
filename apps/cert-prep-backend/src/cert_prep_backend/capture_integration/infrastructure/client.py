@@ -61,6 +61,8 @@ class CaptureUpload:
     content: bytes | BinaryIO
     media_type: str = "application/octet-stream"
     pdf_page_numbers: tuple[int, ...] | None = None
+    # Audio only: the language spoken in the recording; None keeps Capture's Chinese default.
+    spoken_language: str | None = None
 
 
 class CaptureRuntimeClient:
@@ -206,6 +208,7 @@ class CaptureRuntimeClient:
             media_type=media_type,
             structuring_mode=StructuringMode.HOST,
             target_language=target_language,
+            spoken_language=upload.spoken_language,
         )
         if upload.pdf_page_numbers is None:
             return self._sdk.start_capture(

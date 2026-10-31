@@ -422,6 +422,64 @@ def test_v2_page_scoped_capture_sends_only_the_ordered_page_prefix() -> None:
     assert operation.capture_id == "capture-1"
 
 
+@pytest.mark.parametrize("spoken_language", [None, "ja"])
+def test_v2_audio_capture_names_its_spoken_language_only_when_given(
+    spoken_language: str | None,
+) -> None:
+    audio = {"kind": "audio", "fileName": "listening.mp3", "mediaType": "audio/mpeg"}
+    starts: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == "/v2/streaming/health/ready":
+            return _json_response(request, _streaming_capabilities(max_chunk_bytes=64))
+        if request.method == "POST" and request.url.path == "/v2/ingestions":
+            return _json_response(
+                request, {**_ingestion(received=0, next_chunk=0), **audio}, status=201
+            )
+        if request.method == "PUT":
+            return _json_response(
+                request, {**_ingestion(received=len(SOURCE), next_chunk=1), **audio}
+            )
+        if request.method == "POST" and request.url.path.endswith("/finalize"):
+            ready = _ingestion(
+                received=len(SOURCE),
+                next_chunk=1,
+                status="ready",
+                finalized_sha256=SOURCE_SHA256,
+            )
+            return _json_response(request, {**ready, **audio})
+        if request.method == "POST" and request.url.path == "/v2/captures":
+            starts.append(json.loads(request.content))
+            return _json_response(request, {**_operation(), "kind": "audio"}, status=202)
+        raise AssertionError(f"Unexpected request: {request.method} {request.url.path}")
+
+    _client(handler).start_capture(
+        CaptureUpload(
+            "listening.mp3",
+            SOURCE,
+            "audio/mpeg",
+            spoken_language=spoken_language,
+        ),
+        source_kind="audio",
+        client_request_id="request-spoken-language",
+    )
+
+    assert starts[0].get("spokenLanguage") == spoken_language
+    assert ("spokenLanguage" in starts[0]) is (spoken_language is not None)
+
+
+@pytest.mark.parametrize(
+    ("language_hint", "spoken_language"),
+    [("ja", "ja"), ("en", "en"), ("zh-Hant", None), ("zh-Hans", None), ("auto", None), ("mixed", None)],
+)
+def test_a_document_language_hint_names_capture_spoken_language_only_outside_chinese(
+    language_hint: str, spoken_language: str | None
+) -> None:
+    from cert_prep_backend.routers.documents import _capture_spoken_language
+
+    assert _capture_spoken_language(language_hint) == spoken_language
+
+
 @pytest.mark.parametrize("page_numbers", [(), (2,), (1, 3)])
 def test_v2_page_scope_rejects_non_prefix_page_numbers(
     page_numbers: tuple[int, ...],
