@@ -227,11 +227,15 @@ test('package-manager entrypoints use the exact root pnpm declaration', () => {
     assert.doesNotMatch(source, /PNPM_VERSION:/);
   }
 
+  // A script either goes through the pinned Corepack pnpm or runs a repo-local
+  // Node script directly (`node tools/...`, `node apps/...`), which needs no
+  // package manager. Anything else (a bare `pnpm`, `npx`, a global CLI) would
+  // bypass the packageManager pin.
   for (const [name, command] of Object.entries(packageJson.scripts ?? {})) {
     assert.match(
       command,
-      /^corepack pnpm /,
-      `package script ${name} must invoke the pinned Corepack package manager`,
+      /^(?:corepack pnpm |node (?:tools|apps)\/)/,
+      `package script ${name} must invoke the pinned Corepack package manager or a repo-local node script`,
     );
   }
 });
