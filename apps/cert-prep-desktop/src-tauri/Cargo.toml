@@ -25,3 +25,9 @@ sha2 = "0.10"
 tauri = { version = "2", features = [] }
 uuid = { version = "1", features = ["v4"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[lints.rust]
+# Dead code fails the build. rustc finds it, and `pub` items of this
+# lib/cdylib crate would otherwise be exempt as "exported", so narrow them.
+dead_code = "deny"
+unreachable_pub = "deny"
