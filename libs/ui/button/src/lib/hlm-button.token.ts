@@ -1,4 +1,4 @@
-import { InjectionToken, type ValueProvider, inject } from '@angular/core';
+import { InjectionToken, inject } from '@angular/core';
 import type { ButtonVariants } from './hlm-button';
 
 export interface BrnButtonConfig {
@@ -14,15 +14,6 @@ const defaultConfig: BrnButtonConfig = {
 const BrnButtonConfigToken = new InjectionToken<BrnButtonConfig>(
   'BrnButtonConfig',
 );
-
-export function provideBrnButtonConfig(
-  config: Partial<BrnButtonConfig>,
-): ValueProvider {
-  return {
-    provide: BrnButtonConfigToken,
-    useValue: { ...defaultConfig, ...config },
-  };
-}
 
 export function injectBrnButtonConfig(): BrnButtonConfig {
   return inject(BrnButtonConfigToken, { optional: true }) ?? defaultConfig;

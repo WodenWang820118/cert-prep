@@ -70,17 +70,6 @@ def json_payload(content: object) -> dict[str, Any]:
     return payload
 
 
-def draft_suggestion_from_item(
-    raw_item: Any,
-    chunks_by_page: dict[int, SourceChunk],
-    chunks_by_id: dict[str, SourceChunk],
-) -> DraftSuggestion | None:
-    """Validate one reasoning JSON item and map it to a grounded draft suggestion."""
-
-    admission = admit_reasoning_item(raw_item, chunks_by_page, chunks_by_id)
-    return admission if isinstance(admission, DraftSuggestion) else None
-
-
 def admit_reasoning_item(
     raw_item: Any,
     chunks_by_page: dict[int, SourceChunk],

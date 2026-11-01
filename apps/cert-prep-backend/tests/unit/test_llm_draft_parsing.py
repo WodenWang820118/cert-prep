@@ -13,16 +13,15 @@ from cert_prep_backend.source_library.domain.document import DocumentChunk
 from cert_prep_backend.authoring.domain.deterministic_parser import (
     MAX_PROMPT_SOURCE_CHARS,
     extract_jlpt_question_blocks,
-    source_text_for_prompt,
+    source_text_and_chunks_for_prompt,
 )
 from cert_prep_backend.authoring.infrastructure.draft_writing import (
     generate_drafts_for_strategy,
     generate_drafts_with_annotations_for_strategy,
 )
-from cert_prep_backend.authoring.infrastructure.reasoning_parser import (
-    draft_suggestion_from_item,
-    json_payload,
-)
+from cert_prep_backend.authoring.infrastructure.reasoning_parser import json_payload
+from reasoning_test_support import draft_suggestion_from_item
+
 
 
 def test_audio_draft_source_uses_edited_text_while_pdf_keeps_raw_text() -> None:
@@ -445,7 +444,9 @@ def test_ollama_prompt_source_skips_notice_pages_and_stays_bounded() -> None:
         source_excerpt="問題2",
     )
 
-    source = source_text_for_prompt([notice, first_exam_page, long_exam_page], limit=3)
+    source, _ = source_text_and_chunks_for_prompt(
+        [notice, first_exam_page, long_exam_page], limit=3
+    )
 
     assert "chunk_id:cover" not in source
     assert "chunk_id:page-2" in source

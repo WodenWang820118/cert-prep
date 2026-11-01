@@ -66,10 +66,6 @@ class QuestionAdmission:
     question: str | None = None
     rejection: AdmissionRejection | None = None
 
-    @property
-    def admitted(self) -> bool:
-        return self.rejection is None
-
 
 # Share of the stem's characters that must appear in the page, counted in matching runs
 # of at least three characters. OCR'd stems quote the page almost verbatim (measured

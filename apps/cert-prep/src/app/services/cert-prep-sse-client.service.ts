@@ -25,7 +25,6 @@ import type {
 import { CertPrepRuntimeConfig } from './cert-prep-api.service';
 
 export type {
-  CertPrepSseJsonEvent,
   CertPrepSseJsonStreamInit,
   CertPrepSseStreamOptions,
 } from '../contracts/sse.contracts';

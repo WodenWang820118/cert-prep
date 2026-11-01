@@ -41,16 +41,6 @@ export interface SourceUploadItem {
   readonly error: string | null;
 }
 
-/**
- * Source document metric lookup definition for schema variants emitted by the
- * backend during parsing performance experiments.
- */
-export interface ParsingMetricDefinition {
-  readonly label: string;
-  readonly kind: 'duration' | 'count';
-  readonly keys: readonly string[];
-}
-
 export interface SourceFileSelectionOptions {
   readonly append?: boolean;
   readonly autoUpload?: boolean;

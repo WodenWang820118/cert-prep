@@ -152,20 +152,6 @@ export async function selectActiveDocument(
   ).toBeVisible();
 }
 
-export async function runPracticeCompleteScenario(
-  page: Page,
-  api: MockCertPrepApi,
-): Promise<void> {
-  await createWorkspaceWithUploadedDocument(page, api);
-  await startRandomQuiz(page, api);
-  await completePracticeQuestions(
-    page,
-    api,
-    api.playableDrafts,
-    (draft) => draft.answer,
-  );
-}
-
 export async function runMultiPdfIsolationScenario(
   page: Page,
   api: MockCertPrepApi,
@@ -354,15 +340,6 @@ export async function completePracticeQuestions(
   ).toBeVisible();
   await expect(page.getByText('100%')).toBeVisible();
   expect(api.attempts()).toHaveLength(initialAttemptCount + drafts.length);
-}
-
-export async function submitWrongAnswerAndOpenReview(
-  page: Page,
-  api: MockCertPrepApi,
-): Promise<void> {
-  const draft = api.draft;
-  await completePracticeQuestions(page, api, [draft], wrongChoiceForDraft);
-  await expectWrongAnswerReview(page, api, [draft]);
 }
 
 export async function retryWrongAnswerAndClearReview(

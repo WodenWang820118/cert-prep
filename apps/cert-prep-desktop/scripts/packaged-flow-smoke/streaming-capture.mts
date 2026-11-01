@@ -3,10 +3,7 @@ export {
   captureDocumentOcrEvidence,
   captureFullExamSessionCreate,
   captureLlmHealth,
-  createPackagedSmokeQuestion,
-  firstSourceChunk,
   observeStreamingApiResponses,
-  pollStreamingDraftApis,
   waitForUploadDocumentResponse,
 } from './streaming-capture-api.mts';
 export {

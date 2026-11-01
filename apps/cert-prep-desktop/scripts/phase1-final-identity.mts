@@ -30,8 +30,6 @@ export const PHASE1_FINAL_IDENTITY = Object.freeze({
   authenticatedRuntimePreflight: 'gpu-dml',
 });
 
-export type Phase1FinalIdentity = typeof PHASE1_FINAL_IDENTITY;
-
 export interface Phase1FinalEvidence {
   readonly manifestPath: string;
   readonly manifestSha256: string;

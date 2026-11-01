@@ -26,6 +26,3 @@ def is_non_fatal_generation_error(exc: Exception) -> bool:
         )
     )
 
-
-def is_runtime_model_failure(exc: Exception) -> bool:
-    return not is_non_fatal_generation_error(exc)

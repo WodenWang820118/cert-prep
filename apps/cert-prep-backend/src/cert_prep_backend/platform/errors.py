@@ -16,10 +16,6 @@ class InvalidSourceError(ValidationError):
     pass
 
 
-class InvalidPdfError(InvalidSourceError):
-    pass
-
-
 class ProviderUnavailableError(BackendError):
     """Raised when a provider or its prerequisites are not available."""
 

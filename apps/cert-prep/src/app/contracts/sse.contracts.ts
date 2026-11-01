@@ -1,9 +1,3 @@
-export interface CertPrepSseJsonEvent<T> {
-  readonly id: string;
-  readonly event: string;
-  readonly data: T;
-}
-
 export interface SseFrame {
   readonly id: string;
   readonly event: string;

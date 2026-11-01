@@ -95,27 +95,6 @@ export async function fetchJson(url: string): Promise<unknown | null> {
   }
 }
 
-export async function waitForCdp(
-  run: SmokeRunState,
-  timeoutMs = 60_000,
-): Promise<void> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const version = await fetchJson(
-      `http://127.0.0.1:${run.port}/json/version`,
-    );
-    if (version) {
-      return;
-    }
-    // WebView2 publishes the browser endpoint before its first page navigates.
-    // Poll tightly so the caller can attach during that short window; waiting
-    // hundreds of milliseconds can make Playwright's CDP handshake race the
-    // navigation and hang on a blank page.
-    await delay(25);
-  }
-  throw new Error(`Timed out waiting for WebView2 CDP on port ${run.port}`);
-}
-
 /**
  * Attach during WebView2's short pre-navigation window. A plain
  * wait-then-connect sequence can observe the endpoint only after the page
@@ -213,24 +192,6 @@ export async function waitLocatorText(
   throw new Error(
     `Timed out waiting for ${label}. Pattern=${pattern}. Text=${text.slice(0, 1400)}`,
   );
-}
-
-export function metricText(value: unknown): string {
-  return Array.from(String(value ?? ''))
-    .map((character) => {
-      const code = character.charCodeAt(0);
-      if (
-        code <= 0x1f ||
-        (code >= 0x7f && code <= 0x9f) ||
-        (code >= 0xd800 && code <= 0xdfff)
-      ) {
-        return ' ';
-      }
-      return character;
-    })
-    .join('')
-    .trim()
-    .slice(0, 200);
 }
 
 export async function screenshot(
@@ -510,21 +471,4 @@ export async function closeRuntimeDrawer(run: SmokeRunState): Promise<void> {
     await activePage(run).keyboard.press('Escape');
   }
   await dialog.waitFor({ state: 'hidden', timeout: 10_000 });
-}
-
-export async function refreshRuntimeDrawer(run: SmokeRunState): Promise<void> {
-  await openRuntimeDrawer(run);
-  const refresh = activePage(run)
-    .locator('button')
-    .filter({ hasText: /^\s*Refresh(?: all)?\s*$/ })
-    .first();
-  try {
-    await refresh.waitFor({ state: 'visible', timeout: 10_000 });
-    await refresh.click({ timeout: 10_000 });
-  } catch (error) {
-    run.metrics.observations.push(
-      `Runtime refresh skipped or disabled: ${errorMessage(error)}`,
-    );
-  }
-  await delay(2_500);
 }

@@ -20,13 +20,6 @@ MAX_PROMPT_SOURCE_CHARS = 3_000
 MAX_PROMPT_CHUNKS = 6
 
 
-def source_text_for_prompt(chunks: Sequence[SourceChunk], limit: int) -> str:
-    """Build bounded page-delimited source text for the reasoning provider prompt."""
-
-    source, _ = source_text_and_chunks_for_prompt(chunks, limit)
-    return source
-
-
 def source_text_and_chunks_for_prompt(
     chunks: Sequence[SourceChunk],
     limit: int,
