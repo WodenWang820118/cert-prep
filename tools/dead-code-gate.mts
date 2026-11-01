@@ -403,19 +403,41 @@ function check(repoRoot: string, ci: boolean): number {
 }
 
 /**
+ * Parses the Stop hook payload. Empty or malformed input counts as a normal
+ * stop (`stop_hook_active` false).
+ */
+export function parseHookPayload(raw: string): { stop_hook_active?: boolean } {
+  try {
+    const parsed: unknown = JSON.parse(raw || '{}');
+    return parsed && typeof parsed === 'object'
+      ? (parsed as { stop_hook_active?: boolean })
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Reads stdin as a stream. `readFileSync(0)` can throw EAGAIN on a
+ * non-blocking pipe (Linux/WSL) before Claude Code has written the payload,
+ * which would lose `stop_hook_active` and loop the hook.
+ */
+async function readStdin(): Promise<string> {
+  if (process.stdin.isTTY) return '';
+  let raw = '';
+  for await (const chunk of process.stdin) raw += String(chunk);
+  return raw;
+}
+
+/**
  * Claude Code Stop hook. Runs only when this checkout has code changes
  * (uncommitted, or commits not on the upstream), so chat-only turns and
  * other people's debt never block a stop. Exit 2 shows stderr to the model
  * and keeps it working; `stop_hook_active` means it already had one round of
  * feedback, so it may stop (no loops).
  */
-function runAsStopHook(repoRoot: string): number {
-  let payload: { stop_hook_active?: boolean } = {};
-  try {
-    payload = JSON.parse(readFileSync(0, 'utf8') || '{}');
-  } catch {
-    // No or malformed stdin: treat it as a normal stop.
-  }
+async function runAsStopHook(repoRoot: string): Promise<number> {
+  const payload = parseHookPayload(await readStdin());
   if (payload.stop_hook_active) return 0;
   const changed = [
     ...git(repoRoot, ['status', '--porcelain']).map((line) => line.slice(3)),
@@ -425,7 +447,7 @@ function runAsStopHook(repoRoot: string): number {
   return check(repoRoot, false) === 0 ? 0 : 2;
 }
 
-export function main(argv: string[]): number {
+export async function main(argv: string[]): Promise<number> {
   const repoRoot = resolve(
     dirname(fileURLToPath(import.meta.url)),
     CONFIG.repoRoot,
@@ -439,5 +461,5 @@ if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  process.exitCode = main(process.argv.slice(2));
+  process.exitCode = await main(process.argv.slice(2));
 }
