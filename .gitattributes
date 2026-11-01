@@ -26,4 +26,6 @@
 
 libs/cert-prep-api/src/lib/cert-prep-api.generated.ts text eol=lf
 apps/cert-prep-desktop/test-fixtures/capture-document-v1.schema.json text eol=crlf
+# Published Capture schema bytes (CRLF upstream); install-capture-runtime pins their sha256.
+apps/cert-prep-desktop/test-fixtures/capture-document-v2.schema.json text eol=crlf
 pnpm-lock.yaml text eol=lf
