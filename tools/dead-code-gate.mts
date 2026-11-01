@@ -270,6 +270,11 @@ export function touchesCode(gitPaths: string[]): boolean {
 
 function runKnip(repoRoot: string, mode: 'default' | 'production'): string[] {
   const knipBin = join(repoRoot, 'node_modules', 'knip', 'bin', 'knip.js');
+  if (!existsSync(knipBin)) {
+    throw new Error(
+      `knip is not installed (${knipBin} is missing). Run \`pnpm install\` first.`,
+    );
+  }
   const args = [knipBin, '--reporter', 'json', '--no-progress'];
   if (mode === 'production') {
     args.push('--production', '--include', PRODUCTION_ISSUE_TYPES.join(','));
@@ -283,6 +288,11 @@ function runKnip(repoRoot: string, mode: 'default' | 'production'): string[] {
   if (result.status !== 0 && result.status !== 1) {
     throw new Error(
       `knip (${mode}) failed with status ${result.status}:\n${result.stderr}`,
+    );
+  }
+  if (!result.stdout.trim()) {
+    throw new Error(
+      `knip (${mode}) printed no report (status ${result.status}). Is the workspace installed (\`pnpm install\`)?\n${result.stderr}`,
     );
   }
   return flattenKnipReport(JSON.parse(result.stdout) as KnipJsonReport, mode);
@@ -312,7 +322,7 @@ function runVulture(repoRoot: string, target: PythonTarget): string[] {
   // vulture exits 3 when it finds dead code; anything else is a crash.
   if (result.status !== 0 && result.status !== 3) {
     throw new Error(
-      `vulture (${target.cwd}) failed with status ${result.status}:\n${result.stderr}${result.error ?? ''}`,
+      `vulture (${target.cwd}) did not run (status ${result.status}). Is uv installed, and is vulture a dev dependency there (\`uv sync\`)?\n${result.stderr}${result.error ?? ''}`,
     );
   }
   return parseVultureOutput(result.stdout, target.cwd, target.library);
