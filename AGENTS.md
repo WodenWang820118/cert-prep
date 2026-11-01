@@ -29,6 +29,13 @@
 - The Capture producer dispatches `.github/workflows/capture-candidate-gate.yml` during a release. Before that, pre-run `tools/capture-candidate-gate.mts` locally against the downloaded release candidate, following `.agents/GUIDES/release-runbook.md` in the sibling `capture-workbench` checkout. Keep the gate's `pnpm/action-setup` pin identical to `ci.yml`.
 - Open Capture consumer work is in `.agents/TODOS/capture-runtime-consumer.md` and `.agents/TODOS/cert-prep-pdf-image-acceptance.md`. Handwriting OCR quality is a known Capture Runtime limitation.
 
+# Dead code
+
+- Dead code is gated as a ratchet. `tools/quality/dead-code-baseline.json` lists the known findings of knip (TypeScript; `knip.json`), vulture (backend, contracts and ollama `src`) and every Rust `#[allow(dead_code)]`. `pnpm run dead-code:check` fails only on new findings. CI runs it with `--ci`, which also fails when a baseline entry is gone, so run `pnpm run dead-code:update` after deleting dead code. `production` and `python` entries mean only tests still use that code.
+- In `knip.json`, keep production (`!`) and non-production project globs disjoint; an overlap silently drops those files from the production pass.
+- When a design is replaced, delete the old path, its config, CI and release steps, and its docs in the same change. Do not keep it "for compatibility" unless a named consumer still needs it. When a tool cannot see a real use (a CLI entry, a framework callback), add a `knip.json` entry or a vulture decorator ignore in `tools/dead-code-gate.mts`; never add new dead code to the baseline. Rust code only tests use goes under `#[cfg(test)]`, not behind `allow(dead_code)`.
+- `.claude/settings.json` runs the check as a Claude Code Stop hook before a turn that changed code ends.
+
 # Testing
 
 - CI (`ci.yml`) runs the same checks on PR and main in two parallel jobs: platform-neutral lint and tests once on Linux; packaging, the Capture Runtime install, and the Tauri host on Windows. `release-alpha.yml` reruns them on the exact release source and adds the built-binary stack check; `validate_only` stops before anything is reserved or published.

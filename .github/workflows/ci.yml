@@ -142,6 +142,14 @@ jobs:
           cert-prep-backend
           --parallel=3
 
+      # knip (TypeScript), vulture (Python) and a Rust allow(dead_code) freeze.
+      # --ci also fails when a baseline entry is gone, so the baseline only shrinks.
+      - name: Dead-code gate
+        run: >-
+          node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts
+          --test tools/dead-code-gate.test.mts
+          && node tools/dead-code-gate.mts --ci
+
       - name: Test generated API client
         run: pnpm nx run cert-prep-api:vite:test
 

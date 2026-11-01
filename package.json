@@ -4,6 +4,8 @@
   "license": "MIT",
   "packageManager": "pnpm@12.8.2",
   "scripts": {
+    "dead-code:check": "node tools/dead-code-gate.mts",
+    "dead-code:update": "node tools/dead-code-gate.mts --update",
     "dev": "corepack pnpm nx run-many --target=serve --projects=cert-prep,cert-prep-backend --parallel=2",
     "dev:frontend": "corepack pnpm nx run cert-prep:serve",
     "dev:backend": "corepack pnpm nx run cert-prep-backend:serve",
@@ -82,6 +84,7 @@
     "jiti": "2.4.2",
     "jsdom": "~22.1.0",
     "jsonc-eslint-parser": "^2.1.0",
+    "knip": "^6.44.0",
     "ng-packagr": "22.0.1",
     "nx": "23.1.2",
     "playwright": "^1.36.0",

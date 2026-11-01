@@ -60,7 +60,9 @@ Thumbs.db
 .github/instructions/nx.instructions.md
 
 .angular
-.claude
+.claude/*
+# Shared Claude Code hooks (dead-code Stop hook); local settings stay ignored.
+!.claude/settings.json
 .playwright-mcp
 
 vite.config.*.timestamp*

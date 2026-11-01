@@ -1,0 +1,48 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "apps/cert-prep/src/main.ts!",
+    "apps/cert-prep/src/app/contracts/generated-client.typecheck.ts",
+    "apps/*/eslint.config.{mjs,mts}",
+    "libs/*/eslint.config.{mjs,mts}",
+    "libs/*/vitest.config.mts",
+    "apps/*/playwright*.config.ts",
+    "apps/cert-prep-desktop/scripts/packaged-flow-smoke.mts",
+    "apps/cert-prep-desktop/scripts/packaged-image-upload-smoke.mts",
+    "**/*.{spec,test}.{ts,mts}",
+    "sheriff.config.ts"
+  ],
+  "project": [
+    "apps/cert-prep/src/**/*.ts!",
+    "libs/**/*.ts!",
+    "apps/cert-prep/*.{mts,ts}",
+    "apps/cert-prep/tests/**/*.ts",
+    "apps/cert-prep-desktop/**/*.{ts,mts,mjs}",
+    "apps/cert-prep-e2e/**/*.{ts,mts}",
+    "libs/**/*.{mjs,mts}",
+    "tools/**/*.{ts,mts}",
+    "!**/*.{spec,test}.{ts,mts}!",
+    "!**/*.spec-helpers.ts!",
+    "!**/testing/**!"
+  ],
+  "ignore": [
+    ".agents/**",
+    ".github/skills/**",
+    ".opencode/**",
+    "**/src-tauri/target/**",
+    "**/*.d.ts"
+  ],
+  "ignoreExportsUsedInFile": true,
+  "ignoreDependencies": [
+    "@angular/cli",
+    "@angular/language-service",
+    "@nx/.*"
+  ],
+  "ignoreBinaries": [
+    "netstat",
+    "uv"
+  ],
+  "ignoreUnresolved": [
+    "^\\*$"
+  ]
+}
