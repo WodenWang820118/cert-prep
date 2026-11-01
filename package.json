@@ -4,8 +4,8 @@
   "license": "MIT",
   "packageManager": "pnpm@12.8.2",
   "scripts": {
-    "dead-code:check": "node tools/dead-code-gate.mts",
-    "dead-code:update": "node tools/dead-code-gate.mts --update",
+    "dead-code:check": "corepack pnpm exec node tools/dead-code-gate.mts",
+    "dead-code:update": "corepack pnpm exec node tools/dead-code-gate.mts --update",
     "dev": "corepack pnpm nx run-many --target=serve --projects=cert-prep,cert-prep-backend --parallel=2",
     "dev:frontend": "corepack pnpm nx run cert-prep:serve",
     "dev:backend": "corepack pnpm nx run cert-prep-backend:serve",
