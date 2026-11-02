@@ -7,6 +7,7 @@ import type {
   CaptureEvent,
   CaptureOperation,
   CaptureReviewEdit,
+  CaptureSourceKind,
   CaptureStreamingResult,
   CaptureStructuringProvider,
   CaptureStructuringRequest,
@@ -15,16 +16,23 @@ import type {
   RawCapture,
   ReportStreamingStructuringFailureRequest,
   RuntimeInstallation,
+  RuntimeReady,
   RuntimeRequirement,
   StartRuntimeInstallationRequest,
   StartStreamingCaptureRequest,
+} from '@gx-capture/capture-workbench-ui';
+import {
+  assertCaptureRuntimeCompatible,
+  CAPTURE_RUNTIME_MAJOR,
 } from '@gx-capture/capture-workbench-ui';
 import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
 import { CertPrepRuntimeConfig } from '../../services/cert-prep-api.service';
 import { ProjectStore } from '../../stores/project.store';
 import { certPrepCaptureEventStream } from './cert-prep-capture-event-stream';
 import {
-  assertCaptureAdmission,
+  array,
+  assertCaptureRuntimeMinorCompatible,
+  assertRequirementReady,
   exactCaptureOperation,
   fail,
   mapCaptureDocument,
@@ -437,4 +445,35 @@ function captureEventsUrl(
 
 function structuringRequestId(captureId: string): string {
   return `${captureId.slice(0, 118)}-structure`;
+}
+
+// Kept in the client: release tooling pins this compatibility gate to this file.
+function assertCaptureAdmission(
+  ready: RuntimeReady,
+  requirements: readonly RuntimeRequirement[],
+  sourceKind: CaptureSourceKind,
+): void {
+  if (!ready['ready']) throw new Error('Capture Runtime is not ready.');
+  assertCaptureRuntimeCompatible(ready, CAPTURE_RUNTIME_MAJOR, 'host');
+  assertCaptureRuntimeMinorCompatible(ready.runtimeVersion);
+  const capabilities = record(ready['capabilities'], 'capabilities');
+  const captureKinds = array(
+    capabilities['captureKinds'],
+    'capabilities.captureKinds',
+  );
+  if (!captureKinds.includes(sourceKind)) {
+    throw new Error(
+      `Capture Runtime does not support ${sourceKind.toUpperCase()} capture.`,
+    );
+  }
+  if (sourceKind === 'pdf' || sourceKind === 'image') {
+    assertRequirementReady(requirements, 'windowsml-ocr', 'WindowsML OCR');
+  }
+  if (sourceKind === 'audio') {
+    assertRequirementReady(
+      requirements,
+      'speech-recognition',
+      'Speech recognition',
+    );
+  }
 }

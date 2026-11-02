@@ -10,10 +10,6 @@ import type {
   RuntimeReady as ApiRuntimeReady,
   RuntimeRequirementV2 as ApiRuntimeRequirement,
 } from '@cert-prep/api';
-import {
-  assertCaptureRuntimeCompatible,
-  CAPTURE_RUNTIME_MAJOR,
-} from '@gx-capture/capture-workbench-ui';
 import type {
   CaptureBlock,
   CaptureDocument,
@@ -26,7 +22,6 @@ import type {
   RawCaptureSegment,
   RawCapture,
   RuntimeInstallation,
-  RuntimeReady,
   RuntimeRequirement,
   StructuringMode,
 } from '@gx-capture/capture-workbench-ui';
@@ -590,7 +585,7 @@ export function record(value: unknown, label: string): UnknownRecord {
   return value as UnknownRecord;
 }
 
-function array(value: unknown, label: string): unknown[] {
+export function array(value: unknown, label: string): unknown[] {
   if (!Array.isArray(value)) fail(`${label} must be an array`);
   return value;
 }
@@ -756,37 +751,9 @@ function isStructuringMode(value: string): value is StructuringMode {
   return value === 'runtime' || value === 'host';
 }
 
-export function assertCaptureAdmission(
-  ready: RuntimeReady,
-  requirements: readonly RuntimeRequirement[],
-  sourceKind: CaptureSourceKind,
+export function assertCaptureRuntimeMinorCompatible(
+  runtimeVersion: string,
 ): void {
-  if (!ready['ready']) throw new Error('Capture Runtime is not ready.');
-  assertCaptureRuntimeCompatible(ready, CAPTURE_RUNTIME_MAJOR, 'host');
-  assertCaptureRuntimeMinorCompatible(ready.runtimeVersion);
-  const capabilities = record(ready['capabilities'], 'capabilities');
-  const captureKinds = array(
-    capabilities['captureKinds'],
-    'capabilities.captureKinds',
-  );
-  if (!captureKinds.includes(sourceKind)) {
-    throw new Error(
-      `Capture Runtime does not support ${sourceKind.toUpperCase()} capture.`,
-    );
-  }
-  if (sourceKind === 'pdf' || sourceKind === 'image') {
-    assertRequirementReady(requirements, 'windowsml-ocr', 'WindowsML OCR');
-  }
-  if (sourceKind === 'audio') {
-    assertRequirementReady(
-      requirements,
-      'speech-recognition',
-      'Speech recognition',
-    );
-  }
-}
-
-function assertCaptureRuntimeMinorCompatible(runtimeVersion: string): void {
   const expectedMinor = parseRuntimeMinor(CAPTURE_RUNTIME_VERSION);
   if (parseRuntimeMinor(runtimeVersion) !== expectedMinor) {
     throw new Error(
@@ -803,7 +770,7 @@ function parseRuntimeMinor(version: string): number {
   return Number.isFinite(minor) ? minor : -1;
 }
 
-function assertRequirementReady(
+export function assertRequirementReady(
   requirements: readonly RuntimeRequirement[],
   requirementId: RuntimeRequirement['requirementId'],
   displayName: string,
