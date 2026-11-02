@@ -20,6 +20,7 @@ import {
 } from '../packaged-flow-smoke/app-lifecycle.mts';
 import { createProject } from '../packaged-flow-smoke/flow-steps.mts';
 import { unavailableGenerationReadinessSnapshot } from '../packaged-flow-smoke/generation-readiness.mts';
+import { createSmokeRunState } from '../packaged-flow-smoke/run-state.mts';
 import { buildPhase1AcceptanceEvidence } from '../phase1-acceptance-evidence.mts';
 import {
   activePage,
@@ -618,22 +619,7 @@ function createRunState(
       status_counts: {},
     },
   };
-  return {
-    options: smokeOptions,
-    metrics,
-    app: null,
-    appExit: null,
-    resourceSampling: null,
-    browser: null,
-    page: null,
-    port: options.cdpPort,
-    processBaseline: { all: [], nodePids: new Set() },
-    projectApi: null,
-    uploadedDocument: null,
-    streamingDraftParseStartedAt: null,
-    streamingDraftCaptureOpen: false,
-    streamingApiPollErrorCaptured: false,
-  };
+  return createSmokeRunState(smokeOptions, metrics);
 }
 
 function sha256File(path: string): string {

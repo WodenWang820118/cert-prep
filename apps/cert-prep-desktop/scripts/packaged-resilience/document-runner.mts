@@ -22,6 +22,7 @@ import { captureProjectApiAfterRestart } from '../packaged-flow-smoke/generation
 import { installPythonRuntimeIfNeeded } from '../packaged-flow-smoke/runtime-install-flow.mts';
 import { activePage } from '../packaged-flow-smoke/runner-context.mts';
 import { unavailableGenerationReadinessSnapshot } from '../packaged-flow-smoke/generation-readiness.mts';
+import { createSmokeRunState } from '../packaged-flow-smoke/run-state.mts';
 import type {
   SmokeMetrics,
   SmokeOptions,
@@ -292,22 +293,7 @@ function createRunState(
       status_counts: {},
     },
   };
-  return {
-    options: smokeOptions,
-    metrics,
-    app: null,
-    appExit: null,
-    resourceSampling: null,
-    browser: null,
-    page: null,
-    port: options.cdpPort,
-    processBaseline: { all: [], nodePids: new Set() },
-    projectApi: null,
-    uploadedDocument: null,
-    streamingDraftParseStartedAt: null,
-    streamingDraftCaptureOpen: false,
-    streamingApiPollErrorCaptured: false,
-  };
+  return createSmokeRunState(smokeOptions, metrics);
 }
 
 function defaultTransport(run: SmokeRunState): JsonTransport {
