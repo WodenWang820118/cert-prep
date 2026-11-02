@@ -9,6 +9,7 @@ mod constants;
 mod manifests;
 mod process_owner;
 mod runtime_installation;
+mod runtime_slots;
 
 use std::{fs, path::PathBuf, thread};
 use tauri::Manager;
@@ -41,9 +42,13 @@ pub fn run() {
                 // previously installed backend may take tens of seconds to
                 // become ready; the shell must remain visible so the user can
                 // inspect runtime state or explicitly install/start it.
+                // Runtime refreshes after an app update also run here, before
+                // any sidecar is launched from the copies being replaced.
+                let capture_state = state.clone();
+                thread::spawn(move || capture_state.refresh_installed_capture_runtime());
                 let startup_state = state.clone();
                 thread::spawn(move || {
-                    let launch_result = startup_state.try_launch_installed_backend();
+                    let launch_result = startup_state.launch_installed_backend_at_startup();
                     if launch_result.is_err() && package_qa_auto_install_enabled() {
                         startup_state.start_installation();
                     }

@@ -1,5 +1,5 @@
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Condvar, Mutex,
@@ -21,14 +21,14 @@ use crate::{
         CaptureRuntimeState,
     },
     constants::{
-        BACKEND_RUNTIME_DIR, CAPTURE_RUNTIME_MODEL, CAPTURE_RUNTIME_VERSION, PYTHON_RUNTIME_KIND,
-        PYTHON_RUNTIME_LABEL,
+        CAPTURE_RUNTIME_MODEL, CAPTURE_RUNTIME_VERSION, PYTHON_RUNTIME_KIND, PYTHON_RUNTIME_LABEL,
     },
     manifests::{load_runtime_manifest, RuntimeManifest},
     runtime_installation::{
         completed_installation, failed_installation, install_python_runtime, installation_from_job,
         RuntimeJob,
     },
+    runtime_slots::{bundle_identity, CAPTURE_RUNTIME_SLOT, PYTHON_BACKEND_SLOT},
     DesktopRuntimeInstallation,
 };
 
@@ -162,13 +162,43 @@ impl BackendRuntimeInner {
         }
     }
 
-    fn installed_runtime_dir(&self) -> PathBuf {
-        self.data_dir.join("runtimes").join(BACKEND_RUNTIME_DIR)
+    fn backend_bundle_identity(&self) -> Option<String> {
+        bundled_identity(self.backend_manifest_path.as_deref())
     }
 
-    fn installed_manifest_path(&self) -> PathBuf {
-        self.installed_runtime_dir().join("runtime-manifest.json")
+    fn capture_bundle_identity(&self) -> Option<String> {
+        bundled_identity(self.capture_runtime_manifest_path.as_deref())
     }
+
+    fn installed_capture_runtime_paths(&self) -> Result<(PathBuf, PathBuf), String> {
+        installed_capture_runtime_paths(
+            &self.data_dir,
+            self.capture_runtime_manifest_path.as_deref(),
+        )
+    }
+
+    /// The Python backend installed from this app's bundle, with its
+    /// installed manifest. A copy left by an earlier app version is ignored.
+    fn installed_backend(&self) -> Option<(PathBuf, RuntimeManifest)> {
+        let dir = PYTHON_BACKEND_SLOT
+            .installed_dir(&self.data_dir, self.backend_bundle_identity().as_deref())?;
+        let manifest = load_runtime_manifest(&dir.join("runtime-manifest.json")).ok()?;
+        Some((dir, manifest))
+    }
+
+    fn installed_backend_entrypoint(&self) -> Option<PathBuf> {
+        let (dir, manifest) = self.installed_backend()?;
+        let entrypoint = dir.join(manifest.entrypoint);
+        entrypoint.is_file().then_some(entrypoint)
+    }
+}
+
+/// Identity of a bundled runtime. `None` when the app ships no bundle (for
+/// example a development run), so any installed copy is accepted.
+fn bundled_identity(manifest_path: Option<&Path>) -> Option<String> {
+    manifest_path
+        .filter(|path| path.is_file())
+        .and_then(|path| bundle_identity(path).ok())
 }
 
 impl BackendState {
@@ -302,7 +332,7 @@ impl BackendState {
             job_id: None,
             completed: None,
             total: None,
-            error: None,
+            error: self.failed_job_error(),
         }
     }
 
@@ -314,22 +344,20 @@ impl BackendState {
         })
     }
 
-    fn installed_runtime_dir(&self) -> PathBuf {
-        self.inner.installed_runtime_dir()
-    }
-
-    fn installed_manifest_path(&self) -> PathBuf {
-        self.inner.installed_manifest_path()
-    }
-
     fn installed_manifest(&self) -> Option<RuntimeManifest> {
-        load_runtime_manifest(&self.installed_manifest_path()).ok()
+        self.inner.installed_backend().map(|(_, manifest)| manifest)
     }
 
     fn installed_entrypoint(&self) -> Option<PathBuf> {
-        let manifest = self.installed_manifest()?;
-        let entrypoint = self.installed_runtime_dir().join(manifest.entrypoint);
-        entrypoint.is_file().then_some(entrypoint)
+        self.inner.installed_backend_entrypoint()
+    }
+
+    fn failed_job_error(&self) -> Option<String> {
+        self.inner.job.lock().ok().and_then(|job| {
+            job.as_ref()
+                .filter(|job| job.status == "failed")
+                .and_then(|job| job.error.clone())
+        })
     }
 
     fn capture_runtime_connection(&self) -> Result<Option<CaptureRuntimeConnection>, String> {
@@ -401,7 +429,7 @@ impl BackendState {
             };
             if unavailable_reason.is_some() {
                 return capture_runtime_status(
-                    installed_capture_runtime_paths(&self.inner.data_dir).is_ok(),
+                    self.inner.installed_capture_runtime_paths().is_ok(),
                     false,
                     &job.status,
                     &job.detail,
@@ -412,7 +440,7 @@ impl BackendState {
             }
         }
 
-        if installed_capture_runtime_paths(&self.inner.data_dir).is_ok() {
+        if self.inner.installed_capture_runtime_paths().is_ok() {
             return capture_runtime_status(
                 true,
                 false,
@@ -522,7 +550,7 @@ impl BackendState {
                 "Capture Runtime requires host configuration because an external backend is active.",
             );
         }
-        if installed_capture_runtime_paths(&self.inner.data_dir).is_err() {
+        if self.inner.installed_capture_runtime_paths().is_err() {
             return failed_capture_installation(
                 "Capture Runtime is not installed. Install it before starting it.",
             );
@@ -562,7 +590,72 @@ impl BackendState {
         Ok(installation_from_job(job))
     }
 
-    pub(crate) fn try_launch_installed_backend(&self) -> Result<(), String> {
+    /// Startup step, run before any sidecar is launched. Removes leftovers
+    /// of earlier installs and, when an app update shipped a new Capture
+    /// Runtime, reinstalls the copy the user had installed. Engines and user
+    /// data live outside the runtime slots and are kept.
+    pub(crate) fn refresh_installed_capture_runtime(&self) {
+        CAPTURE_RUNTIME_SLOT.sweep(&self.inner.data_dir);
+        let Some(identity) = self.inner.capture_bundle_identity() else {
+            return;
+        };
+        if self.inner.closing.load(Ordering::SeqCst)
+            || !CAPTURE_RUNTIME_SLOT.needs_refresh(&self.inner.data_dir, &identity)
+        {
+            return;
+        }
+        let mut job = RuntimeJob::queued_capture_runtime();
+        job.detail = "Updating Capture Runtime to the version bundled with this app.".into();
+        let job_id = job.id.clone();
+        // An install or start the user requested meanwhile wins; it already
+        // works from the current bundle.
+        if matches!(self.claim_capture_job(job), Ok(CaptureJobClaim::Claimed)) {
+            install_capture_runtime(Arc::clone(&self.inner), job_id);
+        }
+    }
+
+    /// Startup step: launches the installed Python backend. A copy left by
+    /// an earlier app version is first reinstalled from the bundle as a
+    /// normal installation job, so the UI shows its progress or error. On
+    /// failure the previous copy stays on disk but is not launched.
+    pub(crate) fn launch_installed_backend_at_startup(&self) -> Result<(), String> {
+        PYTHON_BACKEND_SLOT.sweep(&self.inner.data_dir);
+        let stale = self.inner.backend_bundle_identity().is_some_and(|identity| {
+            PYTHON_BACKEND_SLOT.needs_refresh(&self.inner.data_dir, &identity)
+        });
+        if !stale {
+            return self.try_launch_installed_backend();
+        }
+        if self.inner.closing.load(Ordering::SeqCst) {
+            return Err("Cert Prep is closing; Python backend runtime was not updated.".into());
+        }
+        let mut job = RuntimeJob::queued_python_backend();
+        job.detail =
+            "Updating the Python backend runtime to the version bundled with this app.".into();
+        let job_id = job.id.clone();
+        {
+            let mut current = self
+                .inner
+                .job
+                .lock()
+                .map_err(|_| "Runtime installation state is unavailable.".to_string())?;
+            if current
+                .as_ref()
+                .is_some_and(|job| matches!(job.status.as_str(), "queued" | "running"))
+            {
+                return Err("A Python backend runtime installation is already running.".into());
+            }
+            *current = Some(job);
+        }
+        install_python_runtime(Arc::clone(&self.inner), job_id.clone());
+        let job = self.get_installation(&job_id)?;
+        match job.status.as_str() {
+            "succeeded" => Ok(()),
+            _ => Err(job.error.unwrap_or(job.detail)),
+        }
+    }
+
+    fn try_launch_installed_backend(&self) -> Result<(), String> {
         let entrypoint = self
             .installed_entrypoint()
             .ok_or_else(|| "Python backend runtime is not installed.".to_string())?;
@@ -736,7 +829,7 @@ fn start_capture_runtime(inner: Arc<BackendRuntimeInner>, job_id: String) {
         None,
     );
     let result = (|| {
-        let (manifest_path, executable_path) = installed_capture_runtime_paths(&inner.data_dir)?;
+        let (manifest_path, executable_path) = inner.installed_capture_runtime_paths()?;
         let capture_runtime = CaptureRuntimeState::launch_cancellable(
             &manifest_path,
             &executable_path,
@@ -785,19 +878,17 @@ fn restart_owned_backend_with_capture_runtime(
                 .into(),
         );
     }
-    let manifest_path = inner
+    if !inner
         .backend_manifest_path
         .as_ref()
-        .filter(|path| path.is_file())
-        .ok_or_else(|| "Python backend runtime manifest is not bundled.".to_string())?;
-    let manifest = load_runtime_manifest(manifest_path)?;
-    let entrypoint = inner.installed_runtime_dir().join(manifest.entrypoint);
-    if !entrypoint.is_file() {
-        return Err(
-            "Python backend runtime is not installed. Install it before starting Capture Runtime."
-                .into(),
-        );
+        .is_some_and(|path| path.is_file())
+    {
+        return Err("Python backend runtime manifest is not bundled.".into());
     }
+    let entrypoint = inner.installed_backend_entrypoint().ok_or_else(|| {
+        "Python backend runtime is not installed. Install it before starting Capture Runtime."
+            .to_string()
+    })?;
 
     let connection = capture_runtime.connection();
     // Acquire the ownership lock before starting the backend candidate. If it

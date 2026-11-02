@@ -1,5 +1,4 @@
 use std::{
-    fs,
     path::PathBuf,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -11,10 +10,9 @@ use crate::{
     archives::extract_zip,
     backend::BackendRuntimeInner,
     backend_process::launch_backend_entrypoint,
-    constants::{
-        BACKEND_RUNTIME_DIR, CAPTURE_RUNTIME_MODEL, PYTHON_RUNTIME_KIND,
-    },
+    constants::{CAPTURE_RUNTIME_MODEL, PYTHON_RUNTIME_KIND},
     manifests::{load_runtime_manifest, verify_artifact, write_installed_manifest},
+    runtime_slots::{bundle_identity, PYTHON_BACKEND_SLOT},
 };
 
 /// Runtime installation job state returned to Angular during install polling.
@@ -167,44 +165,19 @@ fn install_python_runtime_inner(
         None,
     );
     verify_artifact(&artifact_path, &manifest.artifact)?;
+    let identity = bundle_identity(manifest_path)?;
+    let entrypoint_relative = safe_relative_path(&manifest.entrypoint, "entrypoint")?;
 
-    let runtime_root = inner.data_dir.join("runtimes");
-    fs::create_dir_all(&runtime_root)
-        .map_err(|error| format!("failed to create runtime root: {error}"))?;
-    let extract_dir = runtime_root.join(format!(".python-backend-install-{job_id}"));
-    if extract_dir.exists() {
-        fs::remove_dir_all(&extract_dir)
-            .map_err(|error| format!("failed to clean runtime extraction directory: {error}"))?;
-    }
-    fs::create_dir_all(&extract_dir)
-        .map_err(|error| format!("failed to create runtime extraction directory: {error}"))?;
-    if let Err(error) = extract_zip(&artifact_path, &extract_dir) {
-        let _ = fs::remove_dir_all(&extract_dir);
-        return Err(error);
-    }
-
-    let entrypoint_relative = match safe_relative_path(&manifest.entrypoint, "entrypoint") {
-        Ok(path) => path,
-        Err(error) => {
-            let _ = fs::remove_dir_all(&extract_dir);
-            return Err(error);
+    let runtime_dir = PYTHON_BACKEND_SLOT.install(&inner.data_dir, &identity, |staging| {
+        extract_zip(&artifact_path, staging)?;
+        if !staging.join(entrypoint_relative).is_file() {
+            return Err(format!(
+                "Python backend runtime entrypoint was not found: {}",
+                manifest.entrypoint
+            ));
         }
-    };
-    let entrypoint = extract_dir.join(&entrypoint_relative);
-    if !entrypoint.is_file() {
-        let _ = fs::remove_dir_all(&extract_dir);
-        return Err(format!(
-            "Python backend runtime entrypoint was not found: {}",
-            manifest.entrypoint
-        ));
-    }
-
-    if let Err(error) = write_installed_manifest(&extract_dir, &manifest) {
-        let _ = fs::remove_dir_all(&extract_dir);
-        return Err(error);
-    }
-    let runtime_dir = runtime_root.join(BACKEND_RUNTIME_DIR);
-    replace_runtime_directory(&extract_dir, &runtime_dir, job_id)?;
+        write_installed_manifest(staging, &manifest)
+    })?;
     Ok(runtime_dir.join(entrypoint_relative))
 }
 
@@ -219,35 +192,6 @@ fn safe_relative_path<'a>(value: &'a str, label: &str) -> Result<&'a std::path::
         return Err(format!("Python backend runtime {label} is unsafe: {value}"));
     }
     Ok(path)
-}
-
-fn replace_runtime_directory(
-    staging: &std::path::Path,
-    destination: &std::path::Path,
-    job_id: &str,
-) -> Result<(), String> {
-    let backup = destination.with_file_name(format!(".python-backend-backup-{job_id}"));
-    if backup.exists() {
-        fs::remove_dir_all(&backup)
-            .map_err(|error| format!("failed to clean runtime backup: {error}"))?;
-    }
-    let had_previous = destination.exists();
-    if had_previous {
-        fs::rename(destination, &backup)
-            .map_err(|error| format!("failed to stage existing Python backend runtime: {error}"))?;
-    }
-    if let Err(error) = fs::rename(staging, destination) {
-        if had_previous {
-            let _ = fs::rename(&backup, destination);
-        }
-        return Err(format!(
-            "failed to atomically install Python backend runtime: {error}"
-        ));
-    }
-    if had_previous {
-        let _ = fs::remove_dir_all(backup);
-    }
-    Ok(())
 }
 
 pub(crate) fn update_job(
@@ -326,7 +270,9 @@ fn now_string() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::constants::BACKEND_RUNTIME_DIR;
     use crate::manifests::{RuntimeArtifact, RuntimeManifest};
+    use std::fs;
     use sha2::{Digest, Sha256};
     use std::{
         io::Write,
@@ -368,13 +314,18 @@ mod tests {
         let old_runtime = data_dir.join("runtimes").join(BACKEND_RUNTIME_DIR);
         fs::create_dir_all(&old_runtime).expect("old runtime");
         fs::write(old_runtime.join("old.txt"), "old").expect("old marker");
-        let inner = runtime_inner(data_dir.clone(), manifest_path);
+        let inner = runtime_inner(data_dir.clone(), manifest_path.clone());
 
         let entrypoint = install_python_runtime_inner(&inner, "test-job").expect("install");
 
-        assert_eq!(fs::read(entrypoint).expect("entrypoint"), b"new-runtime");
-        assert!(!old_runtime.join("old.txt").exists());
-        assert!(old_runtime.join("runtime-manifest.json").is_file());
+        assert_eq!(fs::read(&entrypoint).expect("entrypoint"), b"new-runtime");
+        assert!(!old_runtime.exists(), "the pre-marker copy is retired");
+        let runtime_dir = entrypoint.parent().expect("runtime dir");
+        assert!(runtime_dir.join("runtime-manifest.json").is_file());
+        assert_eq!(
+            PYTHON_BACKEND_SLOT.installed_dir(&data_dir, Some(&hash_file(&manifest_path))),
+            Some(runtime_dir.to_path_buf())
+        );
         assert!(artifact_path.is_file());
         let _ = fs::remove_dir_all(root);
     }

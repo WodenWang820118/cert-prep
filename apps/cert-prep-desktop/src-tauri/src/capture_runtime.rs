@@ -19,8 +19,9 @@ use crate::{
     capture_manifest::{
         load_capture_runtime_manifest, validate_capture_manifest_contract, verify_capture_runtime,
     },
-    constants::{CAPTURE_RUNTIME_DIR, CAPTURE_RUNTIME_MANIFEST, CAPTURE_RUNTIME_VERSION},
+    constants::{CAPTURE_RUNTIME_MANIFEST, CAPTURE_RUNTIME_VERSION},
     process_owner::{owned_runtime_process, RuntimeProcessOwner},
+    runtime_slots::{bundle_identity, CAPTURE_RUNTIME_SLOT},
 };
 
 const LOOPBACK_HOST: &str = "127.0.0.1";
@@ -172,6 +173,8 @@ impl CaptureRuntimeState {
 
 /// Copies only a verified bundled Capture Runtime into user app data. The
 /// caller chooses when to invoke this; Tauri setup deliberately does not.
+/// The copy goes into a new versioned slot directory and becomes active only
+/// after it verified, so a failure keeps the previously installed runtime.
 pub(crate) fn install_bundled_capture_runtime(
     bundled_manifest_path: &Path,
     app_data_dir: &Path,
@@ -179,122 +182,53 @@ pub(crate) fn install_bundled_capture_runtime(
     let (source_manifest_path, source_executable_path) =
         bundled_capture_runtime_paths(Some(bundled_manifest_path.to_path_buf()))?;
     let verified = verify_capture_runtime(&source_manifest_path, &source_executable_path)?;
+    let identity = bundle_identity(&source_manifest_path)?;
     let source_dir = source_manifest_path
         .parent()
         .ok_or_else(|| "Bundled Capture Runtime manifest has no resource directory.".to_string())?;
-    let runtime_root = app_data_dir.join("runtimes");
-    fs::create_dir_all(&runtime_root)
-        .map_err(|error| format!("Capture Runtime install root could not be created: {error}"))?;
-    clean_stale_capture_runtime_staging(&runtime_root)?;
-    let staging = runtime_root.join(format!(".capture-runtime-install-{}", uuid::Uuid::new_v4()));
-    fs::create_dir_all(&staging).map_err(|error| {
-        format!("Capture Runtime staging directory could not be created: {error}")
-    })?;
 
-    let staged_manifest = staging.join(CAPTURE_RUNTIME_MANIFEST);
-    let staged_executable = staging.join(&verified.manifest.file_name);
-    let staged_schema = staging.join(&verified.manifest.schema_file_name);
-    let copy_result = (|| {
+    let destination = CAPTURE_RUNTIME_SLOT.install(app_data_dir, &identity, |staging| {
+        let staged_manifest = staging.join(CAPTURE_RUNTIME_MANIFEST);
+        let staged_executable = staging.join(&verified.manifest.file_name);
         fs::copy(&source_manifest_path, &staged_manifest)
             .map_err(|error| format!("Capture Runtime manifest could not be staged: {error}"))?;
         fs::copy(&source_executable_path, &staged_executable)
             .map_err(|error| format!("Capture Runtime executable could not be staged: {error}"))?;
         fs::copy(
             source_dir.join(&verified.manifest.schema_file_name),
-            &staged_schema,
+            staging.join(&verified.manifest.schema_file_name),
         )
         .map_err(|error| format!("Capture Runtime schema could not be staged: {error}"))?;
         verify_capture_runtime(&staged_manifest, &staged_executable)?;
-        Ok::<(), String>(())
-    })();
-    if let Err(error) = copy_result {
-        let _ = fs::remove_dir_all(&staging);
-        return Err(error);
-    }
-
-    let destination = runtime_root.join(CAPTURE_RUNTIME_DIR);
-    replace_runtime_directory(&staging, &destination)?;
+        if bundle_identity(&staged_manifest)? != identity {
+            return Err("Bundled Capture Runtime manifest changed during installation.".into());
+        }
+        Ok(())
+    })?;
     Ok((
         destination.join(CAPTURE_RUNTIME_MANIFEST),
         destination.join(verified.manifest.file_name),
     ))
 }
 
+/// Paths of the installed, verified Capture Runtime. When the app bundles a
+/// runtime, only a copy installed from that same bundle counts; a copy left
+/// by an earlier app version is reported as not installed.
 pub(crate) fn installed_capture_runtime_paths(
     app_data_dir: &Path,
+    bundled_manifest_path: Option<&Path>,
 ) -> Result<(PathBuf, PathBuf), String> {
-    let manifest_path = app_data_dir
-        .join("runtimes")
-        .join(CAPTURE_RUNTIME_DIR)
-        .join(CAPTURE_RUNTIME_MANIFEST);
-    let (manifest_path, executable_path) = bundled_capture_runtime_paths(Some(manifest_path))?;
+    let expected_identity = bundled_manifest_path
+        .filter(|path| path.is_file())
+        .map(bundle_identity)
+        .transpose()?;
+    let installed_dir = CAPTURE_RUNTIME_SLOT
+        .installed_dir(app_data_dir, expected_identity.as_deref())
+        .ok_or_else(|| "Capture Runtime for this app version is not installed.".to_string())?;
+    let (manifest_path, executable_path) =
+        bundled_capture_runtime_paths(Some(installed_dir.join(CAPTURE_RUNTIME_MANIFEST)))?;
     verify_capture_runtime(&manifest_path, &executable_path)?;
     Ok((manifest_path, executable_path))
-}
-
-fn replace_runtime_directory(staging: &Path, destination: &Path) -> Result<(), String> {
-    let backup =
-        destination.with_file_name(format!(".capture-runtime-backup-{}", uuid::Uuid::new_v4()));
-    if backup.exists() {
-        fs::remove_dir_all(&backup)
-            .map_err(|error| format!("Capture Runtime backup could not be cleaned: {error}"))?;
-    }
-    let had_previous = destination.exists();
-    if had_previous {
-        fs::rename(destination, &backup)
-            .map_err(|error| format!("Existing Capture Runtime could not be staged: {error}"))?;
-    }
-    if let Err(error) = fs::rename(staging, destination) {
-        if had_previous {
-            let _ = fs::rename(&backup, destination);
-        }
-        return Err(format!(
-            "Capture Runtime installation could not be finalized: {error}"
-        ));
-    }
-    if had_previous {
-        if let Err(error) = fs::remove_dir_all(&backup) {
-            let _ = fs::remove_dir_all(destination);
-            let restore = fs::rename(&backup, destination);
-            return Err(match restore {
-                Ok(()) => format!("Capture Runtime backup could not be cleaned: {error}"),
-                Err(restore_error) => format!(
-                    "Capture Runtime backup could not be cleaned ({error}); rollback failed: {restore_error}"
-                ),
-            });
-        }
-    }
-    Ok(())
-}
-
-fn clean_stale_capture_runtime_staging(runtime_root: &Path) -> Result<(), String> {
-    let entries = fs::read_dir(runtime_root)
-        .map_err(|error| format!("Capture Runtime install root could not be read: {error}"))?;
-    for entry in entries {
-        let entry = entry
-            .map_err(|error| format!("Capture Runtime staging entry could not be read: {error}"))?;
-        if !entry
-            .file_type()
-            .map_err(|error| {
-                format!("Capture Runtime staging entry type could not be read: {error}")
-            })?
-            .is_dir()
-        {
-            continue;
-        }
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        let uuid = name
-            .strip_prefix(".capture-runtime-install-")
-            .or_else(|| name.strip_prefix(".capture-runtime-backup-"));
-        let Some(uuid) = uuid else { continue };
-        if uuid::Uuid::parse_str(uuid).is_ok() {
-            fs::remove_dir_all(entry.path()).map_err(|error| {
-                format!("Stale Capture Runtime staging directory could not be removed: {error}")
-            })?;
-        }
-    }
-    Ok(())
 }
 
 struct CaptureLaunchPolicy {
@@ -438,30 +372,47 @@ mod tests {
             .into_bytes()
     }
 
-    #[test]
-    fn explicit_install_stages_verified_bundle_without_starting_a_process() {
-        let root = std::env::temp_dir().join(format!(
-            "cert-prep-capture-runtime-install-{}",
-            uuid::Uuid::new_v4()
-        ));
-        let resources = root.join("resources");
-        let app_data = root.join("app-data");
-        fs::create_dir_all(&resources).expect("resources");
-        let executable = resources.join(CAPTURE_RUNTIME_BINARY);
-        let schema = resources.join(CAPTURE_DOCUMENT_SCHEMA_FILE);
-        let manifest_path = resources.join(CAPTURE_RUNTIME_MANIFEST);
-        let executable_bytes = b"capture-runtime-test-binary";
-        let schema_bytes = canonical_schema_bytes();
-        fs::write(&executable, executable_bytes).expect("executable");
-        fs::write(&schema, &schema_bytes).expect("schema");
+    /// Writes a bundled runtime (manifest, executable, schema) the way the
+    /// installer lays it out, with the manifest pinning `executable_bytes`.
+    fn write_bundle(resources: &Path, executable_bytes: &[u8]) -> PathBuf {
+        fs::create_dir_all(resources).expect("resources");
+        fs::write(resources.join(CAPTURE_RUNTIME_BINARY), executable_bytes).expect("executable");
+        fs::write(
+            resources.join(CAPTURE_DOCUMENT_SCHEMA_FILE),
+            canonical_schema_bytes(),
+        )
+        .expect("schema");
         let mut bundle_manifest = manifest();
         bundle_manifest.bytes = executable_bytes.len() as u64;
         bundle_manifest.sha256 = format!("{:x}", Sha256::digest(executable_bytes));
+        let manifest_path = resources.join(CAPTURE_RUNTIME_MANIFEST);
         fs::write(
             &manifest_path,
             serde_json::to_vec(&bundle_manifest).expect("manifest"),
         )
         .expect("manifest path");
+        manifest_path
+    }
+
+    struct TempRoot(PathBuf);
+
+    impl TempRoot {
+        fn new(label: &str) -> Self {
+            Self(std::env::temp_dir().join(format!("{label}-{}", uuid::Uuid::new_v4())))
+        }
+    }
+
+    impl Drop for TempRoot {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn explicit_install_stages_verified_bundle_without_starting_a_process() {
+        let root = TempRoot::new("cert-prep-capture-runtime-install");
+        let app_data = root.0.join("app-data");
+        let manifest_path = write_bundle(&root.0.join("resources"), b"capture-runtime-test-binary");
 
         let (installed_manifest, installed_executable) =
             install_bundled_capture_runtime(&manifest_path, &app_data).expect("install");
@@ -469,36 +420,120 @@ mod tests {
         assert!(installed_manifest.is_file());
         assert!(installed_executable.is_file());
         assert_eq!(
-            installed_capture_runtime_paths(&app_data).expect("installed paths"),
+            installed_capture_runtime_paths(&app_data, Some(&manifest_path))
+                .expect("installed paths"),
             (installed_manifest, installed_executable),
         );
+        assert!(!CAPTURE_RUNTIME_SLOT.needs_refresh(
+            &app_data,
+            &bundle_identity(&manifest_path).expect("identity")
+        ));
         assert!(!app_data.join("capture-workbench").exists());
-        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
-    fn stale_install_cleanup_removes_only_uuid_owned_staging_and_backup_directories() {
-        let root = std::env::temp_dir().join(format!(
-            "cert-prep-capture-runtime-staging-{}",
-            uuid::Uuid::new_v4()
-        ));
-        fs::create_dir_all(&root).expect("root");
-        let owned = root.join(format!(".capture-runtime-install-{}", uuid::Uuid::new_v4()));
-        let backup = root.join(format!(".capture-runtime-backup-{}", uuid::Uuid::new_v4()));
-        let unrelated = root.join(".capture-runtime-install-not-a-uuid");
-        let unrelated_backup = root.join(".capture-runtime-backup-not-a-uuid");
-        fs::create_dir_all(&owned).expect("owned");
-        fs::create_dir_all(&backup).expect("backup");
-        fs::create_dir_all(&unrelated).expect("unrelated");
-        fs::create_dir_all(&unrelated_backup).expect("unrelated backup");
+    fn app_update_with_a_new_bundle_reinstalls_and_keeps_engines() {
+        let root = TempRoot::new("cert-prep-capture-runtime-update");
+        let app_data = root.0.join("app-data");
+        let engines = app_data.join("capture-workbench").join("engines");
+        fs::create_dir_all(&engines).expect("engines");
+        fs::write(engines.join("model.bin"), "engine").expect("engine");
+        let old_bundle = write_bundle(&root.0.join("resources-n"), b"capture-runtime-n");
+        let (_, old_executable) =
+            install_bundled_capture_runtime(&old_bundle, &app_data).expect("install N");
 
-        clean_stale_capture_runtime_staging(&root).expect("cleanup");
+        // The updated app ships N+1. The copy from N no longer counts.
+        let new_bundle = write_bundle(&root.0.join("resources-n1"), b"capture-runtime-n+1");
+        let new_identity = bundle_identity(&new_bundle).expect("identity");
+        assert!(CAPTURE_RUNTIME_SLOT.needs_refresh(&app_data, &new_identity));
+        assert!(installed_capture_runtime_paths(&app_data, Some(&new_bundle))
+            .expect_err("stale copy")
+            .contains("not installed"));
 
-        assert!(!owned.exists());
-        assert!(!backup.exists());
-        assert!(unrelated.exists());
-        assert!(unrelated_backup.exists());
-        let _ = fs::remove_dir_all(root);
+        let (_, new_executable) =
+            install_bundled_capture_runtime(&new_bundle, &app_data).expect("install N+1");
+
+        assert_eq!(fs::read(&new_executable).expect("N+1"), b"capture-runtime-n+1");
+        assert!(!old_executable.exists(), "the copy from N is removed");
+        assert!(!CAPTURE_RUNTIME_SLOT.needs_refresh(&app_data, &new_identity));
+        assert!(engines.join("model.bin").is_file(), "engines survive");
+    }
+
+    #[test]
+    fn corrupted_bundle_fails_closed_and_keeps_the_installed_runtime() {
+        let root = TempRoot::new("cert-prep-capture-runtime-corrupt");
+        let app_data = root.0.join("app-data");
+        let old_bundle = write_bundle(&root.0.join("resources-n"), b"capture-runtime-n");
+        let (old_manifest, old_executable) =
+            install_bundled_capture_runtime(&old_bundle, &app_data).expect("install N");
+        let new_bundle = write_bundle(&root.0.join("resources-n1"), b"capture-runtime-n+1");
+        fs::write(
+            root.0.join("resources-n1").join(CAPTURE_RUNTIME_BINARY),
+            b"capture-runtime-bad",
+        )
+        .expect("corrupt");
+
+        let error = install_bundled_capture_runtime(&new_bundle, &app_data)
+            .expect_err("corrupted executable");
+
+        assert!(error.contains("SHA-256 mismatch"), "{error}");
+        assert_eq!(
+            installed_capture_runtime_paths(&app_data, Some(&old_bundle)).expect("N still active"),
+            (old_manifest, old_executable),
+        );
+    }
+
+    #[test]
+    fn startup_refresh_reinstalls_only_a_copy_the_user_installed() {
+        use crate::backend::BackendState;
+
+        let root = TempRoot::new("cert-prep-capture-runtime-startup");
+        let app_data = root.0.join("app-data");
+        let old_bundle = write_bundle(&root.0.join("resources-n"), b"capture-runtime-n");
+        let new_bundle = write_bundle(&root.0.join("resources-n1"), b"capture-runtime-n+1");
+
+        // Never installed: startup must not install it on its own.
+        BackendState::new(app_data.clone(), None, Some(new_bundle.clone()))
+            .refresh_installed_capture_runtime();
+        assert_eq!(CAPTURE_RUNTIME_SLOT.installed_dir(&app_data, None), None);
+
+        install_bundled_capture_runtime(&old_bundle, &app_data).expect("install N");
+        let updated_app = BackendState::new(app_data.clone(), None, Some(new_bundle.clone()));
+        assert_eq!(updated_app.capture_runtime_status().status, "missing");
+
+        updated_app.refresh_installed_capture_runtime();
+
+        assert_eq!(updated_app.capture_runtime_status().status, "installed");
+        let (_, executable) =
+            installed_capture_runtime_paths(&app_data, Some(&new_bundle)).expect("N+1 active");
+        assert_eq!(fs::read(executable).expect("N+1"), b"capture-runtime-n+1");
+    }
+
+    #[test]
+    fn startup_refresh_failure_is_reported_and_keeps_the_installed_runtime() {
+        use crate::backend::BackendState;
+
+        let root = TempRoot::new("cert-prep-capture-runtime-startup-fail");
+        let app_data = root.0.join("app-data");
+        let old_bundle = write_bundle(&root.0.join("resources-n"), b"capture-runtime-n");
+        let old_paths = install_bundled_capture_runtime(&old_bundle, &app_data).expect("N");
+        let new_bundle = write_bundle(&root.0.join("resources-n1"), b"capture-runtime-n+1");
+        fs::write(
+            root.0.join("resources-n1").join(CAPTURE_RUNTIME_BINARY),
+            b"capture-runtime-bad",
+        )
+        .expect("corrupt");
+        let updated_app = BackendState::new(app_data.clone(), None, Some(new_bundle));
+
+        updated_app.refresh_installed_capture_runtime();
+
+        let status = updated_app.capture_runtime_status();
+        assert_eq!(status.status, "failed");
+        assert!(status.error.expect("error").contains("SHA-256 mismatch"));
+        assert_eq!(
+            installed_capture_runtime_paths(&app_data, Some(&old_bundle)).expect("N kept"),
+            old_paths,
+        );
     }
 
     #[test]
