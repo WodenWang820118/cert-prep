@@ -10,6 +10,7 @@ mod manifests;
 mod process_owner;
 mod runtime_installation;
 mod runtime_slots;
+mod runtime_update;
 
 use std::{fs, path::PathBuf, thread};
 use tauri::Manager;
@@ -44,11 +45,17 @@ pub fn run() {
                 // inspect runtime state or explicitly install/start it.
                 // Runtime refreshes after an app update also run here, before
                 // any sidecar is launched from the copies being replaced.
+                // The plan runs here, synchronously, so the WebView's first
+                // poll already sees the update notice.
+                let refresh = state.plan_startup_runtime_refresh();
                 let capture_state = state.clone();
-                thread::spawn(move || capture_state.refresh_installed_capture_runtime());
+                let capture_job = refresh.capture_job;
+                thread::spawn(move || capture_state.refresh_installed_capture_runtime(capture_job));
                 let startup_state = state.clone();
+                let backend_job = refresh.backend_job;
                 thread::spawn(move || {
-                    let launch_result = startup_state.launch_installed_backend_at_startup();
+                    let launch_result =
+                        startup_state.launch_installed_backend_at_startup(backend_job);
                     if launch_result.is_err() && package_qa_auto_install_enabled() {
                         startup_state.start_installation();
                     }
@@ -75,7 +82,8 @@ pub fn run() {
             commands::capture_runtime_status,
             commands::install_capture_runtime,
             commands::start_capture_runtime,
-            commands::get_capture_runtime_installation
+            commands::get_capture_runtime_installation,
+            commands::runtime_update_status
         ])
         .build(tauri::generate_context!())
         .expect("failed to build cert prep desktop app")

@@ -493,16 +493,30 @@ mod tests {
         let new_bundle = write_bundle(&root.0.join("resources-n1"), b"capture-runtime-n+1");
 
         // Never installed: startup must not install it on its own.
-        BackendState::new(app_data.clone(), None, Some(new_bundle.clone()))
-            .refresh_installed_capture_runtime();
+        let fresh_app = BackendState::new(app_data.clone(), None, Some(new_bundle.clone()));
+        let refresh = fresh_app.plan_startup_runtime_refresh();
+        assert_eq!(refresh.capture_job, None);
+        assert_eq!(fresh_app.runtime_update_notice().phase, "idle");
+        fresh_app.refresh_installed_capture_runtime(refresh.capture_job);
         assert_eq!(CAPTURE_RUNTIME_SLOT.installed_dir(&app_data, None), None);
 
         install_bundled_capture_runtime(&old_bundle, &app_data).expect("install N");
         let updated_app = BackendState::new(app_data.clone(), None, Some(new_bundle.clone()));
-        assert_eq!(updated_app.capture_runtime_status().status, "missing");
 
-        updated_app.refresh_installed_capture_runtime();
+        // The plan runs before any worker, so the first poll shows the notice.
+        let refresh = updated_app.plan_startup_runtime_refresh();
+        let notice = updated_app.runtime_update_notice();
+        assert_eq!(notice.phase, "applying");
+        assert_eq!(notice.runtimes, vec!["capture_runtime"]);
+        assert_eq!((notice.completed, notice.total), (0, 1));
+        assert_eq!(notice.estimated_seconds, Some(1));
+        assert_eq!(updated_app.capture_runtime_status().status, "queued");
 
+        updated_app.refresh_installed_capture_runtime(refresh.capture_job);
+
+        let notice = updated_app.runtime_update_notice();
+        assert_eq!(notice.phase, "succeeded");
+        assert_eq!((notice.completed, notice.total), (1, 1));
         assert_eq!(updated_app.capture_runtime_status().status, "installed");
         let (_, executable) =
             installed_capture_runtime_paths(&app_data, Some(&new_bundle)).expect("N+1 active");
@@ -525,8 +539,12 @@ mod tests {
         .expect("corrupt");
         let updated_app = BackendState::new(app_data.clone(), None, Some(new_bundle));
 
-        updated_app.refresh_installed_capture_runtime();
+        let refresh = updated_app.plan_startup_runtime_refresh();
+        updated_app.refresh_installed_capture_runtime(refresh.capture_job);
 
+        let notice = updated_app.runtime_update_notice();
+        assert_eq!(notice.phase, "failed");
+        assert!(notice.error.expect("error").contains("SHA-256 mismatch"));
         let status = updated_app.capture_runtime_status();
         assert_eq!(status.status, "failed");
         assert!(status.error.expect("error").contains("SHA-256 mismatch"));

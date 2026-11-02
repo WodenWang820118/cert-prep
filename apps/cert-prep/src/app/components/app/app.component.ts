@@ -19,6 +19,7 @@ import {
 } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { RuntimeConsentDialogsComponent } from '../model-health/runtime-consent-dialogs.component';
+import { RuntimeUpdateNoticeComponent } from '../model-health/runtime-update-notice.component';
 import { ProjectRailComponent } from '../project-rail/project-rail.component';
 import { BACKEND_READINESS_POLL_LIMIT } from '../../constants/app.constants';
 import type { StudyNavigationGroup } from '../../contracts/app.contracts';
@@ -32,7 +33,7 @@ import { LAST_PROJECT_STORAGE_KEY } from '../../constants/runtime.constants';
 import { AppIconComponent } from '../ui/app-icon.component';
 
 @Component({
-  imports: [CdkTrapFocus, ProjectRailComponent, RuntimeManagerPage, RuntimeConsentDialogsComponent, RouterLink, RouterLinkActive, RouterOutlet, AppIconComponent],
+  imports: [CdkTrapFocus, ProjectRailComponent, RuntimeManagerPage, RuntimeConsentDialogsComponent, RuntimeUpdateNoticeComponent, RouterLink, RouterLinkActive, RouterOutlet, AppIconComponent],
   selector: 'app-root',
   templateUrl: './app.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -172,6 +173,7 @@ export class App implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    this.desktopRuntime.watchRuntimeUpdate();
     this.loadStartupState();
     this.hasAttemptedInitialStartupLoad = true;
     this.scheduleBackendReadinessPoll();
@@ -224,9 +226,13 @@ export class App implements OnInit, OnDestroy {
       }
 
       const status = this.desktopRuntime.status();
+      // After an app update the host first reinstalls the backend as a
+      // startup job (`python_runtime_installing`); keep polling through it.
       const retry =
         status.available ||
         this.desktopRuntime.isInstallActive() ||
+        this.desktopRuntime.isRuntimeUpdateApplying() ||
+        status.unavailableReason === 'python_runtime_installing' ||
         status.status === 'starting';
       if (retry) {
         this.backendReadinessPollAttempts += 1;

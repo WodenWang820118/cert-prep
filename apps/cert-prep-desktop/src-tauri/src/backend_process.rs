@@ -327,6 +327,7 @@ mod tests {
             capture_start_complete: Condvar::new(),
             external_backend: Mutex::new(false),
             closing: std::sync::atomic::AtomicBool::new(false),
+            runtime_updates: Mutex::new(Default::default()),
         });
         let current_launch = inner.backend_launch.lock().expect("launch lock");
         let launch_inner = Arc::clone(&inner);

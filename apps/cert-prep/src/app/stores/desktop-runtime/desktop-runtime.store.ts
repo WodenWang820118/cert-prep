@@ -3,11 +3,16 @@ import { catchError, from, map, Observable, of, Subscription, tap, timer } from 
 import type {
   DesktopRuntimeInstallation,
   DesktopRuntimeStatus,
+  RuntimeUpdateNotice,
 } from './contracts/desktop-runtime.contracts';
 import { DesktopRuntimeBridgeService } from './desktop-runtime-bridge.service';
 import { DesktopRuntimeViewService } from './desktop-runtime-view.service';
 import { OperationStore } from '../operation.store';
-import { RUNTIME_INSTALL_POLL_INTERVAL_MS } from './constants/desktop-runtime.constants';
+import {
+  RUNTIME_INSTALL_POLL_INTERVAL_MS,
+  RUNTIME_UPDATE_POLL_INTERVAL_MS,
+  RUNTIME_UPDATE_SUCCESS_VISIBLE_MS,
+} from './constants/desktop-runtime.constants';
 import { CertPrepRuntimeConfig } from '../../services/cert-prep-api.service';
 
 @Injectable({ providedIn: 'root' })
@@ -19,6 +24,8 @@ export class DesktopRuntimeStore {
   private installPollSubscription: Subscription | null = null;
   private captureRuntimePollSubscription: Subscription | null = null;
   private captureRuntimeAction: 'install' | 'start' | null = null;
+  private runtimeUpdatePolling = false;
+  private runtimeUpdateTimerSubscription: Subscription | null = null;
   private readonly desktop = this.bridge.isDesktop();
 
   readonly isDesktop = signal(this.desktop);
@@ -40,6 +47,11 @@ export class DesktopRuntimeStore {
     null,
   );
   readonly captureRuntimeInstallStarting = signal(false);
+  /** Runtime refresh after an app update; `null` when there is none. */
+  readonly runtimeUpdate = signal<RuntimeUpdateNotice | null>(null);
+  readonly isRuntimeUpdateApplying = computed(
+    () => this.runtimeUpdate()?.phase === 'applying',
+  );
   readonly isBackendReady = computed(
     () => !this.isDesktop() || this.status().running,
   );
@@ -94,6 +106,36 @@ export class DesktopRuntimeStore {
   readonly installProgress = computed(() =>
     this.view.progressFrom(this.installation() ?? this.status()),
   );
+
+  /**
+   * Follows the one-time runtime refresh the host plans at startup after
+   * an app update, so the shell can show it. Polls only while it applies;
+   * a success hides itself, a failure stays until dismissed.
+   */
+  watchRuntimeUpdate(): void {
+    if (!this.isDesktop() || this.runtimeUpdatePolling) {
+      return;
+    }
+    this.clearRuntimeUpdateTimer();
+    this.runtimeUpdatePolling = true;
+    from(
+      this.bridge.invoke<unknown>('runtime_update_status'),
+    )
+      .pipe(
+        map((value) => this.view.runtimeUpdateNotice(value)),
+        // The notice is advisory; a failed status read shows nothing.
+        catchError(() => of(null)),
+      )
+      .subscribe((notice) => {
+        this.runtimeUpdatePolling = false;
+        this.applyRuntimeUpdate(notice);
+      });
+  }
+
+  dismissRuntimeUpdate(): void {
+    this.clearRuntimeUpdateTimer();
+    this.runtimeUpdate.set(null);
+  }
 
   load(): Observable<DesktopRuntimeStatus | null> {
     if (!this.isDesktop()) {
@@ -370,6 +412,43 @@ export class DesktopRuntimeStore {
     this.captureRuntimePollSubscription = timer(RUNTIME_INSTALL_POLL_INTERVAL_MS)
       .pipe(tap(() => (this.captureRuntimePollSubscription = null)))
       .subscribe(() => this.refreshCaptureRuntimeInstallation());
+  }
+
+  private applyRuntimeUpdate(notice: RuntimeUpdateNotice | null): void {
+    const previous = this.runtimeUpdate();
+    this.runtimeUpdate.set(notice);
+    if (notice === null) {
+      return;
+    }
+    if (notice.phase === 'applying') {
+      this.runtimeUpdateTimerSubscription = timer(
+        RUNTIME_UPDATE_POLL_INTERVAL_MS,
+      ).subscribe(() => {
+        this.runtimeUpdateTimerSubscription = null;
+        this.watchRuntimeUpdate();
+      });
+      return;
+    }
+    if (previous?.phase === 'applying') {
+      // Both runtimes changed on disk; show their new state.
+      this.load().subscribe();
+      this.loadCaptureRuntime().subscribe();
+    }
+    if (notice.phase === 'succeeded') {
+      this.runtimeUpdateTimerSubscription = timer(
+        RUNTIME_UPDATE_SUCCESS_VISIBLE_MS,
+      ).subscribe(() => {
+        this.runtimeUpdateTimerSubscription = null;
+        this.runtimeUpdate.set(null);
+      });
+    }
+  }
+
+  private clearRuntimeUpdateTimer(): void {
+    if (this.runtimeUpdateTimerSubscription !== null) {
+      this.runtimeUpdateTimerSubscription.unsubscribe();
+      this.runtimeUpdateTimerSubscription = null;
+    }
   }
 
   private clearCaptureRuntimePollTimer(): void {

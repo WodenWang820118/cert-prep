@@ -70,3 +70,12 @@ pub(crate) fn get_capture_runtime_installation(
 ) -> Result<DesktopRuntimeInstallation, String> {
     state.get_capture_runtime_installation(&job_id)
 }
+
+/// Reports the one-time runtime refresh after an app update, so the WebView
+/// can show that the update is being applied.
+#[tauri::command]
+pub(crate) fn runtime_update_status(
+    state: tauri::State<'_, BackendState>,
+) -> crate::runtime_update::RuntimeUpdateNotice {
+    state.runtime_update_notice()
+}
