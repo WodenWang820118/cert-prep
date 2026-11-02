@@ -112,7 +112,7 @@ jobs:
           $version = (Get-Content tools/capture-runtime-version.json -Raw | ConvertFrom-Json).runtimeVersion
           $staged = "tmp/cert-prep/capture-runtime/$version"
           $attested = Join-Path $env:RUNNER_TEMP 'capture-release-attestation'
-          gh release download "v$version" -R gx-capture/capture-workbench -D $attested --clobber -p capture-release-manifest-v1.json
+          gh release download "v$version" -R gx-capture/capture-workbench -D $attested -p capture-release-manifest-v1.json
           if ($LASTEXITCODE -ne 0) { throw 'Could not download the Capture release manifest.' }
           $assetArgs = @(Get-ChildItem -LiteralPath $staged -File | ForEach-Object { '--asset'; $_.Name })
           node tools/verify-capture-release-attestation.mts `
