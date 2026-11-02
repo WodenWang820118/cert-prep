@@ -12,14 +12,13 @@ import {
   dirname,
   extname,
   isAbsolute,
-  relative,
   resolve,
-  sep,
 } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import type { CandidateDistributionProfile } from '../packaged-flow-smoke/types.mts';
 import type { CandidateBinding } from './evidence-contract.mts';
+import { requireStrictDescendant } from './evidence-paths.mts';
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/i;
 const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i;
@@ -736,23 +735,5 @@ function assertPdfHeader(path: string): void {
     throw new Error(
       'CERT_PREP_RESILIENCE_PDF_PATH does not contain a PDF header.',
     );
-  }
-}
-
-function requireStrictDescendant(
-  candidatePath: string,
-  parentPath: string,
-  label: string,
-): void {
-  const child = resolve(candidatePath);
-  const parent = resolve(parentPath);
-  const childRelative = relative(parent, child);
-  if (
-    !childRelative ||
-    childRelative === '..' ||
-    childRelative.startsWith(`..${sep}`) ||
-    isAbsolute(childRelative)
-  ) {
-    throw new Error(`${label} must stay under ${parent}.`);
   }
 }

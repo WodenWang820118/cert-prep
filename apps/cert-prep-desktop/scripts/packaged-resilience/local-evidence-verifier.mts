@@ -7,7 +7,7 @@ import {
   realpathSync,
   statSync,
 } from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
@@ -21,6 +21,7 @@ import {
   type InstallationBinding,
   type ResilienceCheck,
 } from './evidence-contract.mts';
+import { requireStrictDescendant } from './evidence-paths.mts';
 
 const DOCUMENT_CHECKS = [
   'upload',
@@ -398,24 +399,6 @@ function assertExactCheckPartition(): void {
     partition.some((check, index) => check !== expected[index])
   ) {
     throw new Error('Local resilience evidence check partition is incomplete.');
-  }
-}
-
-function requireStrictDescendant(
-  candidatePath: string,
-  parentPath: string,
-  label: string,
-): void {
-  const child = resolve(candidatePath);
-  const parent = resolve(parentPath);
-  const childRelative = relative(parent, child);
-  if (
-    !childRelative ||
-    childRelative === '..' ||
-    childRelative.startsWith(`..${sep}`) ||
-    isAbsolute(childRelative)
-  ) {
-    throw new Error(`${label} must stay under ${parent}.`);
   }
 }
 
