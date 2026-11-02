@@ -16,6 +16,7 @@ use tauri::Runtime;
 
 use crate::{
     backend_process::launch_backend_entrypoint,
+    capture_manifest::load_capture_runtime_manifest,
     capture_runtime::{
         install_bundled_capture_runtime, installed_capture_runtime_paths, CaptureRuntimeConnection,
         CaptureRuntimeState,
@@ -29,6 +30,9 @@ use crate::{
         RuntimeJob,
     },
     runtime_slots::{bundle_identity, CAPTURE_RUNTIME_SLOT, PYTHON_BACKEND_SLOT},
+    runtime_update::{
+        RuntimeUpdateNotice, RuntimeUpdates, BACKEND_UPDATE_KIND, CAPTURE_UPDATE_KIND,
+    },
     DesktopRuntimeInstallation,
 };
 
@@ -81,6 +85,15 @@ pub(crate) struct BackendRuntimeInner {
     pub(crate) capture_start_complete: Condvar,
     pub(crate) external_backend: Mutex<bool>,
     pub(crate) closing: AtomicBool,
+    pub(crate) runtime_updates: Mutex<RuntimeUpdates>,
+}
+
+/// Refresh jobs queued by `plan_startup_runtime_refresh`, run by the
+/// startup workers.
+#[derive(Debug, Default)]
+pub(crate) struct StartupRuntimeRefresh {
+    pub(crate) backend_job: Option<String>,
+    pub(crate) capture_job: Option<String>,
 }
 
 /// Shared Tauri state for backend runtime process and installation lifecycle.
@@ -186,6 +199,12 @@ impl BackendRuntimeInner {
         Some((dir, manifest))
     }
 
+    fn finish_runtime_update(&self, kind: &str, result: Result<(), String>) {
+        if let Ok(mut updates) = self.runtime_updates.lock() {
+            updates.finish(kind, result);
+        }
+    }
+
     fn installed_backend_entrypoint(&self) -> Option<PathBuf> {
         let (dir, manifest) = self.installed_backend()?;
         let entrypoint = dir.join(manifest.entrypoint);
@@ -222,6 +241,7 @@ impl BackendState {
                 capture_start_complete: Condvar::new(),
                 external_backend: Mutex::new(false),
                 closing: AtomicBool::new(false),
+                runtime_updates: Mutex::new(RuntimeUpdates::default()),
             }),
         }
     }
@@ -590,69 +610,104 @@ impl BackendState {
         Ok(installation_from_job(job))
     }
 
-    /// Startup step, run before any sidecar is launched. Removes leftovers
-    /// of earlier installs and, when an app update shipped a new Capture
-    /// Runtime, reinstalls the copy the user had installed. Engines and user
-    /// data live outside the runtime slots and are kept.
-    pub(crate) fn refresh_installed_capture_runtime(&self) {
-        CAPTURE_RUNTIME_SLOT.sweep(&self.inner.data_dir);
-        let Some(identity) = self.inner.capture_bundle_identity() else {
-            return;
+    /// Startup step, run synchronously in Tauri setup before the WebView can
+    /// request anything: decides which runtimes the user installed from an
+    /// earlier app version and queues their refresh jobs, so the first
+    /// `runtime_update_status` poll already shows the notice and no user
+    /// install or start can race the refresh.
+    pub(crate) fn plan_startup_runtime_refresh(&self) -> StartupRuntimeRefresh {
+        let data_dir = &self.inner.data_dir;
+        let backend_bytes = self
+            .inner
+            .backend_bundle_identity()
+            .filter(|identity| PYTHON_BACKEND_SLOT.needs_refresh(data_dir, identity))
+            .and_then(|_| self.inner.backend_manifest_path.as_deref())
+            .map(|path| load_runtime_manifest(path).map_or(0, |manifest| manifest.artifact.bytes));
+        let capture_bytes = self
+            .inner
+            .capture_bundle_identity()
+            .filter(|identity| CAPTURE_RUNTIME_SLOT.needs_refresh(data_dir, identity))
+            .and_then(|_| self.inner.capture_runtime_manifest_path.as_deref())
+            .map(|path| load_capture_runtime_manifest(path).map_or(0, |manifest| manifest.bytes));
+
+        let Ok(mut updates) = self.inner.runtime_updates.lock() else {
+            return StartupRuntimeRefresh::default();
         };
-        if self.inner.closing.load(Ordering::SeqCst)
-            || !CAPTURE_RUNTIME_SLOT.needs_refresh(&self.inner.data_dir, &identity)
-        {
-            return;
-        }
-        let mut job = RuntimeJob::queued_capture_runtime();
-        job.detail = "Updating Capture Runtime to the version bundled with this app.".into();
-        let job_id = job.id.clone();
-        // An install or start the user requested meanwhile wins; it already
-        // works from the current bundle.
-        if matches!(self.claim_capture_job(job), Ok(CaptureJobClaim::Claimed)) {
-            install_capture_runtime(Arc::clone(&self.inner), job_id);
+        let backend_job = backend_bytes.and_then(|bytes| {
+            let mut job = RuntimeJob::queued_python_backend();
+            job.detail =
+                "Updating the Python backend runtime to the version bundled with this app.".into();
+            let job_id = job.id.clone();
+            let mut current = self.inner.job.lock().ok()?;
+            *current = Some(job);
+            updates.plan(BACKEND_UPDATE_KIND, bytes);
+            Some(job_id)
+        });
+        let capture_job = capture_bytes.and_then(|bytes| {
+            let mut job = RuntimeJob::queued_capture_runtime();
+            job.detail = "Updating Capture Runtime to the version bundled with this app.".into();
+            let job_id = job.id.clone();
+            matches!(self.claim_capture_job(job), Ok(CaptureJobClaim::Claimed)).then(|| {
+                updates.plan(CAPTURE_UPDATE_KIND, bytes);
+                job_id
+            })
+        });
+        StartupRuntimeRefresh {
+            backend_job,
+            capture_job,
         }
     }
 
-    /// Startup step: launches the installed Python backend. A copy left by
-    /// an earlier app version is first reinstalled from the bundle as a
-    /// normal installation job, so the UI shows its progress or error. On
-    /// failure the previous copy stays on disk but is not launched.
-    pub(crate) fn launch_installed_backend_at_startup(&self) -> Result<(), String> {
+    /// Startup worker: removes leftovers of earlier installs and runs the
+    /// planned Capture Runtime refresh. Engines and user data live outside
+    /// the runtime slots and are kept.
+    pub(crate) fn refresh_installed_capture_runtime(&self, job_id: Option<String>) {
+        CAPTURE_RUNTIME_SLOT.sweep(&self.inner.data_dir);
+        let Some(job_id) = job_id else {
+            return;
+        };
+        install_capture_runtime(Arc::clone(&self.inner), job_id.clone());
+        let result = match self.capture_job().filter(|job| job.id == job_id) {
+            Some(job) if job.status == "succeeded" => Ok(()),
+            Some(job) => Err(job.error.unwrap_or(job.detail)),
+            None => Err("Capture Runtime update state is unavailable.".into()),
+        };
+        self.inner.finish_runtime_update(CAPTURE_UPDATE_KIND, result);
+    }
+
+    /// Startup worker: launches the installed Python backend. A planned
+    /// refresh reinstalls it from the bundle first, as a normal installation
+    /// job. On failure the previous copy stays on disk but is not launched.
+    pub(crate) fn launch_installed_backend_at_startup(
+        &self,
+        job_id: Option<String>,
+    ) -> Result<(), String> {
         PYTHON_BACKEND_SLOT.sweep(&self.inner.data_dir);
-        let stale = self.inner.backend_bundle_identity().is_some_and(|identity| {
-            PYTHON_BACKEND_SLOT.needs_refresh(&self.inner.data_dir, &identity)
-        });
-        if !stale {
+        let Some(job_id) = job_id else {
             return self.try_launch_installed_backend();
-        }
-        if self.inner.closing.load(Ordering::SeqCst) {
-            return Err("Cert Prep is closing; Python backend runtime was not updated.".into());
-        }
-        let mut job = RuntimeJob::queued_python_backend();
-        job.detail =
-            "Updating the Python backend runtime to the version bundled with this app.".into();
-        let job_id = job.id.clone();
-        {
-            let mut current = self
-                .inner
-                .job
-                .lock()
-                .map_err(|_| "Runtime installation state is unavailable.".to_string())?;
-            if current
-                .as_ref()
-                .is_some_and(|job| matches!(job.status.as_str(), "queued" | "running"))
-            {
-                return Err("A Python backend runtime installation is already running.".into());
-            }
-            *current = Some(job);
-        }
+        };
         install_python_runtime(Arc::clone(&self.inner), job_id.clone());
         let job = self.get_installation(&job_id)?;
+        // The update is applied once the installed copy matches the bundle,
+        // even if launching the backend afterwards failed.
+        let applied = if self.inner.installed_backend_entrypoint().is_some() {
+            Ok(())
+        } else {
+            Err(job.error.clone().unwrap_or_else(|| job.detail.clone()))
+        };
+        self.inner.finish_runtime_update(BACKEND_UPDATE_KIND, applied);
         match job.status.as_str() {
             "succeeded" => Ok(()),
             _ => Err(job.error.unwrap_or(job.detail)),
         }
+    }
+
+    pub(crate) fn runtime_update_notice(&self) -> RuntimeUpdateNotice {
+        self.inner
+            .runtime_updates
+            .lock()
+            .map(|updates| updates.notice())
+            .unwrap_or_else(|_| RuntimeUpdates::default().notice())
     }
 
     fn try_launch_installed_backend(&self) -> Result<(), String> {

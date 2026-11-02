@@ -161,6 +161,56 @@ describe('App desktop runtime recovery routes', () => {
   });
 });
 
+describe('App runtime update notice', () => {
+  it('shows the startup runtime update in the shell status region before the backend is ready', () => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    const apiClient = createApiClient();
+    const invoke = vi.fn((command: string) =>
+      command === 'runtime_update_status'
+        ? of({
+            phase: 'applying',
+            runtimes: ['python_backend'],
+            completed: 0,
+            total: 1,
+            estimatedSeconds: 3,
+            error: null,
+          })
+        : of({
+            ...missingPythonRuntimeStatus(),
+            status: 'running',
+            detail: 'Updating the Python backend runtime.',
+            unavailableReason: 'python_runtime_installing',
+          }),
+    );
+    TestBed.configureTestingModule({
+      imports: [App],
+      providers: [
+        { provide: CERT_PREP_API, useValue: apiClient },
+        provideCertPrepHttpResourceClientFake(apiClient),
+        {
+          provide: DesktopRuntimeBridgeService,
+          useValue: { isDesktop: vi.fn().mockReturnValue(true), invoke },
+        },
+        provideRouter(appRoutes),
+      ],
+    });
+
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    const status = compiled.querySelector(
+      'app-runtime-update-notice [role="status"]',
+    );
+    expect(invoke).toHaveBeenCalledWith('runtime_update_status');
+    expect(status?.textContent).toContain(
+      '正在套用更新：更新本機服務（約需 3 秒）',
+    );
+    fixture.destroy();
+  });
+});
+
 function createApiClient() {
   return {
     health: vi.fn().mockReturnValue(of(backendHealth())),

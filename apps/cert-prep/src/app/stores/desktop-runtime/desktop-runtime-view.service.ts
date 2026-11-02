@@ -3,7 +3,9 @@ import type {
   DesktopRuntimeInstallation,
   DesktopRuntimeStatus,
   RuntimePhase,
+  RuntimeUpdateNotice,
 } from './contracts/desktop-runtime.contracts';
+import { RUNTIME_UPDATE_COPY } from './constants/runtime-update-copy.constants';
 
 /**
  * Maps raw runtime command data into stable UI/runtime state primitives.
@@ -159,6 +161,63 @@ export class DesktopRuntimeViewService {
       return 'installed';
     }
     return 'missing';
+  }
+
+  /**
+   * Accepts only a well-formed, non-idle `runtime_update_status` snapshot;
+   * anything else means there is no update notice to show.
+   */
+  runtimeUpdateNotice(value: unknown): RuntimeUpdateNotice | null {
+    if (typeof value !== 'object' || value === null) {
+      return null;
+    }
+    const raw = value as Record<string, unknown>;
+    const phase = raw['phase'];
+    if (phase !== 'applying' && phase !== 'succeeded' && phase !== 'failed') {
+      return null;
+    }
+    const count = (field: unknown): number =>
+      typeof field === 'number' && Number.isFinite(field) && field >= 0
+        ? field
+        : 0;
+    const runtimes = raw['runtimes'];
+    const estimated = raw['estimatedSeconds'];
+    const error = raw['error'];
+    return {
+      phase,
+      runtimes: Array.isArray(runtimes)
+        ? runtimes.filter(
+            (runtime): runtime is string => typeof runtime === 'string',
+          )
+        : [],
+      completed: count(raw['completed']),
+      total: count(raw['total']),
+      estimatedSeconds:
+        typeof estimated === 'number' && estimated > 0 ? estimated : null,
+      error: typeof error === 'string' && error.length > 0 ? error : null,
+    };
+  }
+
+  /** zh-TW wording of the update notice shown in the shell. */
+  runtimeUpdateMessage(notice: RuntimeUpdateNotice): string {
+    if (notice.phase === 'succeeded') {
+      return RUNTIME_UPDATE_COPY.succeeded;
+    }
+    if (notice.phase === 'failed') {
+      return RUNTIME_UPDATE_COPY.failed(
+        notice.error ?? RUNTIME_UPDATE_COPY.unknownError,
+      );
+    }
+    const names = notice.runtimes.map(
+      (runtime) =>
+        RUNTIME_UPDATE_COPY.runtimeNames[runtime] ??
+        RUNTIME_UPDATE_COPY.fallbackRuntimeName,
+    );
+    const subject =
+      names.length > 0
+        ? [...new Set(names)].join('與')
+        : RUNTIME_UPDATE_COPY.fallbackRuntimeName;
+    return RUNTIME_UPDATE_COPY.applying(subject, notice.estimatedSeconds);
   }
 
   errorMessage(error: unknown): string {
