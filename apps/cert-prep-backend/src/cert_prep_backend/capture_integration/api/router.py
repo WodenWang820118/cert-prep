@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterator
-import json
 from pathlib import Path
 import re
-from threading import Condition, Lock
 from typing import Annotated
 from uuid import uuid4
 
@@ -30,7 +27,6 @@ from capture_runtime_client import (
     CaptureBlock,
     CaptureDocument,
     CaptureEngine,
-    CaptureEvent,
     CaptureFailure,
     CaptureOperation,
     CaptureSourceKind,
@@ -38,7 +34,6 @@ from capture_runtime_client import (
     RawCaptureSegment,
     RawCapture,
     StreamingCaptureStatus,
-    StreamingEventType,
 )
 from cert_prep_backend.api.dependencies import get_capture_coordinator
 from cert_prep_backend.platform.dependencies import (
@@ -48,6 +43,12 @@ from cert_prep_backend.platform.dependencies import (
 from cert_prep_backend.api.errors import ApiErrorRead, api_error, not_found_error
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.errors import NotFoundError, ValidationError
+from cert_prep_backend.capture_integration.api.capture_event_stream import (
+    CaptureRuntimeEventRegistry,
+    event_registry,
+    host_event_stream,
+    session_or_404,
+)
 from cert_prep_backend.capture_integration.domain.review_session import (
     CaptureReviewSession,
     CaptureReviewStatus,
@@ -57,7 +58,6 @@ from cert_prep_backend.capture_integration.application import use_cases as captu
 from cert_prep_backend.capture_integration.application.errors import (
     CaptureAudioRejected,
     CaptureCommitNotQueued,
-    CaptureEventStreamFailed,
     CaptureGatewayRejection,
     CaptureOcrClosed,
     CaptureOcrMissing,
@@ -126,7 +126,6 @@ LastEventIdHeader = Annotated[
     str | None,
     Header(alias="Last-Event-ID", max_length=32),
 ]
-_REGISTRY_LOCK = Lock()
 _EVENT_CURSOR = re.compile(r"^-?\d+$")
 
 
@@ -164,55 +163,6 @@ class CaptureStreamingResultRead(_ApiModel):
     operation: CaptureReviewOperationRead
     raw: RawCapture
     result: CaptureDocument
-
-
-class CaptureRuntimeEventRegistry:
-    """Wake SSE proxies after durable capture-session state changes."""
-
-    _MAX_REVISION = (1 << 63) - 1
-
-    def __init__(self) -> None:
-        self._condition = Condition()
-        self._revision = 0
-
-    def publish_runtime(self, project_id: str, session_id: str, runtime_id: str) -> None:
-        """Notify listeners after the runtime identity has been persisted."""
-
-        self._publish_change()
-
-    def publish_terminal(self, project_id: str, session_id: str, terminal: str) -> None:
-        """Notify listeners after the durable session has terminalized."""
-
-        self._publish_change()
-
-    def publish_review_ready(self, project_id: str, session_id: str) -> None:
-        """Notify listeners after the host operation has entered capture review."""
-
-        self._publish_change()
-
-    def revision(self) -> int:
-        with self._condition:
-            return self._revision
-
-    def wait_for_change(
-        self,
-        observed_revision: int,
-        *,
-        timeout_seconds: float,
-    ) -> int:
-        with self._condition:
-            self._condition.wait_for(
-                lambda: self._revision != observed_revision,
-                timeout=timeout_seconds,
-            )
-            return self._revision
-
-    def _publish_change(self) -> None:
-        with self._condition:
-            self._revision = (
-                0 if self._revision == self._MAX_REVISION else self._revision + 1
-            )
-            self._condition.notify_all()
 
 
 def get_project_repository(request: Request) -> ProjectRepository:
@@ -256,7 +206,7 @@ def get_capture_review_events(request: Request) -> CaptureReviewEvents:
 
 
 def get_capture_event_signal(request: Request) -> CaptureEventSignal:
-    return _event_registry(request)
+    return event_registry(request)
 
 
 def get_capture_question_drafting(request: Request) -> CaptureQuestionDrafting:
@@ -492,14 +442,14 @@ def capture_events(
     event_cursor = _host_event_cursor(last_event_id)
     capture_reviews.expire_capture_reviews(get_capture_review_maintenance(request))
     sessions = get_capture_review_store(request)
-    session = _session_or_404(sessions, project_id, capture_id)
+    session = session_or_404(sessions, project_id, capture_id)
     documents = get_capture_documents(request)
     try:
         document = documents.document(project_id, session.document_id)
     except NotFoundError as error:
         raise not_found_error(str(error)) from error
     return StreamingResponse(
-        _host_event_stream(
+        host_event_stream(
             runtime=get_capture_runtime(request),
             sessions=sessions,
             documents=documents,
@@ -853,7 +803,7 @@ def delete_capture(
     maintenance: CaptureReviewMaintenance = Depends(get_capture_review_maintenance),
 ) -> Response:
     get_capture_coordinator(request)
-    session = _session_or_404(sessions, project_id, capture_id)
+    session = session_or_404(sessions, project_id, capture_id)
     if session.is_active:
         cancel_capture(
             request,
@@ -866,7 +816,7 @@ def delete_capture(
             events,
             maintenance,
         )
-        session = _session_or_404(sessions, project_id, capture_id)
+        session = session_or_404(sessions, project_id, capture_id)
     try:
         capture_reviews.discard_capture_runtime(
             runtime, runtime_capture_id=session.runtime_capture_id
@@ -874,197 +824,6 @@ def delete_capture(
     except CaptureGatewayRejection as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-def _host_event_stream(
-    *,
-    runtime: CaptureRuntime,
-    sessions: CaptureReviewStore,
-    documents: CaptureDocuments,
-    operations: CaptureOperations,
-    signal: CaptureEventSignal,
-    project_id: str,
-    capture_id: str,
-    session: CaptureReviewSession,
-    document: SourceDocument,
-    last_event_id: int | None,
-) -> Iterator[str]:
-    runtime_id = session.runtime_capture_id
-    while not runtime_id and session.is_active:
-        try:
-            held = capture_reviews.hold_capture_stream(
-                sessions,
-                operations,
-                signal,
-                project_id=project_id,
-                session_id=capture_id,
-                hold="identity",
-                timeout_seconds=5,
-            )
-        except NotFoundError as error:
-            raise not_found_error(str(error)) from error
-        session = held.session
-        runtime_id = session.runtime_capture_id
-        if held.waiting:
-            yield ": cert-prep waiting for runtime identity\n\n"
-    if runtime_id:
-        emitted = False
-        try:
-            for event in runtime.iter_events(
-                runtime_id,
-                last_event_id=last_event_id,
-            ):
-                emitted = True
-                session = capture_reviews.note_capture_event(
-                    sessions,
-                    project_id=project_id,
-                    session_id=capture_id,
-                    sequence=event.sequence,
-                )
-                if runtime.event_is_terminal(event):
-                    while session.is_active:
-                        held = capture_reviews.hold_capture_stream(
-                            sessions,
-                            operations,
-                            signal,
-                            project_id=project_id,
-                            session_id=capture_id,
-                            hold="terminal",
-                            timeout_seconds=1,
-                        )
-                        session = held.session
-                        if held.waiting:
-                            yield ": cert-prep waiting for durable terminal state\n\n"
-                    terminal = _terminal_host_event(
-                        capture_id,
-                        session,
-                        document,
-                        source_kind=_event_source_kind(
-                            documents,
-                            project_id=project_id,
-                            document_id=document.id,
-                        ),
-                    )
-                    if _cursor_before(last_event_id, terminal.sequence):
-                        yield _encode_sse_event(terminal)
-                    return
-                if runtime.event_awaits_structuring(event):
-                    # Clients confirm as soon as they see this stage, so hold it until
-                    # the host operation can take the review.
-                    while session.is_active and not capture_reviews.capture_review_ready(
-                        operations, session
-                    ):
-                        held = capture_reviews.hold_capture_stream(
-                            sessions,
-                            operations,
-                            signal,
-                            project_id=project_id,
-                            session_id=capture_id,
-                            hold="review",
-                            timeout_seconds=1,
-                        )
-                        session = held.session
-                        if held.waiting:
-                            yield ": cert-prep waiting for capture review\n\n"
-                    if not session.is_active:
-                        terminal = _terminal_host_event(
-                            capture_id,
-                            session,
-                            document,
-                            source_kind=_event_source_kind(
-                                documents,
-                                project_id=project_id,
-                                document_id=document.id,
-                            ),
-                        )
-                        if _cursor_before(last_event_id, terminal.sequence):
-                            yield _encode_sse_event(terminal)
-                        return
-                yield _encode_sse_event(
-                    CaptureEvent.model_validate(
-                        {
-                            **event.model_dump(mode="json", by_alias=True),
-                            "captureId": capture_id,
-                            "eventId": f"{capture_id}/{event.sequence}",
-                        }
-                    )
-                )
-            return
-        except GeneratorExit:
-            return
-        except CaptureEventStreamFailed as error:
-            if emitted or error.status_code != 404:
-                return
-        except Exception:
-            # Closing this listener must never mutate the runtime operation.
-            return
-    session = _session_or_404(sessions, project_id, capture_id)
-    if not session.is_active:
-        event = _terminal_host_event(
-            capture_id,
-            session,
-            document,
-            source_kind=_event_source_kind(
-                documents, project_id=project_id, document_id=document.id
-            ),
-        )
-        if _cursor_before(last_event_id, event.sequence):
-            yield _encode_sse_event(event)
-
-
-def _event_source_kind(
-    documents: CaptureDocuments, *, project_id: str, document_id: str
-) -> CaptureSourceKind:
-    kind = capture_reviews.capture_source_kind(
-        documents, project_id=project_id, document_id=document_id
-    )
-    return CaptureSourceKind.PDF if kind == "pdf" else CaptureSourceKind.IMAGE
-
-
-def _terminal_host_event(
-    capture_id: str,
-    session: CaptureReviewSession,
-    document: SourceDocument,
-    *,
-    source_kind: CaptureSourceKind,
-) -> CaptureEvent:
-    status_value = session.status
-    event_type = {
-        CaptureReviewStatus.COMPLETED: StreamingEventType.COMPLETED,
-        CaptureReviewStatus.CANCELED: StreamingEventType.CANCELLED,
-        CaptureReviewStatus.FAILED: StreamingEventType.FAILED,
-    }[status_value]
-    failure = (
-        CaptureFailure(
-            code="host_capture_failed",
-            message="Cert Prep capture processing failed.",
-            stage="host",
-            retryable=False,
-        )
-        if event_type is StreamingEventType.FAILED
-        else None
-    )
-    sequence = max(1, int(session.last_event_sequence))
-    return CaptureEvent(
-        event_id=f"{capture_id}/{sequence}",
-        sequence=sequence,
-        capture_id=capture_id,
-        kind=source_kind,
-        event_type=event_type,
-        stage=event_type.value,
-        progress=1,
-        error=failure,
-        created_at=document.updated_at,
-    )
-
-
-def _encode_sse_event(event: CaptureEvent) -> str:
-    data = json.dumps(
-        event.model_dump(mode="json", by_alias=True),
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
-    return f"id: {event.sequence}\nevent: {event.event_type.value}\ndata: {data}\n\n"
 
 
 def _host_event_cursor(last_event_id: str | None) -> int | None:
@@ -1082,22 +841,6 @@ def _host_event_cursor(last_event_id: str | None) -> int | None:
             detail="Last-Event-ID must be a decimal integer greater than or equal to -1.",
         )
     return cursor
-
-
-def _cursor_before(last_event_id: int | None, sequence: int) -> bool:
-    return last_event_id is None or last_event_id < sequence
-
-
-def _event_registry(request: Request) -> CaptureRuntimeEventRegistry:
-    registry = getattr(request.app.state, "capture_runtime_event_registry", None)
-    if isinstance(registry, CaptureRuntimeEventRegistry):
-        return registry
-    with _REGISTRY_LOCK:
-        registry = getattr(request.app.state, "capture_runtime_event_registry", None)
-        if not isinstance(registry, CaptureRuntimeEventRegistry):
-            registry = CaptureRuntimeEventRegistry()
-            request.app.state.capture_runtime_event_registry = registry
-    return registry
 
 
 def _operation_for_session(
@@ -1282,15 +1025,6 @@ def _raw_projection(document: CaptureDocument) -> RawCapture:
         warnings=document.warnings,
         created_at=document.created_at,
     )
-
-
-def _session_or_404(
-    sessions: CaptureReviewStore, project_id: str, capture_id: str
-) -> CaptureReviewSession:
-    try:
-        return sessions.get(project_id=project_id, session_id=capture_id)
-    except NotFoundError as error:
-        raise not_found_error(str(error)) from error
 
 
 def _media_type(filename: str, canonical_suffix: str | None = None) -> str:
