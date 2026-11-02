@@ -81,6 +81,91 @@ test('license policy accepts only explicitly reviewed SPDX expressions', () => {
   }
 });
 
+test('license expressions accept AND, OR, WITH, and parentheses', () => {
+  const accepted = [
+    ['MIT', 'MIT'],
+    ['Apache-2.0 OR MIT', 'Apache-2.0 OR MIT'],
+    ['MIT AND Apache-2.0', 'MIT AND Apache-2.0'],
+    [
+      'MIT AND Apache-2.0 OR BSD-3-Clause',
+      'MIT AND Apache-2.0 OR BSD-3-Clause',
+    ],
+    ['Apache-2.0 WITH LLVM-exception', 'Apache-2.0 WITH LLVM-exception'],
+    [
+      'Apache-2.0 WITH LLVM-exception AND MIT',
+      'Apache-2.0 WITH LLVM-exception AND MIT',
+    ],
+    ['(MIT)', '(MIT)'],
+    ['((MIT OR Apache-2.0) AND ISC)', '((MIT OR Apache-2.0) AND ISC)'],
+    [
+      '(MIT AND Apache-2.0) OR (BSD-3-Clause AND ISC)',
+      '(MIT AND Apache-2.0) OR (BSD-3-Clause AND ISC)',
+    ],
+    [
+      'MIT AND (Apache-2.0 WITH LLVM-exception OR BSD-3-Clause)',
+      'MIT AND (Apache-2.0 WITH LLVM-exception OR BSD-3-Clause)',
+    ],
+    ['  Apache-2.0  ', 'Apache-2.0'],
+    ['MIT  OR   Apache-2.0', 'MIT  OR   Apache-2.0'],
+    ['MIT License', 'MIT'],
+    ['Apache License 2.0', 'Apache-2.0'],
+    ['bsd', 'BSD-3-Clause'],
+    ['mit/apache-2.0', 'MIT OR Apache-2.0'],
+    [
+      'bsd-3-clause, apache-2.0, dependency licenses',
+      'BSD-3-Clause AND Apache-2.0 AND CC-BY-4.0',
+    ],
+    [
+      'gplv2-or-later with a special exception which allows to use pyinstaller to build and distribute non-free programs (including commercial ones)',
+      'GPL-2.0-or-later WITH Bootloader-exception',
+    ],
+  ];
+  for (const [raw, expected] of accepted) {
+    assert.equal(normalizeLicense(raw), expected, raw);
+  }
+});
+
+test('rejected license expressions fail with the exact unsupported-license error', () => {
+  const rejected = [
+    ['AGPL-3.0-only', 'AGPL-3.0-only'],
+    ['BUSL-1.1', 'BUSL-1.1'],
+    ['GPL-2.0-or-later', 'GPL-2.0-or-later'],
+    ['MIT WITH Bootloader-exception', 'MIT WITH Bootloader-exception'],
+    [
+      '(MIT AND Apache-2.0) WITH LLVM-exception',
+      '(MIT AND Apache-2.0) WITH LLVM-exception',
+    ],
+    ['MIT AND', 'MIT AND'],
+    ['MIT OR', 'MIT OR'],
+    ['(MIT OR Apache-2.0', '(MIT OR Apache-2.0'],
+    ['()', '()'],
+    ['MIT and Apache-2.0', 'MIT and Apache-2.0'],
+    ['see license in LICENSE', 'see license in LICENSE'],
+    ['LicenseRef-Custom', 'LicenseRef-Custom'],
+    ['proprietary', 'proprietary'],
+    ['commercial use', 'commercial use'],
+    ['unknown', 'unknown'],
+    ['n/a', 'n/a'],
+    ['', ''],
+    ['   ', '   '],
+    [null, 'missing'],
+  ];
+  for (const [license, shown] of rejected) {
+    assert.equal(normalizeLicense(license), null, String(shown));
+    assert.throws(
+      () =>
+        collectLicensedComponents({
+          pythonLicenses: [
+            { name: 'rejected-package', version: '1.0.0', license },
+          ],
+        }),
+      {
+        message: `Release dependency has missing or unsupported license metadata: pypi:rejected-package@1.0.0 (${shown}).`,
+      },
+    );
+  }
+});
+
 test('release identity derives and validates the canonical alpha tag', () => {
   const identity = deriveReleaseIdentity({
     eventName: 'workflow_dispatch',
@@ -233,17 +318,15 @@ test('metadata validates every source release version', () => {
       join(root, 'apps/cert-prep-backend/project.json'),
       JSON.stringify({
         targets: Object.fromEntries(
-          ['build-backend-runtime'].map(
-            (name) => [
-              name,
-              {
-                options: {
-                  command:
-                    'uv run --isolated --python 3.14 python build.py --target x86_64-pc-windows-msvc --version 0.1.0-alpha.1',
-                },
+          ['build-backend-runtime'].map((name) => [
+            name,
+            {
+              options: {
+                command:
+                  'uv run --isolated --python 3.14 python build.py --target x86_64-pc-windows-msvc --version 0.1.0-alpha.1',
               },
-            ],
-          ),
+            },
+          ]),
         ),
       }),
     );
@@ -433,7 +516,8 @@ test('release documents map the installer, backend, and Capture Runtime artifact
           },
           {
             id: 'backend-runtime',
-            artifactPath: 'runtimes/cert-prep-backend-runtime-0.1.0-alpha.1.zip',
+            artifactPath:
+              'runtimes/cert-prep-backend-runtime-0.1.0-alpha.1.zip',
             componentPurls: [purl],
           },
           captureScope,
@@ -609,7 +693,11 @@ test('pinned SPDX canonical text covers a missing LGPL text', async () => {
 
 test('no-clobber planner only reuses identical digests', () => {
   const desired = [
-    { name: 'capture-runtime.exe', path: 'capture-runtime.exe', sha256: '1'.repeat(64) },
+    {
+      name: 'capture-runtime.exe',
+      path: 'capture-runtime.exe',
+      sha256: '1'.repeat(64),
+    },
   ];
   assert.deepEqual(
     planAssetUploads(
