@@ -23,6 +23,11 @@ import type {
   SseFrame,
 } from '../contracts/sse.contracts';
 import { CertPrepRuntimeConfig } from './cert-prep-api.service';
+import {
+  SseFrameParser,
+  type RawSseFrame,
+  type SseFrameLimits,
+} from './sse-frame-parser';
 
 export type {
   CertPrepSseJsonStreamInit,
@@ -85,10 +90,11 @@ export function certPrepSseJsonStream<T>(
         signal: controller.signal,
       }),
     ).pipe(
-      mergeMap((response): Observable<T> =>
-        response.ok
-          ? jsonEventsFromResponse(response, init.eventName, init.isTerminal)
-          : throwError(() => invalidEventStream()),
+      mergeMap(
+        (response): Observable<T> =>
+          response.ok
+            ? jsonEventsFromResponse(response, init.eventName, init.isTerminal)
+            : throwError(() => invalidEventStream()),
       ),
       finalize(() => {
         externalSignal?.removeEventListener('abort', abort);
@@ -103,7 +109,9 @@ function jsonEventsFromResponse<T>(
   expectedEventName: string,
   isTerminal: (value: T) => boolean,
 ): Observable<T> {
-  const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
+  const contentType = (
+    response.headers.get('content-type') ?? ''
+  ).toLowerCase();
   if (!contentType.startsWith('text/event-stream') || !response.body) {
     return throwError(() => invalidEventStream());
   }
@@ -112,7 +120,7 @@ function jsonEventsFromResponse<T>(
   return defer(() => {
     const reader = body.getReader();
     const decoder = new TextDecoder('utf-8', { fatal: true });
-    const parser = new SseParser();
+    const parser = new SseFrameParser(SSE_LIMITS, invalidEventStream);
     let terminalSeen = false;
     const readChunk = () =>
       from(reader.read()).pipe(map(({ done, value }) => ({ done, value })));
@@ -139,17 +147,20 @@ function jsonEventsFromResponse<T>(
     return readChunk().pipe(
       expand(({ done }) => (done ? EMPTY : readChunk())),
       mergeMap(({ done, value }) => {
-        const frames = parser.push(
-          done ? decodeText() : decodeText(value, true),
-        );
+        const frames = parser
+          .push(done ? decodeText() : decodeText(value, true))
+          .map(toSseFrame);
         const events = frames.map(decode);
         if (!done) return from(events);
 
-        const finalEvents = parser.finish().map(decode);
-        const emitted = from([...events, ...finalEvents]);
+        parser.finish();
+        const emitted = from(events);
         return terminalSeen
           ? emitted
-          : concat(emitted, throwError(() => nonTerminalEventStreamEof()));
+          : concat(
+              emitted,
+              throwError(() => nonTerminalEventStreamEof()),
+            );
       }),
       finalize(() => {
         void reader.cancel().catch(() => undefined);
@@ -158,111 +169,24 @@ function jsonEventsFromResponse<T>(
   });
 }
 
-class SseParser {
-  private line = '';
-  private lineBytes = 0;
-  private pendingHighSurrogate = false;
-  private block: string[] = [];
-  private blockBytes = 0;
-  private pendingCarriageReturn = false;
+const SSE_LIMITS: SseFrameLimits = {
+  maxLineBytes: MAX_LINE_BYTES,
+  maxFrameLines: MAX_FRAME_LINES,
+  maxFrameBytes: MAX_FRAME_BYTES,
+  maxPayloadBytes: MAX_PAYLOAD_BYTES,
+};
 
-  push(chunk: string): readonly SseFrame[] {
-    const frames: SseFrame[] = [];
-    let index = 0;
-    if (this.pendingCarriageReturn) {
-      this.pendingCarriageReturn = false;
-      if (chunk[index] === '\n') index += 1;
-      this.emitLine(frames);
-    }
-    while (index < chunk.length) {
-      const character = chunk[index++];
-      if (character === '\r') {
-        if (index === chunk.length) {
-          this.pendingCarriageReturn = true;
-        } else {
-          if (chunk[index] === '\n') index += 1;
-          this.emitLine(frames);
-        }
-      } else if (character === '\n') {
-        this.emitLine(frames);
-      } else {
-        this.appendLineCharacter(character);
-      }
-    }
-    return frames;
-  }
-
-  finish(): readonly SseFrame[] {
-    if (
-      this.pendingCarriageReturn ||
-      this.line !== '' ||
-      this.block.length > 0
-    ) {
-      throw invalidEventStream();
-    }
-    return [];
-  }
-
-  private appendLineCharacter(character: string): void {
-    this.line += character;
-    const code = character.charCodeAt(0);
-    if (this.pendingHighSurrogate) {
-      this.pendingHighSurrogate = false;
-      this.lineBytes += 1;
-    } else if (code >= 0xd800 && code <= 0xdbff) {
-      this.pendingHighSurrogate = true;
-      this.lineBytes += 3;
-    } else {
-      this.lineBytes += code <= 0x7f ? 1 : code <= 0x7ff ? 2 : 3;
-    }
-    if (this.lineBytes > MAX_LINE_BYTES) throw invalidEventStream();
-  }
-
-  private emitLine(frames: SseFrame[]): void {
-    if (this.line === '') {
-      if (this.block.length > 0) {
-        const frame = parseSseBlock(this.block);
-        if (frame) frames.push(frame);
-      }
-      this.block = [];
-      this.blockBytes = 0;
-    } else {
-      if (this.block.length >= MAX_FRAME_LINES) throw invalidEventStream();
-      this.block.push(this.line);
-      this.blockBytes += this.lineBytes;
-      if (this.blockBytes > MAX_FRAME_BYTES) throw invalidEventStream();
-    }
-    this.line = '';
-    this.lineBytes = 0;
-    this.pendingHighSurrogate = false;
-  }
-}
-
-function parseSseBlock(lines: readonly string[]): SseFrame | undefined {
-  let id: string | undefined;
-  let event: string | undefined;
-  const data: string[] = [];
-  let payloadBytes = 0;
-  for (const rawLine of lines) {
-    if (rawLine.startsWith(':')) continue;
-    const colon = rawLine.indexOf(':');
-    const field = colon === -1 ? rawLine : rawLine.slice(0, colon);
-    const value = colon === -1 ? '' : rawLine.slice(colon + 1).replace(/^ /u, '');
-    if (field === 'data') {
-      data.push(value);
-      payloadBytes += new TextEncoder().encode(value).byteLength;
-      if (payloadBytes > MAX_PAYLOAD_BYTES) throw invalidEventStream();
-    } else if (field === 'id') {
-      id = value;
-    } else if (field === 'event') {
-      event = value;
-    }
-  }
-  if (data.length === 0) return undefined;
-  if (id === undefined || id.length === 0 || event === undefined || event.length === 0) {
+function toSseFrame(frame: RawSseFrame): SseFrame {
+  const { id, event } = frame;
+  if (
+    id === undefined ||
+    id.length === 0 ||
+    event === undefined ||
+    event.length === 0
+  ) {
     throw invalidEventStream();
   }
-  return { id, event, data: data.join('\n') };
+  return { id, event, data: frame.data };
 }
 
 function invalidEventStream(): Error {
@@ -277,6 +201,7 @@ function nonTerminalEventStreamEof(): Error {
 
 function abortError(signal: AbortSignal): unknown {
   return (
-    signal.reason ?? new DOMException('The operation was aborted.', 'AbortError')
+    signal.reason ??
+    new DOMException('The operation was aborted.', 'AbortError')
   );
 }

@@ -486,8 +486,20 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
   it.each([
     ['dedicated', 'gpu-dml', null, false, null],
     ['integrated', 'gpu-dml', null, false, null],
-    ['integrated', 'cpu-fallback', 'no_compatible_gpu', true, 'ocr_cpu_fallback'],
-    ['unknown', 'cpu-fallback', 'dml_provider_unavailable', true, 'ocr_cpu_fallback'],
+    [
+      'integrated',
+      'cpu-fallback',
+      'no_compatible_gpu',
+      true,
+      'ocr_cpu_fallback',
+    ],
+    [
+      'unknown',
+      'cpu-fallback',
+      'dml_provider_unavailable',
+      true,
+      'ocr_cpu_fallback',
+    ],
   ] as const)(
     'maps the runtime-owned %s %s OCR compute decision',
     async (adapterClass, mode, reasonCode, userNoticeRequired, noticeCode) => {
@@ -614,6 +626,211 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     await expect(
       firstValueFrom(client.getStreamingCapture('capture-1')),
     ).rejects.toThrow('backend unavailable');
+  });
+
+  it.each([
+    [
+      'a non-Capture Runtime service',
+      { service: 'other-service' },
+      'non-Capture Runtime service',
+    ],
+    [
+      'capabilities outside the Capture contract',
+      { capabilities: { supportsCancellation: false } },
+      'outside the Capture contract',
+    ],
+    [
+      'an OCR preflight for a different runtime version',
+      { ocrCompute: { ...readyOcrCompute(), runtimeVersion: '9.9.9' } },
+      'ocrCompute.runtimeVersion does not match runtimeVersion',
+    ],
+    [
+      'a cpu-fallback preflight without a notice',
+      {
+        ocrCompute: {
+          ...readyOcrCompute(),
+          mode: 'cpu-fallback',
+          reasonCode: 'no_compatible_gpu',
+          userNoticeRequired: false,
+          noticeCode: null,
+        },
+      },
+      'cpu-fallback requires a reason and user notice',
+    ],
+    [
+      'a preflight with a malformed contract digest',
+      { ocrCompute: { ...readyOcrCompute(), contractSha256: 'nope' } },
+      'ocrCompute.contractSha256',
+    ],
+  ] as const)(
+    'rejects readiness with %s',
+    async (_label, override, message) => {
+      api.captureRuntimeReady.mockReturnValueOnce(
+        of(readyResponse(override as Record<string, unknown>)),
+      );
+
+      await expect(firstValueFrom(client.getReady())).rejects.toThrow(message);
+    },
+  );
+
+  it('rejects a capture kind the runtime does not advertise before upload', async () => {
+    api.captureRuntimeReady.mockReturnValueOnce(
+      of(readyResponse({ capabilities: { captureKinds: ['image'] } })),
+    );
+
+    await expect(
+      firstValueFrom(
+        client.startStreamingCapture({
+          clientRequestId: 'unsupported-kind',
+          file: new File(['pdf'], 'scan.pdf', { type: 'application/pdf' }),
+          sourceKind: 'pdf',
+          structuringMode: 'host',
+        }),
+      ),
+    ).rejects.toThrow('Capture Runtime does not support PDF capture.');
+    expect(api.createCapture).not.toHaveBeenCalled();
+  });
+
+  it('rejects a runtime that reports not ready before upload', async () => {
+    api.captureRuntimeReady.mockReturnValueOnce(
+      of(readyResponse({ ready: false })),
+    );
+
+    await expect(
+      firstValueFrom(
+        client.startStreamingCapture({
+          clientRequestId: 'not-ready',
+          file: new File(['pdf'], 'scan.pdf', { type: 'application/pdf' }),
+          sourceKind: 'pdf',
+          structuringMode: 'host',
+        }),
+      ),
+    ).rejects.toThrow('Capture Runtime is not ready.');
+    expect(api.createCapture).not.toHaveBeenCalled();
+  });
+
+  it('rejects an operation whose kind differs from the requested source', async () => {
+    api.createCapture.mockReturnValueOnce(
+      of({ ...makeOperation(), kind: 'image' }),
+    );
+
+    await expect(
+      firstValueFrom(
+        client.startStreamingCapture({
+          clientRequestId: 'kind-mismatch',
+          file: new File(['pdf'], 'scan.pdf', { type: 'application/pdf' }),
+          sourceKind: 'pdf',
+          structuringMode: 'host',
+        }),
+      ),
+    ).rejects.toThrow('capture kind does not match the requested source');
+  });
+
+  it('rejects malformed capture identifiers before any backend call', () => {
+    expect(() => client.getStreamingCapture('bad id')).toThrow(
+      'captureId has an invalid format',
+    );
+    expect(api.getCapture).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'a different captureId',
+      { captureId: 'capture-2' },
+      'captureId does not match',
+    ],
+    [
+      'an unsupported status',
+      { status: 'bogus' },
+      'capture status is unsupported',
+    ],
+    [
+      'an out-of-range progress',
+      { progress: 2 },
+      'capture progress is invalid',
+    ],
+    [
+      'a failed status without an error',
+      { status: 'failed', error: null },
+      'capture error does not match status',
+    ],
+    [
+      'a terminal status without completedAt',
+      { status: 'completed', completedAt: null },
+      'completedAt does not match capture status',
+    ],
+    [
+      'another protocol version',
+      { protocolVersion: '1' },
+      'protocolVersion must be 2',
+    ],
+  ] as const)(
+    'rejects an operation response with %s',
+    async (_label, override, message) => {
+      await seedCapture();
+      api.getCapture.mockReturnValueOnce(
+        of({ ...makeOperation(), ...override }),
+      );
+
+      await expect(
+        firstValueFrom(client.getStreamingCapture('capture-1')),
+      ).rejects.toThrow(message);
+    },
+  );
+
+  it('passes the caller abort signal to every capture request', async () => {
+    await seedCapture();
+    const { signal } = new AbortController();
+
+    await firstValueFrom(client.getStreamingCapture('capture-1', signal));
+    await firstValueFrom(client.getStreamingPartial('capture-1', signal));
+    await firstValueFrom(client.getStreamingRaw('capture-1', signal));
+    await firstValueFrom(client.getStreamingResult('capture-1', signal));
+    await firstValueFrom(client.cancelStreamingCapture('capture-1', signal));
+    await firstValueFrom(client.deleteStreamingCapture('capture-1', signal));
+
+    expect(api.getCapture).toHaveBeenLastCalledWith(
+      TEST_PROJECT_ID,
+      'capture-1',
+      { signal },
+    );
+    expect(api.getPartial).toHaveBeenCalledWith(TEST_PROJECT_ID, 'capture-1', {
+      signal,
+    });
+    expect(api.getRaw).toHaveBeenCalledWith(TEST_PROJECT_ID, 'capture-1', {
+      signal,
+    });
+    expect(api.getResult).toHaveBeenCalledWith(TEST_PROJECT_ID, 'capture-1', {
+      signal,
+    });
+    expect(api.cancelCapture).toHaveBeenCalledWith(
+      TEST_PROJECT_ID,
+      'capture-1',
+      { signal },
+    );
+    expect(api.deleteCapture).toHaveBeenCalledWith(
+      TEST_PROJECT_ID,
+      'capture-1',
+      { signal },
+    );
+  });
+
+  it('rejects composite results whose source digest diverges', async () => {
+    await seedCapture();
+    const composite = makeCompositeResult();
+    api.getResult.mockReturnValueOnce(
+      of({
+        ...composite,
+        result: {
+          ...composite.result,
+          source: { ...composite.result.source, sha256: 'c'.repeat(64) },
+        },
+      }),
+    );
+
+    await expect(
+      firstValueFrom(client.getStreamingResult('capture-1')),
+    ).rejects.toThrow('result source does not match the capture operation');
   });
 
   async function seedCapture(): Promise<void> {

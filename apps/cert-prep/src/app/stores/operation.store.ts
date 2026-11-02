@@ -17,15 +17,19 @@ import {
   share,
   Subscription,
 } from 'rxjs';
-import type { BusyAction, CommandResult } from './operation/contracts/operation.contracts';
+import type {
+  BusyAction,
+  CommandResult,
+} from './operation/contracts/operation.contracts';
+import { requestErrorMessage } from '../services/request-error-message';
 
 @Injectable({ providedIn: 'root' })
 export class OperationStore {
   private readonly injector = inject(Injector);
   private readonly runEpochs = new Map<BusyAction, number>();
-  private readonly activeActionCounts = signal<
-    ReadonlyMap<BusyAction, number>
-  >(new Map());
+  private readonly activeActionCounts = signal<ReadonlyMap<BusyAction, number>>(
+    new Map(),
+  );
   readonly busy = signal<BusyAction | null>(null);
   readonly status = signal('Ready');
   readonly error = signal<string | null>(null);
@@ -63,7 +67,9 @@ export class OperationStore {
         }
         cleaned = true;
         if (taskController !== undefined && !taskController.signal.aborted) {
-          taskController.abort(new DOMException('The command was canceled.', 'AbortError'));
+          taskController.abort(
+            new DOMException('The command was canceled.', 'AbortError'),
+          );
         }
         taskSubscription?.unsubscribe();
         resourceEffect.destroy();
@@ -86,7 +92,10 @@ export class OperationStore {
             resetOnRefCountZero: false,
           }),
         );
-        const command = rxResource<CommandResult<T> | null, boolean | undefined>({
+        const command = rxResource<
+          CommandResult<T> | null,
+          boolean | undefined
+        >({
           params: () => (started() ? true : undefined),
           defaultValue: null,
           stream: ({ abortSignal }) => {
@@ -205,28 +214,9 @@ export class OperationStore {
   }
 
   private getErrorMessage(error: unknown): string {
-    const httpError = error as { error?: unknown; message?: unknown };
-    if (this.hasMessage(httpError.error)) {
-      return httpError.error.message;
-    }
-
-    if (typeof httpError.error === 'string' && httpError.error.length > 0) {
-      return httpError.error;
-    }
-
-    if (typeof httpError.message === 'string' && httpError.message.length > 0) {
-      return httpError.message;
-    }
-
-    return 'The local cert prep service did not complete the request.';
-  }
-
-  private hasMessage(value: unknown): value is { message: string } {
-    return (
-      typeof value === 'object' &&
-      value !== null &&
-      'message' in value &&
-      typeof (value as { message?: unknown }).message === 'string'
+    return requestErrorMessage(
+      error,
+      'The local cert prep service did not complete the request.',
     );
   }
 

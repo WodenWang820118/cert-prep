@@ -11,6 +11,7 @@ import type {
 } from './contracts/health-runtime.contracts';
 import { RuntimeHealthDerivationService } from './runtime-health-derivation.service';
 import { RUNTIME_KIND_LABELS } from './constants/health.constants';
+import { requestErrorMessage } from '../../services/request-error-message';
 
 @Injectable({ providedIn: 'root' })
 export class RuntimeJobViewService {
@@ -22,17 +23,10 @@ export class RuntimeJobViewService {
     context: ModelDownloadViewContext,
   ): ModelDownloadView {
     const record = this.asRecord(response);
-    const status =
-      this.readString(record, 'status') ??
-      this.readString(record, 'phase') ??
-      fallbackPhase;
-    const error = this.readString(record, 'error');
-    const phase = this.phaseFrom(
-      this.derivation.normalizedCode(status),
+    const { status, error, phase, progress } = this.readJobProgress(
+      record,
       fallbackPhase,
-      error,
     );
-    const progress = this.progressFrom(record, phase);
     const message =
       error ??
       this.readString(record, 'detail') ??
@@ -58,17 +52,10 @@ export class RuntimeJobViewService {
   ): RuntimeInstallationView {
     const record = this.asRecord(response);
     const kind = this.runtimeKindFrom(record, fallbackKind);
-    const status =
-      this.readString(record, 'status') ??
-      this.readString(record, 'phase') ??
-      fallbackPhase;
-    const error = this.readString(record, 'error');
-    const phase = this.phaseFrom(
-      this.derivation.normalizedCode(status),
+    const { status, error, phase, progress } = this.readJobProgress(
+      record,
       fallbackPhase,
-      error,
     );
-    const progress = this.progressFrom(record, phase);
     const message =
       error ??
       this.readString(record, 'detail') ??
@@ -158,29 +145,29 @@ export class RuntimeJobViewService {
   }
 
   errorMessage(error: unknown): string {
-    const httpError = error as { error?: unknown; message?: unknown };
-    if (this.hasMessage(httpError.error)) {
-      return httpError.error.message;
-    }
-
-    if (typeof httpError.error === 'string' && httpError.error.length > 0) {
-      return httpError.error;
-    }
-
-    if (typeof httpError.message === 'string' && httpError.message.length > 0) {
-      return httpError.message;
-    }
-
-    return 'The model download did not complete.';
+    return requestErrorMessage(error, 'The model download did not complete.');
   }
 
-  private hasMessage(value: unknown): value is { message: string } {
-    return (
-      typeof value === 'object' &&
-      value !== null &&
-      'message' in value &&
-      typeof (value as { message?: unknown }).message === 'string'
+  private readJobProgress(
+    record: RuntimeJobRecord,
+    fallbackPhase: DownloadPhase,
+  ): {
+    status: string;
+    error: string | null;
+    phase: DownloadPhase;
+    progress: number | null;
+  } {
+    const status =
+      this.readString(record, 'status') ??
+      this.readString(record, 'phase') ??
+      fallbackPhase;
+    const error = this.readString(record, 'error');
+    const phase = this.phaseFrom(
+      this.derivation.normalizedCode(status),
+      fallbackPhase,
+      error,
     );
+    return { status, error, phase, progress: this.progressFrom(record, phase) };
   }
 
   private phaseFrom(
@@ -319,8 +306,6 @@ export class RuntimeJobViewService {
     const kind = this.derivation.normalizedCode(
       this.readString(record, 'kind') ?? fallbackKind,
     );
-    return kind === 'ollama' || kind === 'ollama_model'
-      ? kind
-      : fallbackKind;
+    return kind === 'ollama' || kind === 'ollama_model' ? kind : fallbackKind;
   }
 }
