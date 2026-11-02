@@ -11,7 +11,6 @@ from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 import hashlib
 import os
-from pathlib import Path
 import re
 from threading import Lock
 from typing import BinaryIO
@@ -319,22 +318,6 @@ class CaptureRuntimeClient:
                 except Exception:
                     pass
             raise
-
-    def upload_path(
-        self,
-        path: Path,
-        *,
-        source_kind: CaptureSourceKind | str,
-        client_request_id: str,
-        media_type: str = "application/octet-stream",
-        target_language: str | None = None,
-    ) -> CaptureOperation:
-        return self.start_capture(
-            CaptureUpload(path.name, path.read_bytes(), media_type),
-            source_kind=source_kind,
-            client_request_id=client_request_id,
-            target_language=target_language,
-        )
 
     def get_capture(self, capture_id: str) -> CaptureOperation:
         return self._sdk.get_capture(capture_id)

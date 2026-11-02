@@ -1,5 +1,3 @@
-const CAPTURE_LIMIT = 12_000;
-
 /** Coerces process/API numeric fields into finite report-safe numbers. */
 export function numberField(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value)
@@ -20,16 +18,6 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 /** Normalizes Windows and POSIX separators for report paths and matching. */
 export function normalizePath(path: string): string {
   return path.split(/[\\/]+/).join('/');
-}
-
-/** Normalizes a command line fragment for case-insensitive Windows matching. */
-export function normalizeForCommandLine(value: string): string {
-  return normalizePath(value).toLowerCase();
-}
-
-/** Keeps captured output bounded before it enters reports or errors. */
-export function trimCapture(value: string): string {
-  return value.trim().slice(-CAPTURE_LIMIT);
 }
 
 /** Converts unknown caught values into readable diagnostics. */

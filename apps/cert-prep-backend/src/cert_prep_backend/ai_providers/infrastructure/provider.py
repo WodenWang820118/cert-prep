@@ -129,26 +129,6 @@ class LazyLLMProvider:
         if callable(close):
             close()
 
-    def reconfigure_from_settings(self, settings: Settings) -> None:
-        """Reset the lazy provider after an explicit local policy decision."""
-
-        selected_provider = _selected_provider_from_settings(settings).value
-        with self._lock:
-            resolved = self._provider
-            self._provider = None
-            self._provider_hint = selected_provider
-            self._model_hint = _provider_model_hint(settings, selected_provider)
-            self._runtime_requirement_kind = (
-                RuntimeRequirementKind.OLLAMA
-                if selected_provider == "ollama"
-                else None
-            )
-            self._starts_on_generation = False
-        if resolved is not None:
-            close = getattr(resolved, "close", None)
-            if callable(close):
-                close()
-
     def streaming_generation_kwargs(self) -> dict[str, object]:
         resolved = self._resolved_provider()
         kwargs = getattr(resolved, "streaming_generation_kwargs", None)

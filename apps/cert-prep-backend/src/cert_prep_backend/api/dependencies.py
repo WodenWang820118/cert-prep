@@ -7,7 +7,6 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from cert_prep_backend.api.errors import api_error
 from cert_prep_backend.platform.dependencies import get_settings
-from cert_prep_backend.capture_integration.infrastructure.client import CaptureRuntimeClient
 from cert_prep_backend.capture_integration.infrastructure.coordinator import CertPrepCaptureCoordinator
 from cert_prep_backend.ai_providers.application.ports import MachineInventory
 from cert_prep_backend.ai_providers.domain.provider import LLMProvider
@@ -18,17 +17,6 @@ from cert_prep_backend.platform.document_worker_pool import (
 
 
 bearer_scheme = HTTPBearer(auto_error=False)
-
-
-def get_capture_runtime_client(request: Request) -> CaptureRuntimeClient:
-    client: CaptureRuntimeClient | None = request.app.state.capture_runtime_client
-    if client is None:
-        raise api_error(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            code="capture_runtime_unavailable",
-            message="Capture Runtime is not configured for this process.",
-        )
-    return client
 
 
 def get_capture_coordinator(request: Request) -> CertPrepCaptureCoordinator:

@@ -9,10 +9,4 @@ export {
   summarizeGpuByAdapter,
   summarizeWindowsResourceCsv,
 } from './resource-sampling-summary.mts';
-export type {
-  DxgiAdapter,
-  ResourceSamplingRun,
-  StartResourceSamplingOptions,
-  WindowsResourceSummary,
-  WindowsResourceScriptOptions,
-} from './resource-sampling-types.mts';
+

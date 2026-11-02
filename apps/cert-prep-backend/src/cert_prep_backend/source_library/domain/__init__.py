@@ -6,7 +6,6 @@ from cert_prep_backend.source_library.domain.document import (
     DocumentChunk,
     SourceFile,
 )
-from cert_prep_backend.source_library.domain.policies import PdfExtractionPolicy, SourceDocumentLifecyclePolicy
 from cert_prep_backend.source_library.domain.statuses import (
     DOCUMENT_STATUS_VALUES,
     PDF_EXTRACTION_METHOD_VALUES,
@@ -21,10 +20,8 @@ __all__ = [
     "PdfExtraction",
     "PdfExtractionResult",
     "PdfExtractionMethod",
-    "PdfExtractionPolicy",
     "SourceDocument",
     "DocumentChunk",
-    "SourceDocumentLifecyclePolicy",
     "SourceDocumentStatus",
     "SourceFile",
 ]

@@ -469,66 +469,6 @@ async function streamingApiGet(
   }
 }
 
-export async function createPackagedSmokeQuestion(
-  run: SmokeRunState,
-  uploadedDocument: UploadedDocumentRef,
-  payload: Record<string, unknown>,
-): Promise<unknown> {
-  const headers = uploadedDocument.authorization
-    ? { Authorization: uploadedDocument.authorization }
-    : undefined;
-  const response = await activePage(run).request.post(
-    `${uploadedDocument.apiBaseUrl}/projects/${encodeURIComponent(
-      uploadedDocument.projectId,
-    )}/question-drafts`,
-    {
-      data: payload,
-      headers,
-      timeout: 30_000,
-    },
-  );
-  if (!response.ok()) {
-    throw new Error(
-      `Creating packaged smoke question failed with HTTP ${response.status()}: ${await response.text()}`,
-    );
-  }
-  return await response.json();
-}
-
-export async function firstSourceChunk(
-  run: SmokeRunState,
-  uploadedDocument: UploadedDocumentRef,
-): Promise<{ id: string; pageNumber: number; sourceExcerpt: string }> {
-  const payload = await streamingApiGet(
-    run,
-    uploadedDocument,
-    `/projects/${encodeURIComponent(uploadedDocument.projectId)}/documents/${encodeURIComponent(
-      uploadedDocument.documentId,
-    )}/chunks`,
-  );
-  const items = responseItems(payload);
-  const first = items[0];
-  if (!first || typeof first !== 'object') {
-    throw new Error(
-      'Cannot create QA question because no source chunks were returned.',
-    );
-  }
-  const id = valueString(first, 'id');
-  if (!id) {
-    throw new Error(
-      'Cannot create QA question because the first source chunk had no id.',
-    );
-  }
-  return {
-    id,
-    pageNumber: valueNumber(first, 'page_number') ?? 1,
-    sourceExcerpt:
-      valueString(first, 'source_excerpt') ??
-      valueString(first, 'text') ??
-      'Packaged smoke source excerpt.',
-  };
-}
-
 function normalizedVisibleText(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }

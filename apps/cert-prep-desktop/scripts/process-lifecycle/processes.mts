@@ -1,4 +1,4 @@
-import { execFile, spawnSync, type ChildProcess } from 'node:child_process';
+import { spawnSync, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { join } from 'node:path';
@@ -234,41 +234,6 @@ export function snapshotWindowsProcesses(): ProcessRecord[] {
     );
   }
   return parseProcessSnapshotJson(result.stdout);
-}
-
-/** Captures the same process table without blocking Playwright's event loop. */
-export async function snapshotWindowsProcessesAsync(): Promise<ProcessRecord[]> {
-  if (process.platform !== 'win32') {
-    return [];
-  }
-
-  return await new Promise<ProcessRecord[]>((resolve, reject) => {
-    execFile(
-      resolveWindowsPowerShellExecutable(),
-      windowsProcessSnapshotArguments(),
-      {
-        encoding: 'utf8',
-        windowsHide: true,
-        maxBuffer: PROCESS_SNAPSHOT_MAX_BUFFER,
-        timeout: WINDOWS_PROCESS_SNAPSHOT_TIMEOUT_MS,
-      },
-      (error, stdout, stderr) => {
-        if (error) {
-          reject(
-            new Error(
-              `Process snapshot failed: ${trimCapture(stderr || error.message)}`,
-            ),
-          );
-          return;
-        }
-        try {
-          resolve(parseProcessSnapshotJson(stdout));
-        } catch (parseError) {
-          reject(parseError);
-        }
-      },
-    );
-  });
 }
 
 function windowsProcessSnapshotArguments(): string[] {

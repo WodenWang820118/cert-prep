@@ -9,7 +9,6 @@ handshake; it never returns local paths, bearer tokens, or source text.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import sys
@@ -161,12 +160,6 @@ def _require_digest(value: object, label: str) -> None:
         int(value, 16)
     except ValueError as error:
         raise RuntimeError(f"Packaged Capture Runtime provenance field {label} is invalid.") from error
-
-
-def sha256_bytes(value: bytes) -> str:
-    """Small helper shared by the build-time provenance generator and tests."""
-
-    return hashlib.sha256(value).hexdigest()
 
 
 __all__ = ["capture_runtime_attestation", "load_packaged_provenance"]

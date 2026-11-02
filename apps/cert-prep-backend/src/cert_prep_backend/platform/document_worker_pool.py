@@ -32,10 +32,6 @@ class DocumentWorkerPoolSnapshot:
 class DocumentWorkerCloseResult:
     unresolved_operation_ids: tuple[str, ...]
 
-    @property
-    def unresolved_count(self) -> int:
-        return len(self.unresolved_operation_ids)
-
 
 class DocumentWorkerPool:
     """App-owned FIFO dispatcher for bounded asynchronous document work."""

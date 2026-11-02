@@ -62,13 +62,6 @@ class RuntimeInstallationJobRepository:
                 raise KeyError(job_id)
             return job
 
-    def active_job_for(self, kind: RuntimeRequirementKind) -> RuntimeInstallationJob | None:
-        with self._lock:
-            for job in self._jobs.values():
-                if job.kind == kind and job.is_active:
-                    return job
-            return None
-
     def find_active_or_create(
         self,
         target: RuntimeInstallationTarget,

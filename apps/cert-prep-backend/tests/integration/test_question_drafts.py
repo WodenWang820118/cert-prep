@@ -162,6 +162,24 @@ def test_create_question_rejects_partial_source_reference(
     assert response.json()["code"] == "validation_error"
 
 
+def _append_generated_drafts(
+    db,
+    *,
+    project_id: str,
+    document_id: str,
+    suggestions: list[DraftSuggestion],
+):
+    drafts_repository.ensure_project_exists(db, project_id)
+    with db.connect() as connection:
+        rows = drafts_repository._append_generated_drafts(
+            connection,
+            project_id=project_id,
+            document_id=document_id,
+            suggestions=suggestions,
+        )
+    return [drafts_repository._draft_from_row(row) for row in rows]
+
+
 def test_streaming_append_preserves_existing_drafts_and_dedupes_retries(
     client: TestClient, auth_headers
 ) -> None:
@@ -198,13 +216,13 @@ def test_streaming_append_preserves_existing_drafts_and_dedupes_retries(
         source_question_number="1",
     )
 
-    first = drafts_repository.append_generated_drafts(
+    first = _append_generated_drafts(
         client.app.state.database,
         project_id=project_id,
         document_id=document_id,
         suggestions=[suggestion],
     )
-    second = drafts_repository.append_generated_drafts(
+    second = _append_generated_drafts(
         client.app.state.database,
         project_id=project_id,
         document_id=document_id,

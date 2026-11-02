@@ -224,27 +224,6 @@ def mark_capture_review_pending(
         return _required_operation(_operation_query_by_id(connection, operation_id))
 
 
-def begin_capture_review_commit(
-    db: Database,
-    *,
-    project_id: str,
-    document_id: str,
-    operation_id: str,
-) -> DocumentOperation:
-    """Atomically claim the pending capture for the confirmation worker."""
-
-    now = utc_now()
-    with db.connect() as connection:
-        connection.execute("BEGIN IMMEDIATE")
-        return begin_capture_review_commit_in_connection(
-            connection,
-            project_id=project_id,
-            document_id=document_id,
-            operation_id=operation_id,
-            now=now,
-        )
-
-
 def begin_capture_review_commit_in_connection(
     connection: Connection,
     *,

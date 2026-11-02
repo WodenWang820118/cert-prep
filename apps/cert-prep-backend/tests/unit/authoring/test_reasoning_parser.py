@@ -5,9 +5,7 @@ from dataclasses import replace
 import pytest
 
 from cert_prep_backend.authoring.domain.models import DraftSuggestion, SourceChunk
-from cert_prep_backend.authoring.infrastructure.reasoning_parser import (
-    draft_suggestion_from_item,
-)
+from reasoning_test_support import draft_suggestion_from_item
 
 
 @pytest.fixture

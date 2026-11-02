@@ -243,31 +243,6 @@ def _chunk_exists(
     )
 
 
-def insert_audio_segments(
-    db: Database,
-    *,
-    project_id: str,
-    document_id: str,
-    segments,
-    now: str,
-) -> None:
-    with db.connect() as connection:
-        delete_audio_segments(
-            connection,
-            project_id=project_id,
-            document_id=document_id,
-        )
-        for index, segment in enumerate(segments):
-            insert_audio_segment(
-                connection,
-                project_id=project_id,
-                document_id=document_id,
-                chunk_index=index,
-                segment=segment,
-                now=now,
-            )
-
-
 def delete_audio_segments(connection, *, project_id: str, document_id: str) -> None:
     connection.execute(
         "DELETE FROM document_chunks WHERE project_id = ? AND document_id = ?",

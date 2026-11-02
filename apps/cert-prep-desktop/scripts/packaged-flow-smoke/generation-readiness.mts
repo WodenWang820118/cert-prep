@@ -132,33 +132,6 @@ export async function captureGenerationReadinessAtProjectCreate(
   }
 }
 
-export async function captureGenerationReadinessFromProjectApi(
-  run: SmokeRunState,
-  options: CaptureGenerationReadinessOptions = {},
-): Promise<GenerationReadinessSnapshot> {
-  const page = options.page ?? activePage(run);
-  const now = options.now ?? (() => new Date());
-  const projectApi = run.projectApi;
-  if (!projectApi) {
-    const snapshot = failedSnapshot(
-      now().toISOString(),
-      'project_api_reference_missing',
-    );
-    run.metrics.generation_readiness_at_start = snapshot;
-    return snapshot;
-  }
-  const snapshot = await generationReadinessFromProjectApi(
-    run,
-    page,
-    projectApi,
-    now().toISOString(),
-    options.requestTimeoutMs ?? READINESS_REQUEST_TIMEOUT_MS,
-    options.installedPathVerifier ?? isExistingRegularFile,
-  );
-  run.metrics.generation_readiness_at_start = snapshot;
-  return snapshot;
-}
-
 export async function captureProjectApiAfterRestart(
   page: RestartProjectApiPage,
   expectedProjectId: string,

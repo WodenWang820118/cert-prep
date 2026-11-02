@@ -122,26 +122,6 @@ def create_generated_drafts(
     return [_draft_from_row(row) for row in rows]
 
 
-def append_generated_drafts(
-    db: Database,
-    *,
-    project_id: str,
-    document_id: str,
-    suggestions: list[DraftSuggestion],
-) -> list[QuestionDraft]:
-    """Append streaming draft suggestions without deleting in-review work."""
-
-    ensure_project_exists(db, project_id)
-    with db.connect() as connection:
-        rows = _append_generated_drafts(
-            connection,
-            project_id=project_id,
-            document_id=document_id,
-            suggestions=suggestions,
-        )
-    return [_draft_from_row(row) for row in rows]
-
-
 def append_generated_drafts_and_complete_job(
     db: Database,
     *,

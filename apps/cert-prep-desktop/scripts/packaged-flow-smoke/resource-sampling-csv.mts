@@ -64,15 +64,6 @@ export function newAggregate(): MutableAggregate {
   };
 }
 
-export function addOptionalAggregate(
-  aggregate: MutableAggregate,
-  value: number | null,
-): void {
-  if (value !== null) {
-    addAggregate(aggregate, value);
-  }
-}
-
 export function addAggregate(aggregate: MutableAggregate, value: number): void {
   aggregate.samples += 1;
   aggregate.sum += value;

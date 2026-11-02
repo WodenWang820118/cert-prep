@@ -29,7 +29,7 @@ def _admit(question: str, *, source: str = _PAGE, exam_page: bool = True, choice
 def test_a_quoted_stem_is_admitted_unchanged() -> None:
     admission = _admit("あの兄弟はいつもお互いに張り合っている。")
 
-    assert admission.admitted
+    assert admission.rejection is None
     assert admission.question == "あの兄弟はいつもお互いに張り合っている。"
 
 
@@ -66,7 +66,7 @@ def test_one_mentioned_choice_word_is_not_cut() -> None:
 def test_each_rule_names_its_rejection(question, source, reason) -> None:
     admission = _admit(question, source=source)
 
-    assert not admission.admitted
+    assert admission.rejection is not None
     assert admission.rejection is reason
     assert admission.question is None
 
@@ -80,13 +80,13 @@ def test_a_quoted_request_is_not_a_section_instruction() -> None:
         choices=("1 先生", "2 生徒", "3 親", "4 友人"),
     )
 
-    assert admission.admitted
+    assert admission.rejection is None
 
 
 def test_grounding_applies_only_to_exam_pages() -> None:
     admission = _admit("この教材の要点はどれか。", source="会議の議事録です。", exam_page=False)
 
-    assert admission.admitted
+    assert admission.rejection is None
 
 
 def test_the_listening_rule_runs_before_cleanup() -> None:
