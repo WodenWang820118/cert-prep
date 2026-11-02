@@ -1,0 +1,113 @@
+name: Capture bump
+
+# Opens a version-bump PR when a newer Capture Runtime release is available.
+# resolve-capture-release (capture-workbench) verifies the release's manifest
+# digest and attestation and skips superseded releases; tools/capture-bump.mts
+# decides whether to act and runs the bump:
+# - same version: nothing happens;
+# - a branch or PR for that version already exists: nothing happens;
+# - otherwise it runs version-apply, re-locks only the Capture packages
+#   (including the minimumReleaseAgeExclude entries version-apply rewrites),
+#   regenerates libs/cert-prep-api, runs version-check and opens a PR on
+#   bot/capture-bump-<version>. breaking or manual-review classifications
+#   open a draft titled "需遷移 / migration required".
+#
+# GitHub limitation: a PR created with GITHUB_TOKEN triggers no other
+# workflow, so ci.yml does not run on it by itself. Close and reopen the PR
+# (or push a commit) to run ci.yml before merging; the PR body carries that
+# checklist. No PAT or extra secret is used on purpose.
+
+on:
+  schedule:
+    - cron: '41 2 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'route-a: newest runtime release; stable: release-index/stable.json'
+        required: false
+        default: route-a
+        type: choice
+        options:
+          - route-a
+          - stable
+
+permissions:
+  contents: write
+  pull-requests: write
+  attestations: read
+  packages: read
+
+concurrency:
+  group: capture-bump
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out main
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+        with:
+          run_install: false
+
+      - name: Install Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: '@gx-capture'
+
+      - name: Read the current Capture pin
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/capture-bump.mts current >> "$GITHUB_OUTPUT"
+
+      - name: Resolve the next Capture release
+        id: release
+        uses: gx-capture/capture-workbench/.github/actions/resolve-capture-release@17dde392ff0a881024c8ed8aa6d1e97f2fd41b81
+        with:
+          mode: ${{ inputs.mode || 'route-a' }}
+          current-version: ${{ steps.current.outputs.version }}
+          current-contract-set-sha256: ${{ steps.current.outputs.contract_set_sha256 }}
+
+      - name: Install uv
+        if: steps.release.outputs.changed == 'true'
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990
+        with:
+          version: 0.9.18
+          enable-cache: true
+          python-version: '3.14'
+
+      - name: Install the current dependencies
+        if: steps.release.outputs.changed == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Bump Capture and open the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          NX_DAEMON: 'false'
+          MODE: ${{ inputs.mode || 'route-a' }}
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+          MANIFEST_SHA256: ${{ steps.release.outputs.manifest_sha256 }}
+          CLASSIFICATION: ${{ steps.release.outputs.contract_classification }}
+          CONTRACT_SET_SHA256: ${{ steps.release.outputs.contract_set_sha256 }}
+          CHANGED: ${{ steps.release.outputs.changed }}
+        run: >-
+          node tools/capture-bump.mts open
+          --mode "$MODE" --tag "$TAG" --version "$VERSION"
+          --manifest-sha256 "$MANIFEST_SHA256"
+          --contract-classification "$CLASSIFICATION"
+          --contract-set-sha256 "$CONTRACT_SET_SHA256"
+          --changed "$CHANGED"

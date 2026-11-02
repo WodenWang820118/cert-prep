@@ -20,6 +20,10 @@ const captureCandidateWorkflow = readFileSync(
   ),
   'utf8',
 ).replaceAll('\r\n', '\n');
+const captureBumpWorkflow = readFileSync(
+  resolve(import.meta.dirname, '../../.github/workflows/capture-bump.yml'),
+  'utf8',
+).replaceAll('\r\n', '\n');
 const packageJson = JSON.parse(
   readFileSync(resolve(import.meta.dirname, '../../package.json'), 'utf8'),
 );
@@ -208,7 +212,12 @@ test('package-manager entrypoints use the exact root pnpm declaration', () => {
     ),
   );
 
-  for (const source of [ciWorkflow, captureCandidateWorkflow, workflow]) {
+  for (const source of [
+    ciWorkflow,
+    captureCandidateWorkflow,
+    captureBumpWorkflow,
+    workflow,
+  ]) {
     const setupSteps = [
       ...source.matchAll(
         /      - (?:name:[^\n]*\n\s+)?uses:\s*pnpm\/action-setup@[^\n]+\n(?:(?!      - )[^\n]*\n)*/g,
@@ -543,4 +552,33 @@ test('removed release gates and artifact formats cannot return unnoticed', () =>
     assert.doesNotMatch(workflow, pattern);
   }
   assert.doesNotMatch(gitAttributes, /alpha-acceptance-pdf-manifest\.json/);
+});
+
+test('the Capture bump workflow is pinned, least-privilege and secret-free', () => {
+  const actionUses = [
+    ...captureBumpWorkflow.matchAll(/uses:\s*([^\s@]+)@([^\s]+)/g),
+  ];
+  assert.ok(actionUses.length >= 5);
+  for (const [, action, ref] of actionUses) {
+    assert.match(ref, /^[0-9a-f]{40}$/, `${action} must use an immutable SHA`);
+  }
+  assert.match(
+    captureBumpWorkflow,
+    /uses: gx-capture\/capture-workbench\/\.github\/actions\/resolve-capture-release@[0-9a-f]{40}\n/,
+  );
+  assert.match(
+    captureBumpWorkflow,
+    /\npermissions:\n {2}contents: write\n {2}pull-requests: write\n {2}attestations: read\n {2}packages: read\n\n/,
+  );
+  assert.match(captureBumpWorkflow, /schedule:/);
+  assert.match(captureBumpWorkflow, /workflow_dispatch:/);
+  // GITHUB_TOKEN only: no PAT or repository secret.
+  assert.doesNotMatch(captureBumpWorkflow, /secrets\./);
+  assert.match(captureBumpWorkflow, /run: pnpm install --frozen-lockfile/);
+  assert.match(
+    captureBumpWorkflow,
+    /registry-url: https:\/\/npm\.pkg\.github\.com/,
+  );
+  assert.match(captureBumpWorkflow, /scope: '@gx-capture'/);
+  assert.match(captureBumpWorkflow, /node tools\/capture-bump\.mts open/);
 });
