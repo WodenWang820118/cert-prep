@@ -81,38 +81,14 @@ def create_generated_drafts(
                 continue
             draft_id = str(uuid4())
             draft_ids.append(draft_id)
-            connection.execute(
-                """
-                INSERT INTO question_drafts(
-                    id, project_id, document_id, chunk_id, question, choices_json,
-                    answer, answer_key_source, rationale, citation_page, source_excerpt, status,
-                    confidence, source_order, source_question_number, item_kind, group_key, group_prompt,
-                    rejection_reason, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
-                """,
-                (
-                    draft_id,
-                    project_id,
-                    document_id,
-                    suggestion.chunk_id,
-                    suggestion.question,
-                    json.dumps(suggestion.choices),
-                    suggestion.answer,
-                    suggestion.answer_key_source,
-                    suggestion.rationale,
-                    suggestion.citation_page,
-                    suggestion.source_excerpt,
-                    suggestion.status.value,
-                    suggestion.confidence,
-                    suggestion.source_order or index,
-                    suggestion.source_question_number,
-                    suggestion.item_kind.value,
-                    suggestion.group_key,
-                    suggestion.group_prompt,
-                    now,
-                    now,
-                ),
+            _insert_generated_draft(
+                connection,
+                draft_id=draft_id,
+                project_id=project_id,
+                document_id=document_id,
+                suggestion=suggestion,
+                source_order=suggestion.source_order or index,
+                now=now,
             )
         rows = [
             row
@@ -299,6 +275,51 @@ def append_generated_drafts_and_complete_manual_operation(
     return [_draft_from_row(row) for row in rows]
 
 
+def _insert_generated_draft(
+    connection,
+    *,
+    draft_id: str,
+    project_id: str,
+    document_id: str,
+    suggestion: DraftSuggestion,
+    source_order: int,
+    now: str,
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO question_drafts(
+            id, project_id, document_id, chunk_id, question, choices_json,
+            answer, answer_key_source, rationale, citation_page, source_excerpt, status,
+            confidence, source_order, source_question_number, item_kind, group_key, group_prompt,
+            rejection_reason, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+        """,
+        (
+            draft_id,
+            project_id,
+            document_id,
+            suggestion.chunk_id,
+            suggestion.question,
+            json.dumps(suggestion.choices),
+            suggestion.answer,
+            suggestion.answer_key_source,
+            suggestion.rationale,
+            suggestion.citation_page,
+            suggestion.source_excerpt,
+            suggestion.status.value,
+            suggestion.confidence,
+            source_order,
+            suggestion.source_question_number,
+            suggestion.item_kind.value,
+            suggestion.group_key,
+            suggestion.group_prompt,
+            now,
+            now,
+        ),
+    )
+
+
 def _append_generated_drafts(
     connection,
     *,
@@ -318,38 +339,14 @@ def _append_generated_drafts(
             continue
         draft_id = str(uuid4())
         draft_ids.append(draft_id)
-        connection.execute(
-            """
-            INSERT INTO question_drafts(
-                id, project_id, document_id, chunk_id, question, choices_json,
-                answer, answer_key_source, rationale, citation_page, source_excerpt, status,
-                confidence, source_order, source_question_number, item_kind, group_key, group_prompt,
-                rejection_reason, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
-            """,
-            (
-                draft_id,
-                project_id,
-                document_id,
-                suggestion.chunk_id,
-                suggestion.question,
-                json.dumps(suggestion.choices),
-                suggestion.answer,
-                suggestion.answer_key_source,
-                suggestion.rationale,
-                suggestion.citation_page,
-                suggestion.source_excerpt,
-                suggestion.status.value,
-                suggestion.confidence,
-                suggestion.source_order or index,
-                suggestion.source_question_number,
-                suggestion.item_kind.value,
-                suggestion.group_key,
-                suggestion.group_prompt,
-                now,
-                now,
-            ),
+        _insert_generated_draft(
+            connection,
+            draft_id=draft_id,
+            project_id=project_id,
+            document_id=document_id,
+            suggestion=suggestion,
+            source_order=suggestion.source_order or index,
+            now=now,
         )
     return [
         row
