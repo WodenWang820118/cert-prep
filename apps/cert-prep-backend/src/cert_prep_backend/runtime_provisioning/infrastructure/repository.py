@@ -116,30 +116,19 @@ class RuntimeInstallationJobRepository:
     def recover(self, now: datetime) -> list[RuntimeInstallationJob]:
         if self._db is None:
             return []
-        now_str = now.isoformat()
         with self._lock:
             with self._db.connect() as connection:
-                connection.execute(
+                # Transitions come from the aggregate; persisting here keeps them
+                # in the same transaction and before retention trimming.
+                interrupted = connection.execute(
                     """
-                    UPDATE runtime_installation_jobs
-                    SET status = 'failed', phase = 'interrupted', cancellable = 0,
-                        detail = 'Runtime installation was interrupted by an app restart.',
-                        error = 'Runtime installation was interrupted by an app restart.',
-                        updated_at = ?
-                    WHERE status IN ('queued', 'running')
-                    """,
-                    (now_str,),
-                )
-                connection.execute(
+                    SELECT * FROM runtime_installation_jobs
+                    WHERE status IN ('queued', 'running', 'cancel_requested')
                     """
-                    UPDATE runtime_installation_jobs
-                    SET status = 'canceled', phase = 'canceled', cancellable = 0,
-                        detail = 'Runtime installation cancellation completed after restart.',
-                        error = NULL, updated_at = ?
-                    WHERE status = 'cancel_requested'
-                    """,
-                    (now_str,),
-                )
+                ).fetchall()
+                for interrupted_row in interrupted:
+                    job = self._job_from_row(interrupted_row)
+                    self._write_job(connection, job.recover_after_restart(now=now))
                 rows = connection.execute(
                     """
                     SELECT * FROM runtime_installation_jobs
@@ -184,46 +173,50 @@ class RuntimeInstallationJobRepository:
         if self._db is None:
             return
         with self._db.connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO runtime_installation_jobs(
-                    id, kind, provider, model, status, phase, cancellable,
-                    detail, completed, total, error, created_at, updated_at,
-                    commit_started_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    status = excluded.status,
-                    phase = excluded.phase,
-                    cancellable = excluded.cancellable,
-                    detail = excluded.detail,
-                    completed = excluded.completed,
-                    total = excluded.total,
-                    error = excluded.error,
-                    updated_at = excluded.updated_at,
-                    commit_started_at = excluded.commit_started_at
-                """,
-                (
-                    job.id,
-                    job.kind.value,
-                    job.provider,
-                    job.model,
-                    job.status.value,
-                    job.phase.value,
-                    int(job.cancellable),
-                    job.detail,
-                    job.completed,
-                    job.total,
-                    job.error,
-                    job.created_at.isoformat(),
-                    job.updated_at.isoformat(),
-                    (
-                        job.commit_started_at.isoformat()
-                        if job.commit_started_at is not None
-                        else None
-                    ),
-                ),
+            self._write_job(connection, job)
+
+    @staticmethod
+    def _write_job(connection: sqlite3.Connection, job: RuntimeInstallationJob) -> None:
+        connection.execute(
+            """
+            INSERT INTO runtime_installation_jobs(
+                id, kind, provider, model, status, phase, cancellable,
+                detail, completed, total, error, created_at, updated_at,
+                commit_started_at
             )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                status = excluded.status,
+                phase = excluded.phase,
+                cancellable = excluded.cancellable,
+                detail = excluded.detail,
+                completed = excluded.completed,
+                total = excluded.total,
+                error = excluded.error,
+                updated_at = excluded.updated_at,
+                commit_started_at = excluded.commit_started_at
+            """,
+            (
+                job.id,
+                job.kind.value,
+                job.provider,
+                job.model,
+                job.status.value,
+                job.phase.value,
+                int(job.cancellable),
+                job.detail,
+                job.completed,
+                job.total,
+                job.error,
+                job.created_at.isoformat(),
+                job.updated_at.isoformat(),
+                (
+                    job.commit_started_at.isoformat()
+                    if job.commit_started_at is not None
+                    else None
+                ),
+            ),
+        )
 
     def _evict_terminal_jobs_locked(self) -> None:
         if len(self._jobs) <= self._max_retained_jobs:

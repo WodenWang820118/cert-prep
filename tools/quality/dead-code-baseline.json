@@ -105,7 +105,6 @@
   "production|types|libs/cert-prep-api/src/lib/cert-prep-api.generated.ts|RuntimeRequirementsRead",
   "production|types|libs/cert-prep-api/src/lib/cert-prep-api.generated.ts|StartRuntimeInstallationRequest",
   "python|function|apps/cert-prep-backend/src/cert_prep_backend/api/app.py|create_app",
-  "python|method|apps/cert-prep-backend/src/cert_prep_backend/runtime_provisioning/domain/installation.py|recover_after_restart",
   "python|method|apps/cert-prep-backend/src/cert_prep_backend/runtime_provisioning/domain/installation.py|wait_for_user",
   "python|variable|apps/cert-prep-backend/src/cert_prep_backend/runtime_provisioning/application/ports.py|timeout"
 ]
