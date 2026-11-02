@@ -326,12 +326,15 @@ test('release workflow quality targets exist in the resolved Nx projects', () =>
 });
 
 test('continuous integration lints and tests platform-neutral projects once, on Linux', () => {
-  assertSeparateNxQualitySteps(workflowJobBody(ciWorkflow, 'portable-quality'), {
-    stepLabel: 'portable projects',
-    projects: portableProjects,
-    parallel: 3,
-    nextStepLabel: 'Test generated API client',
-  });
+  assertSeparateNxQualitySteps(
+    workflowJobBody(ciWorkflow, 'portable-quality'),
+    {
+      stepLabel: 'portable projects',
+      projects: portableProjects,
+      parallel: 3,
+      nextStepLabel: 'Test generated API client',
+    },
+  );
   const windowsJob = workflowJobBody(ciWorkflow, 'windows-quality');
   assert.doesNotMatch(windowsJob, /pnpm nx run-many -t (?:lint|test)/);
 });
@@ -366,6 +369,31 @@ test('Capture Runtime remains candidate-bound and fail-closed through clean inst
   assert.doesNotMatch(cleanInstall, /Invoke-WebRequest/);
 });
 
+test('candidate build verifies the staged Capture release attestation with the exact signer', () => {
+  const body = jobBody('build-candidate');
+  assert.match(body, /attestations:\s*read/);
+  const stageStart = body.indexOf(
+    '- name: Stage the published Capture Runtime release',
+  );
+  const verifyStart = body.indexOf(
+    '- name: Verify the staged Capture Runtime release attestation',
+  );
+  const smokeStart = body.indexOf(
+    '- name: Run the Capture Runtime consumer smoke',
+  );
+  assert.ok(stageStart >= 0 && stageStart < verifyStart);
+  assert.ok(verifyStart < smokeStart);
+  const step = body.slice(verifyStart, smokeStart);
+  assert.match(step, /node tools\/verify-capture-release-attestation\.mts/);
+  assert.match(step, /--repo gx-capture\/capture-workbench /);
+  assert.match(
+    step,
+    /--signer-workflow gx-capture\/capture-workbench\/\.github\/workflows\/_publish-github-release\.yml /,
+  );
+  assert.match(step, /capture-release-manifest-v1\.json/);
+  assert.match(step, /if \(\$LASTEXITCODE -ne 0\) \{ throw/);
+});
+
 test('clean-install canonicalizes candidate identities with ordinal ordering', () => {
   assert.match(
     cleanInstall,
@@ -375,10 +403,7 @@ test('clean-install canonicalizes candidate identities with ordinal ordering', (
     cleanInstall,
     /\$computedCandidateId\s*=\s*Get-CanonicalCandidateId \$candidate\.files/,
   );
-  assert.doesNotMatch(
-    cleanInstall,
-    /\$candidate\.files\s*\|\s*Sort-Object/,
-  );
+  assert.doesNotMatch(cleanInstall, /\$candidate\.files\s*\|\s*Sort-Object/);
 });
 
 test(
@@ -506,7 +531,11 @@ test('removed release gates and artifact formats cannot return unnoticed', () =>
     /verify-hardware-result/i,
     /hardware-evidence/i,
     /CycloneDX|\.cdx\.json/i,
-    /attest|provenance/i,
+    // The unsigned alpha must not produce or claim its own attestations;
+    // verifying the upstream Capture release attestation stays allowed.
+    /actions\/attest|attest-build-provenance|attest-release/i,
+    /attestations:\s*write|id-token:\s*write/i,
+    /provenance/i,
     /recording|video-evidence/i,
     /\bmsi\b/i,
   ];

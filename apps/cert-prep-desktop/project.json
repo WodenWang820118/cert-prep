@@ -95,7 +95,7 @@
       "cache": false,
       "executor": "nx:run-commands",
       "options": {
-        "command": "node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts --test tools/capture-runtime-version.test.mts tools/install-capture-runtime.test.mts tools/version-owner.test.mts"
+        "command": "node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts --test tools/capture-runtime-version.test.mts tools/install-capture-runtime.test.mts tools/version-owner.test.mts tools/verify-capture-release-attestation.test.mts"
       }
     },
     "capture-candidate-gate-test": {
