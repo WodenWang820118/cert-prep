@@ -1,22 +1,24 @@
-import { Injectable } from '@angular/core';
-import { defer, from, Observable, switchMap } from 'rxjs';
+import { inject, Injectable } from '@angular/core';
+import { Observable } from 'rxjs';
+import { CertPrepTauriBridgeService } from '../../services/cert-prep-tauri-bridge.service';
 
 /**
  * Small boundary around Tauri globals and command invocation so the runtime
- * store can focus on state transitions instead of platform probing.
+ * store can focus on state transitions instead of platform probing. Kept as a
+ * separate injectable so the store's tests can replace it independently.
  */
 @Injectable({ providedIn: 'root' })
 export class DesktopRuntimeBridgeService {
+  private readonly tauri = inject(CertPrepTauriBridgeService);
+
   isDesktop(): boolean {
-    return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+    return this.tauri.isDesktop();
   }
 
   invoke<TResult>(
     command: string,
     args?: Record<string, unknown>,
   ): Observable<TResult> {
-    return defer(() => from(import('@tauri-apps/api/core'))).pipe(
-      switchMap(({ invoke }) => from(invoke<TResult>(command, args))),
-    );
+    return this.tauri.invoke<TResult>(command, args);
   }
 }

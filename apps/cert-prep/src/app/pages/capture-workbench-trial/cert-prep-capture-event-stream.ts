@@ -1,6 +1,5 @@
 import {
   EMPTY,
-  concat,
   defer,
   expand,
   finalize,
@@ -22,6 +21,11 @@ import {
   MAX_SSE_SEGMENTS,
   STREAMING_EVENT_TYPES,
 } from './constants/capture-workbench-trial.constants';
+import {
+  SseFrameParser,
+  type RawSseFrame,
+  type SseFrameLimits,
+} from '../../services/sse-frame-parser';
 import type {
   CertPrepCaptureEventStreamInit,
   SseEventFrame,
@@ -93,7 +97,7 @@ function eventStreamFromBody(
   return defer(() => {
     const reader = body.getReader();
     const decoder = new TextDecoder('utf-8', { fatal: true });
-    const parser = new SseCaptureEventParser();
+    const parser = new SseFrameParser(CAPTURE_SSE_LIMITS, invalidEventStream);
     let previousSequence = initialSequence;
     const decodeText = (value?: Uint8Array, streaming = false): string => {
       try {
@@ -118,13 +122,13 @@ function eventStreamFromBody(
     return readChunk().pipe(
       expand(({ done }) => (done ? EMPTY : readChunk())),
       mergeMap(({ done, value }) => {
-        const frames = parser.push(
-          done ? decodeText() : decodeText(value, true),
-        );
+        const frames = parser
+          .push(done ? decodeText() : decodeText(value, true))
+          .map(toSseEventFrame);
         const events = frames.map(decode);
-        return done
-          ? concat(from(events), from(parser.finish().map(decode)))
-          : from(events);
+        if (!done) return from(events);
+        parser.finish();
+        return from(events);
       }),
       finalize(() => {
         void reader.cancel().catch(() => undefined);
@@ -133,115 +137,15 @@ function eventStreamFromBody(
   });
 }
 
-class SseCaptureEventParser {
-  private line = '';
-  private lineBytes = 0;
-  private pendingHighSurrogate = false;
-  private block: string[] = [];
-  private blockBytes = 0;
-  private pendingCarriageReturn = false;
+const CAPTURE_SSE_LIMITS: SseFrameLimits = {
+  maxLineBytes: MAX_SSE_LINE_BYTES,
+  maxFrameLines: MAX_SSE_FRAME_LINES,
+  maxFrameBytes: MAX_SSE_FRAME_BYTES,
+  maxPayloadBytes: MAX_SSE_PAYLOAD_BYTES,
+};
 
-  push(chunk: string): readonly SseEventFrame[] {
-    const frames: SseEventFrame[] = [];
-    let index = 0;
-    if (this.pendingCarriageReturn) {
-      this.pendingCarriageReturn = false;
-      if (chunk[index] === '\n') index += 1;
-      this.emitLine(frames);
-    }
-    while (index < chunk.length) {
-      const character = chunk[index];
-      index += 1;
-      if (character === '\r') {
-        if (index === chunk.length) {
-          this.pendingCarriageReturn = true;
-        } else {
-          if (chunk[index] === '\n') index += 1;
-          this.emitLine(frames);
-        }
-      } else if (character === '\n') {
-        this.emitLine(frames);
-      } else {
-        this.appendLineCharacter(character);
-      }
-    }
-    return frames;
-  }
-
-  finish(): readonly SseEventFrame[] {
-    const pending =
-      this.pendingCarriageReturn || this.line !== '' || this.block.length > 0;
-    this.line = '';
-    this.lineBytes = 0;
-    this.pendingHighSurrogate = false;
-    this.block = [];
-    this.blockBytes = 0;
-    this.pendingCarriageReturn = false;
-    if (pending) throw invalidEventStream();
-    return [];
-  }
-
-  private appendLineCharacter(character: string): void {
-    this.line += character;
-    const code = character.charCodeAt(0);
-    if (this.pendingHighSurrogate) {
-      this.pendingHighSurrogate = false;
-      this.lineBytes += 1;
-    } else if (code >= 0xd800 && code <= 0xdbff) {
-      this.pendingHighSurrogate = true;
-      this.lineBytes += 3;
-    } else {
-      this.lineBytes += utf8BytesForCodeUnit(code);
-    }
-    if (this.lineBytes > MAX_SSE_LINE_BYTES) throw invalidEventStream();
-  }
-
-  private emitLine(frames: SseEventFrame[]): void {
-    if (this.line === '') {
-      if (this.block.length > 0) {
-        const frame = parseSseBlock(this.block);
-        if (frame) frames.push(frame);
-      }
-      this.block = [];
-      this.blockBytes = 0;
-    } else {
-      if (this.block.length >= MAX_SSE_FRAME_LINES) throw invalidEventStream();
-      this.block.push(this.line);
-      this.blockBytes += this.lineBytes;
-      if (this.blockBytes > MAX_SSE_FRAME_BYTES) throw invalidEventStream();
-    }
-    this.line = '';
-    this.lineBytes = 0;
-    this.pendingHighSurrogate = false;
-  }
-}
-
-function parseSseBlock(lines: readonly string[]): SseEventFrame | undefined {
-  let id: string | undefined;
-  let event: string | undefined;
-  const data: string[] = [];
-  let payloadBytes = 0;
-  for (const rawLine of lines) {
-    if (rawLine.startsWith(':')) continue;
-    const colon = rawLine.indexOf(':');
-    const field = colon === -1 ? rawLine : rawLine.slice(0, colon);
-    const value =
-      colon === -1 ? '' : rawLine.slice(colon + 1).replace(/^ /u, '');
-    if (field === 'data') {
-      data.push(value);
-      payloadBytes += new TextEncoder().encode(value).byteLength;
-      if (payloadBytes > MAX_SSE_PAYLOAD_BYTES) throw invalidEventStream();
-    } else if (field === 'id') {
-      id = value;
-    } else if (field === 'event') {
-      event = value;
-    }
-  }
-  if (data.length === 0) {
-    // Comments, retry hints, and metadata-only blocks keep the transport alive
-    // but do not dispatch a CaptureEvent.
-    return undefined;
-  }
+function toSseEventFrame(frame: RawSseFrame): SseEventFrame {
+  const { id, event } = frame;
   if (
     id === undefined ||
     !id ||
@@ -251,7 +155,7 @@ function parseSseBlock(lines: readonly string[]): SseEventFrame | undefined {
   ) {
     throw invalidEventStream();
   }
-  return { id, event, data: data.join('\n') };
+  return { id, event, data: frame.data };
 }
 
 function decodeCaptureEventFrame(
@@ -467,12 +371,6 @@ function daysInMonth(year: number, month: number): number {
     return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28;
   }
   return [4, 6, 9, 11].includes(month) ? 30 : 31;
-}
-
-function utf8BytesForCodeUnit(code: number): number {
-  if (code <= 0x7f) return 1;
-  if (code <= 0x7ff) return 2;
-  return 3;
 }
 
 function safeNonNegativeInteger(value: unknown): value is number {
