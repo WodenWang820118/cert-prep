@@ -46,6 +46,8 @@ jobs:
     permissions:
       contents: read
       packages: read
+      # gh attestation verify reads the Capture release's artifact attestations.
+      attestations: read
     outputs:
       tag: ${{ steps.metadata.outputs.tag }}
       commit_sha: ${{ steps.metadata.outputs.commit_sha }}
@@ -97,6 +99,28 @@ jobs:
 
       - name: Stage the published Capture Runtime release
         run: pnpm nx run cert-prep-desktop:install-capture-runtime --skip-nx-cache
+
+      # The full Capture release attests capture-release-manifest-v1.json, which
+      # lists every runtime asset's SHA-256. Verify that attestation's exact
+      # signer workflow, then every staged asset against the manifest.
+      - name: Verify the staged Capture Runtime release attestation
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content tools/capture-runtime-version.json -Raw | ConvertFrom-Json).runtimeVersion
+          $staged = "tmp/cert-prep/capture-runtime/$version"
+          $attested = Join-Path $env:RUNNER_TEMP 'capture-release-attestation'
+          gh release download "v$version" -R gx-capture/capture-workbench -D $attested --clobber -p capture-release-manifest-v1.json
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download the Capture release manifest.' }
+          $assetArgs = @(Get-ChildItem -LiteralPath $staged -File | ForEach-Object { '--asset'; $_.Name })
+          node tools/verify-capture-release-attestation.mts `
+            --repo gx-capture/capture-workbench --tag "v$version" `
+            --signer-workflow gx-capture/capture-workbench/.github/workflows/_publish-github-release.yml `
+            --release-manifest (Join-Path $attested 'capture-release-manifest-v1.json') `
+            --directory $staged @assetArgs
+          if ($LASTEXITCODE -ne 0) { throw 'Capture Runtime release assets failed attestation verification.' }
 
       - name: Run the Capture Runtime consumer smoke
         run: pnpm nx run cert-prep-desktop:capture-runtime-consumer-smoke --skip-nx-cache
