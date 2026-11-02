@@ -14,6 +14,7 @@ from runtime_characterization_support import (
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.database import Database
 from cert_prep_contracts.runtime import (
+    RuntimeInstallProgress as Progress,
     RuntimeInstallationStatus as Status,
     RuntimeRequirementKind as Kind,
 )
@@ -103,6 +104,52 @@ def test_waiting_cancellation_finishes_only_after_restart(tmp_path, make_manager
     assert recovered.detail == "Runtime installation cancellation completed after restart."
     assert recovered.error is None
     assert saved_job(database, waiting.id)["status"] == "canceled"
+
+
+def test_wait_for_user_persists_every_column(tmp_path, make_manager, installer):
+    database = Database(Settings(data_dir=tmp_path))
+
+    def waiting_after_partial_progress(progress):
+        progress(Progress("downloaded", 70, 90))
+        return Status.WAITING_FOR_USER
+
+    installer.action = waiting_after_partial_progress
+    waiting = make_manager(db=database).start_installation(Kind.OLLAMA)
+    row = saved_job(database, waiting.id)
+    assert (row["status"], row["phase"], row["cancellable"]) == (
+        "waiting_for_user", "waiting_for_user", 1,
+    )
+    assert (row["detail"], row["completed"], row["total"], row["error"]) == (
+        "Manual setup required", None, 80, None,
+    )
+    assert row["commit_started_at"] is None
+    assert row["updated_at"] == waiting.updated_at
+    assert (row["kind"], row["provider"], row["model"]) == ("ollama", "test-provider", "test-model")
+
+
+def test_wait_for_user_after_cancel_request_persists_canceled_columns(
+    tmp_path, make_manager, installer,
+):
+    database = Database(Settings(data_dir=tmp_path))
+    manager = make_manager(db=database)
+
+    def cancel_then_wait(progress):
+        progress(Progress("downloaded", 70, 90))
+        (job_id,) = manager._jobs
+        manager.cancel_installation(job_id)
+        return Status.WAITING_FOR_USER
+
+    installer.action = cancel_then_wait
+    result = manager.start_installation(Kind.OLLAMA)
+    row = saved_job(database, result.id)
+    assert (row["status"], row["phase"], row["cancellable"]) == ("canceled", "canceled", 0)
+    assert row["detail"] == "Runtime installation canceled"
+    assert row["error"] is None
+    # The use-case path applies the waiting counts even when cancellation wins;
+    # RuntimeInstallationJob.wait_for_user keeps the prior (70, 90) instead.
+    assert (row["completed"], row["total"]) == (None, 80)
+    assert row["commit_started_at"] is None
+    assert row["updated_at"] == result.updated_at
 
 
 def test_recovery_retains_exact_newest_100_with_created_and_id_tiebreaks(tmp_path, make_manager):
