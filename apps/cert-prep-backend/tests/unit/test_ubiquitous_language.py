@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from cert_prep_backend.api.app import create_app
+from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.platform.config import Settings
 from semantic_layers import REPOSITORY_ROOT, documented_contexts, glossary_code_names, modules_of
 

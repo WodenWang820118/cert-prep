@@ -30,7 +30,7 @@ from cert_prep_backend.runtime_provisioning.infrastructure.manager import Thread
 from cert_prep_backend.runtime_provisioning.infrastructure.repository import (
     RuntimeInstallationJobRepository,
 )
-from cert_prep_backend.api.dependencies import require_bearer_auth
+from cert_prep_backend.api.auth import require_bearer_auth
 from cert_prep_backend.platform.change_notifications import DatabaseChangeNotifier
 from cert_prep_backend.capture_integration.infrastructure.client import CaptureRuntimeClient
 from cert_prep_backend.capture_integration.infrastructure.runtime_policy import (

@@ -15,12 +15,6 @@ from fastapi.responses import FileResponse
 
 from cert_prep_contracts.documents import DocumentOperationRead
 
-from cert_prep_backend.api.dependencies import (
-    get_capture_coordinator,
-    get_document_worker_pool,
-    get_llm_provider,
-    get_streaming_draft_generation_manager,
-)
 from cert_prep_backend.platform.dependencies import (
     get_database,
     get_settings,
@@ -138,6 +132,31 @@ def get_source_file_store(request: Request) -> SourceFileStore:
 
 def get_chunk_translator(request: Request) -> ChunkTranslator:
     return request.app.state.chunk_translator
+
+
+def get_capture_coordinator(request: Request) -> CertPrepCaptureCoordinator:
+    coordinator: CertPrepCaptureCoordinator | None = request.app.state.capture_coordinator
+    if coordinator is None:
+        raise api_error(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="capture_runtime_unavailable",
+            message="Capture Runtime is not configured for this process.",
+        )
+    return coordinator
+
+
+def get_llm_provider(request: Request) -> LLMProvider:
+    return request.app.state.llm_provider
+
+
+def get_streaming_draft_generation_manager(
+    request: Request,
+) -> StreamingDraftGenerationManager:
+    return request.app.state.streaming_draft_generation_manager
+
+
+def get_document_worker_pool(request: Request) -> DocumentWorkerPool:
+    return request.app.state.document_worker_pool
 
 
 @operations_router.get(

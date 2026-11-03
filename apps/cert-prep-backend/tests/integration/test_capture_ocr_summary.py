@@ -10,7 +10,7 @@ import pytest
 from capture_runtime_client import CAPTURE_RUNTIME_VERSION
 from fastapi.testclient import TestClient
 
-from cert_prep_backend.api.app import create_app
+from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.capture_integration.domain.review_session import CaptureReviewStatus
 from cert_prep_backend.capture_integration.infrastructure import review_sessions

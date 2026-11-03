@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from cert_prep_backend.api.app import create_app
+from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.platform.config import DEFAULT_OLLAMA_MODEL, Settings
 from cert_prep_backend.ai_providers.infrastructure import machine_inventory as machine_inventory_module
 from cert_prep_ollama.profiles import DEFAULT_PROFILE_ID

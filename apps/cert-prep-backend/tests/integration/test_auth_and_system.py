@@ -2,7 +2,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from cert_prep_backend.api.app import create_app
+from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.platform.config import DEFAULT_OLLAMA_MODEL, Settings, default_data_dir
 
 

@@ -116,7 +116,7 @@ sequenceDiagram
 - 學習專案：練習屬於一個專案；專案不存在時是 404。
 - 題目編寫：練習讀 `question_drafts` 裡已核可的題目（資料表歸屬在 C5 定案）。
 - 教材來源：整份教材模式先確認教材屬於這個專案。
-- AI 供應：解說錯題用 LLM provider；它現在由 `api.dependencies` 提供，AI 供應拆出後改由它提供（已知例外）。
+- AI 供應：解說錯題用 LLM provider，型別是 AI 供應的 `LLMProvider` port；router 從 `create_app` 放在 `app.state.llm_provider` 的實作取得。
 
 其他上下文只能經 `practice.application` 與 `practice.domain` 使用練習（import-linter「Other contexts reach Practice and Review only through its application and domain」）。
 

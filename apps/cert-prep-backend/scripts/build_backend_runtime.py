@@ -33,7 +33,7 @@ PROVENANCE_PATH = DIST_DIR / "capture-runtime-provenance.json"
 LITE_EXCLUDES: list[str] = []
 
 COMMON_HIDDEN_IMPORTS = [
-    "cert_prep_backend.api.app",
+    "cert_prep_backend.bootstrap.app",
     "sudachipy.sudachipy",
     "sudachidict_core",
 ]

@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from conftest import TestCaptureRuntimeClient, minimal_pdf
-from cert_prep_backend.api.app import create_app
+from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.platform.config import DEFAULT_OLLAMA_MODEL, Settings
 from cert_prep_backend.authoring.domain.models import (
     AnswerKeySource,

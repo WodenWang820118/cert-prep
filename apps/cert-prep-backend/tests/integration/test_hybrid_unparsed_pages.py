@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 import conftest
 from conftest import AUTH_TOKEN, TestCaptureRuntimeClient, minimal_pdf
 from llm_test_fakes import RecordingOllamaClient
-from cert_prep_backend.api.app import create_app
+from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.ai_providers.infrastructure.ollama_transport import OllamaProvider
 from cert_prep_backend.authoring.domain.models import DraftGenerationStrategy
 from cert_prep_backend.authoring.infrastructure import repository as drafts_repository

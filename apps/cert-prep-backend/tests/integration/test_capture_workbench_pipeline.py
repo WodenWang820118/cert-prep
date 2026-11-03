@@ -24,7 +24,7 @@ from conftest import (
     minimal_pdf,
     TypedPullSessionRuntimeMixin,
 )
-from cert_prep_backend.api.app import create_app
+from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeError,

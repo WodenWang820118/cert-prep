@@ -9,7 +9,10 @@ def main() -> None:
     host = os.environ.get("CERT_PREP_HOST", "127.0.0.1")
     port = int(os.environ.get("CERT_PREP_PORT", "8765"))
     start_stale_extraction_sweep()
-    uvicorn.run("cert_prep_backend.api.app:create_app", factory=True, host=host, port=port)
+    # Imported late, as when uvicorn loaded the factory from its import path.
+    from cert_prep_backend.bootstrap.app import create_app
+
+    uvicorn.run(create_app, factory=True, host=host, port=port)
 
 
 if __name__ == "__main__":

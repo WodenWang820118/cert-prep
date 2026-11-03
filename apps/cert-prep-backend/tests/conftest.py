@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 import pypdfium2 as pdfium
 
-from cert_prep_backend.api.app import create_app
+from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.ai_providers.infrastructure import machine_inventory
 from cert_prep_backend.capture_integration.infrastructure.client import (

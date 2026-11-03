@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from capture_runtime_client import CaptureEvent
-from cert_prep_backend.api.app import create_app
+from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.capture_integration.api import capture_event_stream
 from cert_prep_backend.capture_integration.application import use_cases as capture_reviews
 from cert_prep_backend.capture_integration.application.results import CaptureStreamHold
