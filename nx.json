@@ -91,8 +91,5 @@
       "style": "css"
     }
   },
-  "analytics": false,
-  "affected": {
-    "legacy": true
-  }
+  "analytics": false
 }
