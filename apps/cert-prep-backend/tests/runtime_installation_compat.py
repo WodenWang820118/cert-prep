@@ -4,7 +4,7 @@ Production has no manager facade. This test adapter builds the production ports
 and delegates to the same use cases as HTTP, SSE and application lifespan.
 """
 
-from cert_prep_backend.api.app import build_runtime_installation
+from cert_prep_backend.bootstrap.app import build_runtime_installation
 from cert_prep_backend.runtime_provisioning.application import use_cases
 from cert_prep_backend.runtime_provisioning.application.ports import RuntimeInstallation
 from cert_prep_contracts.runtime import RuntimeRequirementKind

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from cert_prep_contracts.hardware import MachineAcceleratorSnapshot
 from cert_prep_backend.ai_providers.api.schemas import MachineAcceleratorRead
-from cert_prep_backend.api.app import create_app
+from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.platform.config import Settings
 
 

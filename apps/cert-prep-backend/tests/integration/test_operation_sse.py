@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from cert_prep_backend.ai_providers.infrastructure.machine_inventory import OllamaMachineInventory
-from cert_prep_backend.api.app import create_app
+from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.platform.sse import operation_snapshot_stream
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.runtime_provisioning.infrastructure.manager import RuntimeInstallationManager

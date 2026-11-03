@@ -5,9 +5,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Path, Request
 
-from cert_prep_backend.api.dependencies import (
-    get_streaming_draft_generation_manager,
-)
 from cert_prep_backend.platform.dependencies import (
     get_database,
     get_database_change_notifier,
@@ -40,6 +37,12 @@ LastEventIdHeader = Annotated[str | None, Header(alias="Last-Event-ID")]
 
 def get_runtime_installation_manager(request: Request) -> RuntimeInstallation:
     return request.app.state.runtime_installation_manager
+
+
+def get_streaming_draft_generation_manager(
+    request: Request,
+) -> StreamingDraftGenerationManager:
+    return request.app.state.streaming_draft_generation_manager
 
 
 @router.get(

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from cert_prep_backend.api.dependencies import get_llm_provider
 from cert_prep_backend.api.errors import (
     ApiErrorRead,
     api_error,
@@ -55,6 +54,10 @@ def get_practice_store(request: Request) -> PracticeStore:
     """The store create_app wires for this application."""
 
     return request.app.state.practice_store
+
+
+def get_llm_provider(request: Request) -> LLMProvider:
+    return request.app.state.llm_provider
 
 
 @router.post(

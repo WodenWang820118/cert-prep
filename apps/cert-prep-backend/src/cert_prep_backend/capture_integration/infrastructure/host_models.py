@@ -7,6 +7,11 @@ from pydantic.alias_generators import to_camel
 
 from capture_runtime_client import CAPTURE_RUNTIME_VERSION
 
+from cert_prep_backend.capture_integration.application.review_envelope import (
+    CaptureReview,
+    CaptureReviewEdit,
+)
+
 try:
     # The SDK publishes this generated contract through the public Python SDK.
     # Keep the fallback below only while the repository's published pin is
@@ -28,20 +33,6 @@ class _HostModel(BaseModel):
         populate_by_name=True,
         extra="forbid",
     )
-
-
-class CaptureReviewEdit(_HostModel):
-    """One user-confirmed replacement for an immutable runtime segment."""
-
-    segment_id: str = Field(min_length=1, max_length=128)
-    reviewed_text: str = Field(min_length=1, max_length=1_000_000)
-
-
-class CaptureReview(_HostModel):
-    """Cert Prep's product review envelope for a v2 capture candidate."""
-
-    review_version: Literal[2] = 2
-    edits: list[CaptureReviewEdit] = Field(default_factory=list)
 
 
 if OcrComputePreflightV2 is None:

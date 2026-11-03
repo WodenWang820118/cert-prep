@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from cert_prep_backend.api.app import create_app
+from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.platform.errors import ProviderUnavailableError
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.ai_providers.infrastructure import machine_inventory as machine_inventory_module

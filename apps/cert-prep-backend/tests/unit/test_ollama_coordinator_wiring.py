@@ -20,7 +20,7 @@ from cert_prep_backend.ai_providers.infrastructure.runtime_installers import (
     LazyOllamaProfileInstaller,
     configured_installer_choices,
 )
-from cert_prep_backend.api.app import create_app
+from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.platform.config import Settings
 from cert_prep_contracts.hardware import (
     MachineCpuSnapshot,

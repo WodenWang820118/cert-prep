@@ -8,7 +8,7 @@
     "serve": {
       "continuous": true,
       "executor": "nx:run-commands",
-      "options": { "cwd": "apps/cert-prep-backend", "command": "uv run uvicorn --app-dir src cert_prep_backend.api.app:create_app --factory --host 127.0.0.1 --port 8765" }
+      "options": { "cwd": "apps/cert-prep-backend", "command": "uv run uvicorn --app-dir src cert_prep_backend.bootstrap.app:create_app --factory --host 127.0.0.1 --port 8765" }
     },
     "test-unit": {
       "cache": true,

@@ -209,4 +209,4 @@ sequenceDiagram
 - HTTP：`/projects/{project_id}/capture-workbench/captures` 與 `/capture-runtime`。事件是工作台下的 `GET /{capture_id}/events`，`text/event-stream`。
 - 安裝請求的 `consent: true` 與 UUID `X-Idempotency-Key` 留在 router。安裝進入 `completed`、`failed`、`cancelled` 或 `manual_action_required` 時，client 清掉 discovery 快取。
 - `CaptureReviewStatus` 不是 OpenAPI 的列舉，概念集沒有對應項目。
-- 已知例外仍在 `apps/cert-prep-backend/pyproject.toml`：工作台 router 對 `api.dependencies`、`routers.documents`、`host_models`、`runtime_policy`；runtime router 對 `host_models`；`persistence` 與 `review_workflow` 對教材來源的 infrastructure。
+- 已知例外仍在 `apps/cert-prep-backend/pyproject.toml`：工作台 router 對 `routers.documents`；runtime router 對 `host_models`（`RuntimeReady` 也由 infrastructure 的 Capture SDK client 解析）；`persistence` 與 `review_workflow` 對教材來源的 infrastructure。

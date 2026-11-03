@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from capture_runtime_client import (
+    CAPTURE_RUNTIME_VERSION,
     CaptureBlock,
     CaptureDocument,
     CaptureEngine,
@@ -35,7 +36,6 @@ from capture_runtime_client import (
     RawCapture,
     StreamingCaptureStatus,
 )
-from cert_prep_backend.api.dependencies import get_capture_coordinator
 from cert_prep_backend.platform.dependencies import (
     get_database,
     get_settings,
@@ -53,8 +53,8 @@ from cert_prep_backend.capture_integration.domain.review_session import (
     CaptureReviewSession,
     CaptureReviewStatus,
 )
-from cert_prep_backend.capture_integration.infrastructure.host_models import CaptureReview
 from cert_prep_backend.capture_integration.application import use_cases as capture_reviews
+from cert_prep_backend.capture_integration.application.review_envelope import CaptureReview
 from cert_prep_backend.capture_integration.application.errors import (
     CaptureAudioRejected,
     CaptureCommitNotQueued,
@@ -84,9 +84,6 @@ from cert_prep_backend.capture_integration.application.ports import (
 )
 from cert_prep_backend.capture_integration.application.ocr_summary import (
     CaptureOcrSummaryRead,
-)
-from cert_prep_backend.capture_integration.infrastructure.runtime_policy import (
-    SUPPORTED_RUNTIME_VERSION,
 )
 from cert_prep_backend.projects.application.ports import ProjectRepository
 from cert_prep_backend.source_library.domain.document import DocumentChunk, SourceDocument
@@ -163,6 +160,16 @@ class CaptureStreamingResultRead(_ApiModel):
     operation: CaptureReviewOperationRead
     raw: RawCapture
     result: CaptureDocument
+
+
+def require_capture_coordinator(request: Request) -> None:
+    """Answer 503 when this process has no Capture Runtime configured."""
+    if request.app.state.capture_coordinator is None:
+        raise api_error(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="capture_runtime_unavailable",
+            message="Capture Runtime is not configured for this process.",
+        )
 
 
 def get_project_repository(request: Request) -> ProjectRepository:
@@ -261,7 +268,7 @@ async def create_capture(
     work: CaptureBackgroundWork = Depends(get_capture_background_work),
     events: CaptureReviewEvents = Depends(get_capture_review_events),
 ) -> CaptureReviewOperationRead:
-    get_capture_coordinator(request)
+    require_capture_coordinator(request)
     capture_reviews.expire_capture_reviews(maintenance)
     operation_id = operation_id_header or str(uuid4())
     try:
@@ -323,7 +330,7 @@ def get_capture(
     capture_id: str,
     db: Database = Depends(get_database),
 ) -> CaptureReviewOperationRead:
-    get_capture_coordinator(request)
+    require_capture_coordinator(request)
     capture_reviews.expire_capture_reviews(get_capture_review_maintenance(request))
     try:
         viewed = capture_reviews.view_capture(
@@ -438,7 +445,7 @@ def capture_events(
     last_event_id: LastEventIdHeader = None,
     db: Database = Depends(get_database),
 ) -> StreamingResponse:
-    get_capture_coordinator(request)
+    require_capture_coordinator(request)
     event_cursor = _host_event_cursor(last_event_id)
     capture_reviews.expire_capture_reviews(get_capture_review_maintenance(request))
     sessions = get_capture_review_store(request)
@@ -476,7 +483,7 @@ def get_partial(
     capture_id: str,
     db: Database = Depends(get_database),
 ) -> PartialCapture:
-    get_capture_coordinator(request)
+    require_capture_coordinator(request)
     capture_reviews.expire_capture_reviews(get_capture_review_maintenance(request))
     try:
         partial = capture_reviews.view_partial_capture(
@@ -509,7 +516,7 @@ def get_raw(
     capture_id: str,
     db: Database = Depends(get_database),
 ) -> RawCapture:
-    get_capture_coordinator(request)
+    require_capture_coordinator(request)
     capture_reviews.expire_capture_reviews(get_capture_review_maintenance(request))
     try:
         return capture_reviews.view_raw_capture(
@@ -537,7 +544,7 @@ def structure_capture(
     structure_request: CaptureReviewStructureRequest,
     db: Database = Depends(get_database),
 ) -> CaptureDocument:
-    get_capture_coordinator(request)
+    require_capture_coordinator(request)
     capture_reviews.expire_capture_reviews(get_capture_review_maintenance(request))
     try:
         return capture_reviews.preview_capture_structure(
@@ -582,7 +589,7 @@ def commit_capture(
     events: CaptureReviewEvents = Depends(get_capture_review_events),
     drafts: CaptureQuestionDrafting = Depends(get_capture_question_drafting),
 ) -> CaptureReviewOperationRead:
-    get_capture_coordinator(request)
+    require_capture_coordinator(request)
     capture_reviews.expire_capture_reviews(maintenance)
     try:
         queued = capture_reviews.commit_capture_review(
@@ -639,7 +646,7 @@ def report_structuring_failure(
     sessions: CaptureReviewStore = Depends(get_capture_review_store),
     runtime: CaptureRuntime = Depends(get_capture_runtime),
 ) -> CaptureReviewOperationRead:
-    get_capture_coordinator(request)
+    require_capture_coordinator(request)
     try:
         reported = capture_reviews.report_structuring_failure(
             sessions,
@@ -678,7 +685,7 @@ def cancel_capture(
     events: CaptureReviewEvents = Depends(get_capture_review_events),
     maintenance: CaptureReviewMaintenance = Depends(get_capture_review_maintenance),
 ) -> CaptureReviewOperationRead:
-    get_capture_coordinator(request)
+    require_capture_coordinator(request)
     capture_reviews.expire_capture_reviews(maintenance)
     try:
         capture_reviews.cancel_capture_review(
@@ -703,7 +710,7 @@ def get_result(
     capture_id: str,
     db: Database = Depends(get_database),
 ) -> CaptureStreamingResultRead:
-    get_capture_coordinator(request)
+    require_capture_coordinator(request)
     capture_reviews.expire_capture_reviews(get_capture_review_maintenance(request))
     documents = get_capture_documents(request)
     files = get_capture_file_store(request)
@@ -802,7 +809,7 @@ def delete_capture(
     events: CaptureReviewEvents = Depends(get_capture_review_events),
     maintenance: CaptureReviewMaintenance = Depends(get_capture_review_maintenance),
 ) -> Response:
-    get_capture_coordinator(request)
+    require_capture_coordinator(request)
     session = session_or_404(sessions, project_id, capture_id)
     if session.is_active:
         cancel_capture(
@@ -986,7 +993,7 @@ def _document_projection(
     digest = f"sha256:{document.sha256}"
     extraction = CaptureEngine(
         engine=document.extraction_method or "windowsml-ocr",
-        model=f"capture-runtime@{SUPPORTED_RUNTIME_VERSION}",
+        model=f"capture-runtime@{CAPTURE_RUNTIME_VERSION}",
         digest=digest,
         device=document.ocr_device,
     )
