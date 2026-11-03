@@ -25,25 +25,10 @@
       "dependsOn": ["^build"],
       "inputs": ["production", "^production"]
     },
-    "@nx/eslint:lint": {
-      "cache": true,
-      "inputs": [
-        "default",
-        "^default",
-        "{workspaceRoot}/.eslintrc.json",
-        "{workspaceRoot}/.eslintignore",
-        "{workspaceRoot}/eslint.config.mts",
-        "{workspaceRoot}/tools/eslint-rules/**/*"
-      ]
-    },
     "@nx/js:tsc": {
       "cache": true,
       "dependsOn": ["^build"],
       "inputs": ["production", "^production"]
-    },
-    "@nx/vitest:test": {
-      "cache": true,
-      "inputs": ["default", "^production"]
     },
     "@angular/build:unit-test": {
       "cache": true,
@@ -61,6 +46,14 @@
       "plugin": "@nx/eslint/plugin",
       "options": {
         "targetName": "lint"
+      }
+    },
+    {
+      "plugin": "@nx/js/typescript",
+      "options": {
+        "typecheck": {
+          "targetName": "typecheck"
+        }
       }
     },
     {

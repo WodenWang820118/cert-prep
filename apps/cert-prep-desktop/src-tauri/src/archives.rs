@@ -78,7 +78,9 @@ pub(crate) fn extract_zip(artifact: &Path, destination: &Path) -> Result<(), Str
     Ok(())
 }
 
-fn safe_entry_path(entry: &zip::read::ZipFile<'_>) -> Result<std::path::PathBuf, String> {
+fn safe_entry_path<R: std::io::Read>(
+    entry: &zip::read::ZipFile<'_, R>,
+) -> Result<std::path::PathBuf, String> {
     let name = entry.name();
     if name.contains('\\') {
         return Err(format!("runtime ZIP entry uses an unsafe separator: {name}"));

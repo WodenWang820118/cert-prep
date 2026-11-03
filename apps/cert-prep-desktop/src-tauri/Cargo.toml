@@ -24,7 +24,7 @@ serde_json = "1"
 sha2 = "0.10"
 tauri = { version = "2", features = [] }
 uuid = { version = "1", features = ["v4"] }
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "2.6", default-features = false, features = ["deflate"] }
 
 [lints.rust]
 # Dead code fails the build. rustc finds it, and `pub` items of this
