@@ -193,3 +193,6 @@ mod shared_sidecar_contract_tests {
         server.join().expect("server");
     }
 }
+
+#[cfg(test)]
+mod public_surface;
