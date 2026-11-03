@@ -21,6 +21,7 @@ from capture_runtime_client import (
     RuntimeRequirements,
     StreamingCaptureStatus,
 )
+from cert_prep_backend.capture_integration.api.router import CaptureReviewOperationRead
 from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeClient,
     CaptureRuntimeProtocolError,
@@ -788,6 +789,46 @@ def test_v2_result_requires_one_exact_source_identity(
 
     with pytest.raises(CaptureRuntimeProtocolError, match="invalid streaming result"):
         _client(handler).get_result("capture-1")
+
+
+def test_v2_responses_accept_capture_090_download_and_page_progress_fields() -> None:
+    """Capture 0.9.0 sends byte and page progress; Cert must pass it through."""
+
+    operation = {**_operation(), "pagesTotal": 12, "pagesDone": 9}
+    requirement = {
+        **_test_runtime_requirements("missing").items[0].model_dump(
+            mode="json", by_alias=True, exclude_none=True
+        ),
+        "downloadBytes": 2_000,
+    }
+    installation = {
+        "installationId": "installation-1",
+        "requirementId": "windowsml-ocr",
+        "status": "running",
+        "progress": 0.25,
+        "createdAt": NOW.isoformat(),
+        "updatedAt": NOW.isoformat(),
+        "downloadBytes": 2_000,
+        "downloadedBytes": 500,
+    }
+    responses: dict[str, dict[str, object]] = {
+        "/v2/captures/capture-1": operation,
+        "/v2/runtime/requirements": {"items": [requirement]},
+        "/v2/runtime/installations/installation-1": installation,
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _json_response(request, responses[request.url.path])
+
+    client = _client(handler)
+    snapshot = client.get_capture("capture-1")
+    read = CaptureReviewOperationRead.model_validate(
+        {**snapshot.model_dump(), "document_id": "document-1"}
+    ).model_dump(mode="json", by_alias=True)
+    assert (read["pagesTotal"], read["pagesDone"]) == (12, 9)
+    assert client.get_requirements().items[0].download_bytes == 2_000
+    progress = client.get_installation("installation-1")
+    assert (progress.download_bytes, progress.downloaded_bytes) == (2_000, 500)
 
 
 @pytest.mark.parametrize("operation_name", ["snapshot", "failure", "cancel"])
