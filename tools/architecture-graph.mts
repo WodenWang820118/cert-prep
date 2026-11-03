@@ -1,14 +1,16 @@
 /**
  * Architecture graph: one normalized JSON picture of the dependencies that
- * the existing rules (Nx tags, import-linter, Sheriff) already constrain, and
- * generated Mermaid diagrams under docs/architecture/ that cannot go stale.
+ * the existing rules (Nx tags, import-linter, Sheriff, dependency-cruiser,
+ * ArchUnit) already constrain, and generated Mermaid diagrams under
+ * docs/architecture/ that cannot go stale.
  *
  * The levels are declared in `architecture-graph.config.json` at the repo
  * root (see {@link parseArchitectureConfig}); each has one of four kinds:
  * - `nx`: Nx projects and their dependencies (`nx graph --file`).
  * - `python`: groups of one Python package, collapsed to a module depth, from
  *   the grimp import graph (tools/architecture_graph_python.py).
- * - `typescript`: Sheriff modules, with edges computed from TypeScript imports.
+ * - `typescript`: folder modules (a Sheriff config's `modules` map, or the same
+ *   map written into the config), with edges computed from TypeScript imports.
  * - `java`: packages under a base package, collapsed to a depth, with edges
  *   from `import` statements (no JDK needed).
  *
@@ -21,14 +23,12 @@
  *   node tools/architecture-graph.mts --config <file>  # levels from another config file
  *
  * The tool is copied, not shared, into each repo that uses it (Capture
- * Workbench owns the original, tools/architecture-graph.ts; Cert Prep and LAW
- * keep copies that are updated together). This copy differs from the
- * original in its Sheriff handling (nested `modules` maps, `<name>`
- * placeholders inside a segment and in tags, the first matching pattern wins
- * as in Sheriff) and counts `.spec-helpers.ts` files as tests. It needs only
- * `typescript`, `nx` for an `nx` level, `uv` and
- * tools/architecture_graph_python.py for a `python` level, and for `--hook`
- * tools/dead-code-gate.mts and tools/architecture-exceptions-gate.mts.
+ * Workbench, Cert Prep, LAW). The copies are kept identical apart from the
+ * file extension (`.ts` or `.mts`) and the import paths it implies; each
+ * repo's levels live in its config file, so a change here goes to every copy
+ * with its tests. It needs only `typescript`, `nx` for an `nx` level, `uv`
+ * and tools/architecture_graph_python.py for a `python` level, and for
+ * `--hook` tools/dead-code-gate.mts and tools/architecture-exceptions-gate.mts.
  *
  * The graph-building functions are pure; everything that spawns a process or
  * touches the filesystem sits in the "process boundary" section at the end.
@@ -67,7 +67,7 @@ export type Edge = [from: string, to: string];
 export interface GraphLevel {
   nodes: string[];
   edges: Edge[];
-  /** Label shown under a node: its `type:*` tag (projects), group (python) or Sheriff tags (UI modules). */
+  /** Label shown under a node: its Nx tag (projects, `tagPrefix`), group (python) or module tags (typescript). */
   tags?: Record<string, string>;
   /**
    * Repo-relative posix path prefix (a directory or a file; `.` is the whole
@@ -79,7 +79,7 @@ export interface GraphLevel {
   label?: string;
   /**
    * Which edges cross a boundary: `tag` when the endpoints' tags differ (Nx
-   * `type:*`, python groups), `node` when every node is its own group.
+   * tags, python groups), `node` when every node is its own group.
    */
   boundary?: 'tag' | 'node';
 }
@@ -110,6 +110,12 @@ interface LevelConfigBase {
 
 export interface NxLevelConfig extends LevelConfigBase {
   kind: 'nx';
+  /**
+   * Prefix of the project tag shown under each node and compared for
+   * crossing edges: the tag family the Nx `depConstraints` use (default
+   * `type:`; a repo whose rules use `scope:*` sets `scope:`).
+   */
+  tagPrefix: string;
 }
 
 export interface PythonLevelConfig extends LevelConfigBase {
@@ -132,8 +138,13 @@ export interface PythonLevelConfig extends LevelConfigBase {
 
 export interface TypeScriptLevelConfig extends LevelConfigBase {
   kind: 'typescript';
-  /** Sheriff config whose `modules` map defines the nodes. */
-  sheriffConfig: string;
+  /** Sheriff config whose `modules` map defines the nodes (or `modules`). */
+  sheriffConfig?: string;
+  /**
+   * The same map written here, for a project whose folder rules live in
+   * another tool (such as dependency-cruiser). Exactly one of the two.
+   */
+  modules?: Record<string, string[]>;
   /** tsconfig whose `compilerOptions.paths` resolve import aliases. */
   tsconfig: string;
   /** Directories scanned for production `.ts` sources. */
@@ -207,8 +218,9 @@ function readPattern(
   path: string,
   pattern: RegExp,
   description: string,
+  fallback?: string,
 ): string {
-  const value = readString(object, key, path);
+  const value = readString(object, key, path, fallback);
   if (!pattern.test(value))
     configError(`${path}.${key}`, `must be ${description}.`);
   return value;
@@ -283,6 +295,33 @@ function readPositiveInteger(
   return value as number;
 }
 
+/** An object of non-empty string arrays, such as a Sheriff `modules` map. */
+function readStringListMap(
+  object: JsonObject,
+  key: string,
+  path: string,
+): Record<string, string[]> | undefined {
+  const value = object[key];
+  if (value === undefined) return undefined;
+  if (!isObject(value) || Object.keys(value).length === 0) {
+    configError(`${path}.${key}`, 'must be a non-empty object.');
+  }
+  for (const [entry, list] of Object.entries(value)) {
+    checkRelativePath(entry, `${path}.${key} key "${entry}"`);
+    if (
+      !Array.isArray(list) ||
+      list.length === 0 ||
+      !list.every((item) => typeof item === 'string' && item.trim() !== '')
+    ) {
+      configError(
+        `${path}.${key}.${entry}`,
+        'must be a non-empty array of strings.',
+      );
+    }
+  }
+  return value as Record<string, string[]>;
+}
+
 function readStringMap(
   object: JsonObject,
   key: string,
@@ -326,8 +365,19 @@ function parseLevel(value: unknown, path: string): LevelConfig {
   const kind = value.kind;
   switch (kind) {
     case 'nx':
-      rejectUnknownKeys(value, COMMON_KEYS, path);
-      return { ...common, kind };
+      rejectUnknownKeys(value, [...COMMON_KEYS, 'tagPrefix'], path);
+      return {
+        ...common,
+        kind,
+        tagPrefix: readPattern(
+          value,
+          'tagPrefix',
+          path,
+          /^[\w-]+:$/u,
+          'a tag prefix ending in `:`, such as `type:`',
+          'type:',
+        ),
+      };
     case 'python': {
       rejectUnknownKeys(
         value,
@@ -368,20 +418,34 @@ function parseLevel(value: unknown, path: string): LevelConfig {
         ...(contracts ? { importLinterConfig: contracts } : {}),
       };
     }
-    case 'typescript':
+    case 'typescript': {
       rejectUnknownKeys(
         value,
-        [...COMMON_KEYS, 'sheriffConfig', 'tsconfig', 'sourceRoots', 'exclude'],
+        [
+          ...COMMON_KEYS,
+          'sheriffConfig',
+          'modules',
+          'tsconfig',
+          'sourceRoots',
+          'exclude',
+        ],
         path,
       );
+      const sheriffConfig = readOptionalPath(value, 'sheriffConfig', path);
+      const modules = readStringListMap(value, 'modules', path);
+      if ((sheriffConfig === undefined) === (modules === undefined)) {
+        configError(path, 'needs exactly one of `sheriffConfig`, `modules`.');
+      }
       return {
         ...common,
         kind,
-        sheriffConfig: readPath(value, 'sheriffConfig', path),
+        ...(sheriffConfig ? { sheriffConfig } : {}),
+        ...(modules ? { modules } : {}),
         tsconfig: readPath(value, 'tsconfig', path, 'tsconfig.base.json'),
         sourceRoots: readPathList(value, 'sourceRoots', path),
         exclude: readPathList(value, 'exclude', path, []),
       };
+    }
     case 'java':
       rejectUnknownKeys(
         value,
@@ -411,7 +475,8 @@ function parseLevel(value: unknown, path: string): LevelConfig {
 
 /**
  * Validates the parsed `architecture-graph.config.json` and fills defaults
- * (`label` = `title`, python `projectDir` `.`, `collapseDepth` 1, typescript
+ * (`label` = `title`, nx `tagPrefix` `type:`, python `projectDir` `.`,
+ * `collapseDepth` 1, typescript
  * `tsconfig` `tsconfig.base.json`). Every error names the offending key.
  */
 export function parseArchitectureConfig(value: unknown): ArchitectureConfig {
@@ -474,10 +539,12 @@ interface NxGraphBody {
 /**
  * Builds the project level from the JSON written by `nx graph --file`.
  * External (npm) nodes and their edges are dropped. A file belongs to the
- * project with the longest root containing it, as in Nx.
+ * project with the longest root containing it, as in Nx. Each node's label
+ * is its first tag starting with `tagPrefix`.
  */
 export function projectsLevel(
   nxGraph: NxGraphBody & { graph?: NxGraphBody },
+  tagPrefix = 'type:',
 ): GraphLevel {
   const body = nxGraph.graph ?? nxGraph;
   const projects = body.nodes ?? {};
@@ -494,8 +561,10 @@ export function projectsLevel(
   const tags: Record<string, string> = {};
   const roots: Record<string, string> = {};
   for (const [name, project] of Object.entries(projects)) {
-    const typeTag = project.data?.tags?.find((tag) => tag.startsWith('type:'));
-    if (typeTag) tags[name] = typeTag;
+    const tag = project.data?.tags?.find((entry) =>
+      entry.startsWith(tagPrefix),
+    );
+    if (tag) tags[name] = tag;
     const root = project.data?.root;
     if (root !== undefined) roots[root === '' ? '.' : root] = name;
   }
@@ -610,12 +679,12 @@ export function pythonModulesLevel(
   };
 }
 
-// ---- Level kind: typescript (Sheriff modules) ------------------------------
+// ---- Level kind: typescript (folder modules) -------------------------------
 
 const ROOT_MODULE = 'root';
 
 interface UiModuleInput {
-  /** The Sheriff `modules` map: path pattern (`<name>` matches one directory) to tags. */
+  /** A Sheriff-style `modules` map: path pattern (`<name>` matches folder characters in one segment) to tags; the first match wins. */
   modules: Record<string, string[]>;
   /** Production TypeScript sources by workspace-relative posix path. */
   sources: Record<string, string>;
@@ -841,7 +910,7 @@ function resolveSourceFile(
 
 /**
  * Module-to-module edges from TypeScript imports. A file belongs to the
- * deepest Sheriff module directory containing it, or to `root` when none does.
+ * deepest module directory containing it, or to `root` when none does.
  * A directory that several patterns match takes the tags of the first one in
  * config order, as Sheriff does (`components/ui` before
  * `components/<component>`). Imports that resolve to no scanned source file
@@ -1046,8 +1115,22 @@ export function mermaidIds(nodes: string[]): Map<string, string> {
   return ids;
 }
 
-function mermaidLabel(text: string): string {
-  return text.replaceAll('"', '#quot;');
+/**
+ * Text that is safe inside a quoted Mermaid label (`id["..."]`): the
+ * characters Mermaid or its HTML labels would interpret become entity codes
+ * (`#` first, since every code starts with it), and line breaks and runs of
+ * whitespace become one space. tools/wiki-overview.ts uses it for issue titles.
+ */
+export function mermaidLabel(text: string): string {
+  return text
+    .replaceAll('#', '#35;')
+    .replaceAll('"', '#quot;')
+    .replaceAll('&', '#amp;')
+    .replaceAll('<', '#lt;')
+    .replaceAll('>', '#gt;')
+    .replaceAll('`', '#96;')
+    .replace(/\s+/gu, ' ')
+    .trim();
 }
 
 /**
@@ -1219,7 +1302,7 @@ export function runCli(
 
 /** Config files that can move a diagram or add a boundary exception. */
 const ARCHITECTURE_CONFIG_CHANGE =
-  /(?:^|\/)(?:package|project|nx|tsconfig[^/]*|[^/]*eslint-suppressions)\.json$|(?:^|\/)importlinter\.toml$/u;
+  /(?:^|\/)(?:package|project|nx|tsconfig[^/]*|[^/]*eslint-suppressions|\.oxlintrc|\.dependency-cruiser-known-violations)\.json$|(?:^|\/)(?:importlinter\.toml|\.dependency-cruiser\.c?js)$/u;
 const SOURCE_FILE = /\.(?:ts|tsx|mts|cts|js|mjs|cjs|py|java)$/u;
 
 interface HookChecks {
@@ -1271,7 +1354,8 @@ function isArchitectureChange(
     }
     if (level.kind === 'typescript') {
       sourceDirectories.push(...level.sourceRoots);
-      configFiles.add(level.sheriffConfig).add(level.tsconfig);
+      configFiles.add(level.tsconfig);
+      if (level.sheriffConfig) configFiles.add(level.sheriffConfig);
     }
     if (level.kind === 'java') sourceDirectories.push(...level.sourceRoots);
   }
@@ -1288,8 +1372,9 @@ function isArchitectureChange(
  * affect the architecture (`changed` comes from the dead-code gate's
  * `changedPaths`); then the docs check and the exception gate run, plus the
  * import-linter contracts of each python level (with `importLinterConfig`)
- * whose Python sources or contracts changed. The Sheriff and Nx rules run
- * with each project's `lint`, which is too slow for the hook. Exit 2 shows
+ * whose Python sources or contracts changed. The Nx tag and folder rules
+ * (Sheriff, dependency-cruiser) run with each project's `lint`, and ArchUnit
+ * rules with the Java tests; both are too slow for the hook. Exit 2 shows
  * stderr to the model; `stop_hook_active` means it already had one round of
  * feedback, so it may stop (no loops).
  */
@@ -1395,7 +1480,7 @@ function nxBinary(root: string): string {
  */
 const NX_ENV = { ...process.env, NX_DAEMON: 'false' };
 
-function collectProjects(root: string): GraphLevel {
+function collectProjects(root: string, level: NxLevelConfig): GraphLevel {
   const nxBin = nxBinary(root);
   const directory = mkdtempSync(join(tmpdir(), 'architecture-graph-'));
   try {
@@ -1406,7 +1491,10 @@ function collectProjects(root: string): GraphLevel {
       [nxBin, 'graph', `--file=${file}`],
       { cwd: root, env: NX_ENV },
     );
-    return projectsLevel(JSON.parse(readFileSync(file, 'utf8')));
+    return projectsLevel(
+      JSON.parse(readFileSync(file, 'utf8')),
+      level.tagPrefix,
+    );
   } finally {
     rmSync(directory, {
       recursive: true,
@@ -1489,7 +1577,9 @@ function collectTypeScript(
     ),
   );
   return uiModulesLevel({
-    modules: parseSheriffModules(readText(join(root, level.sheriffConfig))),
+    modules:
+      level.modules ??
+      parseSheriffModules(readText(join(root, level.sheriffConfig as string))),
     sources: collectSources(
       root,
       level.sourceRoots,
@@ -1516,7 +1606,7 @@ function collectJava(root: string, level: JavaLevelConfig): GraphLevel {
 function collectLevel(root: string, level: LevelConfig): GraphLevel {
   switch (level.kind) {
     case 'nx':
-      return collectProjects(root);
+      return collectProjects(root, level);
     case 'python':
       return collectPython(root, level);
     case 'typescript':
