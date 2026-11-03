@@ -1,0 +1,176 @@
+name: Architecture diff
+
+# Keeps an architecture section in each pull request description
+# (tools/architecture-diff.mts): the nodes of every level of
+# tools/architecture-graph.mts that the changed files belong to, their direct
+# dependencies, and the dependency edges the PR adds and removes. Only the
+# text between the section's hidden markers is rewritten; a sticky comment is
+# the fallback when the description cannot be updated (a fork's read-only
+# token). Only paths that feed the graphs trigger it.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/**'
+      - 'libs/**'
+      - 'packages/**'
+      - 'tools/**'
+      - 'architecture-graph.config.json'
+      - '.github/workflows/architecture-diff.yml'
+      - 'nx.json'
+      - 'package.json'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig*.json'
+      - 'sheriff.config.ts'
+      - '!**/*.md'
+
+permissions:
+  contents: read
+  packages: read
+  pull-requests: write
+
+# A newer push to a pull request replaces its older run; only the latest
+# head's section matters.
+concurrency:
+  group: architecture-diff-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  CI: 'true'
+  NX_CLOUD_DISTRIBUTED_EXECUTION: 'false'
+  PYTHON_VERSION: '3.14'
+
+jobs:
+  describe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Informational only: a failure here (a base tree that no longer installs,
+    # a fork's read-only token) must never block a merge. The blocking rules
+    # (Nx tags, import-linter, Sheriff, architecture diagrams and exceptions)
+    # live in the portable-quality job of ci.yml.
+    continue-on-error: true
+    steps:
+      - name: Check out source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+        with:
+          run_install: false
+
+      - name: Install Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: '@gx-capture'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990
+        with:
+          version: 0.9.18
+          enable-cache: true
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # @gx-capture packages come from GitHub Packages, which needs a token
+      # even for public packages (packages: read above).
+      - name: Install published Capture Workbench packages
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Head graph
+        run: node tools/architecture-graph.mts > "$RUNNER_TEMP/head.json"
+
+      # The head's copy of the tool reads the base tree through --root, so a
+      # base without tools/architecture-graph.mts still works; --config gives
+      # it the head's levels, so both graphs have the same levels even when
+      # the base has no (or an older) architecture-graph.config.json. `nx
+      # graph` needs the workspace's own node_modules (the nx bin refuses a
+      # workspace without a local install and resolves nx.json plugins from
+      # it), so the base worktree gets its own install, with the same
+      # registry token. The pnpm store is already warm from the head install,
+      # and lifecycle scripts are not needed to read the project graph.
+      - name: Base graph
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git worktree add --detach "$RUNNER_TEMP/base" "$BASE_SHA"
+          pnpm --dir "$RUNNER_TEMP/base" install --frozen-lockfile --prefer-offline --ignore-scripts
+          node tools/architecture-graph.mts --root "$RUNNER_TEMP/base" \
+            --config architecture-graph.config.json > "$RUNNER_TEMP/base.json"
+
+      # --no-renames lists a moved file's old path too, so the node it left
+      # counts as touched; quotePath=false keeps non-ASCII paths unescaped.
+      - name: Changed files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: >-
+          git -c core.quotePath=false diff --name-only --no-renames
+          "$BASE_SHA"...HEAD > "$RUNNER_TEMP/changed-files.txt"
+
+      - name: Render section
+        run: >-
+          node tools/architecture-diff.mts
+          --base "$RUNNER_TEMP/base.json"
+          --head "$RUNNER_TEMP/head.json"
+          --changed-files "$RUNNER_TEMP/changed-files.txt"
+          > "$RUNNER_TEMP/architecture-section.md"
+
+      # Splices the section into the current description (tested in
+      # tools/architecture-diff.test.mts) and writes it back only when it
+      # changed. --template prints the body byte-exact; --jq would append a
+      # newline that every run would add to the description again.
+      - name: Update the pull request description
+        id: description
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -uo pipefail
+          body="$RUNNER_TEMP/pr-body.md"
+          new_body="$RUNNER_TEMP/pr-body-new.md"
+          if gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" \
+              --template '{{if .body}}{{.body}}{{end}}' > "$body" &&
+            node tools/architecture-diff.mts --splice-body "$body" \
+              --section "$RUNNER_TEMP/architecture-section.md" > "$new_body" &&
+            { cmp -s "$body" "$new_body" ||
+              gh api --method PATCH "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" \
+                -F body=@"$new_body" > /dev/null; }; then
+            echo "updated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Could not update the pull request description; posting the section as a comment instead."
+            echo "updated=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Fallback: update the comment that starts with the marker, else add one.
+      - name: Create or update the fallback comment
+        if: steps.description.outputs.updated != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          node tools/architecture-diff.mts --comment \
+            --base "$RUNNER_TEMP/base.json" \
+            --head "$RUNNER_TEMP/head.json" \
+            --changed-files "$RUNNER_TEMP/changed-files.txt" \
+            > "$RUNNER_TEMP/architecture-diff.md"
+          # Collect every id first: piping into `head` could kill gh with
+          # SIGPIPE, which pipefail turns into a failed step.
+          ids="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- architecture-diff -->"))) | .id')"
+          comment_id="${ids%%$'\n'*}"
+          if [ -n "$comment_id" ]; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" \
+              -F body=@"$RUNNER_TEMP/architecture-diff.md" > /dev/null
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+              -F body=@"$RUNNER_TEMP/architecture-diff.md" > /dev/null
+          fi

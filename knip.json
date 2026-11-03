@@ -40,7 +40,8 @@
   ],
   "ignoreBinaries": [
     "netstat",
-    "uv"
+    "uv",
+    "uvx"
   ],
   "ignoreUnresolved": [
     "^\\*$"

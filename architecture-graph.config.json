@@ -1,0 +1,55 @@
+{
+  "levels": [
+    {
+      "id": "projects",
+      "kind": "nx",
+      "title": "Nx projects",
+      "label": "Nx 專案",
+      "output": "projects.md",
+      "intro": "Each node is an Nx project, labelled with its `type:*` tag. An arrow `a --> b` means project `a` depends on project `b` (from `nx graph`)."
+    },
+    {
+      "id": "backendContexts",
+      "kind": "python",
+      "title": "Backend contexts",
+      "label": "後端上下文",
+      "output": "backend-contexts.md",
+      "intro": "Each node is a top-level package of the `cert_prep_backend` Python package, labelled with its bounded context from `.agents/PLANS/ddd-refactor/README.md` (`api`, `routers` and `entrypoints` are the web and bootstrap code that step C6 dissolves). An arrow `a --> b` means a module in `a` imports a module in `b` (from grimp); imports inside one package are not drawn. The rules are the import-linter contracts in `apps/cert-prep-backend/pyproject.toml`.",
+      "package": "cert_prep_backend",
+      "sourceDir": "apps/cert-prep-backend/src",
+      "projectDir": "apps/cert-prep-backend",
+      "collapseDepth": 1,
+      "groups": {
+        "cert_prep_backend.projects": "Study Projects",
+        "cert_prep_backend.source_library": "Source Library",
+        "cert_prep_backend.capture_integration": "Capture Integration",
+        "cert_prep_backend.authoring": "Question Authoring",
+        "cert_prep_backend.practice": "Practice and Review",
+        "cert_prep_backend.ai_providers": "AI Providers",
+        "cert_prep_backend.runtime_provisioning": "Runtime Provisioning",
+        "cert_prep_backend.platform": "Platform",
+        "cert_prep_backend.api": "Web and bootstrap",
+        "cert_prep_backend.routers": "Web and bootstrap",
+        "cert_prep_backend.entrypoints": "Web and bootstrap"
+      },
+      "importLinter": "import-linter==2.15",
+      "importLinterConfig": "apps/cert-prep-backend/pyproject.toml"
+    },
+    {
+      "id": "uiModules",
+      "kind": "typescript",
+      "title": "UI modules",
+      "label": "前端模組",
+      "output": "ui-modules.md",
+      "intro": "Each node is a Sheriff module (`sheriff.config.ts`) of the Angular app, the Spartan UI libraries, or the generated API client, labelled with its Sheriff tags; `root` holds files outside every module. An arrow `a --> b` means a TypeScript file in `a` imports a file in `b`. Tests and test helpers are not drawn.",
+      "sheriffConfig": "sheriff.config.ts",
+      "tsconfig": "tsconfig.base.json",
+      "sourceRoots": [
+        "apps/cert-prep/src",
+        "libs/ui",
+        "libs/cert-prep-api/src"
+      ],
+      "exclude": ["node_modules", "dist", "testing"]
+    }
+  ]
+}

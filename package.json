@@ -6,6 +6,10 @@
   "scripts": {
     "dead-code:check": "node tools/dead-code-gate.mts",
     "dead-code:update": "node tools/dead-code-gate.mts --update",
+    "architecture:update": "node tools/architecture-graph.mts --write",
+    "architecture:check": "node tools/architecture-graph.mts --check",
+    "architecture-exceptions:check": "node tools/architecture-exceptions-gate.mts",
+    "architecture-exceptions:update": "node tools/architecture-exceptions-gate.mts --update",
     "dev": "corepack pnpm nx run-many --target=serve --projects=cert-prep,cert-prep-backend --parallel=2",
     "dev:frontend": "corepack pnpm nx run cert-prep:serve",
     "dev:backend": "corepack pnpm nx run cert-prep-backend:serve",
