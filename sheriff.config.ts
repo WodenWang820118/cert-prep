@@ -4,7 +4,7 @@ import { SheriffConfig } from '@softarc/sheriff-core';
  * Architecture rules for the Angular app (DDD refactor step C1,
  * .agents/PLANS/ddd-refactor/). They describe today's technical folders so that
  * no new import points back up the chain page → component → store → service →
- * contract. Step C6 replaces them with one module per bounded context.
+ * contract. Step C7 replaces them with one module per bounded context.
  */
 export const config: SheriffConfig = {
   enableBarrelLess: true,

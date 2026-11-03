@@ -1,4 +1,4 @@
-/* eslint-disable @softarc/sheriff/dependency-rule -- Known before C6: the route table is the composition root; C6 moves it out of constants. */
+/* eslint-disable @softarc/sheriff/dependency-rule -- Known before C7: the route table is the composition root; C7 moves it out of constants. */
 import type { Route } from '@angular/router';
 import { BackendRuntimeReadyGuard } from '../guards/runtime-ready.guard';
 
