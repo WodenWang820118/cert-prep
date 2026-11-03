@@ -1,13 +1,86 @@
-"""What the Practice and Review use cases need from storage."""
+"""What the Practice and Review use cases need from storage and from other contexts."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from typing import Protocol
 
 from cert_prep_backend.practice.domain.attempt import PracticeAttempt
 from cert_prep_backend.practice.domain.session import PracticeQuestion, PracticeSession
 from cert_prep_backend.practice.domain.wrong_answer import AnsweredQuestion
+
+
+@dataclass(frozen=True, slots=True)
+class DraftedQuestion:
+    """A question draft as practice reads it. The owning context is Question Authoring.
+
+    `status` is the draft's stored status. Queries that used to leave status out of the
+    SELECT keep the practice question approved (`keep_status=False`).
+    """
+
+    id: str
+    choices: tuple[str, ...]
+    correct_answer: str | None
+    question: str
+    status: str
+    rationale: str | None
+    citation_page: int | None
+    source_excerpt: str | None
+    document_id: str | None
+    answer_key_source: str | None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "choices", tuple(self.choices))
+
+    def as_question(self, *, keep_status: bool) -> PracticeQuestion:
+        return PracticeQuestion(
+            id=self.id,
+            choices=self.choices,
+            correct_answer=self.correct_answer,
+            question=self.question,
+            status=self.status if keep_status else "approved",
+            rationale=self.rationale,
+            citation_page=self.citation_page,
+            source_excerpt=self.source_excerpt,
+            document_id=self.document_id,
+            answer_key_source=self.answer_key_source,
+        )
+
+
+class StudyProjects(Protocol):
+    """Whether a study project exists. Study Projects owns that fact."""
+
+    def exists(self, project_id: str) -> bool: ...
+
+
+class ProjectDocuments(Protocol):
+    """Whether a source document belongs to a project. Source Library owns that fact."""
+
+    def require(self, project_id: str, document_id: str) -> None:
+        """NotFoundError unless the document belongs to the project."""
+        ...
+
+
+class PracticeQuestions(Protocol):
+    """Question drafts practice reads, mapped out of Question Authoring."""
+
+    def approved(
+        self, project_id: str, *, document_id: str | None
+    ) -> list[DraftedQuestion]:
+        """Approved drafts of the project (by id), or of one document (in source order)."""
+        ...
+
+    def current(self, project_id: str, question_id: str) -> DraftedQuestion | None:
+        """The project's current draft of one question, or None when it is gone."""
+        ...
+
+    def current_many(
+        self, project_id: str, question_ids: Sequence[str]
+    ) -> list[DraftedQuestion]:
+        """The project's current drafts for these ids; ids with no draft are absent."""
+        ...
 
 
 class PracticeRepository(Protocol):

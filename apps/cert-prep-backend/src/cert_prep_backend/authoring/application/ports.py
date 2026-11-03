@@ -33,6 +33,20 @@ class QuestionDraftRepository(Protocol):
         """Store generated drafts, skipping ones the document already has."""
         ...
 
+    def approved(
+        self, project_id: str, *, document_id: str | None
+    ) -> list[QuestionDraft]:
+        """Approved drafts of the project, by id, or of one document in source order."""
+        ...
+
+    def find(self, project_id: str, draft_id: str) -> QuestionDraft | None:
+        """The project's current draft of one question, or None when it is gone."""
+        ...
+
+    def find_many(self, project_id: str, draft_ids: Sequence[str]) -> list[QuestionDraft]:
+        """The project's current drafts for these ids; ids with no draft are absent."""
+        ...
+
 
 class DraftGenerationJobRepository(Protocol):
     def jobs_of(self, project_id: str, document_id: str) -> list[DraftGenerationJob]: ...

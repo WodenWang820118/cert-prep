@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from cert_prep_backend.authoring.application.ports import (
     DraftGenerationJobRepository,
     DraftGenerationWork,
@@ -16,13 +18,16 @@ from cert_prep_backend.authoring.domain.normalization import as_editable_questio
 from cert_prep_backend.platform.errors import ProviderUnavailableError, ValidationError
 
 __all__ = [
+    "approved_questions",
     "cancel_generation_job",
     "cancel_manual_generation",
     "draft_imported_document",
     "edit_draft",
+    "find_question_draft",
     "generate_document_drafts",
     "list_drafts",
     "list_generation_jobs",
+    "question_drafts_for",
     "retry_generation_jobs",
     "start_manual_generation",
     "view_manual_generation",
@@ -32,6 +37,30 @@ __all__ = [
 
 def list_drafts(drafts: QuestionDraftRepository, project_id: str) -> list[QuestionDraft]:
     return drafts.drafts_of(project_id)
+
+
+def approved_questions(
+    drafts: QuestionDraftRepository, project_id: str, *, document_id: str | None
+) -> list[QuestionDraft]:
+    """Approved drafts of a project, by id, or of one document in source order."""
+
+    return drafts.approved(project_id, document_id=document_id)
+
+
+def find_question_draft(
+    drafts: QuestionDraftRepository, project_id: str, draft_id: str
+) -> QuestionDraft | None:
+    """The project's current draft of one question, or None when it is gone."""
+
+    return drafts.find(project_id, draft_id)
+
+
+def question_drafts_for(
+    drafts: QuestionDraftRepository, project_id: str, draft_ids: Sequence[str]
+) -> list[QuestionDraft]:
+    """The project's current drafts for these ids; ids with no draft are absent."""
+
+    return drafts.find_many(project_id, draft_ids)
 
 
 def write_draft(

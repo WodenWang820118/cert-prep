@@ -180,11 +180,11 @@ sequenceDiagram
 
 ## 與其他上下文的關係
 
-- 學習專案：教材與作業屬於一個專案；專案不存在時是 404。教材來源只需要專案 id，所以直接讀 `projects` 資料表確認專案存在（資料表歸屬在 C5 定案）。
+- 學習專案：教材與作業屬於一個專案；專案不存在時是 404。`projects` 屬學習專案。教材來源只需要專案 id，所以仍直接讀 `projects` 資料表確認專案存在（已知例外）。
 - 擷取整合：不經檢閱的匯入經 port `SourceExtraction` 交給擷取整合的 `CaptureSourceExtraction`；擷取檢閱的上傳用 `receive_upload`。擷取結果寫成段落（`publish_capture_document`）與檢閱流程仍直接呼叫 `source_library.infrastructure` 的作業與段落函式（已知例外，C5 改經 `source_library.application`）。
 - 題目編寫：匯入或重試出段落後，經 port `ImportedDocumentDrafting` 開始起草；教材來源不依賴題目編寫。
 - 題目編寫：讀段落與內容類型產生題目，並更新教材的題目數；現在也直接呼叫 infrastructure（已知例外，題目編寫的 C4 改經 application）。
-- 練習與複習：整份教材模式先確認教材屬於這個專案（讀 `documents` 資料表）。
+- 練習與複習：整份教材模式經 `view_document` 確認教材屬於這個專案。這次讀取用自己的連線，在練習的寫入交易之前。
 - AI 供應：翻譯用 Ollama 模型（`OllamaTraditionalChineseTranslator` 暫在 `infrastructure/audio.py`，AI 供應拆出後改由它提供）。
 
 其他上下文只能經 `source_library.application` 與 `source_library.domain` 使用教材來源（import-linter「Other contexts reach Source Library only through its application and domain」）；現有的直接引用列為已知例外，之後的 PR 只能減少。

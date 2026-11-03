@@ -7,6 +7,7 @@ import conftest
 from conftest import AUTH_TOKEN, TestCaptureRuntimeClient, minimal_pdf
 from llm_test_fakes import RecordingOllamaClient
 from cert_prep_backend.bootstrap.app import create_app
+from cert_prep_backend.bootstrap.practice_reads import bind_practice_reads
 from cert_prep_backend.ai_providers.infrastructure.ollama_transport import OllamaProvider
 from cert_prep_backend.authoring.domain.models import DraftGenerationStrategy
 from cert_prep_backend.authoring.infrastructure import repository as drafts_repository
@@ -121,8 +122,9 @@ def test_mixed_pages_preserve_saved_and_practice_order(tmp_path, monkeypatch):
             "Which widget is blue?", "Which widget is red?"
         ]
         with database.connect() as connection:
-            questions = SqlitePracticeRepository(connection).approved_questions(
-                project_id, document_id=document_id
-            )
+            projects, questions_of = bind_practice_reads(database, connection)
+            questions = SqlitePracticeRepository(
+                connection, projects=projects, questions=questions_of
+            ).approved_questions(project_id, document_id=document_id)
         assert [item.id for item in questions] == [item.id for item in drafts]
     assert fake_client.pull_calls == 0

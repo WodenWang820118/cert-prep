@@ -42,14 +42,15 @@ classDiagram
 
 ## 用例
 
-| 用例         | 程式名稱          | 說明                                               |
-| ------------ | ----------------- | -------------------------------------------------- |
-| 建立專案     | `create_project`  | 以名稱與說明建立專案，產生新的 id                  |
-| 列出專案     | `list_projects`   | 由新到舊列出所有專案                               |
-| 查看專案     | `get_project`     | 取得一個專案；不存在時是 `NotFoundError`           |
-| 修改專案     | `edit_project`    | 改名稱或說明，沒給的保持原值                       |
-| 刪除專案     | `delete_project`  | 刪除專案；不存在時是 `NotFoundError`               |
-| 確認專案存在 | `require_project` | 給其他上下文：開始屬於某個專案的工作前，確認它存在 |
+| 用例           | 程式名稱          | 說明                                               |
+| -------------- | ----------------- | -------------------------------------------------- |
+| 建立專案       | `create_project`  | 以名稱與說明建立專案，產生新的 id                  |
+| 列出專案       | `list_projects`   | 由新到舊列出所有專案                               |
+| 查看專案       | `get_project`     | 取得一個專案；不存在時是 `NotFoundError`           |
+| 修改專案       | `edit_project`    | 改名稱或說明，沒給的保持原值                       |
+| 刪除專案       | `delete_project`  | 刪除專案；不存在時是 `NotFoundError`               |
+| 確認專案存在   | `require_project` | 給其他上下文：開始屬於某個專案的工作前，確認它存在 |
+| 確認專案在不在 | `project_exists`  | 專案是否還在；練習在同一個 SQLite 交易裡讀它       |
 
 ## 主要流程
 
@@ -74,10 +75,12 @@ sequenceDiagram
 
 學習專案是最上游的上下文，不依賴任何其他上下文（import-linter「Study Projects does not depend on other contexts」）。
 
+練習在自己的 `BEGIN IMMEDIATE` 交易裡經 port 呼叫 `project_exists`（`bootstrap/practice_reads.py` 的 `ProjectExistence` 把練習的連線交給 `SqliteProjectRepository`）。
+
 教材來源、題目編寫與擷取整合在開始工作前呼叫 `ensure_project_exists(db, project_id)`，它用 `require_project` 確認專案存在。這些呼叫現在還直接 import `projects.infrastructure`，列為已知例外（「Other contexts reach Study Projects only through its application and domain」）；各上下文做 C4 時改成注入專案查詢，例外隨之移除。
 
 ## 規則與資料來源
 
-- 資料表 `projects`（`id`、`name`、`description`、`created_at`、`updated_at`），migration 在 `platform/database.py`；資料表歸屬在 C5 定案。
+- 資料表 `projects`（`id`、`name`、`description`、`created_at`、`updated_at`）屬學習專案，migration 在 `platform/database.py`。
 - HTTP：`/projects`（`ProjectCreate`、`ProjectUpdate`、`ProjectRead`、`ProjectList`，在 `projects/api/schemas.py`）。
 - 錯誤訊息「Project not found.」由 router 轉成 404 的 `not_found` 錯誤。

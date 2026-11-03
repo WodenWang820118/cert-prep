@@ -2,105 +2,72 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
 import json
 from sqlite3 import Connection, Row
 
 from cert_prep_backend.platform.database import Database
-from cert_prep_backend.platform.errors import NotFoundError
+from cert_prep_backend.practice.application.ports import (
+    DraftedQuestion,
+    PracticeQuestions,
+    ProjectDocuments,
+    StudyProjects,
+)
 from cert_prep_backend.practice.domain.attempt import PracticeAttempt
 from cert_prep_backend.practice.domain.session import PracticeQuestion, PracticeSession
 from cert_prep_backend.practice.domain.wrong_answer import AnsweredQuestion
 
-_QUESTION_DRAFT_COLUMNS = """
-    id,
-    question,
-    choices_json,
-    answer,
-    status,
-    rationale,
-    citation_page,
-    source_excerpt,
-    document_id,
-    answer_key_source
-"""
-# The question an attempt answered: the session's snapshot when it has one, else the draft.
-_ANSWERED_QUESTION_COLUMNS = """
-    CASE
-        WHEN practice_session_questions.question_id IS NOT NULL
-        THEN practice_session_questions.question
-        ELSE question_drafts.question
-    END AS question,
-    CASE
-        WHEN practice_session_questions.question_id IS NOT NULL
-        THEN practice_session_questions.choices_json
-        ELSE question_drafts.choices_json
-    END AS choices_json,
-    CASE
-        WHEN practice_session_questions.question_id IS NOT NULL
-        THEN practice_session_questions.correct_answer
-        ELSE question_drafts.answer
-    END AS correct_answer,
-    CASE
-        WHEN practice_session_questions.question_id IS NOT NULL
-        THEN practice_session_questions.rationale
-        ELSE question_drafts.rationale
-    END AS rationale,
-    CASE
-        WHEN practice_session_questions.question_id IS NOT NULL
-        THEN practice_session_questions.citation_page
-        ELSE question_drafts.citation_page
-    END AS citation_page,
-    CASE
-        WHEN practice_session_questions.question_id IS NOT NULL
-        THEN practice_session_questions.source_excerpt
-        ELSE question_drafts.source_excerpt
-    END AS source_excerpt,
-    CASE
-        WHEN practice_session_questions.document_id IS NOT NULL
-        THEN practice_session_questions.document_id
-        ELSE question_drafts.document_id
-    END AS document_id,
-    question_drafts.answer_key_source AS answer_key_source
-"""
-
 
 class SqlitePracticeStore:
-    def __init__(self, db: Database) -> None:
+    def __init__(
+        self,
+        db: Database,
+        *,
+        bind_reads: Callable[[Connection], tuple[StudyProjects, PracticeQuestions]],
+        documents: ProjectDocuments,
+    ) -> None:
         self._db = db
+        # bind_reads joins Study Projects and Question Authoring to this unit of work's
+        # connection, so their reads stay in practice's transaction.
+        self._bind_reads = bind_reads
+        self._documents = documents
 
     @contextmanager
     def writing(self) -> Iterator[SqlitePracticeRepository]:
         with self._db.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            yield SqlitePracticeRepository(connection)
+            yield self._repository(connection)
 
     @contextmanager
     def reading(self) -> Iterator[SqlitePracticeRepository]:
         with self._db.connect() as connection:
-            yield SqlitePracticeRepository(connection)
+            yield self._repository(connection)
 
     def require_document(self, project_id: str, document_id: str) -> None:
-        with self._db.connect() as connection:
-            row = connection.execute(
-                "SELECT 1 FROM documents WHERE project_id = ? AND id = ?",
-                (project_id, document_id),
-            ).fetchone()
-        if row is None:
-            raise NotFoundError("Document not found.")
+        # Its own connection, opened before the write transaction, as before.
+        self._documents.require(project_id, document_id)
+
+    def _repository(self, connection: Connection) -> SqlitePracticeRepository:
+        projects, questions = self._bind_reads(connection)
+        return SqlitePracticeRepository(connection, projects=projects, questions=questions)
 
 
 class SqlitePracticeRepository:
-    def __init__(self, connection: Connection) -> None:
+    def __init__(
+        self,
+        connection: Connection,
+        *,
+        projects: StudyProjects,
+        questions: PracticeQuestions,
+    ) -> None:
         self._connection = connection
+        self._projects = projects
+        self._questions = questions
 
     def project_exists(self, project_id: str) -> bool:
-        row = self._connection.execute(
-            "SELECT 1 FROM projects WHERE id = ?", (project_id,)
-        ).fetchone()
-        return row is not None
+        return self._projects.exists(project_id)
 
     def active_session(self, project_id: str) -> PracticeSession | None:
         row = self._connection.execute(
@@ -118,117 +85,69 @@ class SqlitePracticeRepository:
     def approved_questions(
         self, project_id: str, *, document_id: str | None
     ) -> list[PracticeQuestion]:
-        if document_id is None:
-            rows = self._connection.execute(
-                f"""
-                SELECT {_QUESTION_DRAFT_COLUMNS}
-                FROM question_drafts
-                WHERE project_id = ? AND status = 'approved'
-                ORDER BY id
-                """,
-                (project_id,),
-            ).fetchall()
-        else:
-            rows = self._connection.execute(
-                f"""
-                SELECT {_QUESTION_DRAFT_COLUMNS}
-                FROM question_drafts
-                WHERE project_id = ? AND document_id = ? AND status = 'approved'
-                ORDER BY
-                    CASE WHEN source_order IS NULL THEN 1 ELSE 0 END,
-                    source_order,
-                    citation_page,
-                    created_at,
-                    id
-                """,
-                (project_id, document_id),
-            ).fetchall()
-        return [_question_from_row(row) for row in rows]
+        return [
+            draft.as_question(keep_status=True)
+            for draft in self._questions.approved(project_id, document_id=document_id)
+        ]
 
     def answer_history(self, project_id: str) -> list[AnsweredQuestion]:
-        rows = self._connection.execute(
-            f"""
+        attempts = self._attempt_rows(
+            """
             SELECT
-                practice_attempts.id AS attempt_id,
-                practice_attempts.session_id,
-                practice_attempts.question_id,
-                practice_attempts.selected_answer,
-                practice_attempts.is_correct,
-                practice_attempts.created_at,
-                {_ANSWERED_QUESTION_COLUMNS}
+                id AS attempt_id,
+                session_id,
+                question_id,
+                selected_answer,
+                is_correct,
+                created_at
             FROM practice_attempts
-            LEFT JOIN practice_session_questions
-                ON practice_session_questions.project_id = practice_attempts.project_id
-                AND practice_session_questions.session_id = practice_attempts.session_id
-                AND practice_session_questions.question_id = practice_attempts.question_id
-            LEFT JOIN question_drafts
-                ON question_drafts.project_id = practice_attempts.project_id
-                AND question_drafts.id = practice_attempts.question_id
-            WHERE practice_attempts.project_id = ?
-                AND (
-                    practice_session_questions.question_id IS NOT NULL
-                    OR question_drafts.id IS NOT NULL
-                )
-            ORDER BY practice_attempts.created_at DESC, practice_attempts.rowid DESC
+            WHERE project_id = ?
+            ORDER BY created_at DESC, rowid DESC
             """,
             (project_id,),
-        ).fetchall()
-        return [_answered_question_from_row(project_id, row) for row in rows]
+        )
+        return self._answered_questions(project_id, attempts)
 
     def answer_history_since(self, project_id: str, attempt_id: str) -> list[AnsweredQuestion]:
-        rows = self._connection.execute(
-            f"""
-            WITH target_attempt AS (
-                SELECT question_id, created_at, rowid AS attempt_sequence
-                FROM practice_attempts
-                WHERE project_id = ? AND id = ?
-            ),
-            ranked_attempts AS (
-                SELECT
-                    practice_attempts.*,
-                    practice_attempts.rowid AS attempt_sequence,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY practice_attempts.question_id
-                        ORDER BY practice_attempts.created_at DESC, practice_attempts.rowid DESC
-                    ) AS attempt_rank
-                FROM target_attempt
-                JOIN practice_attempts
-                    ON practice_attempts.project_id = ?
-                    AND practice_attempts.question_id = target_attempt.question_id
-                    AND (
-                        practice_attempts.created_at > target_attempt.created_at
-                        OR (
-                            practice_attempts.created_at = target_attempt.created_at
-                            AND practice_attempts.rowid >= target_attempt.attempt_sequence
-                        )
-                    )
-            )
-            SELECT
-                ranked_attempts.id AS attempt_id,
-                ranked_attempts.session_id,
-                ranked_attempts.question_id,
-                ranked_attempts.selected_answer,
-                ranked_attempts.is_correct,
-                ranked_attempts.created_at,
-                {_ANSWERED_QUESTION_COLUMNS}
-            FROM ranked_attempts
-            LEFT JOIN practice_session_questions
-                ON practice_session_questions.project_id = ranked_attempts.project_id
-                AND practice_session_questions.session_id = ranked_attempts.session_id
-                AND practice_session_questions.question_id = ranked_attempts.question_id
-            LEFT JOIN question_drafts
-                ON question_drafts.project_id = ranked_attempts.project_id
-                AND question_drafts.id = ranked_attempts.question_id
-            WHERE (
-                    practice_session_questions.question_id IS NOT NULL
-                    OR question_drafts.id IS NOT NULL
-                )
-                AND ranked_attempts.attempt_rank = 1
-            ORDER BY ranked_attempts.created_at DESC, ranked_attempts.attempt_sequence DESC
+        # The latest attempt of the target's question at or after that attempt. Rank 1
+        # with no snapshot and no draft drops the row, rather than falling through.
+        target = self._connection.execute(
+            """
+            SELECT question_id, created_at, rowid AS attempt_sequence
+            FROM practice_attempts
+            WHERE project_id = ? AND id = ?
             """,
-            (project_id, attempt_id, project_id),
-        ).fetchall()
-        return [_answered_question_from_row(project_id, row) for row in rows]
+            (project_id, attempt_id),
+        ).fetchone()
+        if target is None:
+            return []
+        attempts = self._attempt_rows(
+            """
+            SELECT
+                id AS attempt_id,
+                session_id,
+                question_id,
+                selected_answer,
+                is_correct,
+                created_at
+            FROM practice_attempts
+            WHERE project_id = ? AND question_id = ?
+                AND (
+                    created_at > ?
+                    OR (created_at = ? AND rowid >= ?)
+                )
+            ORDER BY created_at DESC, rowid DESC
+            LIMIT 1
+            """,
+            (
+                project_id,
+                target["question_id"],
+                target["created_at"],
+                target["created_at"],
+                target["attempt_sequence"],
+            ),
+        )
+        return self._answered_questions(project_id, attempts)
 
     def add_session(self, session: PracticeSession) -> None:
         self._connection.execute(
@@ -323,31 +242,17 @@ class SqlitePracticeRepository:
         ).fetchone()
         if snapshot_row is not None:
             return _question_from_row(snapshot_row)
-        draft_row = self._connection.execute(
-            f"""
-            SELECT {_QUESTION_DRAFT_COLUMNS}
-            FROM question_drafts
-            WHERE project_id = ? AND id = ?
-            """,
-            (session.project_id, question_id),
-        ).fetchone()
-        if draft_row is None:
+        draft = self._questions.current(session.project_id, question_id)
+        if draft is None:
             return None
-        question = _question_from_row(draft_row)
+        question = draft.as_question(keep_status=True)
         if session.includes_question(question_id) or question.is_playable():
             return question
         return None
 
     def current_question(self, project_id: str, question_id: str) -> PracticeQuestion | None:
-        row = self._connection.execute(
-            f"""
-            SELECT {_QUESTION_DRAFT_COLUMNS}
-            FROM question_drafts
-            WHERE project_id = ? AND id = ?
-            """,
-            (project_id, question_id),
-        ).fetchone()
-        return None if row is None else _question_from_row(row)
+        draft = self._questions.current(project_id, question_id)
+        return None if draft is None else draft.as_question(keep_status=True)
 
     def attempts_for_question(self, project_id: str, question_id: str) -> list[PracticeAttempt]:
         rows = self._connection.execute(
@@ -443,46 +348,82 @@ class SqlitePracticeRepository:
         snapshot_rows = self._connection.execute(
             """
             SELECT
-                practice_session_questions.question_id AS id,
-                practice_session_questions.question,
-                practice_session_questions.choices_json,
-                practice_session_questions.correct_answer AS answer,
-                practice_session_questions.rationale,
-                practice_session_questions.citation_page,
-                practice_session_questions.source_excerpt,
-                COALESCE(practice_session_questions.document_id, question_drafts.document_id)
-                    AS document_id,
-                question_drafts.answer_key_source AS answer_key_source
+                question_id AS id,
+                question,
+                choices_json,
+                correct_answer AS answer,
+                rationale,
+                citation_page,
+                source_excerpt,
+                document_id
             FROM practice_session_questions
-            LEFT JOIN question_drafts
-                ON question_drafts.project_id = practice_session_questions.project_id
-                AND question_drafts.id = practice_session_questions.question_id
-            WHERE practice_session_questions.project_id = ?
-                AND practice_session_questions.session_id = ?
+            WHERE project_id = ? AND session_id = ?
             """,
             (session.project_id, session.id),
         ).fetchall()
-        rows_by_id: dict[str, Row] = {row["id"]: row for row in snapshot_rows}
-        missing = [question_id for question_id in session.question_ids if question_id not in rows_by_id]
-        if missing:
-            # Sessions from before question snapshots fall back to the drafts.
-            placeholders = ", ".join("?" for _ in missing)
-            draft_rows = self._connection.execute(
-                f"""
-                SELECT
-                    id, question, choices_json, answer, rationale, citation_page,
-                    source_excerpt, document_id, answer_key_source
-                FROM question_drafts
-                WHERE project_id = ? AND id IN ({placeholders})
-                """,
-                (session.project_id, *missing),
-            ).fetchall()
-            rows_by_id.update({row["id"]: row for row in draft_rows})
-        return [
-            _question_from_row(rows_by_id[question_id])
-            for question_id in session.question_ids
-            if question_id in rows_by_id
-        ]
+        snapshots = {row["id"]: row for row in snapshot_rows}
+        drafts = self._drafts_by_id(session.project_id, session.question_ids)
+        questions: list[PracticeQuestion] = []
+        for question_id in session.question_ids:
+            snapshot = snapshots.get(question_id)
+            draft = drafts.get(question_id)
+            if snapshot is not None:
+                questions.append(_snapshot_question(snapshot, draft))
+            elif draft is not None:
+                # Sessions from before question snapshots fall back to the draft, and the
+                # old query did not select the draft's status, so the question stays approved.
+                questions.append(draft.as_question(keep_status=False))
+        return questions
+
+    def _attempt_rows(self, sql: str, parameters: tuple[object, ...]) -> list[Row]:
+        return self._connection.execute(sql, parameters).fetchall()
+
+    def _answered_questions(
+        self, project_id: str, attempts: Sequence[Row]
+    ) -> list[AnsweredQuestion]:
+        if not attempts:
+            return []
+        snapshots = self._snapshots(project_id)
+        drafts = self._drafts_by_id(project_id, [row["question_id"] for row in attempts])
+        answered: list[AnsweredQuestion] = []
+        for row in attempts:
+            question = _question_as_answered(
+                row["question_id"],
+                snapshots.get((row["session_id"], row["question_id"])),
+                drafts.get(row["question_id"]),
+            )
+            if question is None:
+                continue
+            answered.append(_answered_question(project_id, row, question))
+        return answered
+
+    def _snapshots(self, project_id: str) -> dict[tuple[str, str], Row]:
+        rows = self._connection.execute(
+            """
+            SELECT
+                session_id,
+                question_id,
+                question,
+                choices_json,
+                correct_answer,
+                rationale,
+                citation_page,
+                source_excerpt,
+                document_id
+            FROM practice_session_questions
+            WHERE project_id = ?
+            """,
+            (project_id,),
+        ).fetchall()
+        return {(row["session_id"], row["question_id"]): row for row in rows}
+
+    def _drafts_by_id(
+        self, project_id: str, question_ids: Sequence[str]
+    ) -> dict[str, DraftedQuestion]:
+        return {
+            draft.id: draft
+            for draft in self._questions.current_many(project_id, list(question_ids))
+        }
 
 
 def _session_from_row(row: Row) -> PracticeSession:
@@ -529,7 +470,7 @@ def _attempt_from_row(row: Row) -> PracticeAttempt:
     )
 
 
-def _answered_question_from_row(project_id: str, row: Row) -> AnsweredQuestion:
+def _answered_question(project_id: str, row: Row, question: PracticeQuestion) -> AnsweredQuestion:
     return AnsweredQuestion(
         attempt=PracticeAttempt(
             id=row["attempt_id"],
@@ -540,17 +481,54 @@ def _answered_question_from_row(project_id: str, row: Row) -> AnsweredQuestion:
             is_correct=bool(row["is_correct"]),
             created_at=row["created_at"],
         ),
-        question=PracticeQuestion(
-            id=row["question_id"],
-            choices=tuple(json.loads(row["choices_json"])),
-            correct_answer=row["correct_answer"],
-            question=row["question"],
-            rationale=row["rationale"],
-            citation_page=row["citation_page"],
-            source_excerpt=row["source_excerpt"],
-            document_id=row["document_id"],
-            answer_key_source=_optional_text(row, "answer_key_source"),
-        ),
+        question=question,
+    )
+
+
+def _snapshot_question(snapshot: Row, draft: DraftedQuestion | None) -> PracticeQuestion:
+    """A stored snapshot. Its document id falls back to the draft; the answer key always does."""
+
+    document_id = snapshot["document_id"]
+    if document_id is None and draft is not None:
+        document_id = draft.document_id
+    return PracticeQuestion(
+        id=snapshot["id"],
+        choices=tuple(json.loads(snapshot["choices_json"])),
+        correct_answer=snapshot["answer"],
+        question=snapshot["question"],
+        rationale=snapshot["rationale"],
+        citation_page=snapshot["citation_page"],
+        source_excerpt=snapshot["source_excerpt"],
+        document_id=document_id,
+        answer_key_source=None if draft is None else draft.answer_key_source,
+    )
+
+
+def _question_as_answered(
+    question_id: str, snapshot: Row | None, draft: DraftedQuestion | None
+) -> PracticeQuestion | None:
+    """The question an attempt answered: the snapshot when the session stored one, else the draft.
+
+    An attempt with neither is left out. The snapshot wins for the text that was shown;
+    the answer-key source always comes from the current draft, and a null snapshot
+    document id falls back to the draft's.
+    """
+
+    if snapshot is None:
+        return None if draft is None else draft.as_question(keep_status=False)
+    document_id = snapshot["document_id"]
+    if document_id is None and draft is not None:
+        document_id = draft.document_id
+    return PracticeQuestion(
+        id=question_id,
+        choices=tuple(json.loads(snapshot["choices_json"])),
+        correct_answer=snapshot["correct_answer"],
+        question=snapshot["question"],
+        rationale=snapshot["rationale"],
+        citation_page=snapshot["citation_page"],
+        source_excerpt=snapshot["source_excerpt"],
+        document_id=document_id,
+        answer_key_source=None if draft is None else draft.answer_key_source,
     )
 
 
