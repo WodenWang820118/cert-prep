@@ -109,19 +109,19 @@ sequenceDiagram
   UC-->>API: PracticeAttempt
 ```
 
-`create_app` 建立 `SqlitePracticeStore` 放在 `app.state.practice_store`；router 只依 `PracticeStore` 這個 port 呼叫用例。寫入的用例在同一個 `BEGIN IMMEDIATE` 交易裡讀、判斷、寫，兩個請求同時開始練習時只有一個成功。
+`create_app` 建立 `SqlitePracticeStore` 放在 `app.state.practice_store`，並接上 `bind_practice_reads` 與 `practice_documents`；router 只依 `PracticeStore` 這個 port 呼叫用例。寫入的用例在同一個 `BEGIN IMMEDIATE` 交易裡讀、判斷、寫，兩個請求同時開始練習時只有一個成功。這個交易裡對專案與草稿的讀取用同一條連線。確認教材（`require_document`）在寫入交易之前，用自己的連線。
 
 ## 與其他上下文的關係
 
-- 學習專案：練習屬於一個專案；專案不存在時是 404。
-- 題目編寫：練習讀 `question_drafts` 裡已核可的題目（資料表歸屬在 C5 定案）。
-- 教材來源：整份教材模式先確認教材屬於這個專案。
+- 學習專案：練習屬於一個專案；專案不存在時是 404。練習經 port `StudyProjects` 呼叫 `project_exists`，讀的是練習這次交易的連線。
+- 題目編寫：練習經 port `PracticeQuestions` 讀已核可的題目與目前的草稿（`approved_questions`、`find_question_draft`、`question_drafts_for`），同一條連線。
+- 教材來源：整份教材模式經 `view_document` 確認教材屬於這個專案。
 - AI 供應：解說錯題用 LLM provider，型別是 AI 供應的 `LLMProvider` port；router 從 `create_app` 放在 `app.state.llm_provider` 的實作取得。
 
 其他上下文只能經 `practice.application` 與 `practice.domain` 使用練習（import-linter「Other contexts reach Practice and Review only through its application and domain」）。
 
 ## 規則與資料來源
 
-- 資料表：`practice_sessions`、`practice_session_questions`（題目快照）、`practice_attempts`；migration 在 `platform/database.py`。
+- 資料表：`practice_sessions`、`practice_session_questions`（題目快照）、`practice_attempts` 屬練習與複習；migration 在 `platform/database.py`。專案、草稿與教材由所屬上下文的用例讀取，練習的 infrastructure 不查那些資料表。
 - HTTP：`/projects/{project_id}/practice-sessions`、`/projects/{project_id}/wrong-answers`、`POST /projects/{project_id}/practice-questions/{question_id}/regrade`（DTO 在 `practice/api/schemas.py`）。
 - API 的 `PracticeSessionStatus`、`PracticeSessionMode` 列舉值對應到概念集的 `practice.session-status.*`、`practice.session-mode.*`。

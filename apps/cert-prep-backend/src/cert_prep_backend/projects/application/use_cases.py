@@ -14,6 +14,7 @@ __all__ = [
     "edit_project",
     "get_project",
     "list_projects",
+    "project_exists",
     "require_project",
 ]
 
@@ -62,6 +63,12 @@ def edit_project(
 def delete_project(projects: ProjectRepository, project_id: str) -> None:
     if not projects.remove(project_id):
         raise NotFoundError(PROJECT_NOT_FOUND)
+
+
+def project_exists(projects: ProjectRepository, project_id: str) -> bool:
+    """Whether the study project is still there."""
+
+    return projects.get(project_id) is not None
 
 
 def require_project(projects: ProjectRepository, project_id: str) -> Project:

@@ -25,12 +25,12 @@
 | 寫草稿者         | `DraftGenerationProvider`     | 把段落寫成題目草稿的介面；`draft_writer_for` 依設定的供應者挑選 |
 | 推理寫草稿       | `ReasoningDraftProvider`      | 請模型從段落找出完整的選擇題                                    |
 | 快速首題         | `FastFirstDraftProvider`      | 請模型為一題解析到的題目補上答案與解說                          |
-| 漢字讀音片段     | `ReadingSpan`                | 詞典提供的原文片段與讀音                                      |
-| 讀音解答         | `ReadingSolution`            | 唯一符合的選項索引、原文片段、平假名讀音與固定解說            |
-| 讀音詞典         | `ReadingLexicon`             | 提供題幹內含漢字片段讀音的 application port                    |
-| 抽出題目         | `ExtractedQuestion`          | 模型從原文頁面抽出的題幹與選項，連同該頁原文，等待收錄判斷      |
-| 題目收錄         | `QuestionAdmission`          | 一題抽出題目的收錄結果：清理後的題幹，或拒收原因                |
-| 拒收原因         | `AdmissionRejection`         | 抽出題目未被收錄的原因代碼；只記錄與量測，不進 API              |
+| 漢字讀音片段     | `ReadingSpan`                 | 詞典提供的原文片段與讀音                                        |
+| 讀音解答         | `ReadingSolution`             | 唯一符合的選項索引、原文片段、平假名讀音與固定解說              |
+| 讀音詞典         | `ReadingLexicon`              | 提供題幹內含漢字片段讀音的 application port                     |
+| 抽出題目         | `ExtractedQuestion`           | 模型從原文頁面抽出的題幹與選項，連同該頁原文，等待收錄判斷      |
+| 題目收錄         | `QuestionAdmission`           | 一題抽出題目的收錄結果：清理後的題幹，或拒收原因                |
+| 拒收原因         | `AdmissionRejection`          | 抽出題目未被收錄的原因代碼；只記錄與量測，不進 API              |
 | Ollama 寫草稿者  | `OllamaDraftWriter`           | 經 JSON 對話請 Ollama 補答案與解說、或找出解析不到的題目        |
 | 佔位草稿寫草稿者 | `PlaceholderDraftWriter`      | 假供應者用的固定草稿，讓 app 與測試不需要模型也能跑             |
 | 產生工作         | `DraftGenerationJob`          | 匯入教材後，為一個段落產生題目的背景工作（每個段落與策略一個）  |
@@ -126,6 +126,9 @@ stateDiagram-v2
 | 用例           | 程式名稱                   | 說明                                                         |
 | -------------- | -------------------------- | ------------------------------------------------------------ |
 | 列出草稿       | `list_drafts`              | 專案的所有題目草稿，新的在前                                 |
+| 已核可的題目   | `approved_questions`       | 專案已核可的草稿，依 id；一份教材則依來源順序                |
+| 查看一題草稿   | `find_question_draft`      | 專案裡這一題目前的草稿；沒有時是 None                        |
+| 查看這些草稿   | `question_drafts_for`      | 這些 id 目前的草稿；沒有草稿的 id 不在結果裡                 |
 | 手寫草稿       | `write_draft`              | 寫一題草稿，可以引用一份教材的一個段落                       |
 | 編修草稿       | `edit_draft`               | 修正草稿；只改有給的欄位                                     |
 | 為教材產生草稿 | `generate_document_drafts` | 立即用整份教材的段落產生草稿，略過重複的，並記錄教材的題目數 |
@@ -199,19 +202,19 @@ flowchart TD
 
 模型抽出的每一題依序檢查，第一個不通過的檢查就是拒收原因（`AdmissionRejection`）。前半是模型 JSON 的結構檢查（`infrastructure/reasoning_parser.py`），後半是內容規則（`domain/question_admission.py`）。
 
-| 順序 | 原因代碼 | 規則 | 為什麼需要 |
-| --- | --- | --- | --- |
-| 1 | `incomplete_item` | 要有題幹、至少兩個選項與答案 | 模型偶爾回傳空項目 |
-| 2 | `invalid_confidence` | 信心值要是 0–1 的數字 | 結構檢查 |
-| 3 | `unresolved_source` | `chunk_id` 或 `citation_page`（接受 `8`、`"8"`、`"page-8"`、`8.0`）要對到提示中的頁面 | 模型以 `"page-8"` 標頁；`null` 頁碼改依 `chunk_id` |
-| 4 | `listening_page` | 原文為紙本聽力頁（「聴解／聽解」，或「問題用紙」與「聞いて」）時拒收 | 聽力題本只印選項，沒有音檔無法作答 |
-| 5 | `choices_only` | 題幹尾端若含本題兩個以上選項就切掉；切完為空則拒收 | 模型常把選項抄進題幹 |
-| 6 | `section_instruction` | 含「1・2・3・4」列舉，或以「次の」開頭並要求選擇者拒收 | 模型把大題指示當題幹；引用「選んでください」的真題不受影響 |
-| 7 | `stem_is_a_choice` | 題幹（去除句讀）等於或包含在某選項中時拒收 | 文章文法頁只有片段，模型以選項充當題幹 |
-| 8 | `stem_not_in_source` | 考試頁面上，題幹至少 60% 的字元（三字以上連續片段）要出現在原文 | 擋下模型改寫、翻譯或捏造的題幹 |
-| 9 | `answer_not_in_choices` | 答案（可為選項文字、編號或 A–D 字母）要對到選項 | 結構檢查 |
-| 10 | `excerpt_not_in_source` | 原文摘錄要能在頁面中找到（忽略空白） | 確保出處可追溯 |
-| 11 | `not_an_exam_item` | 排除版本說明、著作權等非題目文字 | 既有規則 |
+| 順序 | 原因代碼                | 規則                                                                                  | 為什麼需要                                                 |
+| ---- | ----------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| 1    | `incomplete_item`       | 要有題幹、至少兩個選項與答案                                                          | 模型偶爾回傳空項目                                         |
+| 2    | `invalid_confidence`    | 信心值要是 0–1 的數字                                                                 | 結構檢查                                                   |
+| 3    | `unresolved_source`     | `chunk_id` 或 `citation_page`（接受 `8`、`"8"`、`"page-8"`、`8.0`）要對到提示中的頁面 | 模型以 `"page-8"` 標頁；`null` 頁碼改依 `chunk_id`         |
+| 4    | `listening_page`        | 原文為紙本聽力頁（「聴解／聽解」，或「問題用紙」與「聞いて」）時拒收                  | 聽力題本只印選項，沒有音檔無法作答                         |
+| 5    | `choices_only`          | 題幹尾端若含本題兩個以上選項就切掉；切完為空則拒收                                    | 模型常把選項抄進題幹                                       |
+| 6    | `section_instruction`   | 含「1・2・3・4」列舉，或以「次の」開頭並要求選擇者拒收                                | 模型把大題指示當題幹；引用「選んでください」的真題不受影響 |
+| 7    | `stem_is_a_choice`      | 題幹（去除句讀）等於或包含在某選項中時拒收                                            | 文章文法頁只有片段，模型以選項充當題幹                     |
+| 8    | `stem_not_in_source`    | 考試頁面上，題幹至少 60% 的字元（三字以上連續片段）要出現在原文                       | 擋下模型改寫、翻譯或捏造的題幹                             |
+| 9    | `answer_not_in_choices` | 答案（可為選項文字、編號或 A–D 字母）要對到選項                                       | 結構檢查                                                   |
+| 10   | `excerpt_not_in_source` | 原文摘錄要能在頁面中找到（忽略空白）                                                  | 確保出處可追溯                                             |
+| 11   | `not_an_exam_item`      | 排除版本說明、著作權等非題目文字                                                      | 既有規則                                                   |
 
 量測依據（2026-10-30，`qwen3.5:9b`、RTX 4060、三份 N1 題本、210 題標準答案）：修正抽題前，混合策略找回 40 題、答對 33 題；開放未解析頁抽題後找回 55 題、答對 46 題，但模型抽出的 65 題中有 50 題對不到標準題目。以記錄的這 65 題重算，收錄規則保留全部 15 題正確抽題、拒收 35 題（聽力頁 17、題幹就是選項 8、大題指示 6、題幹不在原文 4），另有約 7 題在切除黏著選項後與標準題目完全相同。
 
@@ -223,8 +226,8 @@ flowchart TD
 
 - 教材來源：為教材產生草稿時，經 `source_library.application` 的 `list_chunks` 與 `view_document` 讀段落與教材；更新教材的題目數、背景產生讀段落與更新教材狀態仍直接呼叫教材來源的儲存函式（已知例外，C5 資料表歸屬改經教材來源的用例）。
 - AI 供應：`draft_writer_for` 依設定的供應者挑選寫草稿者；Ollama 經 JSON 對話寫草稿；串流產生使用串流參數、產生歸屬與釋放資源（見 [ai_providers.md](ai_providers.md)）。
-- 學習專案：確認專案存在仍直接呼叫 `projects.infrastructure`（已知例外，C5）。
-- 練習與複習：練習只出已核可的草稿；它直接讀 `question_drafts` 資料表（C5）。
+- 學習專案：確認專案存在仍直接呼叫 `projects.infrastructure`（已知例外）。
+- 練習與複習：練習經自己的 port `PracticeQuestions` 呼叫 `approved_questions`、`find_question_draft`、`question_drafts_for`。實作把練習交易的連線交給 `SqliteQuestionDraftRepository`，所以讀到的是這次交易裡的草稿。
 - 教材匯入：教材來源匯入或重試教材、擷取出段落後，經它的 port `ImportedDocumentDrafting` 呼叫 `draft_imported_document`；題目編寫實作這個 port，教材來源不依賴題目編寫。
 
 題目編寫不依賴擷取整合、練習與複習、執行環境（import-linter「Question Authoring does not depend on its downstream contexts」）。

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
-from sqlite3 import Row
 from collections.abc import Sequence
+from sqlite3 import Connection, Row
 from uuid import uuid4
 
 from cert_prep_backend.platform.database import Database, utc_now
@@ -417,6 +417,61 @@ def get_draft(db: Database, project_id: str, draft_id: str) -> QuestionDraft:
     return _draft_from_row(row)
 
 
+def _approved_questions(
+    connection: Connection, project_id: str, *, document_id: str | None
+) -> list[QuestionDraft]:
+    """Approved drafts in the order practice asks them.
+
+    A project lists them by id. One document lists them in source order: a missing
+    source order sorts after the ones that have it, then by page, creation and id.
+    """
+
+    if document_id is None:
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM question_drafts
+            WHERE project_id = ? AND status = 'approved'
+            ORDER BY id
+            """,
+            (project_id,),
+        ).fetchall()
+    else:
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM question_drafts
+            WHERE project_id = ? AND document_id = ? AND status = 'approved'
+            ORDER BY
+                CASE WHEN source_order IS NULL THEN 1 ELSE 0 END,
+                source_order,
+                citation_page,
+                created_at,
+                id
+            """,
+            (project_id, document_id),
+        ).fetchall()
+    return [_draft_from_row(row) for row in rows]
+
+
+def _drafts_for_ids(
+    connection: Connection, project_id: str, draft_ids: Sequence[str]
+) -> list[QuestionDraft]:
+    ids = list(dict.fromkeys(draft_ids))
+    if not ids:
+        return []
+    placeholders = ", ".join("?" for _ in ids)
+    rows = connection.execute(
+        f"""
+        SELECT *
+        FROM question_drafts
+        WHERE project_id = ? AND id IN ({placeholders})
+        """,
+        (project_id, *ids),
+    ).fetchall()
+    return [_draft_from_row(row) for row in rows]
+
+
 def _draft_query(connection, project_id: str, draft_id: str) -> Row | None:
     return connection.execute(
         "SELECT * FROM question_drafts WHERE project_id = ? AND id = ?",
@@ -504,8 +559,11 @@ def _draft_from_row(row: Row) -> QuestionDraft:
 class SqliteQuestionDraftRepository:
     """Question drafts stored in SQLite."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, connection: Connection | None = None) -> None:
+        # A caller's connection joins that transaction for reads. Practice passes the
+        # connection of its unit of work; the write methods still open their own.
         self._db = db
+        self._connection = connection
 
     def drafts_of(self, project_id: str) -> list[QuestionDraft]:
         return list_drafts(self._db, project_id)
@@ -525,3 +583,23 @@ class SqliteQuestionDraftRepository:
             document_id=document_id,
             suggestions=list(suggestions),
         )
+
+    def approved(self, project_id: str, *, document_id: str | None) -> list[QuestionDraft]:
+        if self._connection is not None:
+            return _approved_questions(self._connection, project_id, document_id=document_id)
+        with self._db.connect() as connection:
+            return _approved_questions(connection, project_id, document_id=document_id)
+
+    def find(self, project_id: str, draft_id: str) -> QuestionDraft | None:
+        if self._connection is not None:
+            row = _draft_query(self._connection, project_id, draft_id)
+        else:
+            with self._db.connect() as connection:
+                row = _draft_query(connection, project_id, draft_id)
+        return None if row is None else _draft_from_row(row)
+
+    def find_many(self, project_id: str, draft_ids: Sequence[str]) -> list[QuestionDraft]:
+        if self._connection is not None:
+            return _drafts_for_ids(self._connection, project_id, draft_ids)
+        with self._db.connect() as connection:
+            return _drafts_for_ids(connection, project_id, draft_ids)

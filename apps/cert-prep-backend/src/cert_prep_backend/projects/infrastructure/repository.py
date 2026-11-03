@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlite3 import Row
+from sqlite3 import Connection, Row
 
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.projects.application.use_cases import require_project
@@ -10,8 +10,11 @@ from cert_prep_backend.projects.domain.project import Project, ProjectName
 
 
 class SqliteProjectRepository:
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, connection: Connection | None = None) -> None:
+        # A caller's connection joins that transaction for reads. Practice passes the
+        # connection of its BEGIN IMMEDIATE unit of work; writes below still open their own.
         self._db = db
+        self._connection = connection
 
     def add(self, project: Project) -> None:
         with self._db.connect() as connection:
@@ -30,8 +33,15 @@ class SqliteProjectRepository:
             )
 
     def get(self, project_id: str) -> Project | None:
-        with self._db.connect() as connection:
-            row = connection.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        if self._connection is not None:
+            row = self._connection.execute(
+                "SELECT * FROM projects WHERE id = ?", (project_id,)
+            ).fetchone()
+        else:
+            with self._db.connect() as connection:
+                row = connection.execute(
+                    "SELECT * FROM projects WHERE id = ?", (project_id,)
+                ).fetchone()
         return None if row is None else _project_from_row(row)
 
     def list_newest_first(self) -> list[Project]:

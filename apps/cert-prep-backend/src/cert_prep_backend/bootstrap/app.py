@@ -110,6 +110,7 @@ from cert_prep_backend.runtime_provisioning.api import (
 from cert_prep_backend.authoring.api import router as drafts
 from cert_prep_backend.authoring.api import operation_events as draft_generation_events
 from cert_prep_backend.practice.api import router as practice
+from cert_prep_backend.bootstrap.practice_reads import bind_practice_reads, practice_documents
 from cert_prep_backend.practice.infrastructure.repository import SqlitePracticeStore
 from cert_prep_backend.projects.api import router as projects
 from cert_prep_backend.projects.infrastructure.repository import SqliteProjectRepository
@@ -180,7 +181,11 @@ def create_app(
         change_notifier=app.state.database_change_notifier,
     )
     app.state.project_repository = SqliteProjectRepository(app.state.database)
-    app.state.practice_store = SqlitePracticeStore(app.state.database)
+    app.state.practice_store = SqlitePracticeStore(
+        app.state.database,
+        bind_reads=lambda connection: bind_practice_reads(app.state.database, connection),
+        documents=practice_documents(app.state.database),
+    )
     app.state.document_repository = SqliteDocumentRepository(app.state.database)
     app.state.document_operation_repository = SqliteDocumentOperationRepository(app.state.database)
     app.state.source_file_store = LocalSourceFileStore(app_settings)

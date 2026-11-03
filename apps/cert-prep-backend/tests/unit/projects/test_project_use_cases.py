@@ -62,6 +62,14 @@ def test_editing_a_project_keeps_what_is_not_given() -> None:
     assert projects.get(project.id) == edited
 
 
+def test_project_exists_reports_whether_the_project_is_still_there() -> None:
+    projects = InMemoryProjects()
+    project = use_cases.create_project(projects, name="JLPT N2", description="", now="t1")
+
+    assert use_cases.project_exists(projects, project.id) is True
+    assert use_cases.project_exists(projects, "missing") is False
+
+
 def test_a_project_cannot_be_renamed_to_nothing() -> None:
     projects = InMemoryProjects()
     project = use_cases.create_project(projects, name="JLPT N2", description="", now="t1")
