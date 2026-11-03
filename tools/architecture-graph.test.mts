@@ -56,6 +56,21 @@ test('projectsLevel keeps Nx projects, type tags, roots and internal edges, sort
   });
 });
 
+test('projectsLevel labels nodes with the configured tag prefix', () => {
+  const level = projectsLevel(
+    {
+      nodes: {
+        web: { data: { tags: ['type:app', 'scope:web'], root: 'apps/web' } },
+        engine: { data: { tags: ['scope:desktop'], root: 'apps/engine' } },
+        tools: { data: { root: 'tools' } },
+      },
+      dependencies: { web: [{ target: 'engine' }] },
+    },
+    'scope:',
+  );
+  assert.deepEqual(level.tags, { engine: 'scope:desktop', web: 'scope:web' });
+});
+
 const pythonReport = {
   package: 'capture_runtime',
   modules: [
@@ -397,6 +412,7 @@ test('parseArchitectureConfig fills defaults for each level kind', () => {
         label: 'Nx projects',
         output: 'projects.md',
         intro: undefined,
+        tagPrefix: 'type:',
       },
       {
         id: 'runtimeContexts',
@@ -440,6 +456,39 @@ test('parseArchitectureConfig fills defaults for each level kind', () => {
       },
     ],
   });
+  const inline = parseArchitectureConfig({
+    levels: [
+      {
+        id: 'web',
+        kind: 'typescript',
+        title: 'Web modules',
+        output: 'web.md',
+        intro: 'Web.',
+        modules: { 'web/src/app/features/<feature>': ['feature'] },
+        sourceRoots: ['web/src'],
+      },
+      {
+        id: 'projects',
+        kind: 'nx',
+        title: 'Nx',
+        output: 'projects.md',
+        intro: 'Nx.',
+        tagPrefix: 'scope:',
+      },
+    ],
+  });
+  assert.deepEqual(
+    inline.levels[0].kind === 'typescript' && inline.levels[0].modules,
+    { 'web/src/app/features/<feature>': ['feature'] },
+  );
+  assert.equal(
+    inline.levels[0].kind === 'typescript' && inline.levels[0].sheriffConfig,
+    undefined,
+  );
+  assert.equal(
+    inline.levels[1].kind === 'nx' && inline.levels[1].tagPrefix,
+    'scope:',
+  );
   assert.equal(java.levels[0].label, '引擎套件');
   assert.equal(
     java.levels[0].kind === 'java' && java.levels[0].collapseDepth,
@@ -519,6 +568,41 @@ test('parseArchitectureConfig names the offending key in every error', () => {
         ],
       },
       /levels\[0\]\.sourceRoots must be a non-empty array/u,
+    ],
+    [
+      { levels: [{ ...nx, tagPrefix: 'scope' }] },
+      /levels\[0\]\.tagPrefix must be a tag prefix ending in `:`/u,
+    ],
+    [
+      { levels: [{ ...nx, kind: 'typescript', sourceRoots: ['src'] }] },
+      /levels\[0\] needs exactly one of `sheriffConfig`, `modules`/u,
+    ],
+    [
+      {
+        levels: [
+          {
+            ...nx,
+            kind: 'typescript',
+            sheriffConfig: 's.ts',
+            modules: { src: ['a'] },
+            sourceRoots: ['src'],
+          },
+        ],
+      },
+      /levels\[0\] needs exactly one of `sheriffConfig`, `modules`/u,
+    ],
+    [
+      {
+        levels: [
+          {
+            ...nx,
+            kind: 'typescript',
+            modules: { src: [] },
+            sourceRoots: ['src'],
+          },
+        ],
+      },
+      /levels\[0\]\.modules\.src must be a non-empty array of strings/u,
     ],
     [
       { levels: [{ ...nx, kind: 'java', sourceRoots: ['src'] }] },
@@ -829,6 +913,10 @@ test('runHook runs the docs check and exception gate for TypeScript and config c
     ['apps/capture-workbench/project.json'],
     ['tsconfig.base.json'],
     ['packages/ui/eslint-suppressions.json'],
+    ['apps/web/.dependency-cruiser-known-violations.json'],
+    ['apps/web/.dependency-cruiser.cjs'],
+    ['.oxlintrc.json'],
+    ['libs/other/importlinter.toml'],
     ['sheriff.config.ts'],
     ['architecture-graph.config.json'],
   ]) {
