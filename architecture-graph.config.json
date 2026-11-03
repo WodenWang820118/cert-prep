@@ -14,7 +14,7 @@
       "title": "Backend contexts",
       "label": "後端上下文",
       "output": "backend-contexts.md",
-      "intro": "Each node is a top-level package of the `cert_prep_backend` Python package, labelled with its bounded context from `.agents/PLANS/ddd-refactor/README.md` (`api` holds the shared HTTP errors and bearer auth, `routers` the endpoints step C6 moves into their contexts, `bootstrap` assembles the app and `entrypoints` start it). An arrow `a --> b` means a module in `a` imports a module in `b` (from grimp); imports inside one package are not drawn. The rules are the import-linter contracts in `apps/cert-prep-backend/pyproject.toml`.",
+      "intro": "Each node is a top-level package of the `cert_prep_backend` Python package, labelled with its bounded context from `.agents/PLANS/ddd-refactor/README.md` (`api` holds the shared HTTP errors and bearer auth, `bootstrap` assembles the app and `entrypoints` start it). An arrow `a --> b` means a module in `a` imports a module in `b` (from grimp); imports inside one package are not drawn. The rules are the import-linter contracts in `apps/cert-prep-backend/pyproject.toml`.",
       "package": "cert_prep_backend",
       "sourceDir": "apps/cert-prep-backend/src",
       "projectDir": "apps/cert-prep-backend",
@@ -29,7 +29,6 @@
         "cert_prep_backend.runtime_provisioning": "Runtime Provisioning",
         "cert_prep_backend.platform": "Platform",
         "cert_prep_backend.api": "Web",
-        "cert_prep_backend.routers": "Web",
         "cert_prep_backend.bootstrap": "Bootstrap",
         "cert_prep_backend.entrypoints": "Bootstrap"
       },

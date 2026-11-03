@@ -66,7 +66,6 @@ forbidden_modules = [
   "cert_prep_backend.capture_integration",
   "cert_prep_backend.runtime_provisioning",
   "cert_prep_backend.api",
-  "cert_prep_backend.routers",
 ]
 
 # D2: bootstrap assembles the app and may import everything; only the entrypoints start it.
@@ -83,7 +82,6 @@ source_modules = [
   "cert_prep_backend.capture_integration",
   "cert_prep_backend.runtime_provisioning",
   "cert_prep_backend.api",
-  "cert_prep_backend.routers",
 ]
 forbidden_modules = ["cert_prep_backend.bootstrap"]
 
@@ -97,6 +95,7 @@ source_modules = [
   "cert_prep_backend.practice.application",
   "cert_prep_backend.practice.infrastructure",
   "cert_prep_backend.source_library.domain",
+  "cert_prep_backend.source_library.application",
   "cert_prep_backend.source_library.infrastructure",
   "cert_prep_backend.authoring.domain",
   "cert_prep_backend.authoring.infrastructure",
@@ -112,7 +111,6 @@ source_modules = [
 ]
 forbidden_modules = [
   "cert_prep_backend.api",
-  "cert_prep_backend.routers",
   "fastapi",
   "starlette",
 ]
@@ -140,7 +138,6 @@ forbidden_modules = [
   "cert_prep_backend.platform.change_notifications",
   "cert_prep_backend.platform.sse",
   "cert_prep_backend.api",
-  "cert_prep_backend.routers",
 ]
 
 # D8: Capture Integration is the anticorruption layer for Capture Runtime. The SDK's types
@@ -207,10 +204,6 @@ modules = [
   "cert_prep_backend.practice",
   "cert_prep_backend.runtime_provisioning",
 ]
-# Known until C6 moves routers.documents: the capture workbench router reuses its upload helper.
-ignore_imports = [
-  "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.routers.documents",
-]
 
 [[tool.importlinter.contracts]]
 name = "Each context layers api and infrastructure over application over domain"
@@ -227,10 +220,9 @@ containers = [
   "cert_prep_backend.runtime_provisioning",
 ]
 layers = ["(api) | (infrastructure)", "(application)", "(domain)"]
-# The capture workbench router still reuses an upload helper of routers.documents. The runtime
-# router still returns RuntimeReady, which the Capture SDK client in infrastructure also parses.
+# The runtime router still returns RuntimeReady, which the Capture SDK client in infrastructure
+# also parses.
 ignore_imports = [
-  "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.routers.documents",
   "cert_prep_backend.capture_integration.api.runtime_router -> cert_prep_backend.capture_integration.infrastructure.host_models",
 ]
 
@@ -243,7 +235,6 @@ source_modules = [
   "cert_prep_backend.authoring",
   "cert_prep_backend.capture_integration",
   "cert_prep_backend.runtime_provisioning",
-  "cert_prep_backend.routers",
 ]
 forbidden_modules = [
   "cert_prep_backend.projects.infrastructure",
@@ -255,7 +246,6 @@ ignore_imports = [
   "cert_prep_backend.authoring.infrastructure.draft_jobs -> cert_prep_backend.projects.infrastructure.repository",
   "cert_prep_backend.authoring.infrastructure.manual_operations -> cert_prep_backend.projects.infrastructure.repository",
   "cert_prep_backend.authoring.infrastructure.repository -> cert_prep_backend.projects.infrastructure.repository",
-  "cert_prep_backend.routers.documents -> cert_prep_backend.projects.infrastructure.repository",
 ]
 
 [[tool.importlinter.contracts]]
@@ -267,7 +257,6 @@ source_modules = [
   "cert_prep_backend.authoring",
   "cert_prep_backend.capture_integration",
   "cert_prep_backend.runtime_provisioning",
-  "cert_prep_backend.routers",
 ]
 forbidden_modules = [
   "cert_prep_backend.practice.infrastructure",
@@ -283,15 +272,13 @@ source_modules = [
   "cert_prep_backend.authoring",
   "cert_prep_backend.capture_integration",
   "cert_prep_backend.runtime_provisioning",
-  "cert_prep_backend.routers",
 ]
 forbidden_modules = [
   "cert_prep_backend.source_library.infrastructure",
   "cert_prep_backend.source_library.api",
 ]
-# Known until Question Authoring and Capture Integration get their own C4, and until C6 moves
-# routers.documents (still Source Library's HTTP layer) and the capture rules out of the
-# routers: they call Source Library's storage functions directly.
+# Known until C5 gives Source Library's tables their own use cases: Question Authoring and
+# Capture Integration's review workflow call Source Library's storage functions directly.
 ignore_imports = [
   "cert_prep_backend.authoring.infrastructure.sources -> cert_prep_backend.source_library.infrastructure.repository",
   "cert_prep_backend.authoring.infrastructure.draft_jobs -> cert_prep_backend.source_library.infrastructure.repository",
@@ -301,14 +288,6 @@ ignore_imports = [
   "cert_prep_backend.capture_integration.infrastructure.persistence -> cert_prep_backend.source_library.infrastructure.operations",
   "cert_prep_backend.capture_integration.infrastructure.review_workflow -> cert_prep_backend.source_library.infrastructure.operations",
   "cert_prep_backend.capture_integration.infrastructure.review_workflow -> cert_prep_backend.source_library.infrastructure.repository",
-  "cert_prep_backend.routers.documents -> cert_prep_backend.source_library.api.markdown",
-  "cert_prep_backend.routers.documents -> cert_prep_backend.source_library.api.schemas",
-  "cert_prep_backend.routers.documents -> cert_prep_backend.source_library.infrastructure.operations",
-  "cert_prep_backend.routers.documents -> cert_prep_backend.source_library.infrastructure.repository",
-  "cert_prep_backend.routers.documents -> cert_prep_backend.source_library.infrastructure.source_preparation",
-  "cert_prep_backend.routers.documents -> cert_prep_backend.source_library.infrastructure.storage",
-  "cert_prep_backend.routers.operation_events -> cert_prep_backend.source_library.infrastructure.operations",
-  "cert_prep_backend.routers.operation_events -> cert_prep_backend.source_library.infrastructure.repository",
 ]
 
 [[tool.importlinter.contracts]]
@@ -321,7 +300,6 @@ source_modules = [
   "cert_prep_backend.authoring",
   "cert_prep_backend.capture_integration",
   "cert_prep_backend.runtime_provisioning",
-  "cert_prep_backend.routers",
 ]
 forbidden_modules = [
   "cert_prep_backend.ai_providers.infrastructure",

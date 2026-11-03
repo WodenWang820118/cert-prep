@@ -11,7 +11,7 @@ storage writes the next state only while the record is still in the state it was
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Any
@@ -26,6 +26,7 @@ __all__ = [
     "DraftJobNotCancellableError",
     "ManualDraftOperation",
     "ManualDraftOperationStatus",
+    "all_jobs_ended",
 ]
 
 
@@ -369,3 +370,9 @@ def _stopped_phase(status: DraftGenerationJobStatus) -> str:
     if status is _Job.CANCELED:
         return "canceled"
     return "failed"
+
+
+def all_jobs_ended(jobs: Sequence[DraftGenerationJob]) -> bool:
+    """A document's generation has ended once it has jobs and every one of them has ended."""
+
+    return bool(jobs) and all(job.is_terminal for job in jobs)

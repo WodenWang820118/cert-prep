@@ -28,15 +28,6 @@ class PreparedSource:
     duration_ms: int | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class StoredSourceReference:
-    storage_path: str
-    sha256: str
-    canonical_suffix: str
-    filename: str
-    kind: SourceKind
-
-
 def prepare_source(content: bytes, *, max_pdf_pages: int, max_image_pixels: int, filename: str | None = None) -> PreparedSource:
     """Validate a source envelope before handing all extraction to Capture Runtime."""
     if not content:

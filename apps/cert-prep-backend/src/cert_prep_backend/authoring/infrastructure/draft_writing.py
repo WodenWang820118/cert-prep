@@ -260,3 +260,9 @@ class ProviderDraftWriting:
         return generate_drafts_for_strategy(
             model, chunks, limit, strategy, reading_lexicon=self._reading_lexicon
         )
+
+    def import_suggestions(
+        self, model: object, chunks: Sequence[SourceChunk], limit: int
+    ) -> list[DraftSuggestion]:
+        # Drafts written at import never used the reading lexicon; keep them as they were.
+        return draft_writer_for(model).generate_drafts(chunks, limit)
