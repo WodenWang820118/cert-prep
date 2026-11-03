@@ -24,6 +24,8 @@ on:
       - 'tsconfig.scripts.json'
       - 'vitest.workspace.ts'
       - 'eslint.config.mts'
+      - 'sheriff.config.ts'
+      - 'architecture-graph.config.json'
       - '.prettierrc'
       - '.prettierignore'
       - '.editorconfig'
@@ -54,6 +56,8 @@ on:
       - 'tsconfig.scripts.json'
       - 'vitest.workspace.ts'
       - 'eslint.config.mts'
+      - 'sheriff.config.ts'
+      - 'architecture-graph.config.json'
       - '.prettierrc'
       - '.prettierignore'
       - '.editorconfig'
@@ -149,6 +153,24 @@ jobs:
           node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts
           --test tools/dead-code-gate.test.mts
           && node tools/dead-code-gate.mts --ci
+
+      - name: Test architecture tools
+        run: >-
+          node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts
+          --test tools/architecture-graph.test.mts tools/architecture-diff.test.mts
+          tools/architecture-exceptions-gate.test.mts
+
+      # docs/architecture/*.md are generated from the Nx graph, the grimp
+      # import graph of the backend, and the Sheriff modules; fix with
+      # `pnpm run architecture:update`.
+      - name: Architecture diagrams
+        run: node tools/architecture-graph.mts --check
+
+      # Known boundary exceptions (import-linter ignore_imports, ESLint
+      # disables and suppressions of Nx and Sheriff rules) may only shrink;
+      # --ci also fails on a stale baseline (architecture-exceptions:update).
+      - name: Architecture exceptions gate
+        run: node tools/architecture-exceptions-gate.mts --ci
 
       - name: Test generated API client
         run: pnpm nx run cert-prep-api:vite:test

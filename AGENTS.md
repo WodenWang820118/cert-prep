@@ -36,6 +36,14 @@
 - When a design is replaced, delete the old path, its config, CI and release steps, and its docs in the same change. Do not keep it "for compatibility" unless a named consumer still needs it. When a tool cannot see a real use (a CLI entry, a framework callback), add a `knip.json` entry or a vulture decorator ignore in `tools/dead-code-gate.mts`; never add new dead code to the baseline. Rust code only tests use goes under `#[cfg(test)]`, not behind `allow(dead_code)`.
 - `.claude/settings.json` runs the check as a Claude Code Stop hook before a turn that changed code ends.
 
+# Architecture
+
+- `docs/architecture/` holds generated diagrams of today's dependencies (Nx projects, backend contexts, UI modules); the hand-written context map in `.agents/PLANS/ddd-refactor/README.md` is the target, and the difference is the DDD work left. Never edit the generated files: run `pnpm run architecture:update` after changing dependencies; CI's `portable-quality` job fails when they are stale (`architecture:check`). The levels are in `architecture-graph.config.json`.
+- The rules live in the `[tool.importlinter]` contracts of `apps/cert-prep-backend/pyproject.toml` (`cert-prep-backend:lint-architecture`), `sheriff.config.ts` (UI modules, run by `cert-prep:lint`) and the `depConstraints` of `@nx/enforce-module-boundaries` in `eslint.config.mts` (Nx tags). Decisions are in `.agents/PLANS/ddd-refactor/`.
+- Known exceptions (`ignore_imports`, ESLint disables or bulk suppressions of the Nx and Sheriff rules) are a ratchet in `tools/quality/architecture-exceptions-baseline.json`: a new one fails; fix the import instead. After removing one, run `pnpm run architecture-exceptions:update` (CI runs the gate with `--ci`).
+- Every pull request description carries an architecture section between `<!-- architecture:start -->` and `<!-- architecture:end -->`: `.github/workflows/architecture-diff.yml` rewrites it on each push with the touched nodes, their direct dependencies and the dependency edges the PR adds or removes. Write your own text outside the markers.
+- The tools are copied from capture-workbench (`tools/architecture-graph.ts` there); change them in all three repos together. The Stop hook also runs `node tools/architecture-graph.mts --hook`: the diagram check and the exception gate, plus the backend's import-linter contracts when backend Python or `pyproject.toml` changed.
+
 # Testing
 
 - CI (`ci.yml`) runs the same checks on PR and main in two parallel jobs: platform-neutral lint and tests once on Linux; packaging, the Capture Runtime install, and the Tauri host on Windows. `release-alpha.yml` reruns them on the exact release source and adds the built-binary stack check; `validate_only` stops before anything is reserved or published.

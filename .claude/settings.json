@@ -7,6 +7,11 @@
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/tools/dead-code-gate.mts\" --hook",
             "timeout": 120
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/tools/architecture-graph.mts\" --hook",
+            "timeout": 120
           }
         ]
       }
