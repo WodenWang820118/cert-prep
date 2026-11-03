@@ -19,6 +19,20 @@ ExtractionMethod = PdfExtractionMethodValue
 AUDIO_MEDIA_TYPES: Final = {".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4"}
 MARKDOWN_UNAVAILABLE: Final = "markdown_unavailable"
 AUDIO_SOURCE_UNAVAILABLE: Final = "audio_source_unavailable"
+LANGUAGE_HINTS: Final = frozenset({"auto", "ja", "zh-Hant", "zh-Hans", "en", "mixed"})
+
+
+def language_hint_or_auto(language_hint: str) -> str:
+    """The language hint a document keeps: one the app knows, otherwise auto."""
+
+    return language_hint if language_hint in LANGUAGE_HINTS else "auto"
+
+
+def upload_size_limit(filename: str | None, *, max_bytes: int, max_audio_bytes: int) -> int:
+    """The size limit of an upload: a recording, judged by its file name, has its own."""
+
+    is_audio = PurePath(filename or "").suffix.lower() in AUDIO_MEDIA_TYPES
+    return max_audio_bytes if is_audio else max_bytes
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +128,14 @@ class SourceDocument:
                 MARKDOWN_UNAVAILABLE,
                 "Markdown projection is available after document processing completes.",
             )
+
+    def status_after_import_drafts(self) -> str:
+        """The status a document has once drafts were written while it was imported: still
+        processing if it was, ready when it has text and chunks, exam_failed otherwise."""
+
+        if self.status == "processing":
+            return "processing"
+        return "ready" if self.has_text and self.chunks_count > 0 else "exam_failed"
 
     def ensure_playable(self) -> None:
         """Only a recording has a source that can be played."""

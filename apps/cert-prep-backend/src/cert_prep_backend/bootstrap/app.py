@@ -45,6 +45,9 @@ from cert_prep_backend.capture_integration.infrastructure.background import (
 from cert_prep_backend.capture_integration.infrastructure.coordinator import (
     CertPrepCaptureCoordinator,
 )
+from cert_prep_backend.capture_integration.infrastructure.document_extraction import (
+    CaptureSourceExtraction,
+)
 from cert_prep_backend.capture_integration.infrastructure.review_sessions import (
     CaptureReviewStoreAdapter,
 )
@@ -70,6 +73,7 @@ from cert_prep_backend.ai_providers.infrastructure.ollama_server import (
 from cert_prep_backend.ai_providers.infrastructure.provider import lazy_provider_from_settings
 from cert_prep_backend.authoring.infrastructure.draft_jobs import SqliteDraftGenerationJobRepository
 from cert_prep_backend.authoring.infrastructure.draft_writing import ProviderDraftWriting
+from cert_prep_backend.authoring.infrastructure.import_drafting import ImportedDocumentDrafts
 from cert_prep_backend.authoring.infrastructure.repository import SqliteQuestionDraftRepository
 from cert_prep_backend.authoring.infrastructure.sources import SourceLibraryDraftSources
 from cert_prep_backend.authoring.infrastructure.sudachi_reading_lexicon import SudachiReadingLexicon
@@ -85,6 +89,7 @@ from cert_prep_backend.source_library.infrastructure.repository import (
     SqliteDocumentRepository,
 )
 from cert_prep_backend.source_library.infrastructure.storage import LocalSourceFileStore
+from cert_prep_backend.source_library.infrastructure.worker_pool import PoolDocumentWork
 from cert_prep_backend.platform.document_worker_pool import (
     DocumentWorkerPool,
 )
@@ -92,14 +97,18 @@ from cert_prep_backend.capture_integration.api import (
     runtime_router as capture_runtime,
     router as capture_workbench,
 )
-from cert_prep_backend.routers import (
-    documents,
-    operation_events,
+from cert_prep_backend.source_library.api import (
+    operation_events as document_operation_events,
+    router as documents,
 )
 from cert_prep_backend.ai_providers.api import router as llm
 from cert_prep_backend.runtime_provisioning.api import model_download_router as model_downloads
 from cert_prep_backend.runtime_provisioning.api import router as runtime
+from cert_prep_backend.runtime_provisioning.api import (
+    operation_events as runtime_installation_events,
+)
 from cert_prep_backend.authoring.api import router as drafts
+from cert_prep_backend.authoring.api import operation_events as draft_generation_events
 from cert_prep_backend.practice.api import router as practice
 from cert_prep_backend.practice.infrastructure.repository import SqlitePracticeStore
 from cert_prep_backend.projects.api import router as projects
@@ -234,6 +243,12 @@ def create_app(
         worker_name_prefix="capture-document-worker",
     )
     app.state.capture_background_work = PoolCaptureBackgroundWork(app.state.document_worker_pool)
+    app.state.document_work = PoolDocumentWork(app.state.document_worker_pool)
+    app.state.source_extraction = (
+        CaptureSourceExtraction(app.state.capture_coordinator, app.state.database)
+        if app.state.capture_coordinator is not None
+        else None
+    )
     app.state.document_processing_async_jobs = document_processing_async_jobs
     app.state.runtime_installation_async_jobs = runtime_installation_async_jobs
     reading_lexicon = SudachiReadingLexicon() if app_settings.reading_solver_enabled else None
@@ -255,6 +270,14 @@ def create_app(
         app.state.document_repository, app.state.database
     )
     app.state.draft_writing = ProviderDraftWriting(reading_lexicon=reading_lexicon)
+    app.state.imported_document_drafting = ImportedDocumentDrafts(
+        work=app.state.draft_generation_work,
+        drafts=app.state.question_draft_repository,
+        sources=app.state.draft_sources,
+        writing=app.state.draft_writing,
+        model=app.state.llm_provider,
+        settings=app_settings,
+    )
     app.state.machine_inventory = OllamaMachineInventory(app_settings)
     if runtime_installation_manager:
         app.state.runtime_installation_manager = runtime_installation_manager
@@ -340,7 +363,10 @@ def create_app(
     app.include_router(runtime.router, dependencies=protected_dependencies)
     app.include_router(capture_runtime.router, dependencies=protected_dependencies)
     app.include_router(capture_workbench.router, dependencies=protected_dependencies)
-    app.include_router(operation_events.router, dependencies=protected_dependencies)
+    # The operation event streams keep their place at the end of the API (D6).
+    app.include_router(document_operation_events.router, dependencies=protected_dependencies)
+    app.include_router(draft_generation_events.router, dependencies=protected_dependencies)
+    app.include_router(runtime_installation_events.router, dependencies=protected_dependencies)
 
     return app
 

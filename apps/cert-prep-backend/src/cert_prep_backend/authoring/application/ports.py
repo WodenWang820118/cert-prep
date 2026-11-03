@@ -47,6 +47,11 @@ class DraftSources(Protocol):
 
     def record_draft_count(self, project_id: str, document_id: str, count: int) -> None: ...
 
+    def record_import_draft_count(self, project_id: str, document_id: str, count: int) -> None:
+        """Record the drafts written while the document was imported; a document without text
+        or chunks is marked exam_failed."""
+        ...
+
 
 class DraftWriting(Protocol):
     """Writes drafts from source chunks with a language model, following a strategy."""
@@ -59,9 +64,21 @@ class DraftWriting(Protocol):
         strategy: DraftGenerationStrategy,
     ) -> list[DraftSuggestion]: ...
 
+    def import_suggestions(
+        self, model: object, chunks: Sequence[SourceChunk], limit: int
+    ) -> list[DraftSuggestion]:
+        """Drafts written in one pass while a document is imported, without a strategy;
+        ProviderUnavailableError when the model cannot write them."""
+        ...
+
 
 class DraftGenerationWork(Protocol):
-    """Generation that runs in the background: retried jobs and manual operations."""
+    """Generation that runs in the background: per-chunk jobs, retried jobs and manual
+    operations."""
+
+    def enqueue_document(self, project_id: str, document_id: str) -> None:
+        """Queue a generation job per chunk, when the settings stream drafts at import."""
+        ...
 
     def retry_jobs(self, project_id: str, document_id: str) -> list[DraftGenerationJob]: ...
 

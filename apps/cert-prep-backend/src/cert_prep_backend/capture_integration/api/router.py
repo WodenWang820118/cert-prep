@@ -40,7 +40,7 @@ from cert_prep_backend.platform.dependencies import (
     get_database,
     get_settings,
 )
-from cert_prep_backend.api.errors import ApiErrorRead, api_error, not_found_error
+from cert_prep_backend.api.errors import ApiErrorRead, api_error, not_found_error, validation_error
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.errors import NotFoundError, ValidationError
 from cert_prep_backend.capture_integration.api.capture_event_stream import (
@@ -88,7 +88,8 @@ from cert_prep_backend.capture_integration.application.ocr_summary import (
 from cert_prep_backend.projects.application.ports import ProjectRepository
 from cert_prep_backend.source_library.domain.document import DocumentChunk, SourceDocument
 from cert_prep_backend.platform.database import Database
-from cert_prep_backend.routers.documents import _read_limited_upload
+from cert_prep_backend.source_library.application import use_cases as source_library
+from cert_prep_backend.source_library.application.errors import SourceTooLarge
 
 
 router = APIRouter(
@@ -283,8 +284,8 @@ async def create_capture(
     if not claim.acquired:
         raise HTTPException(status_code=409, detail="Document operation id is already in use.")
     try:
-        content = await _read_limited_upload(file, settings.max_upload_bytes)
-    except Exception:
+        content = await source_library.receive_upload(file, settings.max_upload_bytes)
+    except Exception as error:
         capture_reviews.abandon_capture_upload(
             sessions,
             operations,
@@ -293,6 +294,8 @@ async def create_capture(
             operation_id=operation_id,
             session_id=None,
         )
+        if isinstance(error, SourceTooLarge):
+            raise validation_error(str(error)) from error
         raise
     try:
         started = await asyncio.to_thread(

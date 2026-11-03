@@ -1,1 +1,1 @@
-"""DTOs and Markdown export of the Source Library; its endpoints stay in routers.documents until C6."""
+"""HTTP endpoints, DTOs and Markdown export of the Source Library."""

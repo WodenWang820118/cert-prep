@@ -135,14 +135,15 @@ stateDiagram-v2
 | 開始手動產生   | `start_manual_generation`  | 在背景為整份教材產生草稿；已有進行中的作業時回傳那一個       |
 | 查看手動產生   | `view_manual_generation`   | 一個手動產生作業的狀態、產生數量與待檢查的解析題             |
 | 取消手動產生   | `cancel_manual_generation` | 排隊中的作業立即取消，執行中的要求停止；提交後不能取消       |
+| 匯入後起草     | `draft_imported_document`  | 匯入後有段落的教材：排入產生工作，或依設定立即寫出草稿       |
 
-匯入教材時自動產生草稿的流程仍在 `routers/documents.py`，C6 把擷取規則移出 router 時才移入這裡的用例。
+教材來源的 `import_document` 與 `retry_document_processing` 擷取出段落後，經教材來源的 port `ImportedDocumentDrafting` 呼叫 `draft_imported_document`；實作這個 port 的是 `infrastructure/import_drafting.py` 的 `ImportedDocumentDrafts`，它依設定（`streaming_draft_generation_on_upload`、`auto_generate_exam_on_upload`、`auto_generate_exam_limit`）呼叫用例。匯入時直接產生草稿時，模型無法使用就不寫草稿；之後記錄教材的題目數，有文字與段落的教材記為可用，否則記為 `exam_failed`（`SourceDocument.status_after_import_drafts`）。
 
 ## 主要流程
 
 ```mermaid
 sequenceDiagram
-  participant Import as routers.documents
+  participant Import as draft_imported_document
   participant Manager as StreamingDraftGenerationManager
   participant Jobs as draft_jobs
   participant Job as DraftGenerationJob
@@ -157,7 +158,7 @@ sequenceDiagram
   Manager->>Drafts: append_generated_drafts_and_complete_job（同一個交易寫草稿、更新教材題目數、工作成功）
 ```
 
-`create_app` 建立 `SqliteQuestionDraftRepository`、`SqliteDraftGenerationJobRepository`、`StreamingDraftGenerationWork`、`SourceLibraryDraftSources`、`ProviderDraftWriting`，放在 `app.state.question_draft_repository`、`draft_generation_job_repository`、`draft_generation_work`、`draft_sources`、`draft_writing`；router 只依 `application/ports.py` 的 port 呼叫用例。
+`create_app` 建立 `SqliteQuestionDraftRepository`、`SqliteDraftGenerationJobRepository`、`StreamingDraftGenerationWork`、`SourceLibraryDraftSources`、`ProviderDraftWriting`、`ImportedDocumentDrafts`，放在 `app.state.question_draft_repository`、`draft_generation_job_repository`、`draft_generation_work`、`draft_sources`、`draft_writing`、`imported_document_drafting`；router 只依 `application/ports.py` 的 port 呼叫用例。
 
 ### 漢字讀音解答
 
@@ -224,7 +225,7 @@ flowchart TD
 - AI 供應：`draft_writer_for` 依設定的供應者挑選寫草稿者；Ollama 經 JSON 對話寫草稿；串流產生使用串流參數、產生歸屬與釋放資源（見 [ai_providers.md](ai_providers.md)）。
 - 學習專案：確認專案存在仍直接呼叫 `projects.infrastructure`（已知例外，C5）。
 - 練習與複習：練習只出已核可的草稿；它直接讀 `question_drafts` 資料表（C5）。
-- 擷取整合與教材匯入：匯入教材時的自動產生由 `routers/documents.py` 驅動（C6）。
+- 教材匯入：教材來源匯入或重試教材、擷取出段落後，經它的 port `ImportedDocumentDrafting` 呼叫 `draft_imported_document`；題目編寫實作這個 port，教材來源不依賴題目編寫。
 
 題目編寫不依賴擷取整合、練習與複習、執行環境（import-linter「Question Authoring does not depend on its downstream contexts」）。
 
@@ -232,5 +233,5 @@ flowchart TD
 
 - 資料表：`question_drafts`、`draft_generation_jobs`、`manual_draft_generation_operations`；migration 在 `platform/database.py`。
 - 確定性解析：`domain/deterministic_parser.py` 與教材來源的 `exam_content`。
-- HTTP：`/projects/{project_id}/question-drafts`、`/projects/{project_id}/documents/{document_id}/drafts`、`…/draft-jobs`、`…/draft-operations`（DTO 在 `authoring/api/schemas.py`）；產生工作與手動作業的即時狀態經 `routers/operation_events.py` 的 server-sent events。
+- HTTP：`/projects/{project_id}/question-drafts`、`/projects/{project_id}/documents/{document_id}/drafts`、`…/draft-jobs`、`…/draft-operations`（DTO 在 `authoring/api/schemas.py`）；產生工作與手動作業的即時狀態經 `authoring/api/operation_events.py` 的 server-sent events（`…/draft-jobs/events`、`…/draft-operations/{operation_id}/events`）；串流與心跳由 `platform/sse.py` 提供，快照來自 `list_generation_jobs` 與 `view_manual_generation`，所有工作都結束時（`all_jobs_ended`）或作業結束時串流結束。
 - API 的 `DraftStatus`、`AnswerKeySource`、`DraftGenerationStrategy`、`DraftGenerationJobStatus`、`ManualDraftOperationStatus` 列舉值對應到概念集的 `authoring.*`。

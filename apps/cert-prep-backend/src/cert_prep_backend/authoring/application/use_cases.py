@@ -1,8 +1,4 @@
-"""Use cases of Question Authoring, named after what the learner does with question drafts.
-
-Drafts are also generated while a document is imported; routers.documents still drives that
-until step C6 takes the capture rules out of the router.
-"""
+"""Use cases of Question Authoring, named after what the learner does with question drafts."""
 
 from __future__ import annotations
 
@@ -16,11 +12,13 @@ from cert_prep_backend.authoring.application.ports import (
 from cert_prep_backend.authoring.domain.draft import DraftEdit, NewQuestionDraft, QuestionDraft
 from cert_prep_backend.authoring.domain.generation import DraftGenerationJob, ManualDraftOperation
 from cert_prep_backend.authoring.domain.models import DraftGenerationStrategy
-from cert_prep_backend.platform.errors import ValidationError
+from cert_prep_backend.authoring.domain.normalization import as_editable_question
+from cert_prep_backend.platform.errors import ProviderUnavailableError, ValidationError
 
 __all__ = [
     "cancel_generation_job",
     "cancel_manual_generation",
+    "draft_imported_document",
     "edit_draft",
     "generate_document_drafts",
     "list_drafts",
@@ -113,3 +111,38 @@ def cancel_manual_generation(
     work: DraftGenerationWork, project_id: str, document_id: str, operation_id: str
 ) -> ManualDraftOperation:
     return work.cancel_manual_operation(project_id, document_id, operation_id)
+
+
+def draft_imported_document(
+    work: DraftGenerationWork,
+    drafts: QuestionDraftRepository,
+    sources: DraftSources,
+    writing: DraftWriting,
+    model: object,
+    *,
+    project_id: str,
+    document_id: str,
+    streams_drafts: bool,
+    writes_drafts: bool,
+    limit: int,
+) -> None:
+    """Start the drafts of a document whose import produced chunks.
+
+    Streaming queues a job per chunk. When the settings write drafts at import instead, and
+    only then, up to `limit` drafts are written now; an unavailable model writes none, and the
+    document records how many it got.
+    """
+
+    work.enqueue_document(project_id, document_id)
+    if streams_drafts or not writes_drafts:
+        return
+    chunks = sources.chunks_of(project_id, document_id)
+    try:
+        suggestions = [
+            as_editable_question(suggestion)
+            for suggestion in writing.import_suggestions(model, chunks, limit)
+        ]
+    except ProviderUnavailableError:
+        suggestions = []
+    added = drafts.add_generated(project_id, document_id, suggestions) if suggestions else []
+    sources.record_import_draft_count(project_id, document_id, len(added))

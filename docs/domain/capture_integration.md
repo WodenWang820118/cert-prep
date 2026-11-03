@@ -6,7 +6,7 @@
 
 負責：學習者上傳 PDF 或圖片後，請 Capture Runtime 擷取文字、在確認前檢閱、確認後寫成教材段落，並在有段落時排入題目草稿。也負責這個程序裡 runtime 的就緒、來源證明、需求與安裝。
 
-不負責：教材與段落怎麼存（教材來源）、題目草稿怎麼寫（題目編寫）、專案本身（學習專案）、Capture Runtime 的協定與傳輸。SDK 型別留在 infrastructure。不經檢閱的上傳仍在 `routers/documents.py`。
+不負責：教材與段落怎麼存（教材來源）、題目草稿怎麼寫（題目編寫）、專案本身（學習專案）、Capture Runtime 的協定與傳輸。SDK 型別留在 infrastructure。不經檢閱的上傳屬教材來源（`import_document`），擷取整合只替它擷取文字。
 
 ## 用語
 
@@ -165,7 +165,7 @@ stateDiagram-v2
 | 查看 runtime 安裝     | `view_runtime_installation`   | 讀一筆安裝；終態會清掉 discovery 快取             |
 | 取消 runtime 安裝     | `cancel_runtime_installation` | 取消一筆安裝                                      |
 
-不經檢閱的上傳仍在 `routers/documents.py`，不是上表的用例。
+不經檢閱的上傳是教材來源的 `import_document`；擷取整合以 `infrastructure/document_extraction.py` 的 `CaptureSourceExtraction` 實作它的 port `SourceExtraction`（擷取、寫成段落、刪除 runtime 的副本，把 Capture 的錯誤轉成教材來源的錯誤），不是上表的用例。建立擷取時讀上傳檔案用教材來源的 `receive_upload`。
 
 ## 主要流程
 
@@ -199,7 +199,7 @@ sequenceDiagram
 - 題目編寫：寫入後經 `CaptureQuestionDrafting` 排入題目草稿。
 - 學習專案：建立擷取時用 `require_project` 確認專案存在。
 - Capture Runtime：anticorruption layer（D8）。`application` 不得 import `capture_runtime_client`。SDK 型別留在 infrastructure，以及 router 的回應模型。
-- `routers/documents.py`：不經檢閱的上傳仍在那裡（C6）。它呼叫 coordinator 與 `publish_capture_document`，不建立檢閱。
+- 教材來源的不經檢閱匯入：`CaptureSourceExtraction` 呼叫 coordinator 與 `publish_capture_document`，不建立檢閱；教材來源只認得它的 port `SourceExtraction`。
 
 擷取整合不依賴練習與複習、執行環境（import-linter「Capture Integration, Practice and Runtime Provisioning do not depend on each other」）。
 
@@ -209,4 +209,4 @@ sequenceDiagram
 - HTTP：`/projects/{project_id}/capture-workbench/captures` 與 `/capture-runtime`。事件是工作台下的 `GET /{capture_id}/events`，`text/event-stream`。
 - 安裝請求的 `consent: true` 與 UUID `X-Idempotency-Key` 留在 router。安裝進入 `completed`、`failed`、`cancelled` 或 `manual_action_required` 時，client 清掉 discovery 快取。
 - `CaptureReviewStatus` 不是 OpenAPI 的列舉，概念集沒有對應項目。
-- 已知例外仍在 `apps/cert-prep-backend/pyproject.toml`：工作台 router 對 `routers.documents`；runtime router 對 `host_models`（`RuntimeReady` 也由 infrastructure 的 Capture SDK client 解析）；`persistence` 與 `review_workflow` 對教材來源的 infrastructure。
+- 已知例外仍在 `apps/cert-prep-backend/pyproject.toml`：runtime router 對 `host_models`（`RuntimeReady` 也由 infrastructure 的 Capture SDK client 解析）；`persistence` 與 `review_workflow` 對教材來源的 infrastructure。

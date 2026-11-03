@@ -126,28 +126,41 @@ stateDiagram-v2
 
 ## 用例
 
-| 用例          | 程式名稱                   | 說明                                                                       |
-| ------------- | -------------------------- | -------------------------------------------------------------------------- |
-| 列出教材      | `list_documents`           | 專案的所有教材                                                             |
-| 查看教材      | `view_document`            | 一份教材與它的處理結果                                                     |
-| 匯出 Markdown | `export_markdown`          | 處理完成的 PDF 依段落產生 Markdown；其他教材是 `SourceDocumentUnavailable` |
-| 播放錄音      | `open_audio_source`        | 驗證過完整性的錄音原始檔；原始檔不見或被改過時無法播放                     |
-| 查看作業      | `view_operation`           | 一個匯入作業的狀態與階段                                                   |
-| 取消作業      | `cancel_operation`         | 取消一個作業；還沒開始的作業 id 先記為已取消，之後不能再用                 |
-| 取消處理      | `cancel_processing`        | 取消正在處理一份教材的作業                                                 |
-| 列出段落      | `list_chunks`              | 教材的段落，依頁碼或時間排列                                               |
-| 修正段落      | `edit_chunk`               | 修正一段轉錄文字；它的翻譯變成過期                                         |
-| 翻譯段落      | `translate_chunk`          | 把一段轉錄翻譯成繁體中文                                                   |
-| 翻譯過期段落  | `translate_stale_chunks`   | 翻譯所有修正後還沒重新翻譯的段落                                           |
-| 重新開機復原  | `recover_interrupted_work` | 確認已要求的取消、讓中斷的作業失敗、整理仍標成處理中的教材                 |
+| 用例           | 程式名稱                    | 說明                                                                              |
+| -------------- | --------------------------- | --------------------------------------------------------------------------------- |
+| 列出教材       | `list_documents`            | 專案的所有教材                                                                    |
+| 查看教材       | `view_document`             | 一份教材與它的處理結果                                                            |
+| 匯出 Markdown  | `export_markdown`           | 處理完成的 PDF 依段落產生 Markdown；其他教材是 `SourceDocumentUnavailable`        |
+| 播放錄音       | `open_audio_source`         | 驗證過完整性的錄音原始檔；原始檔不見或被改過時無法播放                            |
+| 查看作業       | `view_operation`            | 一個匯入作業的狀態與階段                                                          |
+| 取消作業       | `cancel_operation`          | 取消一個作業；還沒開始的作業 id 先記為已取消，之後不能再用                        |
+| 取消處理       | `cancel_processing`         | 取消正在處理一份教材的作業                                                        |
+| 列出段落       | `list_chunks`               | 教材的段落，依頁碼或時間排列                                                      |
+| 修正段落       | `edit_chunk`                | 修正一段轉錄文字；它的翻譯變成過期                                                |
+| 翻譯段落       | `translate_chunk`           | 把一段轉錄翻譯成繁體中文                                                          |
+| 翻譯過期段落   | `translate_stale_chunks`    | 翻譯所有修正後還沒重新翻譯的段落                                                  |
+| 重新開機復原   | `recover_interrupted_work`  | 確認已要求的取消、讓中斷的作業失敗、整理仍標成處理中的教材                        |
+| 接收上傳       | `receive_upload`            | 讀入上傳的檔案，超過大小上限時立即拒絕（`SourceTooLarge`）；擷取檢閱的上傳也用它  |
+| 匯入教材       | `import_document`           | 不經檢閱的匯入：認領作業 id、驗證並保存原始檔、附上教材，再擷取文字並開始起草題目 |
+| 重試處理       | `retry_document_processing` | 以新的作業 id 從保存的原始檔重新處理教材；原始檔不見或被改過時無法重試            |
+| 查看作業進度   | `view_operation_progress`   | 作業與它處理的教材，作業事件串流的快照                                            |
+| 查看進行中作業 | `view_active_operation`     | 教材仍在排隊、執行或取消中的作業；沒有時是 `NotFoundError`                        |
 
-匯入與重試教材的流程現在仍在 `routers/documents.py`：它同時驅動擷取檢閱與題目草稿，C6 把擷取規則移出 router 時才移入這裡的用例。
+匯入與重試的規則：
+
+- 認領作業 id 前先確認專案存在。id 已被使用時，已取消或要求取消的是「上傳已取消」，其他是衝突；兩者都不改變那個作業。
+- 錄音（依檔名的副檔名判斷）的大小上限是 `max_audio_upload_bytes`，其他是 `max_upload_bytes`（`upload_size_limit`）。語言提示不是已知的值時記為 `auto`（`language_hint_or_auto`）。
+- 驗證與保存之後各確認一次作業仍在等待上傳（`DocumentOperation.ensure_awaiting_upload`）；這時被取消的上傳停止，不附上教材。
+- 認領之後，檔案太大、格式不符、擷取無法使用或其他失敗都讓作業失敗；取消、衝突、專案或教材不存在不改變作業。
+- 處理在背景（`DocumentWork`，即 document worker pool）或在請求內執行。排隊中被取消的工作直接確認取消；開始處理後，作業不再是「處理這份教材、可以取消」（`DocumentOperation.is_processing`）或 app 正在關閉時，擷取停止並確認取消。
+- 擷取經 port `SourceExtraction`（擷取整合的 `CaptureSourceExtraction`）寫入段落；沒有文字時作業失敗、教材記為 `no_text_detected`（`SourceTextNotDetected`），其他擷取失敗記下擷取的訊息（`SourceExtractionFailed`）。
+- 有段落時經 port `ImportedDocumentDrafting`（題目編寫的 `draft_imported_document`）開始起草題目。
 
 ## 主要流程
 
 ```mermaid
 sequenceDiagram
-  participant API as routers.documents
+  participant API as source_library.api
   participant UC as source_library.application
   participant Repo as SqliteDocumentOperationRepository
   participant Op as DocumentOperation
@@ -163,12 +176,13 @@ sequenceDiagram
   UC-->>API: DocumentOperation
 ```
 
-`create_app` 建立 `SqliteDocumentRepository`、`SqliteDocumentOperationRepository`、`LocalSourceFileStore`、`OllamaChunkTranslator`，放在 `app.state.document_repository`、`document_operation_repository`、`source_file_store`、`chunk_translator`；router 只依 `application/ports.py` 的 port 呼叫用例。作業的每一次轉換是一個交易，在 repository 裡讀出作業、交給 `DocumentOperation` 決定、以原狀態為條件寫回。
+`create_app` 建立 `SqliteDocumentRepository`、`SqliteDocumentOperationRepository`、`LocalSourceFileStore`、`OllamaChunkTranslator`、`PoolDocumentWork`，放在 `app.state.document_repository`、`document_operation_repository`、`source_file_store`、`chunk_translator`、`document_work`；擷取與起草的 port 由下游的上下文實作，放在 `app.state.source_extraction`（Capture Runtime 沒有設定時是 `None`，匯入與重試回 503）與 `imported_document_drafting`。router 只依 `application/ports.py` 的 port 呼叫用例。作業的每一次轉換是一個交易，在 repository 裡讀出作業、交給 `DocumentOperation` 決定、以原狀態為條件寫回。
 
 ## 與其他上下文的關係
 
 - 學習專案：教材與作業屬於一個專案；專案不存在時是 404。教材來源只需要專案 id，所以直接讀 `projects` 資料表確認專案存在（資料表歸屬在 C5 定案）。
-- 擷取整合：上傳的擷取在使用者確認後寫成教材段落；現在直接呼叫 `source_library.infrastructure` 的作業與段落函式（已知例外，擷取整合的 C4 與 C6 改經 `source_library.application`）。
+- 擷取整合：不經檢閱的匯入經 port `SourceExtraction` 交給擷取整合的 `CaptureSourceExtraction`；擷取檢閱的上傳用 `receive_upload`。擷取結果寫成段落（`publish_capture_document`）與檢閱流程仍直接呼叫 `source_library.infrastructure` 的作業與段落函式（已知例外，C5 改經 `source_library.application`）。
+- 題目編寫：匯入或重試出段落後，經 port `ImportedDocumentDrafting` 開始起草；教材來源不依賴題目編寫。
 - 題目編寫：讀段落與內容類型產生題目，並更新教材的題目數；現在也直接呼叫 infrastructure（已知例外，題目編寫的 C4 改經 application）。
 - 練習與複習：整份教材模式先確認教材屬於這個專案（讀 `documents` 資料表）。
 - AI 供應：翻譯用 Ollama 模型（`OllamaTraditionalChineseTranslator` 暫在 `infrastructure/audio.py`，AI 供應拆出後改由它提供）。
@@ -179,5 +193,5 @@ sequenceDiagram
 
 - 資料表：`documents`、`document_chunks`、`document_operations`；migration 在 `platform/database.py`。
 - 原始檔：`<data_dir>/uploads/<project_id>/<sha256><副檔名>`（`infrastructure/storage.py`）。
-- HTTP：`/projects/{project_id}/documents`、`/projects/{project_id}/document-operations`（DTO 在 `source_library/api/schemas.py` 與 `cert_prep_contracts.documents`）。
+- HTTP：`/projects/{project_id}/documents`、`/projects/{project_id}/document-operations`（`api/router.py`；DTO 在 `source_library/api/schemas.py` 與 `cert_prep_contracts.documents`）。作業的即時狀態經 `api/operation_events.py` 的 server-sent events（`…/document-operations/{operation_id}/events`、`…/documents/{document_id}/document-operation/events`）；串流由 `platform/sse.py` 提供，快照來自 `view_operation_progress`，作業結束時串流結束。
 - API 的 `SourceDocumentStatus`、`PdfExtractionMethod`、`ContentProfile`、`QuestionItemKind`、`DocumentOperationStatus`、`DocumentOperationPhase` 列舉值對應到概念集的 `source-library.*`。

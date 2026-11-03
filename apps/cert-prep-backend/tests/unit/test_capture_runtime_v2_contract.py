@@ -475,7 +475,7 @@ def test_v2_audio_capture_names_its_spoken_language_only_when_given(
 def test_a_document_language_hint_names_capture_spoken_language_only_outside_chinese(
     language_hint: str, spoken_language: str | None
 ) -> None:
-    from cert_prep_backend.routers.documents import _capture_spoken_language
+    from cert_prep_backend.capture_integration.infrastructure.document_extraction import capture_spoken_language as _capture_spoken_language
 
     assert _capture_spoken_language(language_hint) == spoken_language
 

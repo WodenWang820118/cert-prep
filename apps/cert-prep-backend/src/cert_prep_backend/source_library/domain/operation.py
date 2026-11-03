@@ -103,6 +103,30 @@ class DocumentOperation:
     def is_canceling_or_canceled(self) -> bool:
         return self.status in _CANCELING_OR_CANCELED
 
+    def ensure_awaiting_upload(self) -> None:
+        """An upload goes on only while its operation is queued, cancellable and has no
+        document; a cancellation that arrived meanwhile stops it."""
+
+        if self.is_canceling_or_canceled:
+            raise DocumentProcessingCanceledError("Document upload was canceled before it started.")
+        if not (
+            self.document_id is None
+            and self.status == Status.QUEUED
+            and self.phase == Phase.UPLOADING
+            and self.cancellable
+        ):
+            raise DocumentOperationStateError("Document upload operation is no longer available.")
+
+    def is_processing(self, document_id: str) -> bool:
+        """Still processing this document and still cancellable; extraction stops otherwise."""
+
+        return (
+            self.document_id == document_id
+            and self.status == Status.RUNNING
+            and self.phase == Phase.PROCESSING
+            and self.cancellable
+        )
+
     def ensure_belongs_to(self, project_id: str) -> None:
         if self.project_id != project_id:
             raise DocumentOperationConflictError("Document operation id is already in use.")

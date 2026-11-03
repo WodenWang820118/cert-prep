@@ -65,6 +65,8 @@ class SqliteDocumentRepository:
         language_hint: str,
         storage_path: str,
         page_count: int,
+        source_kind: str = "document",
+        duration_ms: int | None = None,
     ) -> SourceDocument:
         return operations.create_and_attach_document(
             self._db,
@@ -75,6 +77,8 @@ class SqliteDocumentRepository:
             language_hint=language_hint,
             storage_path=storage_path,
             page_count=page_count,
+            source_kind=source_kind,
+            duration_ms=duration_ms,
         )
 
 
@@ -88,14 +92,43 @@ class SqliteDocumentOperationRepository:
     def operation(self, project_id: str, operation_id: str) -> DocumentOperation:
         return operations.get_operation(self._db, project_id=project_id, operation_id=operation_id)
 
-    def claim_upload(self, project_id: str, operation_id: str) -> bool:
-        return operations.claim_operation(
-            self._db, project_id=project_id, operation_id=operation_id
-        ).acquired
+    def active_operation_of(self, project_id: str, document_id: str) -> DocumentOperation | None:
+        return operations.get_active_operation_for_document(
+            self._db, project_id=project_id, document_id=document_id
+        )
 
-    def fail(self, project_id: str, operation_id: str, *, error: str) -> DocumentOperation:
+    def claim(self, project_id: str, operation_id: str) -> tuple[DocumentOperation, bool]:
+        claim = operations.claim_operation(
+            self._db, project_id=project_id, operation_id=operation_id
+        )
+        return claim.operation, claim.acquired
+
+    def claim_upload(self, project_id: str, operation_id: str) -> bool:
+        return self.claim(project_id, operation_id)[1]
+
+    def start_retry(
+        self, project_id: str, document_id: str, operation_id: str
+    ) -> DocumentOperation:
+        return operations.start_retry_operation(
+            self._db, project_id=project_id, document_id=document_id, operation_id=operation_id
+        )
+
+    def fail(
+        self,
+        project_id: str,
+        operation_id: str,
+        *,
+        error: str,
+        document_status: str | None = None,
+        extraction_method: str | None = None,
+    ) -> DocumentOperation:
         return operations.finish_failed(
-            self._db, project_id=project_id, operation_id=operation_id, error=error
+            self._db,
+            project_id=project_id,
+            operation_id=operation_id,
+            error=error,
+            document_status=document_status,
+            extraction_method=extraction_method,
         )
 
     def cancel(self, project_id: str, operation_id: str) -> DocumentOperation:

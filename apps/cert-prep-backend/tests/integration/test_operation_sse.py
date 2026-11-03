@@ -329,7 +329,7 @@ def test_document_operation_events_streams_an_active_operation(tmp_path) -> None
 
     import asyncio
 
-    from cert_prep_backend.routers.operation_events import current_document_operation_events
+    from cert_prep_backend.source_library.api.operation_events import current_document_operation_events
 
     token = "active-token"
     settings = Settings(data_dir=tmp_path, api_token=token, llm_provider="fake")
@@ -359,7 +359,8 @@ def test_document_operation_events_streams_an_active_operation(tmp_path) -> None
             project_id,
             document.id,
             last_event_id=None,
-            db=app.state.database,
+            operations=app.state.document_operation_repository,
+            documents=app.state.document_repository,
             notifier=app.state.database_change_notifier,
         )
         async def first(iterator):

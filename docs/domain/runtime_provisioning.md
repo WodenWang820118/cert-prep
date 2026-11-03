@@ -242,7 +242,7 @@ sequenceDiagram
   - `POST /llm/model-downloads` -> `download_selected_model`
   - `GET /llm/model-downloads/{job_id}` -> `view_runtime_installation`
   - `DELETE /llm/model-downloads/{job_id}` -> `cancel_runtime_installation`
-- **SSE 串流路由（定義在 `routers/operation_events.py`）**：
+- **SSE 串流路由（定義在 `runtime_provisioning/api/operation_events.py`，串流由 `platform/sse.py` 提供，工作進入 `TERMINAL_JOB_STATUSES` 時結束）**：
   - `GET /runtime/installations/{job_id}/events` -> 呼叫 `view_runtime_installation`，事件名稱為 `runtime-installation`
   - `GET /llm/model-downloads/{job_id}/events` -> 呼叫 `view_runtime_installation`（排除 `kind`），事件名稱為 `model-download`
 - **列舉與概念集對應**：

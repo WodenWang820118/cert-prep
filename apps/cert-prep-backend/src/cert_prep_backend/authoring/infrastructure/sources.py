@@ -33,3 +33,13 @@ class SourceLibraryDraftSources:
             status="processing" if document.status == "processing" else "ready",
             exam_item_count=count,
         )
+
+    def record_import_draft_count(self, project_id: str, document_id: str, count: int) -> None:
+        document = source_library.view_document(self._documents, project_id, document_id)
+        source_documents_repository.update_exam_state(
+            self._db,
+            project_id=project_id,
+            document_id=document_id,
+            status=document.status_after_import_drafts(),
+            exam_item_count=count,
+        )
