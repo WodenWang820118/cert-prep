@@ -13,12 +13,11 @@ practice, or review flows after a source has been captured.
 
 ## Decisions
 
-- Use a new Cert Prep app family beside the existing starter/sample apps.
 - Projects own source documents, parsed chunks, editable question records,
   practice sessions, and wrong-answer review state.
 - The Angular UI keeps workflow panels for projects, source import, question
   review/editing, practice, and wrong-answer review.
-- Use spartan-ng components with Angular 22.0.7. Their styled layer is copied
+- Use spartan-ng components with Angular 22. Their styled layer is copied
   into `libs/ui` (import alias `@spartan-ng/helm/*`) and is this project's own
   code; add more with `pnpm nx g @spartan-ng/cli:ui <name>`. Do not add
   PrimeNG: its releases from version 22 need a commercial licence.
@@ -115,16 +114,11 @@ practice, or review flows after a source has been captured.
 
 ## Workbench Screen Contract
 
-The Stitch workbench folders are separate page references, not alternative
-versions of one screen:
-
-- `design/stitch_cert_prep_workbench` maps to Build at `/build`.
-- `design/stitch_cert_prep_workbench2` maps to Full Exam at `/full-exam`.
-- `design/stitch_cert_prep_workbench3` maps to the Manage Runtime modal opened
-  from the app topbar.
-- `design/stitch_cert_prep_workbench4` maps to Wrong Answers at `/review`.
-- Random Quiz has no dedicated Stitch frame. It inherits the Full Exam runner
-  structure and keeps only mode-specific random-draw controls.
+The workbench screens are Build at `/build`, Full Exam at `/full-exam`,
+Random Quiz at `/random-quiz`, Wrong Answers at `/review`, and the Manage
+Runtime modal opened from the app topbar (`/runtime` is the matching unguarded
+route). Random Quiz inherits the Full Exam runner structure and keeps only
+mode-specific random-draw controls.
 
 Shared workbench rules:
 
@@ -161,95 +155,22 @@ Page requirements:
 - Store original source bytes by SHA-256 under the app data directory.
 - Use OpenAPI as the backend/frontend contract source.
 - Use fake LLM providers for deterministic automated tests.
-- Use selectable-text extraction where available and OCR for image-only
-  production flows; vision-only extraction remains outside the current release
-  lane.
+- Every PDF page and image goes through Capture Runtime OCR; Cert Prep does
+  not extract embedded PDF text. Vision-model extraction is out of scope.
 - No direct filesystem or SQLite access from Angular.
 - No live LLM calls in deterministic tests.
 - No question record should become playable without citation fields or a
   source excerpt.
-
-## Evidence
-
-- Saved parsed exams and runtime UX packaged QA covered Python and Capture
-  Runtime
-  readiness, PDF upload, 46 pages / 46 chunks, manual questions, restart
-  persistence, Full Exam, Random Quiz, wrong-answer recording, and review
-  clearing.
-- Production PDF upload QA uses Capture Runtime's WindowsML extraction contract;
-  the Cert Prep UI does not select or display a local OCR provider.
-- UX performance QA showed the app stayed usable during parsing and that manual
-  editing/practice remained viable even when Ollama/model state was offline.
-- Latest packaged flow smoke evidence is tracked in
-  `domains/parsing-reasoning.md` because it now gates first-chunk and reasoning
-  behavior.
-- The 2026-06-26 packaged UI/backend/design gap audit passed mocked app e2e and
-  packaged flow smoke after the smoke harness was aligned with the new
-  workbench UI.
-- The 2026-07-02 feature-roadmap implementation added deterministic Playwright
-  coverage for completing every playable Random Quiz question, completing Full
-  Exam questions for the selected PDF, excluding incomplete approved-looking
-  drafts, wrong-answer AI/fallback review, two-PDF Full Exam isolation, and
-  project-switch state clearing.
-- Reference recordings were generated under
-  `dist/.playwright/apps/cert-prep-e2e/recordings/` for
-  `practice-complete`, `wrong-answer-ai`, and `multi-pdf-isolation`.
-- The 2026-07-02 session-snapshot slice keeps grading and wrong-answer review
-  stable even if an editable question changes after the session starts.
-- The 2026-07-03 review retry slice added per-card retry, all-current-wrong
-  review quiz startup, weak-area summary metrics, wrong-answer `document_id`,
-  and practice runner snapshot rendering from `PracticeSessionRead.questions`.
-- The 2026-07-03 UI placeholder closeout removed the disabled `Mark for
-  review` affordance and added focused coverage for answer selection, clearing,
-  disabled/busy submit states, navigator state, and disabled shell
-  placeholders.
-- The 2026-07-07 multi-PDF source-import closeout verified batch selection,
-  per-file upload results, failed-file visibility, active-document handoff,
-  binary multipart filename matching, selected-PDF Full Exam startup, and
-  reference `multi-pdf-isolation` recordings.
-- The 2026-07-17 static-image source closeout added exact PDF/PNG/JPEG/WebP
-  selection hints, mixed-batch and partial-failure coverage, generic source-file
-  copy, responsive long-filename handling, and real-backend one-page PNG
-  terminal-state evidence while retaining the existing PDF flows. The packaged
-  app also uploaded a deterministic 256 x 128 PNG and displayed its 1/1-page
-  `no_text_detected` result without process residue.
-- The 2026-07-17 optional-crop closeout verified the default-off toggle,
-  sequential mixed PDF/image review, edge-inclusive pointer and numeric bounds,
-  encoding-time input locks and focus recovery, `-cropped` multipart identity,
-  and output dimensions plus quadrant-sensitive pixels across Chromium,
-  Firefox, and WebKit. A real-browser run also applied and uploaded the cropped
-  PNG without console or server errors.
-- The 2026-07-19 source-queue closeout verified immediate rolling-slot refill,
-  active-run file append, an enabled chooser during transport, delayed Capture
-  Runtime readiness, withdrawn setup, exact-operation 503/status reconciliation,
-  and
-  cancel-driven slot refill. The final matrix passed 265 Angular tests, all 388
-  backend tests, production build, frontend/backend/E2E lint, and 12 Chromium
-  scenarios including a held two-PDF queue that starts an appended MP3 when the
-  first slot becomes free.
-- The 2026-07-20 final review matrix passed 267 Angular tests, all 393 backend
-  tests, production build, frontend/backend/E2E lint, and 36 mixed PDF/audio
-  queue scenarios across Chromium, Firefox, and WebKit.
-- The 2026-07-22 Angular resource migration passed 273 Angular tests, all 432
-  backend tests, frontend lint, production build, and `git diff --check`. The
-  focused resource matrix covers generated route encoding, bearer/header
-  handling, config failure, JSON parsing, resource errors, and stale-query
-  cancellation.
 
 ## Open Risks
 
 - Large source text previews can make review/edit surfaces tall; a collapsible
   chunk preview or focus mode may be worth a later UX slice.
 - Copy/i18n cleanup remains separate from current parsing/reasoning gates.
-- Angular initial bundle budget warning is known and not part of the active
-  parsing/reasoning TODO.
+- The Angular initial bundle budget warning is known.
 - Session/debug replay for random seeds should stay backend-testable so UI
   failures can be reproduced without fragile manual clicks.
-- The packaged flow smoke currently records `MOCK ITEMS 0` after manual question
-  creation. Decide whether that metric is parsed/generated-only or should also
-  include manually authored draft questions.
-- Bundle and component CSS warning budgets remain noisy after the feature
-  roadmap slice, although the production build gate passes.
-- Review retry, weak-area metrics, Mark for review policy, and wrong-answer
-  document metadata were closed on 2026-07-03. Reopen a new TODO only for a
-  persisted user-flag review feature or heavier analytics surface.
+- Bundle and component CSS warning budgets remain noisy, although the
+  production build gate passes.
+- A persisted user-flag review feature or a heavier analytics surface would
+  need its own TODO.

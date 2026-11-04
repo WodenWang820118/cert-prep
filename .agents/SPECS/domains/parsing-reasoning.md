@@ -2,8 +2,8 @@
 
 ## Ownership
 
-Capture Runtime owns PDF/image/audio extraction, OCR, Whisper, runtime
-requirements, readiness, and extraction failures. This domain owns only Cert
+Capture Runtime owns PDF/image/audio extraction, OCR, speech recognition,
+runtime requirements, readiness, and extraction failures. This domain owns only Cert
 Prep's Ollama reasoning, study profile, question generation, and practice
 readiness after a validated CaptureDocument has been persisted.
 
@@ -14,6 +14,12 @@ readiness after a validated CaptureDocument has been persisted.
   or provider fallback.
 - CPU execution is an explicit execution mode with an explicit warning. It is
   not a provider or model fallback.
+- The Ollama server Cert Prep starts runs on the device the machine inventory
+  selects: a dedicated GPU, else an integrated GPU through Vulkan, else CPU
+  (`packages/cert-prep-ollama`: `device_policy.py`, `server_coordinator.py`).
+  The server log shows where each model loads; a mismatch restarts the server
+  once on the matched device. An Ollama that was already running is external
+  and is never stopped or reconfigured.
 - Generated questions remain editable and require source evidence before they
   become playable.
 - Parsed blocks are completed independently: grounded completions are persisted

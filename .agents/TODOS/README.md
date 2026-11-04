@@ -1,22 +1,29 @@
 # Open work
 
-Ordered by priority. Each line links to the TODO that holds the detail and
-evidence rules.
+Open work is tracked in GitHub issues of `gx-capture/capture-workbench` with
+the `cross-repo` label.
 
-## Capture Runtime consumer
+## Tracked in issues
 
-- Packaged smoke: audio leg, and update `packaged-capture-workbench-smoke` to
-  the OCR-preflight flow — [capture-workbench-cert-prep-pdf.md](capture-workbench-cert-prep-pdf.md)
-- Installed acceptance journey: original private PDF page 1, cleanup proofs,
-  restart persistence, review override and export, package-defined
-  `ConsumerSemanticResultV1` — [cert-prep-pdf-image-acceptance.md](cert-prep-pdf-image-acceptance.md)
-- Lifecycle hardening slices 4–7 (runtime promotion store, semantic result,
-  supervision adapter, restart reconciliation, performance baseline); consuming the
-  pinned release does not depend on them — [capture-runtime-consumer.md](capture-runtime-consumer.md)
+- DDD steps left (epic): https://github.com/gx-capture/capture-workbench/issues/178
+  - C5 table ownership, the rest after part 1: https://github.com/gx-capture/capture-workbench/issues/200
+  - C7 frontend folders by context: https://github.com/gx-capture/capture-workbench/issues/201
+- E2E route mocks disagree with the generated API types (7 typecheck errors):
+  https://github.com/gx-capture/capture-workbench/issues/194
+- `acceptance-real` pixel baselines need the product owner's review:
+  https://github.com/gx-capture/capture-workbench/issues/241
+- Capture Runtime consumer: producer-owned runtime sessions, after Capture
+  wires its restart reconciliation ("Option W") [#246](https://github.com/gx-capture/capture-workbench/issues/246); OCR performance
+  baseline per compute mode [#261](https://github.com/gx-capture/capture-workbench/issues/261).
+- Packaged Capture Workbench smoke: past the OCR preflight step, plus an audio
+  leg [#259](https://github.com/gx-capture/capture-workbench/issues/259).
+- Public Alpha `0.1.0-alpha.1`: one publishing `release-alpha.yml` run
+  [#260](https://github.com/gx-capture/capture-workbench/issues/260).
+- GPU selection step 3 (device override, observed device in the API status,
+  external-Ollama guidance) [#258](https://github.com/gx-capture/capture-workbench/issues/258); steps 1 and 2 are PR #91 and PR #93.
+- Move `OllamaTraditionalChineseTranslator` to the AI providers context
+  [#262](https://github.com/gx-capture/capture-workbench/issues/262).
+- Release version literals in tests [#253](https://github.com/gx-capture/capture-workbench/issues/253).
 
-## Product release
-
-- Public Alpha `0.1.0-alpha.1`: one green `release-alpha.yml` run and its
-  public verification — [alpha-launch-readiness.md](alpha-launch-readiness.md)
-
-Known limitation: handwritten OCR quality (Capture Runtime).
+Known limitation: handwritten OCR quality (Capture Runtime,
+https://github.com/gx-capture/capture-workbench/issues/250).

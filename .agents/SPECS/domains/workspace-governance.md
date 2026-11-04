@@ -100,10 +100,13 @@ Use the narrowest relevant subset for the slice:
 
 ## Documentation Closeout Rules
 
-- `.agents/SPECS/` is the durable evidence store.
-- `.agents/TODOS/` should contain only active work.
-- Completed TODO and DECISION content should be merged into the owning domain
-  spec and the obsolete markdown removed.
+- `.agents/SPECS/` holds current behaviour and the decisions behind it;
+  `docs/domain/` holds the backend context model and `.agents/PLANS/ddd-refactor/`
+  the DDD plan and its decisions. There is no separate decisions folder.
+- `.agents/TODOS/` contains only open work that has no GitHub issue; work with
+  an issue is tracked there.
+- When a TODO is finished, move durable behaviour into the owning spec and
+  delete the TODO. Delete replaced designs instead of labelling them.
 - Keep temporary slice files only while a slice is actively being researched or
   implemented.
 - When console output shows mojibake for older markdown, preserve the clean
@@ -114,5 +117,3 @@ Use the narrowest relevant subset for the slice:
 - `DEFAULT_OLLAMA_MODEL` needs a cross-language contract decision because it is
   reflected in backend config, desktop runtime defaults, frontend/e2e fixtures,
   and packaged smoke commands.
-- `libs/` creation should wait until at least one shared contract has two
-  production consumers or an e2e fixture needs the same typed surface.

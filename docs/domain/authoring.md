@@ -224,9 +224,9 @@ flowchart TD
 
 ## 與其他上下文的關係
 
-- 教材來源：為教材產生草稿時，經 `source_library.application` 的 `list_chunks` 與 `view_document` 讀段落與教材；更新教材的題目數、背景產生讀段落與更新教材狀態仍直接呼叫教材來源的儲存函式（已知例外，C5 資料表歸屬改經教材來源的用例）。
+- 教材來源：為教材產生草稿時，經 `source_library.application` 的 `list_chunks` 與 `view_document` 讀段落與教材；更新教材的題目數、背景產生讀段落與更新教材狀態仍直接呼叫教材來源的儲存函式（已知例外，C5 資料表歸屬改經教材來源的用例：https://github.com/gx-capture/capture-workbench/issues/200）。
 - AI 供應：`draft_writer_for` 依設定的供應者挑選寫草稿者；Ollama 經 JSON 對話寫草稿；串流產生使用串流參數、產生歸屬與釋放資源（見 [ai_providers.md](ai_providers.md)）。
-- 學習專案：確認專案存在仍直接呼叫 `projects.infrastructure`（已知例外）。
+- 學習專案：確認專案存在仍直接呼叫 `projects.infrastructure`（已知例外，C5 處理）。
 - 練習與複習：練習經自己的 port `PracticeQuestions` 呼叫 `approved_questions`、`find_question_draft`、`question_drafts_for`。實作把練習交易的連線交給 `SqliteQuestionDraftRepository`，所以讀到的是這次交易裡的草稿。
 - 教材匯入：教材來源匯入或重試教材、擷取出段落後，經它的 port `ImportedDocumentDrafting` 呼叫 `draft_imported_document`；題目編寫實作這個 port，教材來源不依賴題目編寫。
 

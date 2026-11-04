@@ -1,12 +1,14 @@
 # Cert Prep 領域驅動重構計畫（DDD）
 
-狀態：**已核可**（2026-10-26）：產品負責人核可方向與產品決策，見 [decisions.md](decisions.md)；實作安排見第 10 節。結構比照 LAW 已定案的 DDD 重構計畫（`gx.law-prep/.agents/PLANS/ddd-refactor/`，決策 A30、A31）。待定的決策見 [decisions.md](decisions.md)，術語見 [glossary.md](glossary.md)，每個上下文的說明見 [docs/domain/](../../../docs/domain/README.md)。
+狀態：**已核可**（2026-10-26）：產品負責人核可方向與產品決策，見 [decisions.md](decisions.md)；實作安排見第 10 節。結構比照 LAW 已定案的 DDD 重構計畫（`gx.law-prep/.agents/PLANS/ddd-refactor/`，決策 A30、A31）。決策見 [decisions.md](decisions.md)，術語見 [glossary.md](glossary.md)，每個上下文的說明見 [docs/domain/](../../../docs/domain/README.md)。
+
+進度（2026-11-04）：C0–C4、C2 收尾、C6、C8 與 C5 第一部分（練習經所屬上下文讀資料表）已完成。剩下 C5 的其餘部分（https://github.com/gx-capture/capture-workbench/issues/200）與 C7 前端（https://github.com/gx-capture/capture-workbench/issues/201），總表是 https://github.com/gx-capture/capture-workbench/issues/178。
 
 這份文件給產品負責人和之後加入的人讀。程式名稱用英文，說明用繁體中文。數字取自 2026-10-26 對 `origin/main`（`826b49b`）的唯讀盤點。
 
 ## 1. 為什麼要重構
 
-後端已有 `domains/<domain>/` 的切法（[backend-architecture.md](../../SPECS/domains/backend-architecture.md) 的 DDD And SOLID Refactor Policy），沒有模組循環，領域檔案也不直接 import FastAPI。但邊界只靠慣例，以下幾點讓「規則在哪裡、改一處會動到哪裡」看不清楚：
+後端已有 `domains/<domain>/` 的切法，沒有模組循環，領域檔案也不直接 import FastAPI。但邊界只靠慣例，以下幾點讓「規則在哪裡、改一處會動到哪裡」看不清楚：
 
 | 現況                                                                                                                                                                             | 影響                                                   |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
@@ -184,7 +186,7 @@ flowchart TB
 | C7    | 3–4 天          | root store 的注入順序與 effect 時序；e2e 是主要防線                                                                                                                                                                                                            |
 | C8    | 1–2 天          | 行程管理（後端與 Capture Runtime 的啟停）不能退步                                                                                                                                                                                                              |
 
-合計約 3.5–4.5 週、22–27 個 PR。目前本機 `cert-prep` 的 main 有未提交的修改（`domains/mock_exams`、`exam_content`），C3 搬題目編寫前要先合併或另行處理，以免衝突。
+合計約 3.5–4.5 週、22–27 個 PR。
 
 ## 9. 給人讀的文件
 

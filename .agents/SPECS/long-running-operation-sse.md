@@ -85,6 +85,13 @@ there is no timer-based polling fallback.
 4. Existing REST snapshot routes stay because they are still useful for
    reconciliation, direct navigation, and non-browser clients; the Angular
    polling orchestration that made them repeatedly necessary is deleted.
+5. Native Tauri commands for Python Runtime and Capture Runtime installation do
+   not use the HTTP API and stay outside this contract; moving them off
+   polling needs a Tauri event-channel contract, not an HTTP SSE endpoint.
+
+Rejected alternatives: keeping polling with shorter intervals (keeps the
+duplicated retry/timer state), and SSE generators that poll SQLite on a timer
+(moves the polling to the server and adds database traffic).
 
 ## Edge Cases and Failure Modes
 

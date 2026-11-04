@@ -9,9 +9,17 @@ and practice.
 
 ## Decisions
 
-- Domain code lives under `cert_prep_backend/domains/<domain>/`.
-- Shared platform modules can stay in place when they serve multiple domains.
-- Public DTOs are owned by their backend domain. OpenAPI client generation must
+- Backend code is split into bounded contexts directly under
+  `cert_prep_backend/` (`projects`, `source_library`, `capture_integration`,
+  `authoring`, `practice`, `ai_providers`, `runtime_provisioning`), each with
+  `domain`, `application`, `infrastructure` and `api` layers, plus `platform`
+  (settings, errors, database and migrations, SSE, background work) and
+  `bootstrap` (app assembly). The plan, rules and decisions are in
+  [`.agents/PLANS/ddd-refactor/`](../../PLANS/ddd-refactor/README.md); each
+  context is described in [`docs/domain/`](../../../docs/domain/README.md).
+  import-linter contracts in `apps/cert-prep-backend/pyproject.toml` enforce the
+  direction.
+- Public DTOs are owned by their context's `api` layer. OpenAPI client generation must
   be rerun after route/schema changes.
 - Primitive JSON Schema `const` values emitted by public DTOs remain literal
   types in the generated TypeScript client. This is required for named
@@ -37,8 +45,6 @@ and practice.
   semantic validation, and provenance reconstruction remain runtime-owned.
 - Generated/AI questions must stay editable and user-governed. Older
   approval-only promotion behavior is retired.
-- Runtime installation remains exposed through the
-  `cert_prep_backend.domains.runtime_installations` package boundary.
 - Behavior-preserving refactors should keep external Tauri command, REST, and
   generated client contracts stable unless the spec explicitly says otherwise.
 - Practice session selection and attempt lookup share the backend playable
@@ -78,12 +84,12 @@ and practice.
   cleanup, but an older backend cannot retry image documents created by the
   newer version.
 
-## DDD And SOLID Refactor Policy
+## Refactor Policy
 
 Accepted:
 
-- Use `cert_prep_backend/domains/<domain>/` instead of layer-only package
-  names.
+- Bounded contexts and layers as described in the DDD plan; no layer-only
+  top-level packages.
 - Keep generated mock exam drafts as `approved` when that is the current tested
   behavior.
 - Remove schema and non-schema compatibility facades after callers move to
@@ -112,44 +118,6 @@ Guardrails:
   tests.
 - Behavior-preserving refactors must keep REST/OpenAPI, Tauri command, and
   package QA JSON contracts stable unless the owning spec says otherwise.
-
-## Refactor Evidence
-
-- The SOLID/DDD refactor split Tauri app wiring, commands, backend process
-  state, runtime installation, manifests, archive/download helpers, and Windows
-  process helpers.
-- Angular runtime health logic was separated around snapshot loading, API
-  clients, requirement derivation, job views, status chips, and runtime drawer
-  view-models.
-- Python backend modules were clarified for source document persistence,
-  progress/chunks/classification, runtime installers/manifests, deterministic
-  parsing, Ollama/reasoning providers, fake providers, and normalization.
-- Verification lanes for the refactor included backend pytest/ruff, Angular
-  lint/test/build, desktop script typecheck/package-QA tests, cargo tests, and
-  packaged production smoke.
-- The 2026-07-02 feature-roadmap slice added project-isolation regression
-  coverage for documents, chunks, question drafts, practice sessions, practice
-  attempts, wrong answers, and wrong-answer explanations. The full backend gate
-  passed with 172 pytest tests and ruff.
-- OpenAPI generation was rerun for `WrongAnswerExplanationRead` and the
-  generated `cert-prep-api` client passed lint, typecheck, and Vitest.
-- The 2026-07-02 session-snapshot slice added backend practice and migration
-  coverage for grading against stored session question fields and reading the
-  latest wrong-answer attempt from the session snapshot; backend lint passed.
-- The 2026-07-03 review retry slice added SQLite migration 14 for nullable
-  `practice_session_questions.document_id`, backend coverage for
-  `review_retry`, generated OpenAPI/client updates, and aggregation coverage
-  for current wrong counts, cleared counts, repeated misses, and
-  document/page clusters.
-- The 2026-07-07 multi-PDF closeout kept the REST contract stable and verified
-  per-file uploads in one project, document-scoped chunks, upload-triggered
-  streaming draft generation, and per-document `ai_inferred` drafts.
-- The 2026-07-17 static-image source closeout kept the same REST, SQLite, and
-  generated-client wire contracts while adding content-authoritative
-  PDF/PNG/JPEG/WebP preparation. Backend tests covered raw-byte hash/storage,
-  defensive decode, normalization, page-one OCR/chunks, Retry/cancel, and
-  document/draft isolation; OpenAPI regeneration produced no TypeScript wire
-  drift, and WindowsML package tests continued to accept normalized PNG input.
 
 ## Open Risks
 
