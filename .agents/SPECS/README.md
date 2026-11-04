@@ -1,40 +1,47 @@
 # Cert Prep Specs
 
-This folder is the durable product memory for Cert Prep. It is organized by
-long-lived ownership domains, not by temporary implementation slices.
+This folder is the durable product memory for Cert Prep. Each file describes
+current behaviour and the decisions behind it; a decision is recorded in the
+spec of the area it governs, not in a separate decision file. The per-context
+domain model (backend contexts, aggregates, use cases) is in
+[`docs/domain/`](../../docs/domain/README.md), and the DDD plan and its
+decisions are in [`.agents/PLANS/ddd-refactor/`](../PLANS/ddd-refactor/README.md).
 
-## Domain Index
+## Domain specs
 
 - `domains/product-ux.md` - product baseline, UI system, workbench screens,
-  async parsing UX, practice, review, and user-facing acceptance evidence.
-- `domains/parsing-reasoning.md` - Capture Runtime extraction ownership,
-  streaming reasoning, provider policy, runtime-node candidates, and
-  parsing/reasoning acceptance gates.
-- `domains/runtime-packaging.md` - Tauri packaging, published runtime assets,
-  setup proxy, package QA, artifact sizes, and process cleanup evidence.
-- `domains/backend-architecture.md` - backend domain boundaries, persistence,
-  OpenAPI/generated-client ownership, DDD/SOLID refactor policy, and schema
-  risks.
-- `domains/workspace-governance.md` - workspace naming, package manager and Nx
-  conventions, broad refactor slicing, documentation closeout rules,
-  agent/tool routing, and cross-agent governance notes.
+  source import, practice and review.
+- `domains/parsing-reasoning.md` - extraction ownership, Ollama reasoning,
+  provider policy and recovery.
+- `domains/capture-runtime-integration.md` - the Capture Runtime consumer
+  contract: SDK boundary, OCR-only admission and mapping, compute preflight,
+  review, OCR summary, desktop boundary and verification.
+- `domains/audio-transcription-translation.md` - audio capture and Traditional
+  Chinese translation.
+- `domains/runtime-packaging.md` - Tauri packaging, bundled runtimes, lifecycle
+  and release evidence.
+- `domains/backend-architecture.md` - backend contracts, persistence and
+  generated-client rules.
+- `domains/workspace-governance.md` - naming, package manager and Nx
+  conventions, refactor slicing, documentation rules and agent routing.
 
-## Active Backlog
+## Feature specs
 
-Active work belongs in `.agents/TODOS/`. Completed decisions, verification
-evidence, and closed TODO content belong in the owning domain spec.
+- `lazy-capture-runtime-installation.md` - explicit Capture Runtime install
+  and start, versioned runtime slots and the refresh after an app update.
+- `cert-prep-pdf-image-acceptance.md` - the real OCR acceptance gate
+  (`cert-prep-desktop:acceptance-real`) and its inputs.
+- `packaged-capture-workbench-smoke.md` - the standalone packaged Capture
+  Workbench smoke.
+- `long-running-operation-sse.md` - authenticated snapshot SSE for document,
+  draft, runtime and model-download operations.
+- `angular-resource-migration.md` - `httpResource` reads beside the generated
+  Promise client.
+- `desktop-cdp-stack-overflow.md` - the desktop's 8 MiB main-thread stack
+  reserve and its probe.
 
-Current TODO files:
+## Active backlog
 
-- `cross-platform-runtime-nodes.md` - deferred restart point for future
-  macOS/Linux/runtime-node expansion; not release-blocking.
-
-## Retired Sources
-
-The former `.agents/DECISIONS/` files and root-level slice specs were folded
-into the domain specs above. Keep future decision records in the relevant
-domain file unless a temporary research note is explicitly needed.
-
-Closeout rule: when a TODO or decision file is completed, merge durable content
-into the owning domain spec, keep `.agents/TODOS/` active-only, and remove the
-obsolete markdown file.
+Open work is in [`.agents/TODOS/`](../TODOS/README.md) or in GitHub issues.
+When a TODO is finished, move any durable behaviour into the spec that owns it
+and delete the TODO.

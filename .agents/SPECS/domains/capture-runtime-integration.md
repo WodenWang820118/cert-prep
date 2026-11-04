@@ -2,140 +2,181 @@
 
 ## Current ownership
 
-Cert Prep currently consumes the published `capture-runtime@0.4.1` Windows x64
-executable, manifest, checksum, and `CaptureDocument` schema `2`. The target
-0.4.2 cutover consumes the matching published executable, Web Component,
-generated SDK, manifest, `CaptureDocument` schema `2`, and the separate OCR
-projection schema `3`; no local sibling fallback is allowed.
-It also consumes the
-published `@gx-capture/capture-workbench-ui@0.4.1` Web Component and generated
-`@gx-capture/capture-runtime-client@0.4.1` package for source import,
-runtime setup, review, cancellation, retry, and completion UI.
+Cert Prep consumes the published Capture Runtime release pinned in
+`tools/capture-runtime-version.json` (`tools/capture-runtime-version.mts` is the
+shared facade; `version-check` keeps every mirror in step). The pin covers the
+Windows x64 `capture-runtime` executable, its manifest and `CaptureDocument`
+schema `2`, the `capture-runtime-client` Python SDK, the
+`@gx-capture/capture-workbench-ui` Web Component and the
+`capture-sidecar-launcher` crate. Runtime API is `2.0`; the typed OCR projection
+is the separate projection schema `3`. No sibling checkout, workspace alias or
+development-path fallback is allowed.
 
-Cert Prep owns only the authenticated proxy, Tauri sidecar lifecycle, host
-structuring, document persistence, and the existing study/reasoning features.
-There is no Cert Prep OCR provider, Whisper provider, runtime installer, or
-provider fallback path.
+| Concern | Owner | Cert Prep rule |
+| --- | --- | --- |
+| Durable sources, review overrides, export, domain records | Cert Prep | Persist source identity and domain data; runtime jobs are ephemeral. Reconcile durable state on restart; never persist a runtime process as domain state. |
+| Extraction, OCR projection, speech recognition | Capture Runtime | The runtime is the sole extractor and OCR projection owner. Cert maps the typed projection and does not recreate it. |
+| Compute decision and notice | Capture Runtime | The producer owns adapter selection, mode, reason and the CPU-fallback notice; Cert admits and displays that decision. |
+| Engine installation and requirement truth | Capture Runtime | Engines install from the runtime's release catalog after explicit consent, proxied through the backend. Cert bundles no OCR or speech payload. |
+| Sidecar process | Tauri host | Launch, token isolation, manifest/schema/checksum verification and PID-scoped cleanup. |
+| Reasoning | Cert Prep | Ollama study profile, question generation, explanations. Capture never starts a second production Ollama. |
+
+There is no Cert Prep OCR provider, speech provider, embedded-text extractor,
+mixed-result arbitration or provider fallback.
 
 ## SDK and typed pull-session boundary
 
-- The pinned Capture Runtime SDK is the sole wire authority for runtime
-  discovery, authenticated transport, retries, SSE decoding, wire DTOs, v2
-  ingestion/capture, and typed pull-session calls. Cert Prep's adapter may keep
-  product upload validation and collection wrappers, but it must not recreate
-  the runtime wire protocol.
-- Host structuring uses the SDK's typed pull-session. Capture Runtime owns batch
-  planning, prompt/schema projection, semantic validation, and provenance
-  reconstruction. Cert Prep passes only the runtime-returned prompt/schema to
-  its configured provider and submits typed semantic blocks through the SDK;
-  raw segments, locators, source text, and engine provenance remain runtime
-  owned.
-- The 0.4.2 SDK must add a typed capture-bound page/segment OCR projection.
-  Cert Prep and Law consume that projection without reconstructing provider
-  routing. Every PDF page and image is rasterized and recognized by canonical
-  PaddleOCR; embedded and mixed extraction are legacy read-only values, never
-  new writes.
+- The pinned SDK is the sole wire authority for discovery, authenticated
+  transport, retries, SSE decoding, wire DTOs, v2 ingestion/capture and typed
+  pull sessions. Cert adapters may add product upload validation but must not
+  recreate the wire protocol.
+- Host structuring uses the SDK's typed pull session. The runtime owns batch
+  planning, prompt/schema projection, semantic validation and provenance
+  reconstruction; Cert passes the runtime-returned prompt/schema to its
+  configured provider and submits typed semantic blocks.
 
-### Authenticated privacy-safe OCR summary
+## OCR-only source admission and durable mapping
 
-- Cert Prep exposes one additive project-scoped read interface at
-  `GET /projects/{project_id}/capture-workbench/captures/{capture_id}/ocr-summary`.
-  It resolves the durable review session, reads the matching runtime operation
-  and typed OCR projection through the SDK, validates capture/source/schema
-  identity, maps an allowlisted summary, and finally reloads the same
-  project-scoped session before returning. It never reads raw capture data,
-  structures or commits a capture, invokes a provider, or writes durable state.
-- `projectionSchemaVersion: 3` identifies the Capture Runtime OCR projection.
-  It is deliberately distinct from `CaptureDocument` schema `2`; the summary
-  interface does not claim or require a schema-3 `CaptureDocument`.
-- A pending review session with runtime `awaiting_structuring` and a completed
-  projection returns `200`. A pending or failed review session with an exact
-  runtime-failed/projection-failed pair also returns `200` privacy-safe failure
-  evidence. Early pending runtime states return `409`; confirming, completed,
-  and canceled review sessions return `410`.
-- Missing, deleted, and cross-project captures share the same `404` response.
-  Transport unavailability returns `503`. Authentication, protocol,
-  compatibility, stable-projection absence, and identity/schema drift return a
-  sanitized `502` without forwarding runtime diagnostics.
-- The summary exposes only host capture identity, projection status and page
-  count, per-page status/normalized character count/box count/confidence/typed
-  failure, and resolved or unavailable runtime/model/device/profile/contract
-  provenance. Typed failures contain only `code` and `retryable`. Raw text, box
-  text, polygons, filenames, paths, runtime capture ids, bearer tokens, warnings,
-  and free-form failure messages are excluded.
-- Normalized character counts follow the shared privacy-safe evidence rule:
-  Unicode NFKC, CRLF normalization, Unicode whitespace collapse, trim, then
-  Unicode code-point count. Runtime page confidence is preserved rather than
-  recomputed.
+- Every new PDF page and image goes through the runtime's raster OCR
+  (`windowsml-ocr` requirement). Cert never reads an embedded PDF text layer,
+  arbitrates a mixed result, writes `direct_pdf`, or calls a second OCR route.
+- `capture_integration/infrastructure/mapping.py` accepts exactly the producer
+  engine `windowsml-ocr` and writes the durable discriminator `windowsml_ocr` on
+  the document and every page and chunk. Neither value is inferred from a
+  substring.
+- Existing `direct_pdf`, `embedded` and `mixed` rows are legacy read-only data:
+  displayed and exported by their existing rules, never a new write, route
+  selector or source for rewriting OCR evidence.
+- Projection pages map in source order to chunks through
+  `publish_capture_document`; no page is dropped or reordered. A source digest
+  mismatch is rejected before commit. Durable provenance keeps allowlisted
+  runtime/model/device/profile fields, never tokens, local paths or raw
+  diagnostics. Host structuring state never becomes OCR provenance.
+- Audio requires the `speech-recognition` requirement and persists
+  time-located transcript segments.
+
+## Compute preflight
+
+Before a PDF or image upload the backend coordinator requires the runtime's
+`ocrCompute` preflight (`OcrComputePreflightV2` in `RuntimeReady`) and checks it
+is self-consistent: `gpu-dml` carries no reason or notice; `cpu-fallback`
+carries `no_compatible_gpu` or `dml_provider_unavailable`, a required notice and
+`ocr_cpu_fallback`. A missing or inconsistent preflight is an incompatible
+runtime. Cert never probes hardware, ranks adapters or changes the selected
+plan. A DirectML failure after a GPU plan was selected fails the capture; the
+host never retries on CPU. When `CERT_PREP_CAPTURE_RUNTIME_CONTRACT_SHA256` or
+`CERT_PREP_CAPTURE_RUNTIME_WORKER_SHA256` is set (acceptance candidates), the
+preflight must match them.
 
 ## Single production path
 
-- PDF, image, and audio uploads use
-  `CertPrepCaptureCoordinator -> CaptureRuntimeClient`.
-- The backend checks the pinned readiness contract before creating a capture.
-- Source transfer and capture execution use only the v2 ingestion/capture
-  lifecycle. The backend opens and finalizes checksum-bound ordered ingestions,
-  starts captures with idempotent uncertain-create recovery, and consumes
-  authenticated replayable SSE with `Last-Event-ID`. It does not poll for
-  normal progress; snapshot reads are limited to initial/reconnect
-  reconciliation.
-- Missing runtime assets, incompatible readiness, missing requirements, runtime
-  errors, timeout, cancellation, and schema/provenance drift fail closed with a
-  machine-readable unavailable or requirement error.
-- The browser receives only the Cert Prep API token. The Capture Runtime URL and
-  process-scoped token remain Tauri/backend-only.
-- The published Angular client remains RxJS Observable-based. Unsubscribe aborts
-  only its backend SSE listener and never sends runtime cancellation; explicit
-  cancel remains a separate authenticated action.
-- The authenticated host proxy exposes terminal snapshots/events only after the
-  durable review session reaches its terminal state. A runtime terminal observed
-  while the host session is active advances the durable event cursor but is held
-  behind comment heartbeats and bounded session reloads; host terminal replay then
-  uses that monotonic cursor. Host `captureId` and `ingestionId` remain the review
-  session id and durable document id across runtime-backed snapshots and results.
-  The in-process event registry is only a bounded condition/revision wake-up
-  signal: it retains no per-session identity or terminal state, and every wait
-  reloads the durable review session so concurrent and late listeners recover
-  from the database.
-- Capture Runtime owns requirement truth. For engine-bearing v0.4.1, Cert Prep
-  hides the component runtime-setup surface while exposing authenticated
-  requirements/install/cancel proxy routes without exposing the sidecar token.
-  Image and audio remain gated on the corresponding ready requirements.
+- PDF, image and audio uploads use `CertPrepCaptureCoordinator ->
+  CaptureRuntimeClient`. The backend checks readiness before creating a
+  capture and admits PDF/image only with a ready `windowsml-ocr` requirement and
+  audio only with a ready `speech-recognition` requirement.
+- Transfer and capture use only the v2 lifecycle: checksum-bound ordered
+  ingestion chunks, finalize, start with idempotent uncertain-create recovery by
+  client request id, and authenticated replayable SSE with `Last-Event-ID`.
+  Snapshot reads are initial/reconnect reconciliation, not progress polling.
+- Missing assets, incompatible readiness, missing requirements, runtime errors,
+  timeout, cancellation and schema/provenance drift fail closed with a
+  machine-readable unavailable or requirement error. Provider output that
+  changes digest, raw text, locators, coverage or order ends in
+  `failed/structuring`; `/raw` is diagnostic-only and never completes a
+  capture.
+- The browser holds only the Cert Prep API token. The runtime URL and
+  process-scoped token stay in Tauri and the backend.
+- Runtime requirements and engine installations are proxied through
+  authenticated `/capture-runtime/*` routes (`ready`, `provenance`,
+  `requirements`, `installations`); an installation needs `consent: true` and a
+  UUID `X-Idempotency-Key`.
+
+## Capture Workbench page
+
+`/capture-workbench-trial` hosts the published Web Component with
+`enabledSources: ['pdf', 'image', 'audio']`, `structuringMode: 'host'`,
+`hostStructuringOwner: 'component'`, `hostManagedHandshake: true` and
+`showRuntimeSetup: false`. Its `CertPrepCaptureClient` calls the authenticated
+backend at `/projects/{project_id}/capture-workbench/captures`; the browser never
+calls Capture Runtime. The client and structuring provider are cold RxJS
+Observables: unsubscribing closes only that backend SSE listener and never
+cancels the runtime capture; cancel is a separate authenticated action.
+
+Review happens before host structuring. A capture pauses for review and the
+user may edit only existing segment text. Confirmation sends the capture id,
+client request id and review contract, never the source or raw text again. The
+backend validates provenance, structures, commits the `CaptureDocument` to the
+runtime and persists it. Before confirmation the document stays processing with
+no usable chunks. Review sessions expire after 1800 seconds and are cleaned up
+on completion, cancellation, expiry and restart recovery.
+
+## Authenticated OCR summary
+
+`GET /projects/{project_id}/capture-workbench/captures/{capture_id}/ocr-summary`
+reads the durable review session, the matching runtime operation and its typed
+OCR projection, validates capture/source/schema identity, maps an allowlisted
+summary and reloads the session before returning. It never reads raw capture
+data, structures, commits, calls a provider or writes durable state.
+
+- A pending review with a completed projection, or an exact runtime-failed and
+  projection-failed pair, returns `200`. Early pending states return `409`;
+  confirming, completed and canceled sessions return `410`. Missing, deleted
+  and cross-project captures share one `404`; transport failure is `503`;
+  authentication, protocol, compatibility, missing projection and identity
+  drift return a sanitized `502`.
+- The summary exposes host capture identity, projection status and page count,
+  per-page status, normalized character count, box count, confidence and typed
+  failure (`code`, `retryable`), plus resolved or unavailable provenance. Raw
+  text, polygons, filenames, paths, runtime capture ids, tokens and free-form
+  messages are excluded. Character counts use NFKC, CRLF normalization,
+  whitespace collapse, trim, then code-point count.
+
+## Event delivery
+
+The host proxy shows a terminal snapshot only after the durable review session
+is terminal. A runtime terminal seen while the session is active advances the
+durable event cursor and is held behind comment heartbeats and bounded session
+reloads. Host `captureId` and `ingestionId` stay the review session id and
+durable document id. The in-process event registry is only a wake-up signal;
+every wait reloads the session from the database.
 
 ## Persistence boundary
 
-After review confirmation, the host maps the validated schema-2 `CaptureDocument`
-into the existing document/chunk model. Every new PDF/image page persists
-`windowsml_ocr`; legacy `embedded` and `mixed` rows remain readable but are not
-created by the 0.4.2 consumer. `document_chunks.raw_text` retains the
-Japanese/OCR/transcript source, while `document_chunks.text` stores the
-reviewed or Traditional Chinese text. Existing extraction and transcription
-columns remain readable for historical documents; new production writes come
-only from Capture Runtime.
+After confirmation the host maps the validated `CaptureDocument` into the
+document/chunk model. `document_chunks.raw_text` keeps the original OCR text or
+Japanese transcript; `document_chunks.text` keeps the reviewed or Traditional
+Chinese text. Review overrides are validated against immutable runtime raw
+segments and applied in the local mapping layer. Capture Runtime never writes
+Cert SQLite.
 
-Mapping, review, and persistence are consumer-local. Cert Prep validates review
-overrides against immutable runtime raw segments, applies them in its local
-mapping layer, and writes SQLite only after host confirmation. Capture Runtime
-never writes Cert Prep SQLite and does not own Cert Prep review decisions.
+## Desktop boundary
 
-## Desktop and release boundary
-
-Tauri stages and verifies only the backend runtime and Capture Runtime assets.
-The target engine-bearing `0.4.2` contract verifies the runtime manifest, checksum,
-schema, and executable bytes before launch. It injects
-the sidecar URL/token only into the backend child, records both process trees,
-and performs PID-scoped cleanup. Cert Prep's retired OCR manifest, executable,
-installer, environment variables, and package targets are not release inputs.
+Tauri verifies the runtime manifest, checksum, schema bytes and executable
+byte count against the pinned values before launch. The sidecar runs with a
+cleared environment plus a Windows bootstrap allowlist, a unique bearer token,
+an ephemeral loopback port, `CAPTURE_EXTRACTION_PROVIDER=runtime`,
+`CAPTURE_STRUCTURING_PROVIDER=host`, and upload, PDF-page and image-pixel
+ceilings aligned with Cert's source limits. Only the backend child receives
+`CERT_PREP_CAPTURE_RUNTIME_URL`, `_TOKEN`, `_VERSION`, `_API_VERSION` and
+`CERT_PREP_CAPTURE_DOCUMENT_SCHEMA_VERSION`; none enter the WebView
+configuration. Shutdown terminates only the recorded backend and sidecar PID
+trees, never by image name, and never touches an external Ollama. Installation
+and start are explicit user actions; see
+[lazy-capture-runtime-installation.md](../lazy-capture-runtime-installation.md).
 
 ## Verification floor
 
-The closeout requires backend/frontend/desktop Nx checks, package QA, release
-contract tests, OpenAPI regeneration, fail-closed unavailable tests, and a
-published-byte handshake/requirements smoke. A local candidate may be staged
-from `CERT_PREP_CAPTURE_RUNTIME_RELEASE_DIRECTORY`, but that is not published
-release evidence. The independent Cert Prep Tauri bundle, not the Capture
-Workbench app, is the consumer artifact. The real PDF OCR/audio consumer smoke
-is an opt-in model-enabled gate for each engine-bearing release (currently
-`0.4.2`).
-Source-import or registry prototypes and deterministic fixtures prove
-distribution or host protocol only; they do not close the real engine smoke.
+Backend, frontend and desktop Nx checks, package QA, release contract tests,
+OpenAPI regeneration, fail-closed unavailable tests and the published-byte
+handshake/requirements smoke (`cert-prep-desktop:capture-runtime-consumer-smoke`).
+A local candidate may be staged from `CERT_PREP_CAPTURE_RUNTIME_RELEASE_DIRECTORY`
+for qualification; that is not published-release evidence. During a Capture
+release the producer dispatches `.github/workflows/capture-candidate-gate.yml`
+(`tools/capture-candidate-gate.mts`): candidate identity is content (contract
+and archive hashes, package provenance, loaded runtime and worker identity),
+never a URL or port, and installs with `direct_url` or local-path provenance are
+rejected. The independent
+Cert Prep Tauri bundle, not the Capture Workbench app, is the consumer artifact.
+Real OCR on the packaged app is `cert-prep-desktop:acceptance-real`
+([acceptance spec](../cert-prep-pdf-image-acceptance.md)); deterministic
+fixtures and protocol fakes prove only the host protocol.

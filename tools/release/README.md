@@ -17,6 +17,8 @@ Before running the workflow, configure:
 
 For a manual dispatch, provide an Alpha SemVer such as `0.1.0-alpha.1` and
 confirm both the public repository and protected release environment inputs.
+Set `validate_only` to run only `build-candidate`: nothing is reserved,
+installed or published.
 For a `cert-prep-v*-alpha.*` tag trigger, set these repository variables to the
 literal value `true`:
 
@@ -46,13 +48,18 @@ incomplete prerelease + failed gate -> cleanup-incomplete-prerelease
 This job checks out the exact release source once and performs all source and
 package validation before creating an artifact. It:
 
+- checks the adopted Capture versions (`cert-prep-desktop:version-check`),
+  stages the pinned Capture Runtime release, verifies its GitHub artifact
+  attestation (`tools/verify-capture-release-attestation.mts`), and runs the
+  published-byte consumer smoke;
 - validates release identity, repository visibility, tag/version, and commit;
-- runs the Windows-owned lint and test targets through Nx;
+- runs the Windows-owned lint and test targets through Nx, plus the generated
+  API client tests;
 - runs desktop script type-checking, package-QA tests, release-tool tests, and
   Rust host tests;
-- builds and validates one unsigned NSIS installer;
-- inventories Node, backend Python, OCR Python, OCR payload, and Rust
-  dependencies;
+- builds and validates one unsigned NSIS installer and checks the built
+  binary's 8 MiB stack reserve;
+- inventories Node, backend Python, and Rust dependencies;
 - creates SPDX documents, the license inventory, license texts, notices, and
   `SHA256SUMS`;
 - uploads one candidate containing both the publishable files and the exact
@@ -65,23 +72,20 @@ ID and download this artifact without a source checkout or rebuild.
 ### `clean-install`
 
 This hosted Windows job first reserves the candidate-bound public prerelease.
-It uploads or reuses exactly the version-pinned WindowsML OCR ZIP and manifest;
-an existing asset is reusable only when its SHA-256 digest is identical. Assets
-are never overwritten.
+Assets are never overwritten.
 
-The NSIS installer bundles the backend runtime but not the OCR ZIP. Its installed
-OCR manifest points to the public release URL and pins the expected file name,
-byte count, and SHA-256. The clean-install script then:
+The NSIS installer bundles the backend runtime and the pinned Capture Runtime
+executable, manifest, and schema. The clean-install script then:
 
 1. verifies every downloaded candidate file and the expected commit;
 2. installs the single NSIS package silently;
-3. validates the installed backend and OCR runtime manifests;
-4. downloads the public OCR ZIP and verifies its bytes and SHA-256;
-5. launches the installed app with fresh app data;
-6. requires the owned backend to report matching packaged health and runtime
+3. validates the installed backend and Capture Runtime manifests (the pinned
+   Capture version, API `2.0`, and `CaptureDocument` schema `2`);
+4. launches the installed app with fresh app data;
+5. requires the owned backend to report matching packaged health and runtime
    versions;
-7. stops the owned processes and uninstalls the app;
-8. confirms the uninstall registration, installed executable, and installation
+6. stops the owned processes and uninstalls the app;
+7. confirms the uninstall registration, installed executable, and installation
    root are all gone.
 
 Evidence is written only after every step, including uninstall, succeeds. The
@@ -98,13 +102,13 @@ public unsigned prerelease.
 After publication, `publish-assets.ts --mode verify-public` downloads every
 declared public file without an authorization header. It requires unique asset
 basenames and verifies the exact byte count and SHA-256 of the NSIS installer,
-WindowsML OCR files, SPDX documents, license inventory and texts, notices,
+runtime files, SPDX documents, license inventory and texts, notices,
 release metadata, evidence, and `SHA256SUMS`. The job fails if any declared file
 is missing, extra, private, or changed.
 
 ### `cleanup-incomplete-prerelease`
 
-The OCR bootstrap release records a publication owner made from the workflow
+The reserved prerelease records a publication owner made from the workflow
 run, attempt, and candidate ID. If a later pre-finalization gate fails, cleanup
 may delete only an incomplete prerelease owned by that same run. It rejects a
 different owner, commit, candidate, or already-finalized release, and it never
@@ -116,7 +120,7 @@ The public release contains:
 
 - one versioned unsigned NSIS setup executable;
 - the bundled backend ZIP and manifest;
-- the remotely published, version-pinned WindowsML OCR ZIP and manifest;
+- the bundled Capture Runtime executable, manifest, and schema;
 - combined and artifact-scoped SPDX JSON documents;
 - a dependency license inventory, canonical license texts, project license,
   privacy notice, changelog, and third-party notices;

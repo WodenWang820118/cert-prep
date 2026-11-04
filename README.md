@@ -46,18 +46,19 @@ not a prerequisite for manual review or deterministic tests.
 | [`apps/cert-prep-desktop`](apps/cert-prep-desktop) | Tauri 2 Windows host, backend process management, sidecar installation/verification, packaging, and desktop smoke/QA scripts. |
 | [`apps/cert-prep-e2e`](apps/cert-prep-e2e) | Playwright browser tests of the UI against a route-mocked API. |
 | [`libs/cert-prep-api`](libs/cert-prep-api) | Generated TypeScript client and typed request helpers derived from the backend OpenAPI contract. |
+| [`libs/ui`](libs/ui) | spartan-ng helm components (badge, button, dialog, input, progress) copied into the workspace as the app's own code. |
 | [`packages/cert-prep-contracts`](packages/cert-prep-contracts) | Shared Python value types and provider protocols. |
-| [`packages/cert-prep-ollama`](packages/cert-prep-ollama) | Ollama discovery, lifecycle, model, profile, and installer utilities shared by the backend and related packages. |
-| [`design`](design) | Workbench design references and screen prototypes. |
+| [`packages/cert-prep-ollama`](packages/cert-prep-ollama) | Ollama discovery, lifecycle, GPU device selection, model, profile, and installer utilities shared by the backend and related packages. |
 | [`tools`](tools) | OpenAPI generation helpers, Capture Runtime consumer tooling, packaging checks, and release tooling. |
-| [`.agents/SPECS`](.agents/SPECS) | Durable product and architecture specifications. Active temporary work belongs in `.agents/TODOS`. |
+| [`docs/domain`](docs/domain) | The backend bounded contexts: model, rules, use cases and diagrams (Traditional Chinese). |
+| [`.agents/SPECS`](.agents/SPECS) | Durable product and architecture specifications. Open work without a GitHub issue is in `.agents/TODOS`; the DDD plan is in `.agents/PLANS/ddd-refactor`. |
 
 ## Development prerequisites
 
 The workspace uses:
 
 - Windows for the Tauri desktop and packaged sidecar workflows.
-- Node.js 24 with Corepack and pnpm 12.0.0 for the Nx/Angular workspace.
+- Node.js 24 with Corepack and the pnpm version in `package.json#packageManager` for the Nx/Angular workspace.
 - Python 3.14 with `uv` for the backend and Python packages.
 - Stable Rust with the MSVC Windows toolchain for Tauri.
 
@@ -188,6 +189,7 @@ corepack pnpm nx affected --targets=lint,test,build
 ```
 
 The root [`AGENTS.md`](AGENTS.md) contains workspace operating rules. Product
-and architecture decisions belong in the domain specifications under
-[`.agents/SPECS`](.agents/SPECS), while this README remains a stable guide to
+and architecture decisions belong in the specifications under
+[`.agents/SPECS`](.agents/SPECS) and the context pages under
+[`docs/domain`](docs/domain), while this README remains a stable guide to
 what the repository contains and how its main surfaces fit together.

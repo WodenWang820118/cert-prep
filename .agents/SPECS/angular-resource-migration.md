@@ -9,8 +9,9 @@ for commands and compatibility.
 ## Non-Goals
 
 - No backend endpoint, OpenAPI schema, persistence, or database changes.
-- No migration of uploads, mutations, Tauri calls, Blob side effects, or job
-  polling/reconciliation.
+- No migration of uploads, mutations, Tauri calls, Blob side effects, or
+  long-running operation streams (those use authenticated SSE; see
+  `long-running-operation-sse.md`).
 - No requirement for zero Promise usage in the Angular application.
 
 ## Interfaces
@@ -30,8 +31,7 @@ for commands and compatibility.
   token without putting credentials in URLs.
 - Signal key changes cancel obsolete requests and cannot write stale results to
   the current project or document.
-- Independent health requests preserve partial success and OCR stale/failed
-  state semantics.
+- Independent health requests preserve partial success.
 - Successful mutations may update writable resource values and then reload for
   server reconciliation.
 

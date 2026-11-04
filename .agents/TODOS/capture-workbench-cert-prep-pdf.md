@@ -1,18 +1,9 @@
 # Cert Prep packaged engine smoke TODO
 
-The packaged Cert Prep image OCR journey passed against published Capture
-Runtime 0.4.2 on 2026-09-27. OCR acceptance details live in the
-[real PDF/image acceptance TODO](cert-prep-pdf-image-acceptance.md); this file
-tracks the remaining packaged engine legs, including audio, which is a separate
-Capture Runtime lane.
+The real OCR journeys on the packaged app run through
+`cert-prep-desktop:acceptance-real` ([acceptance spec](../SPECS/cert-prep-pdf-image-acceptance.md)).
+The standalone packaged Capture Workbench smoke
+([spec](../SPECS/packaged-capture-workbench-smoke.md)) is behind it.
 
-- [ ] Run the PDF and audio legs of the packaged Cert Prep smoke against
-  published 0.4.2 on Windows x64 after explicit consent and engine
-  installation; record SSE replay, review, page provenance, durable chunks,
-  Markdown export, anchors, and cleanup evidence.
-  Real model-enabled journeys are sequential across the three consumers; prove
-  all owned backend/capture/Paddle/model PIDs and listener ports are clear before
-  handing the slot to LAW.
-  Keep this independent Cert Prep Tauri smoke separate from source-import or
-  registry prototypes, deterministic fixtures, and the Capture Workbench app.
-  PDF leg passed on 2026-09-28: the packaged image-upload smoke accepted an image-only PDF made from the canonical JPEG (`windowsml_ocr`, `windowsml-dml`, anchor present). The audio leg remains. The older `packaged-capture-workbench-smoke` still follows the pre-0.4.2 flow (it stops at the OCR preflight step) and needs updating before it can run the PDF leg itself.
+Open work (update the smoke past the OCR compute preflight step, and add an
+audio leg): https://github.com/gx-capture/capture-workbench/issues/259

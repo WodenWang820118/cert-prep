@@ -2,34 +2,34 @@
 
 ## Product contract
 
-Audio MP3, WAV, and M4A imports go through the published Capture Runtime when
-its Whisper requirement is available. Capture Runtime owns Whisper
-requirements, audio decoding, time-aligned Japanese transcript segments, and
-unavailable/error states. The current 0.4.1 engine-bearing package and real
-audio smoke remain explicit verification gates; Cert Prep owns the
-authenticated proxy, host review/structuring, persistence, and Traditional
-Chinese translation. The historical v0.3.8 core-only result remains release
-evidence, not the current operational contract.
+Audio MP3, WAV and M4A imports go through the pinned Capture Runtime when its
+`speech-recognition` requirement is ready. Capture Runtime owns the speech
+engine and its installation, audio decoding, time-aligned transcript segments
+and unavailable/error states; Cert passes the spoken language (`ja` for
+Japanese audio). Cert Prep owns the authenticated proxy, persistence and the
+Traditional Chinese translation. Audio is not accepted by the capture review
+session; it is imported through the documents upload.
 
-Japanese source text remains canonical. Each persisted audio chunk retains its
+Japanese source text remains canonical. Each persisted audio chunk keeps its
 time locator and raw Japanese transcript in `document_chunks.raw_text`; the
 reviewed or translated value is stored in `document_chunks.text` and the
-existing translation fields.
+translation fields.
 
 ## Failure and lifecycle rules
 
-- Invalid codec, signature, size, or duration fails before capture creation.
-- Missing Capture Runtime or Whisper requirements fails closed; Cert Prep does
-  not download models or retry through a local Whisper provider.
-- Cancel, retry, timeout, and runtime failure remain explicit and preserve the
+- Invalid codec, signature, size or duration fails before capture creation.
+- A missing Capture Runtime or `speech-recognition` requirement fails closed;
+  Cert Prep does not download models or retry through a local speech provider.
+- Cancel, retry, timeout and runtime failure remain explicit and preserve the
   canonical source when it is safe to retry.
 - Translation failure does not discard a successful Japanese capture.
-- Audio remains in the shared document/chunk and practice pipeline with its
-  explicit time locator and source/translation revision semantics.
+- Audio stays in the shared document/chunk and practice pipeline with its time
+  locator and source/translation revision semantics.
 
 ## Evidence
 
 Backend coordinator tests cover audio routing, raw provenance, cancellation,
-retry, timeout, unavailable runtime, and translation mapping. The real consumer
-smoke must use the published Capture Runtime asset and verify Japanese source
-retention plus Traditional Chinese translation independently.
+retry, timeout, unavailable runtime and translation mapping. A real run must use
+the published Capture Runtime and check Japanese source retention and the
+Traditional Chinese translation separately. The packaged smoke has no audio leg
+yet ([TODO](../../TODOS/capture-workbench-cert-prep-pdf.md)).
