@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from sqlite3 import Connection
+
 from cert_prep_backend.platform.database import Database, utc_now
 from cert_prep_backend.source_library.domain.document import SourceDocument, SourceFile
 from cert_prep_backend.source_library.infrastructure.records import (
     document_from_row,
     document_query,
-    ensure_project_exists,
 )
 from cert_prep_backend.source_library.domain.statuses import SourceDocumentStatus
 from cert_prep_backend.platform.errors import NotFoundError
@@ -70,7 +71,6 @@ def insert_processing_document(
 def list_documents(db: Database, project_id: str) -> list[SourceDocument]:
     """List source documents for a project in newest-first order."""
 
-    ensure_project_exists(db, project_id)
     with db.connect() as connection:
         rows = connection.execute(
             """
@@ -128,17 +128,35 @@ def update_exam_state(
 ) -> SourceDocument:
     """Update mock-exam generation state on a source document."""
 
-    now = utc_now()
     with db.connect() as connection:
-        connection.execute(
-            """
-            UPDATE documents
-            SET status = ?, exam_item_count = ?, updated_at = ?
-            WHERE project_id = ? AND id = ?
-            """,
-            (status, exam_item_count, now, project_id, document_id),
+        set_exam_state(
+            connection,
+            project_id=project_id,
+            document_id=document_id,
+            status=status,
+            exam_item_count=exam_item_count,
         )
         row = document_query(connection, project_id, document_id)
     if row is None:
         raise NotFoundError("Document not found.")
     return document_from_row(row)
+
+
+def set_exam_state(
+    connection: Connection,
+    *,
+    project_id: str,
+    document_id: str,
+    status: str,
+    exam_item_count: int,
+) -> None:
+    """Store the document's status and draft count using the caller's transaction."""
+
+    connection.execute(
+        """
+        UPDATE documents
+        SET status = ?, exam_item_count = ?, updated_at = ?
+        WHERE project_id = ? AND id = ?
+        """,
+        (status, exam_item_count, utc_now(), project_id, document_id),
+    )

@@ -16,6 +16,8 @@ from cert_prep_backend.authoring.application import use_cases as authoring
 from cert_prep_backend.authoring.application.ports import QuestionDraftRepository
 from cert_prep_backend.authoring.domain.draft import QuestionDraft
 from cert_prep_backend.authoring.infrastructure.repository import SqliteQuestionDraftRepository
+from cert_prep_backend.bootstrap.source_library_links import document_repository
+from cert_prep_backend.bootstrap.study_projects import ProjectExistence
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.practice.application.ports import (
     DraftedQuestion,
@@ -23,22 +25,9 @@ from cert_prep_backend.practice.application.ports import (
     ProjectDocuments,
     StudyProjects,
 )
-from cert_prep_backend.projects.application import use_cases as projects
-from cert_prep_backend.projects.application.ports import ProjectRepository
 from cert_prep_backend.projects.infrastructure.repository import SqliteProjectRepository
 from cert_prep_backend.source_library.application import use_cases as source_library
 from cert_prep_backend.source_library.application.ports import DocumentRepository
-from cert_prep_backend.source_library.infrastructure.repository import SqliteDocumentRepository
-
-
-class ProjectExistence:
-    """Study Projects' `project_exists`, for practice's `StudyProjects` port."""
-
-    def __init__(self, projects_repository: ProjectRepository) -> None:
-        self._projects = projects_repository
-
-    def exists(self, project_id: str) -> bool:
-        return projects.project_exists(self._projects, project_id)
 
 
 class DocumentMembership:
@@ -90,7 +79,7 @@ def bind_practice_reads(
 def practice_documents(db: Database) -> ProjectDocuments:
     """Document membership on its own connection."""
 
-    return DocumentMembership(SqliteDocumentRepository(db))
+    return DocumentMembership(document_repository(db))
 
 
 def _drafted_question(draft: QuestionDraft) -> DraftedQuestion:

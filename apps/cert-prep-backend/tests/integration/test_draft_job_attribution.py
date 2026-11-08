@@ -9,6 +9,7 @@ from cert_prep_backend.authoring.infrastructure import draft_jobs
 from cert_prep_backend.authoring.infrastructure import manual_operations
 from cert_prep_backend.authoring.infrastructure import repository as drafts_repository
 from cert_prep_backend.authoring.domain.models import DraftSuggestion, UnavailableDraftBlock
+from cert_prep_backend.bootstrap.authoring_links import bind_document_exam_state
 
 
 def test_draft_insert_and_success_attribution_commit_together(client, auth_headers) -> None:
@@ -28,6 +29,7 @@ def test_draft_insert_and_success_attribution_commit_together(client, auth_heade
 
     drafts_repository.append_generated_drafts_and_complete_job(
         client.app.state.database,
+        exam_state=bind_document_exam_state(client.app.state.database),
         job_id=job.id,
         project_id=project_id,
         document_id=document_id,
@@ -79,6 +81,7 @@ def test_draft_insert_rolls_back_when_success_attribution_cannot_commit(
     with pytest.raises(sqlite3.IntegrityError, match="success attribution rejected"):
         drafts_repository.append_generated_drafts_and_complete_job(
             client.app.state.database,
+            exam_state=bind_document_exam_state(client.app.state.database),
             job_id=job.id,
             project_id=project_id,
             document_id=document_id,
@@ -113,6 +116,7 @@ def test_manual_operation_persists_unavailable_parsed_blocks_without_playable_ro
 
     drafts_repository.append_generated_drafts_and_complete_manual_operation(
         client.app.state.database,
+        exam_state=bind_document_exam_state(client.app.state.database),
         operation_id=operation.id,
         project_id=project_id,
         document_id=document_id,

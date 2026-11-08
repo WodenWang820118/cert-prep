@@ -157,6 +157,9 @@ class FakeJobs:
     def cancel(self, project_id, document_id, job_id):
         self.calls.append(("cancel", project_id, document_id, job_id))
 
+    def discard_unfinished(self, project_id, document_id):
+        self.calls.append(("discard_unfinished", project_id, document_id))
+
 
 def test_generation_use_cases_reach_the_background_work_and_the_jobs() -> None:
     work, jobs = FakeWork(), FakeJobs()
@@ -167,6 +170,7 @@ def test_generation_use_cases_reach_the_background_work_and_the_jobs() -> None:
     use_cases.cancel_manual_generation(work, "p", "d", "op")
     use_cases.list_generation_jobs(jobs, "p", "d")
     use_cases.cancel_generation_job(jobs, "p", "d", "job")
+    use_cases.discard_unfinished_generation_jobs(jobs, "p", "d")
 
     assert work.calls == [
         ("retry_jobs", "p", "d"),
@@ -174,4 +178,8 @@ def test_generation_use_cases_reach_the_background_work_and_the_jobs() -> None:
         ("view", "p", "d", "op"),
         ("cancel", "p", "d", "op"),
     ]
-    assert jobs.calls == [("jobs_of", "p", "d"), ("cancel", "p", "d", "job")]
+    assert jobs.calls == [
+        ("jobs_of", "p", "d"),
+        ("cancel", "p", "d", "job"),
+        ("discard_unfinished", "p", "d"),
+    ]

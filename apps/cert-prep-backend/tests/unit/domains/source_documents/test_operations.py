@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from cert_prep_backend.bootstrap.app import create_app
+from cert_prep_backend.bootstrap.source_library_links import bind_document_draft_jobs
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.errors import (
     DocumentOperationConflictError,
@@ -238,6 +239,7 @@ def test_cancel_first_rolls_back_late_publication_and_preserves_draft_history(
         )
     terminal = operations.acknowledge_cancellation(
         db,
+        draft_jobs=bind_document_draft_jobs(db),
         project_id="project",
         operation_id="upload",
     )
@@ -388,8 +390,8 @@ def test_audio_recovery_preserves_incremental_transcript_and_sets_specific_state
             """
         )
 
-    assert operations.recover_operations(db) == 1
-    assert operations.recover_operations(db) == 0
+    assert operations.recover_operations(db, draft_jobs=bind_document_draft_jobs(db)) == 1
+    assert operations.recover_operations(db, draft_jobs=bind_document_draft_jobs(db)) == 0
 
     operation = operations.get_operation(
         db,
@@ -437,12 +439,14 @@ def test_publication_is_atomic_and_terminal_finalizers_are_read_only(
     ).status == "succeeded"
     assert operations.finish_failed(
         db,
+        draft_jobs=bind_document_draft_jobs(db),
         project_id="project",
         operation_id="upload",
         error="late failure",
     ).status == "succeeded"
     assert operations.acknowledge_cancellation(
         db,
+        draft_jobs=bind_document_draft_jobs(db),
         project_id="project",
         operation_id="upload",
     ).status == "succeeded"
@@ -542,6 +546,7 @@ def test_real_cancel_vs_publish_race_has_only_two_legal_outcomes(tmp_path: Path)
         assert cancel_result == "cancel_requested"
         operations.acknowledge_cancellation(
             db,
+            draft_jobs=bind_document_draft_jobs(db),
             project_id="project",
             operation_id="upload",
         )
@@ -578,6 +583,7 @@ def test_concurrent_retry_has_one_owner_and_recovery_is_idempotent(
     operations.cancel_operation(db, project_id="project", operation_id="first")
     operations.acknowledge_cancellation(
         db,
+        draft_jobs=bind_document_draft_jobs(db),
         project_id="project",
         operation_id="first",
     )
@@ -588,6 +594,7 @@ def test_concurrent_retry_has_one_owner_and_recovery_is_idempotent(
         try:
             return operations.start_retry_operation(
                 db,
+                draft_jobs=bind_document_draft_jobs(db),
                 project_id="project",
                 document_id="document",
                 operation_id=operation_id,
@@ -601,9 +608,9 @@ def test_concurrent_retry_has_one_owner_and_recovery_is_idempotent(
     assert results.count("conflict") == 1
     retry_id = next(result for result in results if result != "conflict")
     _seed_partial_work(db, "document")
-    assert operations.recover_operations(db) == 1
+    assert operations.recover_operations(db, draft_jobs=bind_document_draft_jobs(db)) == 1
     first_recovery = _terminal_snapshot(db, retry_id, "document")
-    assert operations.recover_operations(db) == 0
+    assert operations.recover_operations(db, draft_jobs=bind_document_draft_jobs(db)) == 0
     assert _terminal_snapshot(db, retry_id, "document") == first_recovery
     assert operations.get_operation(
         db,

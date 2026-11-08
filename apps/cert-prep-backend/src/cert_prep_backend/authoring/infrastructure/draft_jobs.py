@@ -371,11 +371,25 @@ def _optional_row_value(row: Row, column: str):
     return row[column] if column in row.keys() else None
 
 
+def _discard_unfinished_jobs(connection: Connection, project_id: str, document_id: str) -> None:
+    connection.execute(
+        """
+        DELETE FROM draft_generation_jobs
+        WHERE project_id = ? AND document_id = ?
+            AND status IN ('pending', 'running', 'cancel_requested')
+        """,
+        (project_id, document_id),
+    )
+
+
 class SqliteDraftGenerationJobRepository:
     """Draft generation jobs stored in SQLite."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, connection: Connection | None = None) -> None:
+        # A caller's connection joins that transaction. Source Library passes the connection
+        # of the document run it stops or retries, so the jobs go with that run's writes.
         self._db = db
+        self._connection = connection
 
     def jobs_of(self, project_id: str, document_id: str) -> list[DraftGenerationJob]:
         return list_document_jobs(self._db, project_id, document_id)
@@ -384,3 +398,10 @@ class SqliteDraftGenerationJobRepository:
         return request_cancel(
             self._db, project_id=project_id, document_id=document_id, job_id=job_id
         )
+
+    def discard_unfinished(self, project_id: str, document_id: str) -> None:
+        if self._connection is not None:
+            _discard_unfinished_jobs(self._connection, project_id, document_id)
+            return
+        with self._db.connect() as connection:
+            _discard_unfinished_jobs(connection, project_id, document_id)

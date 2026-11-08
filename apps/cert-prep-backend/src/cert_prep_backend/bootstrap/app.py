@@ -84,10 +84,6 @@ from cert_prep_backend.authoring.infrastructure.streaming import (
 from cert_prep_backend.runtime_provisioning.application import use_cases as runtime_installations
 from cert_prep_backend.source_library.application import use_cases as source_library
 from cert_prep_backend.source_library.infrastructure.audio import OllamaChunkTranslator
-from cert_prep_backend.source_library.infrastructure.repository import (
-    SqliteDocumentOperationRepository,
-    SqliteDocumentRepository,
-)
 from cert_prep_backend.source_library.infrastructure.storage import LocalSourceFileStore
 from cert_prep_backend.source_library.infrastructure.worker_pool import PoolDocumentWork
 from cert_prep_backend.platform.document_worker_pool import (
@@ -110,7 +106,12 @@ from cert_prep_backend.runtime_provisioning.api import (
 from cert_prep_backend.authoring.api import router as drafts
 from cert_prep_backend.authoring.api import operation_events as draft_generation_events
 from cert_prep_backend.practice.api import router as practice
+from cert_prep_backend.bootstrap.authoring_links import bind_document_exam_state
 from cert_prep_backend.bootstrap.practice_reads import bind_practice_reads, practice_documents
+from cert_prep_backend.bootstrap.source_library_links import (
+    document_operation_repository,
+    document_repository,
+)
 from cert_prep_backend.practice.infrastructure.repository import SqlitePracticeStore
 from cert_prep_backend.projects.api import router as projects
 from cert_prep_backend.projects.infrastructure.repository import SqliteProjectRepository
@@ -186,8 +187,8 @@ def create_app(
         bind_reads=lambda connection: bind_practice_reads(app.state.database, connection),
         documents=practice_documents(app.state.database),
     )
-    app.state.document_repository = SqliteDocumentRepository(app.state.database)
-    app.state.document_operation_repository = SqliteDocumentOperationRepository(app.state.database)
+    app.state.document_repository = document_repository(app.state.database)
+    app.state.document_operation_repository = document_operation_repository(app.state.database)
     app.state.source_file_store = LocalSourceFileStore(app_settings)
     app.state.chunk_translator = OllamaChunkTranslator(app.state.database, app_settings)
     source_library.recover_interrupted_work(
@@ -228,10 +229,14 @@ def create_app(
     )
     app.state.capture_review_store = CaptureReviewStoreAdapter(app.state.database)
     app.state.capture_review_workflow = CaptureReviewWorkflowAdapter(
-        app.state.database, app.state.capture_coordinator
+        app.state.database,
+        app.state.capture_coordinator,
+        app.state.document_operation_repository,
     )
     app.state.capture_review_maintenance = CaptureReviewMaintenanceAdapter(
-        app.state.database, app.state.capture_coordinator
+        app.state.database,
+        app.state.capture_coordinator,
+        app.state.document_operation_repository,
     )
     app.state.capture_runtime = (
         CoordinatorCaptureRuntime(
@@ -262,6 +267,7 @@ def create_app(
         provider=app.state.llm_provider,
         async_jobs=streaming_draft_generation_async_jobs,
         reading_lexicon=reading_lexicon,
+        exam_state=bind_document_exam_state(app.state.database),
     )
     app.state.streaming_draft_generation_manager.recover_jobs(app.state.database)
     app.state.question_draft_repository = SqliteQuestionDraftRepository(app.state.database)

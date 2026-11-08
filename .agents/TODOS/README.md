@@ -6,7 +6,7 @@ the `cross-repo` label.
 ## Tracked in issues
 
 - DDD steps left (epic): https://github.com/gx-capture/capture-workbench/issues/178
-  - C5 table ownership, the rest after part 1: https://github.com/gx-capture/capture-workbench/issues/200
+  - C5 table ownership, part 3 (the infrastructure import exceptions) after parts 1 and 2: https://github.com/gx-capture/capture-workbench/issues/200
   - C7 frontend folders by context: https://github.com/gx-capture/capture-workbench/issues/201
 - E2E route mocks disagree with the generated API types (7 typecheck errors):
   https://github.com/gx-capture/capture-workbench/issues/194

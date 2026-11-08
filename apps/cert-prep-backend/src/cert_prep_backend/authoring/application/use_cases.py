@@ -21,6 +21,7 @@ __all__ = [
     "approved_questions",
     "cancel_generation_job",
     "cancel_manual_generation",
+    "discard_unfinished_generation_jobs",
     "draft_imported_document",
     "edit_draft",
     "find_question_draft",
@@ -115,6 +116,18 @@ def cancel_generation_job(
     jobs: DraftGenerationJobRepository, project_id: str, document_id: str, job_id: str
 ) -> DraftGenerationJob:
     return jobs.cancel(project_id, document_id, job_id)
+
+
+def discard_unfinished_generation_jobs(
+    jobs: DraftGenerationJobRepository, project_id: str, document_id: str
+) -> None:
+    """Drop the document's jobs that have not ended, because its source text is being redone.
+
+    Source Library calls this when a run of the document stops or is retried. Ended jobs stay
+    as the document's draft history.
+    """
+
+    jobs.discard_unfinished(project_id, document_id)
 
 
 def start_manual_generation(

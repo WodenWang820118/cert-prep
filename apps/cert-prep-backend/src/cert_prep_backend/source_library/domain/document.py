@@ -129,6 +129,12 @@ class SourceDocument:
                 "Markdown projection is available after document processing completes.",
             )
 
+    def status_after_drafts(self) -> str:
+        """The status a document has once the learner's drafts were written: still processing if
+        it was, ready otherwise."""
+
+        return "processing" if self.status == "processing" else "ready"
+
     def status_after_import_drafts(self) -> str:
         """The status a document has once drafts were written while it was imported: still
         processing if it was, ready when it has text and chunks, exam_failed otherwise."""

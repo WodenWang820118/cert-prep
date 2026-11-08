@@ -31,6 +31,7 @@ from cert_prep_backend.capture_integration.infrastructure.persistence import (
     publish_capture_document,
 )
 from cert_prep_backend.capture_integration.infrastructure import review_sessions
+from cert_prep_backend.source_library.application.ports import DocumentOperationRepository
 from cert_prep_backend.source_library.domain.document import SourceDocument
 from cert_prep_backend.source_library.infrastructure import operations
 from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
@@ -143,6 +144,7 @@ def commit_review_capture(
     db: Database,
     *,
     coordinator: CertPrepCaptureCoordinator,
+    document_operations: DocumentOperationRepository,
     project_id: str,
     document_id: str,
     operation_id: str,
@@ -202,11 +204,10 @@ def commit_review_capture(
                 terminal_sequence=terminal_sequence,
             )
         finally:
-            operations.finish_failed(
-                db,
-                project_id=project_id,
-                operation_id=operation_id,
-                error="Capture review confirmation failed.",
+            # Source Library's operation repository also discards the document's
+            # unfinished draft jobs, in the transaction that stops the run.
+            document_operations.fail(
+                project_id, operation_id, error="Capture review confirmation failed."
             )
         raise
 
@@ -215,12 +216,14 @@ def cleanup_active_review_sessions(
     db: Database,
     *,
     coordinator: CertPrepCaptureCoordinator | None,
+    document_operations: DocumentOperationRepository,
 ) -> tuple[str, ...]:
     """Cancel pending sidecar jobs during startup/shutdown recovery."""
 
     return _cleanup_review_sessions(
         db,
         coordinator=coordinator,
+        document_operations=document_operations,
         sessions=review_sessions.active(db),
     )
 
@@ -229,12 +232,14 @@ def cleanup_expired_review_sessions(
     db: Database,
     *,
     coordinator: CertPrepCaptureCoordinator | None,
+    document_operations: DocumentOperationRepository,
 ) -> tuple[str, ...]:
     """Cancel review sessions whose thirty-minute confirmation window expired."""
 
     return _cleanup_review_sessions(
         db,
         coordinator=coordinator,
+        document_operations=document_operations,
         sessions=review_sessions.expired(db),
     )
 
@@ -243,6 +248,7 @@ def _cleanup_review_sessions(
     db: Database,
     *,
     coordinator: CertPrepCaptureCoordinator | None,
+    document_operations: DocumentOperationRepository,
     sessions: list[CaptureReviewSession],
 ) -> tuple[str, ...]:
     """Cancel the supplied durable sessions and their ephemeral runtime jobs."""
@@ -260,22 +266,15 @@ def _cleanup_review_sessions(
                 # must not remain reviewable after process recovery.
                 pass
         try:
-            operations.cancel_operation(
-                db,
-                project_id=session.project_id,
-                operation_id=session.operation_id,
-            )
-            operations.acknowledge_cancellation(
-                db,
-                project_id=session.project_id,
-                operation_id=session.operation_id,
+            document_operations.cancel(session.project_id, session.operation_id)
+            document_operations.acknowledge_cancellation(
+                session.project_id, session.operation_id
             )
         except Exception:
             try:
-                operations.finish_failed(
-                    db,
-                    project_id=session.project_id,
-                    operation_id=session.operation_id,
+                document_operations.fail(
+                    session.project_id,
+                    session.operation_id,
                     error="Capture review session was recovered after host shutdown.",
                 )
             except Exception:
@@ -298,10 +297,14 @@ class CaptureReviewWorkflowAdapter:
     """Claim, begin, and commit a runtime review, translating coordinator failures."""
 
     def __init__(
-        self, db: Database, coordinator: CertPrepCaptureCoordinator | None
+        self,
+        db: Database,
+        coordinator: CertPrepCaptureCoordinator | None,
+        document_operations: DocumentOperationRepository,
     ) -> None:
         self._db = db
         self._coordinator = coordinator
+        self._document_operations = document_operations
 
     def begin_review(
         self,
@@ -383,6 +386,7 @@ class CaptureReviewWorkflowAdapter:
             return commit_review_capture(
                 self._db,
                 coordinator=self._coordinator,
+                document_operations=self._document_operations,
                 project_id=project_id,
                 document_id=document_id,
                 operation_id=operation_id,
@@ -397,15 +401,29 @@ class CaptureReviewWorkflowAdapter:
 class CaptureReviewMaintenanceAdapter:
     """Expire and recover review sessions through the existing cleanup functions."""
 
-    def __init__(self, db: Database, coordinator: CertPrepCaptureCoordinator | None) -> None:
+    def __init__(
+        self,
+        db: Database,
+        coordinator: CertPrepCaptureCoordinator | None,
+        document_operations: DocumentOperationRepository,
+    ) -> None:
         self._db = db
         self._coordinator = coordinator
+        self._document_operations = document_operations
 
     def expire(self) -> tuple[str, ...]:
-        return cleanup_expired_review_sessions(self._db, coordinator=self._coordinator)
+        return cleanup_expired_review_sessions(
+            self._db,
+            coordinator=self._coordinator,
+            document_operations=self._document_operations,
+        )
 
     def recover(self) -> tuple[str, ...]:
-        return cleanup_active_review_sessions(self._db, coordinator=self._coordinator)
+        return cleanup_active_review_sessions(
+            self._db,
+            coordinator=self._coordinator,
+            document_operations=self._document_operations,
+        )
 
 
 __all__ = [

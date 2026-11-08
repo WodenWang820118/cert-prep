@@ -234,11 +234,8 @@ def test_document_operation_events_route_streams_authenticated_terminal_snapshot
             project_id=project_id,
             operation_id=operation_id,
         )
-        document_operations.finish_failed(
-            app.state.database,
-            project_id=project_id,
-            operation_id=operation_id,
-            error="Route smoke terminal state.",
+        app.state.document_operation_repository.fail(
+            project_id, operation_id, error="Route smoke terminal state."
         )
         path = f"/projects/{project_id}/document-operations/{operation_id}/events"
 
