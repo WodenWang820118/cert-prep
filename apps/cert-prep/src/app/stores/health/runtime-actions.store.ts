@@ -7,7 +7,7 @@ import type {
   RuntimeKind,
 } from './contracts/health-runtime.contracts';
 import type { RuntimeActionContext } from './contracts/health-runtime.contracts';
-import { OperationStore } from '../operation.store';
+import { OperationStore } from '../../core/data';
 import { RuntimeApiClientsService } from './runtime-api-clients.service';
 import { RuntimeJobViewService } from './runtime-job-view.service';
 

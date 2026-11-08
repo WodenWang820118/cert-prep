@@ -2,7 +2,7 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
     "apps/cert-prep/src/main.ts!",
-    "apps/cert-prep/src/app/contracts/generated-client.typecheck.ts",
+    "apps/cert-prep/src/app/core/domain/generated-client.typecheck.ts",
     "apps/*/eslint.config.{mjs,mts}",
     "libs/*/eslint.config.{mjs,mts}",
     "libs/*/vitest.config.mts",

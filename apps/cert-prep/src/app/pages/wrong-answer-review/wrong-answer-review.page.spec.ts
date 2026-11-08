@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import { CERT_PREP_API } from '../../core/data';
 import { WrongAnswerReviewPage } from './wrong-answer-review.page';
 
 describe('WrongAnswerReviewPage', () => {

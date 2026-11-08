@@ -1,7 +1,4 @@
-import type {
-  HealthResponse,
-  LLMHealthRead,
-} from '../../../contracts/api.contracts';
+import type { HealthResponse, LLMHealthRead } from '../../../core/domain';
 import type { LLMProviderSelectionRead } from '../../../stores/health/contracts/health-runtime.contracts';
 
 /**

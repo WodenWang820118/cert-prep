@@ -1,14 +1,14 @@
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
 import { from, Subscription } from 'rxjs';
-import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import { CERT_PREP_API } from '../../core/data';
 import type {
   ManualDraftGenerationOperationRead,
   QuestionDraftRead,
-} from '../../contracts/api.contracts';
-import { isDraftOperationEventTerminal } from '../../contracts/operation-events.contracts';
-import type { DraftOperationEvent } from '../../contracts/operation-events.contracts';
-import { CertPrepHttpResourceClient } from '../../services/cert-prep-http-resource-client.service';
-import { CertPrepSseClient } from '../../services/cert-prep-sse-client.service';
+} from '../../core/domain';
+import { isDraftOperationEventTerminal } from '../../core/domain';
+import type { DraftOperationEvent } from '../../core/domain';
+import { CertPrepHttpResourceClient } from '../../core/data';
+import { CertPrepSseClient } from '../../core/data';
 import type {
   DraftEdit,
   DraftGenerationStrategy,
@@ -18,8 +18,8 @@ import { DraftEditSessionStore } from './draft-edit-session.store';
 import { DraftPlayabilityService } from './draft-playability.service';
 import { DraftStreamingJobsStore } from './draft-streaming-jobs.store';
 import { HealthStore } from '../health/health.store';
-import { OperationStore } from '../operation.store';
-import { ProjectStore } from '../project.store';
+import { OperationStore } from '../../core/data';
+import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../source-import/source-import.store';
 
 @Injectable({ providedIn: 'root' })

@@ -1,14 +1,14 @@
 import { effect, inject, Injectable, signal } from '@angular/core';
 import { catchError, from, of, switchMap } from 'rxjs';
-import { CERT_PREP_API } from '../constants/cert-prep-api.constants';
+import { CERT_PREP_API } from '../core/data';
 import type {
   WrongAnswerExplanationRead,
   WrongAnswerRead,
   WrongAnswerSummaryRead,
-} from '../contracts/api.contracts';
-import { CertPrepHttpResourceClient } from '../services/cert-prep-http-resource-client.service';
-import { OperationStore } from './operation.store';
-import { ProjectStore } from './project.store';
+} from '../core/domain';
+import { CertPrepHttpResourceClient } from '../core/data';
+import { OperationStore } from '../core/data';
+import { ProjectStore } from '../projects/data';
 import type { WrongAnswerExplanationState } from './wrong-answer-review/contracts/wrong-answer-review.contracts';
 import {
   EMPTY_ANSWER_KEY_CORRECTION,

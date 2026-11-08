@@ -3,7 +3,7 @@ import {
   HealthResponse,
   LLMHealthRead,
   RuntimeRequirementRead,
-} from '../../contracts/api.contracts';
+} from '../../core/domain';
 import type {
   HealthSnapshot,
   LLMProviderSelectionRead,

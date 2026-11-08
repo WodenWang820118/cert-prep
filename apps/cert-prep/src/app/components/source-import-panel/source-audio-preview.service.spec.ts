@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { of, Subject, throwError } from 'rxjs';
-import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import { CERT_PREP_API } from '../../core/data';
 import { SourceAudioPreviewService } from './source-audio-preview.service';
 
 describe('SourceAudioPreviewService', () => {

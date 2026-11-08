@@ -2,7 +2,7 @@ import { Component, inject, ChangeDetectionStrategy } from '@angular/core';
 import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
 import { HealthStore } from '../../stores/health/health.store';
 import { HlmDialogImports } from '@spartan-ng/helm/dialog';
-import { ActionButtonComponent } from '../ui/action-button.component';
+import { ActionButtonComponent } from '../../core/ui';
 
 @Component({
   selector: 'app-runtime-consent-dialogs',

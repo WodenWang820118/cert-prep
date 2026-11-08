@@ -1,13 +1,13 @@
 import { TestBed } from '@angular/core/testing';
 import { of, Subject, throwError } from 'rxjs';
-import { CERT_PREP_API } from '../constants/cert-prep-api.constants';
+import { CERT_PREP_API } from '../core/data';
 import type {
   ProjectRead,
   WrongAnswerExplanationRead,
   WrongAnswerRead,
-} from '../contracts/api.contracts';
-import { OperationStore } from './operation.store';
-import { ProjectStore } from './project.store';
+} from '../core/domain';
+import { OperationStore } from '../core/data';
+import { ProjectStore } from '../projects/data';
 import { WrongAnswerReviewStore } from './wrong-answer-review.store';
 import { provideCertPrepHttpResourceClientFake } from '../testing/cert-prep-http-resource-client.fake';
 

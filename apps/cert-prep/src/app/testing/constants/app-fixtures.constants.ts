@@ -2,7 +2,7 @@ import type {
   DocumentRead,
   ProjectRead,
   QuestionDraftRead,
-} from '../../contracts/api.contracts';
+} from '../../core/domain';
 
 export const appProject: ProjectRead = {
   id: 'project-1',

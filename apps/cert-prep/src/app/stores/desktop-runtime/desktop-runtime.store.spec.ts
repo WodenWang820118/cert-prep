@@ -5,7 +5,7 @@ import type {
   DesktopRuntimeInstallation,
   DesktopRuntimeStatus,
 } from './contracts/desktop-runtime.contracts';
-import { CertPrepRuntimeConfig } from '../../services/cert-prep-api.service';
+import { CertPrepRuntimeConfig } from '../../core/data';
 import { DesktopRuntimeBridgeService } from './desktop-runtime-bridge.service';
 import { DesktopRuntimeStore } from './desktop-runtime.store';
 

@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import type { DocumentOperationRead } from '../../contracts/api.contracts';
+import type { DocumentOperationRead } from '../../core/domain';
 import { DocumentOperationSnapshotService } from './document-operation-snapshot.service';
 
 describe('DocumentOperationSnapshotService', () => {

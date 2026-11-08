@@ -1,16 +1,16 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { of } from 'rxjs';
-import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import { CERT_PREP_API } from '../../core/data';
 import type {
   DocumentRead,
   PracticeSessionRead,
   ProjectRead,
   WrongAnswerRead,
   WrongAnswerSummaryRead,
-} from '../../contracts/api.contracts';
-import { ProjectStore } from '../../stores/project.store';
-import { OperationStore } from '../../stores/operation.store';
+} from '../../core/domain';
+import { ProjectStore } from '../../projects/data';
+import { OperationStore } from '../../core/data';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { WrongAnswerReviewStore } from '../../stores/wrong-answer-review.store';
 import { WrongAnswerDashboardComponent } from './wrong-answer-dashboard.component';

@@ -1,12 +1,12 @@
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
 import { from, map, Observable, of, switchMap } from 'rxjs';
-import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import { CERT_PREP_API } from '../../core/data';
 import type {
   PracticeAttemptRead,
   PracticeSessionRead,
   PracticeSessionSummaryRead,
-} from '../../contracts/api.contracts';
-import { CertPrepHttpResourceClient } from '../../services/cert-prep-http-resource-client.service';
+} from '../../core/domain';
+import { CertPrepHttpResourceClient } from '../../core/data';
 import type {
   PracticeSessionMode,
   PracticeSessionPayload,
@@ -14,8 +14,8 @@ import type {
 } from './contracts/practice.contracts';
 import { PracticeSessionPayloadService } from './practice-session-payload.service';
 import { DraftReviewStore } from '../draft-review/draft-review.store';
-import { OperationStore } from '../operation.store';
-import { ProjectStore } from '../project.store';
+import { OperationStore } from '../../core/data';
+import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../source-import/source-import.store';
 import { WrongAnswerReviewStore } from '../wrong-answer-review.store';
 

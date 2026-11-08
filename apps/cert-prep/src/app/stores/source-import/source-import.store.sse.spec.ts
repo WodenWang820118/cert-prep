@@ -1,14 +1,14 @@
 import { TestBed } from '@angular/core/testing';
-import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import { CERT_PREP_API } from '../../core/data';
 import type {
   ChunkRead,
   DocumentOperationRead,
   DocumentRead,
-} from '../../contracts/api.contracts';
-import type { DocumentOperationEvent } from '../../contracts/operation-events.contracts';
-import { CertPrepSseClient } from '../../services/cert-prep-sse-client.service';
+} from '../../core/domain';
+import type { DocumentOperationEvent } from '../../core/domain';
+import { CertPrepSseClient } from '../../core/data';
 import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
-import { ProjectStore } from '../project.store';
+import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from './source-import.store';
 import { of, Subject } from 'rxjs';
 

@@ -1,9 +1,9 @@
 import { Component, computed, inject, ChangeDetectionStrategy } from '@angular/core';
-import type { WrongAnswerRead } from '../../contracts/api.contracts';
+import type { WrongAnswerRead } from '../../core/domain';
 import { ReviewDisplayService } from '../../services/review-display.service';
-import { OperationStore } from '../../stores/operation.store';
+import { OperationStore } from '../../core/data';
 import { ReviewRetryNavigationService } from '../../stores/practice/review-retry-navigation.service';
-import { ProjectStore } from '../../stores/project.store';
+import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { WrongAnswerReviewStore } from '../../stores/wrong-answer-review.store';
 import type {
@@ -14,7 +14,7 @@ import type {
   WrongAnswerCluster,
   WrongAnswerRepeatedMiss,
 } from './contracts/wrong-answer-dashboard.contracts';
-import { AppIconComponent } from '../ui/app-icon.component';
+import { AppIconComponent } from '../../core/ui';
 
 @Component({
   selector: 'app-wrong-answer-dashboard',

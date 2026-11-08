@@ -1,7 +1,4 @@
-import type {
-  LLMHealthRead,
-  ModelDownloadRead,
-} from '../../contracts/api.contracts';
+import type { LLMHealthRead, ModelDownloadRead } from '../../core/domain';
 import type { LLMProviderSelectionRead } from './contracts/health-runtime.contracts';
 
 export function providerSelection(

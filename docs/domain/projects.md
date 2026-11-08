@@ -84,3 +84,16 @@ sequenceDiagram
 - 資料表 `projects`（`id`、`name`、`description`、`created_at`、`updated_at`）屬學習專案，migration 在 `platform/database.py`。
 - HTTP：`/projects`（`ProjectCreate`、`ProjectUpdate`、`ProjectRead`、`ProjectList`，在 `projects/api/schemas.py`）。
 - 錯誤訊息「Project not found.」由 router 轉成 404 的 `not_found` 錯誤。
+
+## 前端
+
+程式：`apps/cert-prep/src/app/projects`（C7 第一部分）。規則在 `sheriff.config.ts`：每一層是一個 Sheriff 模組，標上 `context:projects` 與 `type:<層>`，別的模組只能經它的 `index.ts` 引用。
+
+| 層        | 公開（`index.ts`）     | 內容                                                                                                                                    |
+| --------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `data`    | `ProjectStore`         | 專案清單（`/projects` 的 HTTP resource）、目前選的專案、建立專案表單的狀態與 `createFromForm`；`providedIn: 'root'`                     |
+| `feature` | `ProjectRailComponent` | 側欄的專案清單與建立專案表單（`app-project-rail`）；使用者點選或建立專案時送出 `projectSelected`（專案 id），建立時先送出事件再關閉表單 |
+
+沒有 `ui` 與 `domain`：專案的型別（`ProjectRead`）是產生的 API 型別，放在 `core/domain`。
+
+學習專案是最上游的上下文：`projects` 只引用自己與 `core`（`core/data` 的 `CERT_PREP_API`、`CertPrepHttpResourceClient`、`OperationStore`，`core/domain` 的型別，`core/ui` 的圖示）。它不知道下游：殼層（`core/shell` 的 `App`）接住 `projectSelected`，交給 `WorkspaceFacade.selectProject`，由它重設並載入教材來源、題目編寫與練習的資料。其他上下文經 `projects/data` 讀 `ProjectStore.selectedProjectId` 等狀態。

@@ -1,5 +1,5 @@
 import { inject, Injectable } from '@angular/core';
-import type { DocumentOperationRead, DocumentRead } from '../../contracts/api.contracts';
+import type { DocumentOperationRead, DocumentRead } from '../../core/domain';
 import { EMPTY, from, Observable, of, ReplaySubject, Subject, catchError, concatMap, defer, map, switchMap, takeWhile, tap } from 'rxjs';
 import type { ObservableInput } from 'rxjs';
 import type {
@@ -12,7 +12,7 @@ import type {
   MutableUploadRun,
   TerminalUploadStatus,
 } from './contracts/source-import.contracts';
-import type { DocumentOperationEvent } from '../../contracts/operation-events.contracts';
+import type { DocumentOperationEvent } from '../../core/domain';
 import { DetachedOperationTombstoneTracker } from './detached-operation-tombstone-tracker';
 import { DocumentOperationSnapshotService } from './document-operation-snapshot.service';
 

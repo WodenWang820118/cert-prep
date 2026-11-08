@@ -5,16 +5,16 @@ import {
   appProject,
   editableAppQuestion,
 } from '../../testing/app.spec-helpers';
-import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import { CERT_PREP_API } from '../../core/data';
 import type {
   PracticeAttemptRead,
   PracticeSessionRead,
   QuestionDraftRead,
-} from '../../contracts/api.contracts';
+} from '../../core/domain';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
-import { OperationStore } from '../../stores/operation.store';
+import { OperationStore } from '../../core/data';
 import { PracticeStore } from '../../stores/practice/practice.store';
-import { ProjectStore } from '../../stores/project.store';
+import { ProjectStore } from '../../projects/data';
 import { PracticePanelComponent } from './practice-panel.component';
 import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
 

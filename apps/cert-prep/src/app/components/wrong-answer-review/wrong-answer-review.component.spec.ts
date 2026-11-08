@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { of, Subject, throwError } from 'rxjs';
-import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import { CERT_PREP_API } from '../../core/data';
 import type {
   DocumentRead,
   PracticeSessionRead,
@@ -9,11 +9,11 @@ import type {
   QuestionDraftRead,
   WrongAnswerExplanationRead,
   WrongAnswerRead,
-} from '../../contracts/api.contracts';
-import { OperationStore } from '../../stores/operation.store';
+} from '../../core/domain';
+import { OperationStore } from '../../core/data';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { editableAppQuestion } from '../../testing/app.spec-helpers';
-import { ProjectStore } from '../../stores/project.store';
+import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { WrongAnswerReviewStore } from '../../stores/wrong-answer-review.store';
 import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';

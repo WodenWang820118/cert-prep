@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import type { DocumentOperationRead } from '../../contracts/api.contracts';
+import type { DocumentOperationRead } from '../../core/domain';
 
 @Injectable({ providedIn: 'root' })
 export class DocumentOperationSnapshotService {

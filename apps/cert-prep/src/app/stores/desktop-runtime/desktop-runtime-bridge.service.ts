@@ -1,6 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { CertPrepTauriBridgeService } from '../../services/cert-prep-tauri-bridge.service';
+import { CertPrepTauriBridgeService } from '../../core/data';
 
 /**
  * Small boundary around Tauri globals and command invocation so the runtime

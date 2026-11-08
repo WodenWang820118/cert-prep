@@ -18,7 +18,7 @@ import type {
 import { SourceImageCropService } from './source-image-crop.service';
 import type { SourceImportAction } from './source-import-panel.contracts';
 import { HlmDialogImports } from '@spartan-ng/helm/dialog';
-import { ActionButtonComponent } from '../ui/action-button.component';
+import { ActionButtonComponent } from '../../core/ui';
 
 @Component({
   selector: 'app-source-image-crop-dialog',

@@ -10,8 +10,8 @@ import type {
 } from './draft-review-panel.contracts';
 import { formatChoiceKey } from './draft-review-panel.formatters';
 import { displayChoice } from '../../services/choice-display';
-import { AiInferredAnswerBadgeComponent } from '../ui/ai-inferred-answer-badge.component';
-import { AppIconComponent } from '../ui/app-icon.component';
+import { AiInferredAnswerBadgeComponent } from '../../core/ui';
+import { AppIconComponent } from '../../core/ui';
 import { HlmInput } from '@spartan-ng/helm/input';
 
 @Component({

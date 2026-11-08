@@ -1,5 +1,5 @@
 import { inject, Injectable } from '@angular/core';
-import type { RuntimeRequirementKind } from '../../contracts/api.contracts';
+import type { RuntimeRequirementKind } from '../../core/domain';
 import type {
   DownloadPhase,
   ModelDownloadView,
@@ -11,7 +11,7 @@ import type {
 } from './contracts/health-runtime.contracts';
 import { RuntimeHealthDerivationService } from './runtime-health-derivation.service';
 import { RUNTIME_KIND_LABELS } from './constants/health.constants';
-import { requestErrorMessage } from '../../services/request-error-message';
+import { requestErrorMessage } from '../../core/domain';
 
 @Injectable({ providedIn: 'root' })
 export class RuntimeJobViewService {

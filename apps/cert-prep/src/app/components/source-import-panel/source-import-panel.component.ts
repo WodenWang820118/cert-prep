@@ -8,8 +8,8 @@ import {
   viewChild,
 } from '@angular/core';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
-import { OperationStore } from '../../stores/operation.store';
-import { ProjectStore } from '../../stores/project.store';
+import { OperationStore } from '../../core/data';
+import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { SourceImageCropDialogComponent } from './source-image-crop-dialog.component';
 import { SourceImageCropService } from './source-image-crop.service';

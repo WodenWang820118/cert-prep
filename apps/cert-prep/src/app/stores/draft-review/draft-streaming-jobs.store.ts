@@ -1,13 +1,13 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { forkJoin, from, map, Observable, Subscription, tap } from 'rxjs';
-import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
-import type { DocumentRead, DraftGenerationJobRead } from '../../contracts/api.contracts';
-import { isDraftJobsEventTerminal } from '../../contracts/operation-events.contracts';
-import type { DraftJobsEvent } from '../../contracts/operation-events.contracts';
-import { CertPrepSseClient } from '../../services/cert-prep-sse-client.service';
+import { CERT_PREP_API } from '../../core/data';
+import type { DocumentRead, DraftGenerationJobRead } from '../../core/domain';
+import { isDraftJobsEventTerminal } from '../../core/domain';
+import type { DraftJobsEvent } from '../../core/domain';
+import { CertPrepSseClient } from '../../core/data';
 import type { DraftJobSummary } from './contracts/draft-review.contracts';
-import { OperationStore } from '../operation.store';
-import { ProjectStore } from '../project.store';
+import { OperationStore } from '../../core/data';
+import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../source-import/source-import.store';
 
 @Injectable({ providedIn: 'root' })

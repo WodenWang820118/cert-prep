@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import type {
   LLMHealthRead,
   RuntimeRequirementRead,
-} from '../../contracts/api.contracts';
+} from '../../core/domain';
 import {
   LLM_RUNTIME_MISSING_REASON_CODES,
 } from './constants/health.constants';

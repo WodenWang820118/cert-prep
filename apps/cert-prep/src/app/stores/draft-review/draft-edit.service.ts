@@ -3,7 +3,7 @@ import type {
   DraftGenerateRequest,
   QuestionDraftRead,
   QuestionDraftUpdate,
-} from '../../contracts/api.contracts';
+} from '../../core/domain';
 import type {
   DraftEdit,
   DraftGenerationStrategy,

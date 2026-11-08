@@ -25,7 +25,7 @@ import {
   SseFrameParser,
   type RawSseFrame,
   type SseFrameLimits,
-} from '../../services/sse-frame-parser';
+} from '../../core/data';
 import type {
   CertPrepCaptureEventStreamInit,
   SseEventFrame,

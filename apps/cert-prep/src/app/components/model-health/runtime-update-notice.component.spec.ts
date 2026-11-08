@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
-import { CertPrepRuntimeConfig } from '../../services/cert-prep-api.service';
+import { CertPrepRuntimeConfig } from '../../core/data';
 import type { RuntimeUpdateNotice } from '../../stores/desktop-runtime/contracts/desktop-runtime.contracts';
 import { DesktopRuntimeBridgeService } from '../../stores/desktop-runtime/desktop-runtime-bridge.service';
 import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';

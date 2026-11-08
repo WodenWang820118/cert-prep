@@ -8,7 +8,7 @@ import type {
   DraftGenerationAction,
   DraftGenerationStatusViewModel,
 } from './draft-review-panel.contracts';
-import { AppIconComponent } from '../ui/app-icon.component';
+import { AppIconComponent } from '../../core/ui';
 
 @Component({
   selector: 'app-draft-generation-status',

@@ -7,9 +7,9 @@ import type {
   CaptureDocument,
   CaptureStructuringRequest,
 } from '@gx-capture/capture-workbench-ui';
-import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
-import { CertPrepRuntimeConfig } from '../../services/cert-prep-api.service';
-import { ProjectStore } from '../../stores/project.store';
+import { CERT_PREP_API } from '../../core/data';
+import { CertPrepRuntimeConfig } from '../../core/data';
+import { ProjectStore } from '../../projects/data';
 import { CertPrepCaptureClient } from './cert-prep-capture-client';
 
 const TEST_PROJECT_ID = 'project-1';

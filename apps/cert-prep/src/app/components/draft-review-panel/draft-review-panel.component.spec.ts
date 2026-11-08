@@ -1,16 +1,16 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import { CERT_PREP_API } from '../../core/data';
 import type {
   DocumentRead,
   DraftGenerationJobRead,
   ProjectRead,
   QuestionDraftRead,
-} from '../../contracts/api.contracts';
+} from '../../core/domain';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { manualDraftOperation } from '../../stores/draft-review/draft-review.store.spec-helpers';
-import { OperationStore } from '../../stores/operation.store';
-import { ProjectStore } from '../../stores/project.store';
+import { OperationStore } from '../../core/data';
+import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { DraftReviewPanelComponent } from './draft-review-panel.component';
 

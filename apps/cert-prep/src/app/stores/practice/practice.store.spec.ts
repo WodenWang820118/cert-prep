@@ -1,15 +1,15 @@
 import { TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
-import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import { CERT_PREP_API } from '../../core/data';
 import type {
   DocumentRead,
   PracticeSessionRead,
   ProjectRead,
   QuestionDraftRead,
-} from '../../contracts/api.contracts';
+} from '../../core/domain';
 import { DraftReviewStore } from '../draft-review/draft-review.store';
 import { PracticeStore } from './practice.store';
-import { ProjectStore } from '../project.store';
+import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../source-import/source-import.store';
 import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
 

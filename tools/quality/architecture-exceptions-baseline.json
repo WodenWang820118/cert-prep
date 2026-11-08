@@ -1,9 +1,4 @@
 [
-  "eslint|@softarc/sheriff/dependency-rule|apps/cert-prep/src/app/components/app/app.component.ts|eslint-disable",
-  "eslint|@softarc/sheriff/dependency-rule|apps/cert-prep/src/app/constants/app-config.constants.ts|eslint-disable",
-  "eslint|@softarc/sheriff/dependency-rule|apps/cert-prep/src/app/constants/app-routes.constants.ts|eslint-disable",
-  "eslint|@softarc/sheriff/dependency-rule|apps/cert-prep/src/app/constants/cert-prep-api.constants.ts|eslint-disable",
-  "eslint|@softarc/sheriff/dependency-rule|apps/cert-prep/src/app/contracts/app.contracts.ts|eslint-disable",
   "eslint|@softarc/sheriff/dependency-rule|apps/cert-prep/src/app/stores/capture-runtime/capture-runtime-preflight.store.ts|eslint-disable",
   "eslint|@softarc/sheriff/dependency-rule|apps/cert-prep/src/app/stores/capture-runtime/capture-runtime-preflight.store.ts|eslint-disable#2",
   "import-linter|Each context layers api and infrastructure over application over domain|apps/cert-prep-backend/pyproject.toml|cert_prep_backend.capture_integration.api.runtime_router -> cert_prep_backend.capture_integration.infrastructure.host_models",

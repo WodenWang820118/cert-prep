@@ -7,7 +7,7 @@ import {
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
-import { OperationStore } from '../../stores/operation.store';
+import { OperationStore } from '../../core/data';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { DraftGenerationStatusComponent } from './draft-generation-status.component';
 import { DraftQuestionEditorCardComponent } from './draft-question-editor-card.component';
@@ -22,7 +22,7 @@ import {
   formatDraftGenerationMessage,
   formatDraftQuestionStatus,
 } from './draft-review-panel.formatters';
-import { AppIconComponent } from '../ui/app-icon.component';
+import { AppIconComponent } from '../../core/ui';
 import { HlmInput } from '@spartan-ng/helm/input';
 
 @Component({

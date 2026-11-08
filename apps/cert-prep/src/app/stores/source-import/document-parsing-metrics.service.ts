@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import type { DocumentRead } from '../../contracts/api.contracts';
+import type { DocumentRead } from '../../core/domain';
 import type { DocumentParsingMetric } from './contracts/source-import.contracts';
 
 import { PARSING_METRIC_DEFINITIONS } from './constants/source-import.constants';

@@ -1,5 +1,5 @@
 import { computed, Injectable, signal } from '@angular/core';
-import type { ChunkRead, DocumentRead } from '../../contracts/api.contracts';
+import type { ChunkRead, DocumentRead } from '../../core/domain';
 import {
   CHUNK_PREVIEW_STEP,
   INITIAL_CHUNK_PREVIEW_LIMIT,

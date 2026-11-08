@@ -1,14 +1,14 @@
 import { inject, Injectable } from '@angular/core';
-import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import { CERT_PREP_API } from '../../core/data';
 import {
   isModelDownloadEventTerminal,
   isRuntimeInstallationEventTerminal,
-} from '../../contracts/operation-events.contracts';
+} from '../../core/domain';
 import type {
   ModelDownloadEvent,
   RuntimeInstallationEvent,
-} from '../../contracts/operation-events.contracts';
-import { CertPrepSseClient } from '../../services/cert-prep-sse-client.service';
+} from '../../core/domain';
+import { CertPrepSseClient } from '../../core/data';
 import type {
   LLMProviderSelectionApiClient,
   ModelDownloadApiClient,

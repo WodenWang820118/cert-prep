@@ -2,7 +2,7 @@ import type {
   HealthResponse,
   LLMHealthRead,
   WrongAnswerSummaryRead,
-} from '../contracts/api.contracts';
+} from '../core/domain';
 export {
   appDocument,
   appProject,

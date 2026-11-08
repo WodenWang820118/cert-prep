@@ -1,11 +1,11 @@
 import { TestBed } from '@angular/core/testing';
 import { of, Subject, throwError } from 'rxjs';
-import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
-import { CertPrepSseClient } from '../../services/cert-prep-sse-client.service';
+import { CERT_PREP_API } from '../../core/data';
+import { CertPrepSseClient } from '../../core/data';
 import { HealthStore } from './health.store';
 import type { RuntimeActionContext } from './contracts/health-runtime.contracts';
 import { RuntimeActionsStore } from './runtime-actions.store';
-import { OperationStore } from '../operation.store';
+import { OperationStore } from '../../core/data';
 import {
   llmHealth,
   modelDownload,

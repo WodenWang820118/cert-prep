@@ -1,6 +1,6 @@
 import { inject, Injectable } from '@angular/core';
-import type { DocumentOperationRead } from '../../contracts/api.contracts';
-import type { DocumentOperationEvent } from '../../contracts/operation-events.contracts';
+import type { DocumentOperationRead } from '../../core/domain';
+import type { DocumentOperationEvent } from '../../core/domain';
 import { catchError, defer, of, switchMap, takeWhile, tap } from 'rxjs';
 import {
   DetachedOperationTombstoneHooks,

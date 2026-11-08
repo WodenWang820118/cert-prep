@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import type { LLMHealthRead } from '../../contracts/api.contracts';
+import type { LLMHealthRead } from '../../core/domain';
 import { RuntimeHealthDerivationService } from './runtime-health-derivation.service';
 
 describe('RuntimeHealthDerivationService', () => {

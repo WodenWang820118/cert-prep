@@ -7,13 +7,13 @@ import type {
 } from './contracts/desktop-runtime.contracts';
 import { DesktopRuntimeBridgeService } from './desktop-runtime-bridge.service';
 import { DesktopRuntimeViewService } from './desktop-runtime-view.service';
-import { OperationStore } from '../operation.store';
+import { OperationStore } from '../../core/data';
 import {
   RUNTIME_INSTALL_POLL_INTERVAL_MS,
   RUNTIME_UPDATE_POLL_INTERVAL_MS,
   RUNTIME_UPDATE_SUCCESS_VISIBLE_MS,
 } from './constants/desktop-runtime.constants';
-import { CertPrepRuntimeConfig } from '../../services/cert-prep-api.service';
+import { CertPrepRuntimeConfig } from '../../core/data';
 
 @Injectable({ providedIn: 'root' })
 export class DesktopRuntimeStore {

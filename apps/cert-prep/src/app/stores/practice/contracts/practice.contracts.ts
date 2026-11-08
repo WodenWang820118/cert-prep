@@ -1,7 +1,7 @@
 import type {
   PracticeSessionCreate,
   PracticeSessionRead,
-} from '../../../contracts/api.contracts';
+} from '../../../core/domain';
 
 /**
  * Practice session modes supported by the project question bank.

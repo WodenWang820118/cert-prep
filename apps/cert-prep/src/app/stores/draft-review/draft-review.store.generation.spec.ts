@@ -1,11 +1,11 @@
 import { TestBed } from '@angular/core/testing';
 import { of, Subject } from 'rxjs';
-import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
-import { CertPrepSseClient } from '../../services/cert-prep-sse-client.service';
-import { OperationStore } from '../operation.store';
+import { CERT_PREP_API } from '../../core/data';
+import { CertPrepSseClient } from '../../core/data';
+import { OperationStore } from '../../core/data';
 import { DraftReviewStore } from './draft-review.store';
 import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
-import { ProjectStore } from '../project.store';
+import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../source-import/source-import.store';
 import {
   documentRead,
