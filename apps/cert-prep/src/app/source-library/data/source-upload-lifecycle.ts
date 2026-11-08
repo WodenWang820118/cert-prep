@@ -11,7 +11,7 @@ import type {
   UploadTransportRun,
   MutableUploadRun,
   TerminalUploadStatus,
-} from './contracts/source-import.contracts';
+} from '../domain';
 import type { DocumentOperationEvent } from '../../core/domain';
 import { DetachedOperationTombstoneTracker } from './detached-operation-tombstone-tracker';
 import { DocumentOperationSnapshotService } from './document-operation-snapshot.service';

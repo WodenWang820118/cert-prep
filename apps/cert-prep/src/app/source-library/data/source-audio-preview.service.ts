@@ -1,8 +1,8 @@
 import { DestroyRef, inject, Injectable, signal } from '@angular/core';
 import { catchError, of } from 'rxjs';
 import { CERT_PREP_API } from '../../core/data';
-import type { SourceAudioPreviewViewModel } from './source-import-panel.contracts';
-import { INITIAL_SOURCE_AUDIO_PREVIEW_STATE } from './constants/source-audio-preview.constants';
+import type { SourceAudioPreviewViewModel } from '../domain';
+import { INITIAL_SOURCE_AUDIO_PREVIEW_STATE } from '../domain';
 
 @Injectable()
 export class SourceAudioPreviewService {

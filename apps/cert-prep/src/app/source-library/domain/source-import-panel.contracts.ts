@@ -2,7 +2,7 @@ import type { ChunkRead, DocumentRead } from '../../core/domain';
 import type {
   LanguageHint,
   SourceUploadItem,
-} from '../../stores/source-import/contracts/source-import.contracts';
+} from './source-import.contracts';
 
 export type SourceImportAction =
   | { readonly type: 'choose-files'; readonly files: readonly File[] }

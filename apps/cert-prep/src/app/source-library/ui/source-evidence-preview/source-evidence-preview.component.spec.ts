@@ -1,10 +1,10 @@
 import { TestBed } from '@angular/core/testing';
-import type { ChunkRead } from '../../core/domain';
-import { appDocument } from '../../testing/app.spec-helpers';
+import type { ChunkRead } from '../../../core/domain';
+import { appDocument } from '../../../testing/app.spec-helpers';
 import type {
   SourceEvidenceViewModel,
   SourceImportAction,
-} from './source-import-panel.contracts';
+} from '../../domain';
 import { SourceEvidencePreviewComponent } from './source-evidence-preview.component';
 
 describe('SourceEvidencePreviewComponent', () => {

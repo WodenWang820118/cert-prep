@@ -1,4 +1,4 @@
-import type { SourceAudioPreviewViewModel } from '../source-import-panel.contracts';
+import type { SourceAudioPreviewViewModel } from './source-import-panel.contracts';
 
 export const INITIAL_SOURCE_AUDIO_PREVIEW_STATE: SourceAudioPreviewViewModel = {
   url: null,

@@ -4,25 +4,26 @@ import {
   computed,
   effect,
   inject,
+  output,
   signal,
   viewChild,
 } from '@angular/core';
-import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
-import { OperationStore } from '../../core/data';
-import { ProjectStore } from '../../projects/data';
-import { SourceImportStore } from '../../stores/source-import/source-import.store';
-import { SourceImageCropDialogComponent } from './source-image-crop-dialog.component';
-import { SourceImageCropService } from './source-image-crop.service';
-import { SourceAudioPreviewService } from './source-audio-preview.service';
-import { SourceDocumentStatusComponent } from './source-document-status.component';
-import { SourceEvidencePreviewComponent } from './source-evidence-preview.component';
+import { OperationStore } from '../../../core/data';
+import { ProjectStore } from '../../../projects/data';
+import { SourceAudioPreviewService, SourceImportStore } from '../../data';
 import type {
   SourceDocumentStatusViewModel,
   SourceEvidenceViewModel,
   SourceImportAction,
   SourceUploadQueueViewModel,
-} from './source-import-panel.contracts';
-import { SourceUploadQueueComponent } from './source-upload-queue.component';
+} from '../../domain';
+import {
+  SourceDocumentStatusComponent,
+  SourceEvidencePreviewComponent,
+  SourceImageCropDialogComponent,
+  SourceImageCropService,
+  SourceUploadQueueComponent,
+} from '../../ui';
 
 @Component({
   selector: 'app-source-import-panel',
@@ -65,7 +66,6 @@ export class SourceImportPanelComponent {
   private readonly uploadQueue = viewChild(SourceUploadQueueComponent);
   private readonly cropDialog = viewChild(SourceImageCropDialogComponent);
 
-  protected readonly drafts = inject(DraftReviewStore);
   protected readonly operations = inject(OperationStore);
   protected readonly projects = inject(ProjectStore);
   protected readonly sourceImport = inject(SourceImportStore);
@@ -73,6 +73,14 @@ export class SourceImportPanelComponent {
   protected readonly cropSourceFile = signal<File | null>(null);
   protected readonly cropPosition = signal(0);
   protected readonly cropTotal = signal(0);
+
+  /**
+   * Emits the selected project's id when the learner uploads or selects a
+   * source document, and when a document becomes active (an upload can finish
+   * after the first draft query ran). Source Library is upstream of Authoring,
+   * so the composing page reloads that project's drafts (D18).
+   */
+  readonly sourceDocumentActivity = output<string>();
 
   protected readonly uploadQueueModel = computed<SourceUploadQueueViewModel>(
     () => ({
@@ -128,10 +136,10 @@ export class SourceImportPanelComponent {
       const projectId = this.projects.selectedProject()?.id ?? null;
       const documentId = this.sourceImport.activeDocumentId();
       if (projectId !== null && documentId !== null) {
-        // An upload can finish after the initial draft query was enabled. Reload
-        // when the source becomes active so the first empty response is not
-        // mistaken for a project with no drafts.
-        this.drafts.load(projectId);
+        // An upload can finish after the initial draft query was enabled. Tell
+        // the page when the source becomes active so the first empty response
+        // is not mistaken for a project with no drafts.
+        this.sourceDocumentActivity.emit(projectId);
       }
     });
   }
@@ -245,7 +253,7 @@ export class SourceImportPanelComponent {
     this.sourceImport.uploadDocuments();
     const project = this.projects.selectedProject();
     if (project !== null) {
-      this.drafts.load(project.id);
+      this.sourceDocumentActivity.emit(project.id);
     }
   }
 
@@ -253,7 +261,7 @@ export class SourceImportPanelComponent {
     this.sourceImport.selectDocument(documentId);
     const project = this.projects.selectedProject();
     if (project !== null) {
-      this.drafts.load(project.id);
+      this.sourceDocumentActivity.emit(project.id);
     }
   }
 

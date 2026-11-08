@@ -5,7 +5,7 @@ import { CertPrepSseClient } from '../../core/data';
 import type { QuestionDraftRead } from '../../core/domain';
 import { DraftReviewStore } from './draft-review.store';
 import { ProjectStore } from '../../projects/data';
-import { SourceImportStore } from '../source-import/source-import.store';
+import { SourceImportStore } from '../../source-library/data';
 import {
   documentRead,
   manualDraftOperation,

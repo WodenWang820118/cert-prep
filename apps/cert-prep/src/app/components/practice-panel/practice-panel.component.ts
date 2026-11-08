@@ -14,7 +14,7 @@ import { OperationStore } from '../../core/data';
 import type { PracticeSessionMode } from '../../stores/practice/contracts/practice.contracts';
 import { PracticeStore } from '../../stores/practice/practice.store';
 import { ProjectStore } from '../../projects/data';
-import { SourceImportStore } from '../../stores/source-import/source-import.store';
+import { SourceImportStore } from '../../source-library/data';
 import type { QuestionNavigatorItem } from './contracts/practice-panel.contracts';
 import { ChoiceKeyService } from '../../services/choice-key.service';
 import { displayChoice } from '../../services/choice-display';

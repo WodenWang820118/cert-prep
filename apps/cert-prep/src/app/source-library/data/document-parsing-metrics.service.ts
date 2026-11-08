@@ -1,8 +1,8 @@
 import { Injectable } from '@angular/core';
 import type { DocumentRead } from '../../core/domain';
-import type { DocumentParsingMetric } from './contracts/source-import.contracts';
+import type { DocumentParsingMetric } from '../domain';
 
-import { PARSING_METRIC_DEFINITIONS } from './constants/source-import.constants';
+import { PARSING_METRIC_DEFINITIONS } from '../domain';
 
 /**
  * Owns parsing progress and metric formatting for source document cards.

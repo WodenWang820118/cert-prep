@@ -1,10 +1,10 @@
 import { TestBed } from '@angular/core/testing';
-import type { DocumentRead } from '../../core/domain';
-import { appDocument } from '../../testing/app.spec-helpers';
+import type { DocumentRead } from '../../../core/domain';
+import { appDocument } from '../../../testing/app.spec-helpers';
 import type {
   SourceDocumentStatusViewModel,
   SourceImportAction,
-} from './source-import-panel.contracts';
+} from '../../domain';
 import { SourceDocumentStatusComponent } from './source-document-status.component';
 
 describe('SourceDocumentStatusComponent', () => {

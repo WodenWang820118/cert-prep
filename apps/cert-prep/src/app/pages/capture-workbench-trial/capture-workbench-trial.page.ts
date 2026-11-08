@@ -19,7 +19,7 @@ import {
 } from '@gx-capture/capture-workbench-ui';
 import { Subscription } from 'rxjs';
 import { ProjectStore } from '../../projects/data';
-import { SourceImportStore } from '../../stores/source-import/source-import.store';
+import { SourceImportStore } from '../../source-library/data';
 import { CertPrepCaptureClient } from './cert-prep-capture-client';
 import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
 import { CaptureRuntimePreflightStore } from '../../stores/capture-runtime/capture-runtime-preflight.store';

@@ -19,7 +19,7 @@ import type {
   SourceFileSelectionOptions,
   SourceUploadItem,
   UploadTransportRun,
-} from './contracts/source-import.contracts';
+} from '../domain';
 import { DocumentParsingMetricsService } from './document-parsing-metrics.service';
 import { DocumentLibraryStore } from './document-library.store';
 import { OperationStore } from '../../core/data';
@@ -34,7 +34,7 @@ import {
   SUPPORTED_SOURCE_FILE_EXTENSIONS,
   SUPPORTED_SOURCE_MIME_TYPES,
   TRANSCRIPT_MUTATION_ACTIONS,
-} from './constants/source-import.constants';
+} from '../domain';
 
 @Injectable({ providedIn: 'root' })
 export class SourceImportStore {

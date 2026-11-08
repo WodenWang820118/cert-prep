@@ -5,7 +5,7 @@ import { CertPrepSseClient } from '../../core/data';
 import { DraftReviewStore } from './draft-review.store';
 import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
 import { ProjectStore } from '../../projects/data';
-import { SourceImportStore } from '../source-import/source-import.store';
+import { SourceImportStore } from '../../source-library/data';
 import {
   documentRead,
   draftJob,

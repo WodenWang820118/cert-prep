@@ -1,8 +1,8 @@
 import type {
   DocumentOperationRead,
   DocumentRead,
-} from '../../../core/domain';
-import type { DocumentOperationEvent } from '../../../core/domain';
+} from '../../core/domain';
+import type { DocumentOperationEvent } from '../../core/domain';
 import type { Observable, Subscription } from 'rxjs';
 
 /**

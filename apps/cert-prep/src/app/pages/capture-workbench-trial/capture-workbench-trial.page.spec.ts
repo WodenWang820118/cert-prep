@@ -5,7 +5,7 @@ import { CAPTURE_RUNTIME_VERSION } from '@cert-prep/capture-runtime-version';
 import { of, Subject } from 'rxjs';
 import type { CaptureCompletedEvent } from '@gx-capture/capture-workbench-ui';
 import { ProjectStore } from '../../projects/data';
-import { SourceImportStore } from '../../stores/source-import/source-import.store';
+import { SourceImportStore } from '../../source-library/data';
 import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
 import { DesktopRuntimeBridgeService } from '../../stores/desktop-runtime/desktop-runtime-bridge.service';
 import { CertPrepRuntimeConfig } from '../../core/data';

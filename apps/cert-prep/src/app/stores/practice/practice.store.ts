@@ -16,7 +16,7 @@ import { PracticeSessionPayloadService } from './practice-session-payload.servic
 import { DraftReviewStore } from '../draft-review/draft-review.store';
 import { OperationStore } from '../../core/data';
 import { ProjectStore } from '../../projects/data';
-import { SourceImportStore } from '../source-import/source-import.store';
+import { SourceImportStore } from '../../source-library/data';
 import { WrongAnswerReviewStore } from '../wrong-answer-review.store';
 
 @Injectable({ providedIn: 'root' })

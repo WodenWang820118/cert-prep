@@ -1,7 +1,8 @@
-import { Component, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject } from '@angular/core';
 import { DraftReviewPanelComponent } from '../../components/draft-review-panel/draft-review-panel.component';
-import { SourceImportPanelComponent } from '../../components/source-import-panel/source-import-panel.component';
 import { AppIconComponent } from '../../core/ui';
+import { SourceImportPanelComponent } from '../../source-library/feature';
+import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 
 @Component({
   selector: 'app-build-workbench-page',
@@ -10,4 +11,8 @@ import { AppIconComponent } from '../../core/ui';
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './build-workbench.page.css',
 })
-export class BuildWorkbenchPage {}
+export class BuildWorkbenchPage {
+  // Source Library is upstream of Authoring (D18): the source panel reports
+  // source document activity and this page reloads the project's drafts.
+  protected readonly drafts = inject(DraftReviewStore);
+}

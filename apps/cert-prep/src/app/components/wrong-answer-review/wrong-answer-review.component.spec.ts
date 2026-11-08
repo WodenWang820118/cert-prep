@@ -14,7 +14,7 @@ import { OperationStore } from '../../core/data';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { editableAppQuestion } from '../../testing/app.spec-helpers';
 import { ProjectStore } from '../../projects/data';
-import { SourceImportStore } from '../../stores/source-import/source-import.store';
+import { SourceImportStore } from '../../source-library/data';
 import { WrongAnswerReviewStore } from '../../stores/wrong-answer-review.store';
 import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
 import { WrongAnswerReviewComponent } from './wrong-answer-review.component';

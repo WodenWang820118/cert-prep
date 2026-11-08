@@ -1,9 +1,9 @@
 import { TestBed } from '@angular/core/testing';
-import type { SourceUploadItem } from '../../stores/source-import/contracts/source-import.contracts';
+import type { SourceUploadItem } from '../../domain';
 import type {
   SourceImportAction,
   SourceUploadQueueViewModel,
-} from './source-import-panel.contracts';
+} from '../../domain';
 import { SourceUploadQueueComponent } from './source-upload-queue.component';
 
 describe('SourceUploadQueueComponent', () => {

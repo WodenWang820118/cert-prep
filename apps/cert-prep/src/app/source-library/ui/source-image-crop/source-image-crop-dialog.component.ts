@@ -14,11 +14,11 @@ import type {
   CropField,
   ImageCropRect,
   ImagePoint,
-} from './contracts/source-image-crop.contracts';
+} from '../../domain';
 import { SourceImageCropService } from './source-image-crop.service';
-import type { SourceImportAction } from './source-import-panel.contracts';
+import type { SourceImportAction } from '../../domain';
 import { HlmDialogImports } from '@spartan-ng/helm/dialog';
-import { ActionButtonComponent } from '../../core/ui';
+import { ActionButtonComponent } from '../../../core/ui';
 
 @Component({
   selector: 'app-source-image-crop-dialog',
