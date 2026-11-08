@@ -240,13 +240,6 @@ forbidden_modules = [
   "cert_prep_backend.projects.infrastructure",
   "cert_prep_backend.projects.api",
 ]
-# Known before each context's C4 gives its code a project lookup instead of a database:
-# they check that a project exists through ensure_project_exists(db, project_id).
-ignore_imports = [
-  "cert_prep_backend.authoring.infrastructure.draft_jobs -> cert_prep_backend.projects.infrastructure.repository",
-  "cert_prep_backend.authoring.infrastructure.manual_operations -> cert_prep_backend.projects.infrastructure.repository",
-  "cert_prep_backend.authoring.infrastructure.repository -> cert_prep_backend.projects.infrastructure.repository",
-]
 
 [[tool.importlinter.contracts]]
 name = "Other contexts reach Practice and Review only through its application and domain"
@@ -276,18 +269,6 @@ source_modules = [
 forbidden_modules = [
   "cert_prep_backend.source_library.infrastructure",
   "cert_prep_backend.source_library.api",
-]
-# Known until C5 gives Source Library's tables their own use cases: Question Authoring and
-# Capture Integration's review workflow call Source Library's storage functions directly.
-ignore_imports = [
-  "cert_prep_backend.authoring.infrastructure.sources -> cert_prep_backend.source_library.infrastructure.repository",
-  "cert_prep_backend.authoring.infrastructure.draft_jobs -> cert_prep_backend.source_library.infrastructure.repository",
-  "cert_prep_backend.authoring.infrastructure.manual_operations -> cert_prep_backend.source_library.infrastructure.repository",
-  "cert_prep_backend.authoring.infrastructure.repository -> cert_prep_backend.source_library.infrastructure.repository",
-  "cert_prep_backend.authoring.infrastructure.streaming -> cert_prep_backend.source_library.infrastructure.repository",
-  "cert_prep_backend.capture_integration.infrastructure.persistence -> cert_prep_backend.source_library.infrastructure.operations",
-  "cert_prep_backend.capture_integration.infrastructure.review_workflow -> cert_prep_backend.source_library.infrastructure.operations",
-  "cert_prep_backend.capture_integration.infrastructure.review_workflow -> cert_prep_backend.source_library.infrastructure.repository",
 ]
 
 [[tool.importlinter.contracts]]

@@ -13,6 +13,7 @@ from cert_prep_backend.authoring.domain.models import DraftGenerationStrategy
 from cert_prep_backend.authoring.infrastructure import repository as drafts_repository
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.practice.infrastructure.repository import SqlitePracticeRepository
+from cert_prep_backend.bootstrap.study_projects import authoring_projects
 
 
 @pytest.mark.parametrize("dictionary_enabled", [True, False])
@@ -53,7 +54,7 @@ def test_mixed_pages_are_saved_with_actual_model_attribution(tmp_path, monkeypat
         assert operation.status == "succeeded"
         assert operation.effective_provider == "ollama"
         assert operation.effective_model == "qwen3.5:4b"
-        suggestions = drafts_repository.list_drafts(database, project_id)
+        suggestions = drafts_repository.list_drafts(database, project_id, projects=authoring_projects(database))
         assert sorted(item.citation_page for item in suggestions) == [1, 2]
         reasoned = next(item for item in suggestions if item.citation_page == 2)
         assert reasoned.answer == "alpha blue"
@@ -114,7 +115,7 @@ def test_mixed_pages_preserve_saved_and_practice_order(tmp_path, monkeypatch):
         )
         assert operation.status == "succeeded"
         drafts = sorted(
-            drafts_repository.list_drafts(database, project_id), key=lambda item: item.source_order
+            drafts_repository.list_drafts(database, project_id, projects=authoring_projects(database)), key=lambda item: item.source_order
         )
         assert [item.citation_page for item in drafts] == [1, 2, 2]
         assert [item.source_order for item in drafts] == [10001, 21001, 21002]

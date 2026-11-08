@@ -73,6 +73,7 @@ __all__ = [
     "translate_chunk",
     "translate_stale_chunks",
     "view_active_operation",
+    "view_chunk",
     "view_document",
     "view_operation",
     "view_operation_progress",
@@ -206,6 +207,13 @@ def list_chunks(
     documents: DocumentRepository, project_id: str, document_id: str
 ) -> list[DocumentChunk]:
     return documents.chunks_of(project_id, document_id)
+
+
+def view_chunk(
+    documents: DocumentRepository, project_id: str, document_id: str, chunk_id: str
+) -> DocumentChunk:
+    """One chunk of a document, which another context cites as a draft's source."""
+    return documents.chunk(project_id, document_id, chunk_id)
 
 
 def edit_chunk(

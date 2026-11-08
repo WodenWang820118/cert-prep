@@ -5,24 +5,35 @@ from collections.abc import Callable, Sequence
 from sqlite3 import Connection, Row
 from uuid import uuid4
 
-from cert_prep_backend.platform.database import Database, utc_now
-from cert_prep_backend.authoring.application.ports import DocumentExamState
+from cert_prep_backend.authoring.application.ports import (
+    DocumentExamState,
+    DraftSources,
+    StudyProjects,
+)
 from cert_prep_backend.authoring.domain.draft import DraftEdit, NewQuestionDraft, QuestionDraft
 from cert_prep_backend.authoring.domain.models import DraftSuggestion, UnavailableDraftBlock
 from cert_prep_backend.authoring.domain.generation import DraftJobCanceledError
-from cert_prep_backend.source_library.infrastructure import repository as documents_repository
-from cert_prep_backend.projects.infrastructure.repository import ensure_project_exists
+from cert_prep_backend.platform.database import Database, utc_now
 from cert_prep_backend.platform.errors import NotFoundError
 
 BindDocumentExamState = Callable[[Connection], DocumentExamState]
 """Source Library's exam state of documents on the given connection, so it joins the commit."""
 
 
-def create_draft(db: Database, project_id: str, payload: NewQuestionDraft) -> QuestionDraft:
-    ensure_project_exists(db, project_id)
+def create_draft(
+    db: Database,
+    project_id: str,
+    payload: NewQuestionDraft,
+    *,
+    projects: StudyProjects,
+    sources: DraftSources,
+) -> QuestionDraft:
+    if not projects.exists(project_id):
+        raise NotFoundError("Project not found.")
     payload.ensure_source_is_complete()
     if payload.cites_a_source:
-        documents_repository.get_chunk(db, project_id, payload.document_id, payload.chunk_id)
+        assert payload.document_id is not None and payload.chunk_id is not None
+        sources.chunk(project_id, payload.document_id, payload.chunk_id)
     draft_id = str(uuid4())
     now = utc_now()
     with db.connect() as connection:
@@ -70,8 +81,10 @@ def create_generated_drafts(
     project_id: str,
     document_id: str,
     suggestions: list[DraftSuggestion],
+    projects: StudyProjects,
 ) -> list[QuestionDraft]:
-    ensure_project_exists(db, project_id)
+    if not projects.exists(project_id):
+        raise NotFoundError("Project not found.")
     now = utc_now()
     draft_ids: list[str] = []
     with db.connect() as connection:
@@ -113,12 +126,14 @@ def append_generated_drafts_and_complete_job(
     effective_model: str | None,
     fallback_reason: str | None,
     exam_state: BindDocumentExamState,
+    projects: StudyProjects,
 ) -> list[QuestionDraft]:
     """Commit generated drafts, the document's exam state and the job's exact successful
     attribution atomically. The job ran after the document was imported, so Source Library
     records the import's draft count."""
 
-    ensure_project_exists(db, project_id)
+    if not projects.exists(project_id):
+        raise NotFoundError("Project not found.")
     with db.connect() as connection:
         # The count and the document's status are read and written under one write lock, as
         # the single UPDATE that used to do both was.
@@ -190,11 +205,13 @@ def append_generated_drafts_and_complete_manual_operation(
     fallback_reason: str | None,
     exam_state: BindDocumentExamState,
     unavailable_blocks: Sequence[UnavailableDraftBlock] = (),
+    projects: StudyProjects,
 ) -> list[QuestionDraft]:
     """Atomically publish manual drafts, the document's exam state and the operation's final
     attribution."""
 
-    ensure_project_exists(db, project_id)
+    if not projects.exists(project_id):
+        raise NotFoundError("Project not found.")
     with db.connect() as connection:
         # One write lock over the count and the document's status, as for a job commit.
         connection.execute("BEGIN IMMEDIATE")
@@ -349,8 +366,14 @@ def _append_generated_drafts(
     ]
 
 
-def list_drafts(db: Database, project_id: str) -> list[QuestionDraft]:
-    ensure_project_exists(db, project_id)
+def list_drafts(
+    db: Database,
+    project_id: str,
+    *,
+    projects: StudyProjects,
+) -> list[QuestionDraft]:
+    if not projects.exists(project_id):
+        raise NotFoundError("Project not found.")
     with db.connect() as connection:
         rows = connection.execute(
             """
@@ -553,19 +576,32 @@ def _draft_from_row(row: Row) -> QuestionDraft:
 class SqliteQuestionDraftRepository:
     """Question drafts stored in SQLite."""
 
-    def __init__(self, db: Database, connection: Connection | None = None) -> None:
+    def __init__(
+        self,
+        db: Database,
+        connection: Connection | None = None,
+        *,
+        projects: StudyProjects,
+        sources: DraftSources,
+    ) -> None:
         # A caller's connection joins that transaction for reads. Practice passes the
         # connection of its unit of work; the write methods still open their own.
         self._db = db
         self._connection = connection
+        self._projects = projects
+        self._sources = sources
 
     def drafts_of(self, project_id: str) -> list[QuestionDraft]:
-        return list_drafts(self._db, project_id)
+        return list_drafts(self._db, project_id, projects=self._projects)
 
     def write(self, project_id: str, draft: NewQuestionDraft) -> QuestionDraft:
-        return create_draft(self._db, project_id, draft)
+        return create_draft(
+            self._db, project_id, draft, projects=self._projects, sources=self._sources
+        )
 
     def edit(self, project_id: str, draft_id: str, edit: DraftEdit) -> QuestionDraft:
+        if not self._projects.exists(project_id):
+            raise NotFoundError("Project not found.")
         return update_draft(self._db, project_id, draft_id, edit)
 
     def add_generated(
@@ -576,6 +612,7 @@ class SqliteQuestionDraftRepository:
             project_id=project_id,
             document_id=document_id,
             suggestions=list(suggestions),
+            projects=self._projects,
         )
 
     def approved(self, project_id: str, *, document_id: str | None) -> list[QuestionDraft]:

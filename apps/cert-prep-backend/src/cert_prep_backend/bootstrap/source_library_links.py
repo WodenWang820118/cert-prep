@@ -13,7 +13,6 @@ from sqlite3 import Connection
 
 from cert_prep_backend.authoring.application import use_cases as authoring
 from cert_prep_backend.authoring.application.ports import DraftGenerationJobRepository
-from cert_prep_backend.authoring.infrastructure.draft_jobs import SqliteDraftGenerationJobRepository
 from cert_prep_backend.bootstrap.study_projects import ProjectExistence
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.projects.infrastructure.repository import SqliteProjectRepository
@@ -40,7 +39,9 @@ def bind_document_draft_jobs(db: Database) -> BindDraftJobs:
     """Draft jobs on the connection of the document run that discards them."""
 
     def bind(connection: Connection) -> DocumentDraftJobs:
-        return DraftJobsOfDocument(SqliteDraftGenerationJobRepository(db, connection))
+        from cert_prep_backend.bootstrap.authoring_links import draft_generation_job_repository
+
+        return DraftJobsOfDocument(draft_generation_job_repository(db, connection))
 
     return bind
 

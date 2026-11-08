@@ -21,7 +21,6 @@ flowchart LR
   n_cert_prep_backend_authoring --> n_cert_prep_backend_ai_providers
   n_cert_prep_backend_authoring --> n_cert_prep_backend_api
   n_cert_prep_backend_authoring --> n_cert_prep_backend_platform
-  n_cert_prep_backend_authoring --> n_cert_prep_backend_projects
   n_cert_prep_backend_authoring --> n_cert_prep_backend_source_library
   n_cert_prep_backend_bootstrap --> n_cert_prep_backend_ai_providers
   n_cert_prep_backend_bootstrap --> n_cert_prep_backend_api

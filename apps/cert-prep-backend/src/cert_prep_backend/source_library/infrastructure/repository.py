@@ -89,6 +89,9 @@ class SqliteDocumentRepository:
     def chunks_of(self, project_id: str, document_id: str) -> list[DocumentChunk]:
         return list_chunks(self._db, project_id, document_id)
 
+    def chunk(self, project_id: str, document_id: str, chunk_id: str) -> DocumentChunk:
+        return get_chunk(self._db, project_id, document_id, chunk_id)
+
     def edit_chunk_text(
         self, project_id: str, document_id: str, chunk_id: str, text: str
     ) -> DocumentChunk:

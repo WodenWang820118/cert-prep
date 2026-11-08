@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
+from sqlite3 import Connection
 from typing import Protocol
 from uuid import UUID
+
+from cert_prep_contracts.transcription import TranscriptSegment
 
 from cert_prep_backend.capture_integration.application.results import (
     RuntimeCancellation,
@@ -16,6 +19,7 @@ from cert_prep_backend.capture_integration.domain.review_session import (
 )
 from cert_prep_backend.source_library.domain.document import (
     DocumentChunk,
+    PdfExtractionResult,
     SourceDocument,
     SourceFile,
 )
@@ -83,6 +87,45 @@ class CaptureOperations(Protocol):
     ) -> DocumentOperation: ...
 
     def operation(self, project_id: str, operation_id: str) -> DocumentOperation: ...
+
+    def mark_review_pending(
+        self, project_id: str, document_id: str, operation_id: str
+    ) -> DocumentOperation: ...
+
+
+class CaptureReviewCommit(Protocol):
+    """Signals that a review session is committing, in the caller's transaction."""
+
+    def begin_commit(self, project_id: str, document_id: str, operation_id: str) -> None: ...
+
+
+BindCaptureReviewCommit = Callable[[Connection], CaptureReviewCommit]
+"""A review commit listener bound to the active transaction connection."""
+
+
+class CapturePublication(Protocol):
+    """Atomically publishes Capture Runtime results to Source Library."""
+
+    def publish_audio_success(
+        self,
+        *,
+        project_id: str,
+        operation_id: str,
+        document_id: str,
+        segments: Sequence[tuple[TranscriptSegment, str]],
+        model: str,
+        device: str | None,
+        warning: str | None,
+    ) -> SourceDocument: ...
+
+    def publish_success(
+        self,
+        *,
+        project_id: str,
+        operation_id: str,
+        document_id: str,
+        extraction: PdfExtractionResult,
+    ) -> SourceDocument: ...
 
 
 class CaptureFileStore(Protocol):

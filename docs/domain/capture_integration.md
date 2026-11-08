@@ -195,7 +195,7 @@ sequenceDiagram
 
 ## 與其他上下文的關係
 
-- 教材來源：經擷取整合自己的 `CaptureDocuments`、`CaptureOperations`、`CaptureFileStore`。教材來源的 adapter 滿足這些 Protocol，教材來源不 import 擷取整合。`review_workflow` 停止作業（檢閱確認失敗、復原檢閱）時經教材來源的 port `DocumentOperationRepository`（`create_app` 傳入 `app.state.document_operation_repository`），所以作業停止時也刪掉教材未結束的草稿產生工作；`persistence` 與 `review_workflow` 的其他寫入仍直接呼叫教材來源的 infrastructure。
+- 教材來源：經擷取整合自己的 `CaptureDocuments`、`CaptureOperations`、`CaptureFileStore`、`CapturePublication` 與 `BindCaptureReviewCommit`。教材來源的 adapter 滿足這些 Protocol，教材來源不 import 擷取整合。`review_workflow` 停止作業（檢閱確認失敗、復原檢閱）時經教材來源的 port `DocumentOperationRepository`（`create_app` 傳入 `app.state.document_operation_repository`），所以作業停止時也刪掉教材未結束的草稿產生工作；`persistence` 與 `review_workflow` 的成果發布與確認提交經 `CapturePublication`、`BindCaptureReviewCommit` 與 `CaptureOperations`（由 `bootstrap/capture_links.py` 組裝），不直接呼叫教材來源的 infrastructure。
 - 題目編寫：寫入後經 `CaptureQuestionDrafting` 排入題目草稿。
 - 學習專案：建立擷取時用 `require_project` 確認專案存在。
 - Capture Runtime：anticorruption layer（D8）。`application` 不得 import `capture_runtime_client`。SDK 型別留在 infrastructure，以及 router 的回應模型。

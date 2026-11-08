@@ -10,6 +10,9 @@ from cert_prep_backend.authoring.infrastructure import draft_jobs
 from cert_prep_backend.authoring.infrastructure import repository as drafts_repository
 
 from test_draft_job_attribution import _source_chunk
+from cert_prep_backend.bootstrap.study_projects import authoring_projects
+from cert_prep_backend.authoring.infrastructure.sources import SourceLibraryDraftSources
+from cert_prep_backend.bootstrap.source_library_links import document_repository
 
 
 def _full_suggestion(chunk: dict) -> DraftSuggestion:
@@ -34,7 +37,8 @@ def _full_suggestion(chunk: dict) -> DraftSuggestion:
 
 def _create_via_plain_path(db, project_id, document_id, suggestions):
     return drafts_repository.create_generated_drafts(
-        db, project_id=project_id, document_id=document_id, suggestions=suggestions
+        db, project_id=project_id, document_id=document_id, suggestions=suggestions,
+        projects=authoring_projects(db),
     )
 
 
@@ -48,6 +52,8 @@ def _create_via_job_path(db, project_id, document_id, suggestions):
         strategy="hybrid_reasoning",
         provider="p",
         model="m",
+        projects=authoring_projects(db),
+        sources=SourceLibraryDraftSources(document_repository(db)),
     )
     draft_jobs.mark_running(db, job.id)
     draft_jobs.begin_commit(db, job.id)
@@ -61,6 +67,7 @@ def _create_via_job_path(db, project_id, document_id, suggestions):
         effective_provider="p",
         effective_model="m",
         fallback_reason=None,
+        projects=authoring_projects(db),
     )
 
 

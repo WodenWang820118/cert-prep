@@ -27,6 +27,7 @@ from cert_prep_backend.source_library.infrastructure.progress import (
     record_extraction_progress,
 )
 from cert_prep_backend.platform.database import Database
+from cert_prep_backend.bootstrap.authoring_links import authoring_documents
 
 
 def test_concurrent_global_operation_claim_has_exactly_one_owner(tmp_path: Path) -> None:
@@ -284,6 +285,7 @@ def test_cancel_first_rolls_back_late_publication_and_preserves_draft_history(
         document_id="document",
         provider="ollama",
         model="obsolete-model",
+        documents=authoring_documents(db),
     ) == []
     assert draft_jobs.recover_runnable_jobs(db) == []
     assert draft_jobs.get_job(db, "terminal-job") == public_terminal_before

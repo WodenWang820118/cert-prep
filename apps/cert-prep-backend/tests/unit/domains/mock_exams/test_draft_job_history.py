@@ -8,6 +8,10 @@ import pytest
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.authoring.infrastructure import draft_jobs
 from cert_prep_backend.platform.database import Database
+from cert_prep_backend.bootstrap.study_projects import authoring_projects
+from cert_prep_backend.bootstrap.authoring_links import authoring_documents
+from cert_prep_backend.authoring.infrastructure.sources import SourceLibraryDraftSources
+from cert_prep_backend.bootstrap.source_library_links import document_repository
 
 
 def test_detached_terminal_job_keeps_public_attribution_and_is_not_retried(
@@ -24,6 +28,8 @@ def test_detached_terminal_job_keeps_public_attribution_and_is_not_retried(
         strategy="hybrid_reasoning",
         provider="future-provider",
         model="qwen3.5:4b",
+        projects=authoring_projects(db),
+        sources=SourceLibraryDraftSources(document_repository(db)),
     )
     terminal_before = draft_jobs.mark_failed(db, job.id, detail="generation failed")
 
@@ -44,6 +50,7 @@ def test_detached_terminal_job_keeps_public_attribution_and_is_not_retried(
         document_id="document",
         provider="ollama",
         model="obsolete-model",
+        documents=authoring_documents(db),
     ) == []
     assert draft_jobs.get_job(db, job.id) == terminal_before
 
@@ -64,6 +71,8 @@ def test_recovery_terminalizes_detached_nonterminal_jobs(
         strategy="deterministic_only",
         provider="future-provider",
         model="qwen3.5:4b",
+        projects=authoring_projects(db),
+        sources=SourceLibraryDraftSources(document_repository(db)),
     )
     with db.connect() as connection:
         connection.execute(
@@ -130,6 +139,8 @@ def test_draft_job_attribution_constraints_reject_cross_document_drift(
         strategy="deterministic_only",
         provider="future-provider",
         model="qwen3.5:4b",
+        projects=authoring_projects(db),
+        sources=SourceLibraryDraftSources(document_repository(db)),
     )
     with db.connect() as connection:
         with pytest.raises(sqlite3.IntegrityError):

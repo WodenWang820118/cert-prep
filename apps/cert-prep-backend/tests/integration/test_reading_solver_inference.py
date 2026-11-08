@@ -12,6 +12,7 @@ from cert_prep_backend.authoring.infrastructure import repository as drafts_repo
 from cert_prep_backend.authoring.infrastructure.streaming import _generation_attribution
 from cert_prep_backend.authoring.infrastructure.sudachi_reading_lexicon import SudachiReadingLexicon
 from cert_prep_backend.platform.config import Settings
+from cert_prep_backend.bootstrap.study_projects import authoring_projects
 
 
 READING_INSTRUCTION = "問題1 漢字の読み方を四つの候補から選びなさい。"
@@ -102,7 +103,7 @@ def test_inference_paths_and_saved_attribution(tmp_path, path, enabled, text, ca
                     strategy=DraftGenerationStrategy.HYBRID_REASONING,
                 )
             assert attribution.status == "succeeded", attribution
-            suggestions = drafts_repository.list_drafts(database, project_id)
+            suggestions = drafts_repository.list_drafts(database, project_id, projects=authoring_projects(database))
         assert len(suggestions) == 1
         suggestion = suggestions[0]
         assert suggestion.answer_key_source == "ai_inferred"

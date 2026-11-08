@@ -136,6 +136,7 @@ stateDiagram-v2
 | 取消作業           | `cancel_operation`          | 取消一個作業；還沒開始的作業 id 先記為已取消，之後不能再用                               |
 | 取消處理           | `cancel_processing`         | 取消正在處理一份教材的作業                                                               |
 | 列出段落           | `list_chunks`               | 教材的段落，依頁碼或時間排列                                                             |
+| 查看段落           | `view_chunk`                | 給題目編寫：草稿引用的一個段落；教材沒有這個段落時回「Document chunk not found.」        |
 | 修正段落           | `edit_chunk`                | 修正一段轉錄文字；它的翻譯變成過期                                                       |
 | 翻譯段落           | `translate_chunk`           | 把一段轉錄翻譯成繁體中文                                                                 |
 | 翻譯過期段落       | `translate_stale_chunks`    | 翻譯所有修正後還沒重新翻譯的段落                                                         |
@@ -183,15 +184,15 @@ sequenceDiagram
 ## 與其他上下文的關係
 
 - 學習專案：教材與作業屬於一個專案；專案不存在時是 404。`projects` 屬學習專案。repository 在呼叫儲存函式之前經教材來源的 port `StudyProjects` 呼叫學習專案的 `project_exists`（`bootstrap/source_library_links.py` 接線），用自己的連線，在作業的交易之前，和以前查 `projects` 資料表時一樣。
-- 擷取整合：不經檢閱的匯入經 port `SourceExtraction` 交給擷取整合的 `CaptureSourceExtraction`；擷取檢閱的上傳用 `receive_upload`。擷取結果寫成段落（`publish_capture_document`）與檢閱流程仍直接呼叫 `source_library.infrastructure` 的作業與段落函式（已知例外，C5 改經 `source_library.application`：https://github.com/gx-capture/capture-workbench/issues/200）。
+- 擷取整合：不經檢閱的匯入經 port `SourceExtraction` 交給擷取整合的 `CaptureSourceExtraction`；擷取檢閱的上傳用 `receive_upload`。擷取結果寫成段落與檢閱流程經擷取整合的 port（`CapturePublication`、`BindCaptureReviewCommit`、`CaptureOperations`），由 `bootstrap/capture_links.py` 組裝，不直接呼叫 `source_library.infrastructure`。
 - 題目編寫：匯入或重試出段落後，經 port `ImportedDocumentDrafting` 開始起草；教材來源不依賴題目編寫。
 - 題目編寫：作業失敗、取消或重試時，教材還沒結束的草稿產生工作（`pending`、`running`、`cancel_requested`）要刪掉，已結束的留作紀錄。`draft_generation_jobs` 屬題目編寫，所以教材來源經自己的 port `DocumentDraftJobs` 呼叫 `discard_unfinished_generation_jobs`。`SqliteDocumentOperationRepository` 把作業交易（`BEGIN IMMEDIATE`）的連線交給題目編寫的 repository，工作和作業、教材、段落在同一個交易裡寫入或一起復原。擷取整合的檢閱復原與確認失敗也經 `DocumentOperationRepository` 停止作業，所以同樣刪掉這些工作。
 - 題目編寫：寫入產生的草稿時，題目編寫經它的 port `DocumentExamState` 呼叫 `record_draft_count` 或 `record_import_draft_count`；實作把題目編寫寫入交易的連線交給 `SqliteDocumentRepository`，教材的狀態與題目數和草稿一起寫入。
-- 題目編寫：其他讀段落、讀內容類型與更新題目數的地方，題目編寫的 infrastructure 仍直接呼叫教材來源的 infrastructure（已知例外，C5 第三部分改經 application：https://github.com/gx-capture/capture-workbench/issues/200）。
+- 題目編寫：讀段落與更新題目數經題目編寫的 port `DraftSources` 與教材來源用例 `list_chunks`、`view_chunk`、`record_draft_count`、`record_import_draft_count`，教材存在檢查經 `ProjectDocuments`，不直接呼叫 `source_library.infrastructure`。
 - 練習與複習：整份教材模式經 `view_document` 確認教材屬於這個專案。這次讀取用自己的連線，在練習的寫入交易之前。
 - AI 供應：翻譯用 Ollama 模型（`OllamaTraditionalChineseTranslator`，在教材來源的 `infrastructure/audio.py`；移到 AI 供應見 [#262](https://github.com/gx-capture/capture-workbench/issues/262)）。
 
-其他上下文只能經 `source_library.application` 與 `source_library.domain` 使用教材來源（import-linter「Other contexts reach Source Library only through its application and domain」）；現有的直接引用列為已知例外，之後的 PR 只能減少。
+其他上下文只能經 `source_library.application` 與 `source_library.domain` 使用教材來源（import-linter「Other contexts reach Source Library only through its application and domain」），該契約的所有已知例外已在 C5 第三部分完全消除。
 
 ## 規則與資料來源
 

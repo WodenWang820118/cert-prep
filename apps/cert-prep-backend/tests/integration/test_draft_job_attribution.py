@@ -10,6 +10,10 @@ from cert_prep_backend.authoring.infrastructure import manual_operations
 from cert_prep_backend.authoring.infrastructure import repository as drafts_repository
 from cert_prep_backend.authoring.domain.models import DraftSuggestion, UnavailableDraftBlock
 from cert_prep_backend.bootstrap.authoring_links import bind_document_exam_state
+from cert_prep_backend.bootstrap.study_projects import authoring_projects
+from cert_prep_backend.bootstrap.authoring_links import authoring_documents
+from cert_prep_backend.authoring.infrastructure.sources import SourceLibraryDraftSources
+from cert_prep_backend.bootstrap.source_library_links import document_repository
 
 
 def test_draft_insert_and_success_attribution_commit_together(client, auth_headers) -> None:
@@ -23,6 +27,8 @@ def test_draft_insert_and_success_attribution_commit_together(client, auth_heade
         strategy="hybrid_reasoning",
         provider="future-provider",
         model="qwen3.5:4b",
+        projects=authoring_projects(client.app.state.database),
+        sources=SourceLibraryDraftSources(document_repository(client.app.state.database)),
     )
     draft_jobs.mark_running(client.app.state.database, job.id)
     draft_jobs.begin_commit(client.app.state.database, job.id)
@@ -37,6 +43,7 @@ def test_draft_insert_and_success_attribution_commit_together(client, auth_heade
         effective_provider="future-provider",
         effective_model="future-model-fallback",
         fallback_reason="primary model required more memory",
+        projects=authoring_projects(client.app.state.database),
     )
 
     completed = draft_jobs.get_job(client.app.state.database, job.id)
@@ -46,7 +53,7 @@ def test_draft_insert_and_success_attribution_commit_together(client, auth_heade
     assert completed.fallback_reason == "primary model required more memory"
     assert completed.phase == "completed"
     assert completed.cancellable is False
-    assert len(drafts_repository.list_drafts(client.app.state.database, project_id)) == 1
+    assert len(drafts_repository.list_drafts(client.app.state.database, project_id, projects=authoring_projects(client.app.state.database))) == 1
 
 
 def test_draft_insert_rolls_back_when_success_attribution_cannot_commit(
@@ -63,6 +70,8 @@ def test_draft_insert_rolls_back_when_success_attribution_cannot_commit(
         strategy="hybrid_reasoning",
         provider="future-provider",
         model="qwen3.5:4b",
+        projects=authoring_projects(client.app.state.database),
+        sources=SourceLibraryDraftSources(document_repository(client.app.state.database)),
     )
     draft_jobs.mark_running(client.app.state.database, job.id)
     draft_jobs.begin_commit(client.app.state.database, job.id)
@@ -89,9 +98,10 @@ def test_draft_insert_rolls_back_when_success_attribution_cannot_commit(
             effective_provider="future-provider",
             effective_model="qwen3.5:4b",
             fallback_reason=None,
+            projects=authoring_projects(client.app.state.database),
         )
 
-    assert drafts_repository.list_drafts(client.app.state.database, project_id) == []
+    assert drafts_repository.list_drafts(client.app.state.database, project_id, projects=authoring_projects(client.app.state.database)) == []
     persisted = draft_jobs.get_job(client.app.state.database, job.id)
     assert persisted.status == "running"
     assert persisted.phase == "committing"
@@ -110,6 +120,8 @@ def test_manual_operation_persists_unavailable_parsed_blocks_without_playable_ro
         strategy="hybrid_reasoning",
         provider="capture-runtime-question-completion",
         model="qwen3.5:4b",
+        projects=authoring_projects(client.app.state.database),
+        documents=authoring_documents(client.app.state.database),
     )
     manual_operations.mark_running(client.app.state.database, operation.id)
     manual_operations.begin_commit(client.app.state.database, operation.id)
@@ -134,6 +146,7 @@ def test_manual_operation_persists_unavailable_parsed_blocks_without_playable_ro
                 reason="Capture Runtime question completion returned no playable answer.",
             )
         ],
+        projects=authoring_projects(client.app.state.database),
     )
 
     completed = manual_operations.get_operation(
@@ -155,7 +168,7 @@ def test_manual_operation_persists_unavailable_parsed_blocks_without_playable_ro
             "reason": "Capture Runtime question completion returned no playable answer.",
         }
     ]
-    assert drafts_repository.list_drafts(client.app.state.database, project_id) == []
+    assert drafts_repository.list_drafts(client.app.state.database, project_id, projects=authoring_projects(client.app.state.database)) == []
 
 
 def _source_chunk(client, auth_headers) -> tuple[str, str, dict]:
