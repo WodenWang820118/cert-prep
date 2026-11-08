@@ -1,11 +1,11 @@
 import { Injectable } from '@angular/core';
 import { defer, map, Observable } from 'rxjs';
-import type { ImageCropRect } from './contracts/source-image-crop.contracts';
+import type { ImageCropRect } from '../../domain';
 import {
   CROPPABLE_EXTENSIONS,
   CROPPABLE_MIME_TYPES,
   MIME_EXTENSION,
-} from './constants/source-image-crop.constants';
+} from '../../domain';
 
 @Injectable({ providedIn: 'root' })
 export class SourceImageCropService {

@@ -11,7 +11,7 @@ import type {
 } from '../../core/domain';
 import { ProjectStore } from '../../projects/data';
 import { OperationStore } from '../../core/data';
-import { SourceImportStore } from '../../stores/source-import/source-import.store';
+import { SourceImportStore } from '../../source-library/data';
 import { WrongAnswerReviewStore } from '../../stores/wrong-answer-review.store';
 import { WrongAnswerDashboardComponent } from './wrong-answer-dashboard.component';
 

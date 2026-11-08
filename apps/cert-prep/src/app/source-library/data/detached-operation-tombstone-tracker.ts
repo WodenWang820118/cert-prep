@@ -2,10 +2,7 @@ import { inject, Injectable } from '@angular/core';
 import type { DocumentOperationRead } from '../../core/domain';
 import type { DocumentOperationEvent } from '../../core/domain';
 import { catchError, defer, of, switchMap, takeWhile, tap } from 'rxjs';
-import {
-  DetachedOperationTombstoneHooks,
-  DetachedTombstone,
-} from './contracts/source-import.contracts';
+import { DetachedOperationTombstoneHooks, DetachedTombstone } from '../domain';
 import { DocumentOperationSnapshotService } from './document-operation-snapshot.service';
 
 @Injectable({ providedIn: 'root' })

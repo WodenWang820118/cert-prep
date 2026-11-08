@@ -12,7 +12,7 @@ import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { OperationStore } from '../../core/data';
 import { ReviewRetryNavigationService } from '../../stores/practice/review-retry-navigation.service';
 import { ProjectStore } from '../../projects/data';
-import { SourceImportStore } from '../../stores/source-import/source-import.store';
+import { SourceImportStore } from '../../source-library/data';
 import { WrongAnswerReviewStore } from '../../stores/wrong-answer-review.store';
 import { AiInferredAnswerBadgeComponent } from '../../core/ui';
 import { AppIconComponent } from '../../core/ui';

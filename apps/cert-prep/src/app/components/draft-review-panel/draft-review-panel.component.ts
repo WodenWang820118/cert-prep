@@ -8,7 +8,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { OperationStore } from '../../core/data';
-import { SourceImportStore } from '../../stores/source-import/source-import.store';
+import { SourceImportStore } from '../../source-library/data';
 import { DraftGenerationStatusComponent } from './draft-generation-status.component';
 import { DraftQuestionEditorCardComponent } from './draft-question-editor-card.component';
 import type {

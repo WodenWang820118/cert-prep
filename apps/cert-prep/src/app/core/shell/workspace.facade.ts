@@ -6,7 +6,7 @@ import { HealthStore } from '../../stores/health/health.store';
 import { OperationStore } from '../data';
 import { PracticeStore } from '../../stores/practice/practice.store';
 import { ProjectStore } from '../../projects/data';
-import { SourceImportStore } from '../../stores/source-import/source-import.store';
+import { SourceImportStore } from '../../source-library/data';
 import { WrongAnswerReviewStore } from '../../stores/wrong-answer-review.store';
 
 @Injectable({ providedIn: 'root' })

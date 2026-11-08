@@ -20,7 +20,7 @@ import { DraftStreamingJobsStore } from './draft-streaming-jobs.store';
 import { HealthStore } from '../health/health.store';
 import { OperationStore } from '../../core/data';
 import { ProjectStore } from '../../projects/data';
-import { SourceImportStore } from '../source-import/source-import.store';
+import { SourceImportStore } from '../../source-library/data';
 
 @Injectable({ providedIn: 'root' })
 export class DraftReviewStore {

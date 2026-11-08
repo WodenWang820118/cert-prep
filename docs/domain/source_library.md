@@ -200,3 +200,20 @@ sequenceDiagram
 - 原始檔：`<data_dir>/uploads/<project_id>/<sha256><副檔名>`（`infrastructure/storage.py`）。
 - HTTP：`/projects/{project_id}/documents`、`/projects/{project_id}/document-operations`（`api/router.py`；DTO 在 `source_library/api/schemas.py` 與 `cert_prep_contracts.documents`）。作業的即時狀態經 `api/operation_events.py` 的 server-sent events（`…/document-operations/{operation_id}/events`、`…/documents/{document_id}/document-operation/events`）；串流由 `platform/sse.py` 提供，快照來自 `view_operation_progress`，作業結束時串流結束。
 - API 的 `SourceDocumentStatus`、`PdfExtractionMethod`、`ContentProfile`、`QuestionItemKind`、`DocumentOperationStatus`、`DocumentOperationPhase` 列舉值對應到概念集的 `source-library.*`。
+
+## 前端
+
+程式：`apps/cert-prep/src/app/source-library`（C7 第二部分）。規則在 `sheriff.config.ts`：每一層是一個 Sheriff 模組，標上 `context:source-library` 與 `type:<層>`，別的模組只能經它的 `index.ts` 引用。
+
+| 層        | 公開（`index.ts`）                                                                                                                                          | 內容                                                                                                                                                                                                                                                                             |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `domain`  | 全部（`export *`）                                                                                                                                          | 上傳佇列與匯入作業的型別（`SourceUploadItem`、`LanguageHint`、上傳生命週期的 hook）、可上傳的檔案類型與段落預覽的常數、匯入面板的動作與 view model（`SourceImportAction`）、裁切圖片的型別與常數                                                                                 |
+| `data`    | `SourceImportStore`、`SourceAudioPreviewService`                                                                                                            | 教材清單與目前的教材、段落預覽、上傳佇列（`SourceUploadLifecycle`、持續向後端取消使用者已取消的上傳、直到作業結束的 `DetachedOperationTombstoneTracker`）、作業事件串流、轉錄段落的修正與翻譯；都是 `providedIn: 'root'`。`SourceAudioPreviewService` 讀錄音，由匯入面板自己提供 |
+| `ui`      | `SourceUploadQueueComponent`、`SourceDocumentStatusComponent`、`SourceEvidencePreviewComponent`、`SourceImageCropDialogComponent`、`SourceImageCropService` | 只收 view model、送出 `SourceImportAction` 的元件：上傳佇列、教材狀態、段落與錄音預覽、上傳前裁切圖片的對話框；`SourceImageCropService` 做裁切的計算與畫布轉換                                                                                                                   |
+| `feature` | `SourceImportPanelComponent`                                                                                                                                | 匯入面板（`app-source-import-panel`）：注入 store、組出 view model、處理 `ui` 的動作                                                                                                                                                                                             |
+
+教材來源只引用自己、學習專案（`projects/data` 的 `ProjectStore`）與 `core`（`core/data` 的 `CERT_PREP_API`、`CertPrepHttpResourceClient`、`CertPrepSseClient`、`OperationStore`，`core/domain` 的型別，`core/ui` 的圖示與按鈕）。
+
+教材來源是題目編寫的上游，不知道草稿：匯入面板在上傳、選教材，以及教材變成目前的教材時送出 `sourceDocumentActivity`（目前專案的 id），組合兩個面板的 `BuildWorkbenchPage`（`pages/build-workbench`）接住後呼叫題目編寫的 `DraftReviewStore.load`，所以上傳之後才完成的教材不會被當成專案沒有草稿。
+
+下游經 `source-library/data` 讀 `SourceImportStore`：題目編寫（`DraftReviewStore`、`DraftStreamingJobsStore`、草稿面板）、練習（`PracticeStore`、練習面板、錯題）、擷取整合（`capture-workbench-trial` 頁）與殼層（`WorkspaceFacade` 切換專案時重設並載入最新的教材）。

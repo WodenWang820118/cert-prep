@@ -10,8 +10,8 @@ import { FormsModule } from '@angular/forms';
 import type {
   SourceImportAction,
   SourceUploadQueueViewModel,
-} from './source-import-panel.contracts';
-import { AppIconComponent } from '../../core/ui';
+} from '../../domain';
+import { AppIconComponent } from '../../../core/ui';
 import { HlmBadge } from '@spartan-ng/helm/badge';
 import { HlmSwitch } from '@spartan-ng/helm/switch';
 

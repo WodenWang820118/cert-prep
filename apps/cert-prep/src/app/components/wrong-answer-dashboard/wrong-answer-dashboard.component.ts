@@ -4,7 +4,7 @@ import { ReviewDisplayService } from '../../services/review-display.service';
 import { OperationStore } from '../../core/data';
 import { ReviewRetryNavigationService } from '../../stores/practice/review-retry-navigation.service';
 import { ProjectStore } from '../../projects/data';
-import { SourceImportStore } from '../../stores/source-import/source-import.store';
+import { SourceImportStore } from '../../source-library/data';
 import { WrongAnswerReviewStore } from '../../stores/wrong-answer-review.store';
 import type {
   AnswerPatternView,

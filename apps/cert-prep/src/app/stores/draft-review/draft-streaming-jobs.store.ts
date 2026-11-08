@@ -8,7 +8,7 @@ import { CertPrepSseClient } from '../../core/data';
 import type { DraftJobSummary } from './contracts/draft-review.contracts';
 import { OperationStore } from '../../core/data';
 import { ProjectStore } from '../../projects/data';
-import { SourceImportStore } from '../source-import/source-import.store';
+import { SourceImportStore } from '../../source-library/data';
 
 @Injectable({ providedIn: 'root' })
 export class DraftStreamingJobsStore {

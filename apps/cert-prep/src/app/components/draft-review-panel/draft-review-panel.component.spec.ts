@@ -11,7 +11,7 @@ import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { manualDraftOperation } from '../../stores/draft-review/draft-review.store.spec-helpers';
 import { OperationStore } from '../../core/data';
 import { ProjectStore } from '../../projects/data';
-import { SourceImportStore } from '../../stores/source-import/source-import.store';
+import { SourceImportStore } from '../../source-library/data';
 import { DraftReviewPanelComponent } from './draft-review-panel.component';
 
 describe('DraftReviewPanelComponent', () => {

@@ -1,21 +1,18 @@
 import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { of, Subject } from 'rxjs';
-import { CERT_PREP_API } from '../../core/data';
-import type { DocumentRead, ProjectRead } from '../../core/domain';
-import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
-import { OperationStore } from '../../core/data';
-import { ProjectStore } from '../../projects/data';
-import type { SourceUploadItem } from '../../stores/source-import/contracts/source-import.contracts';
-import { SourceImportStore } from '../../stores/source-import/source-import.store';
-import { appDocument, appProject, secondAppProject } from '../../testing/app.spec-helpers';
-import type { SourceImportAction } from './source-import-panel.contracts';
+import { CERT_PREP_API, OperationStore } from '../../../core/data';
+import type { DocumentRead, ProjectRead } from '../../../core/domain';
+import { ProjectStore } from '../../../projects/data';
+import { appDocument, appProject, secondAppProject } from '../../../testing/app.spec-helpers';
+import { SourceImportStore } from '../../data';
+import type { SourceImportAction, SourceUploadItem } from '../../domain';
 import { SourceImportPanelComponent } from './source-import-panel.component';
 
 describe('SourceImportPanelComponent', () => {
   let projects: ReturnType<typeof createProjectsFake>;
   let sourceImport: ReturnType<typeof createSourceImportFake>;
-  let drafts: { load: ReturnType<typeof vi.fn> };
+  let sourceDocumentActivity: ReturnType<typeof vi.fn<(projectId: string) => void>>;
   let operations: ReturnType<typeof createOperationsFake>;
   let api: { getDocumentAudioSource: ReturnType<typeof vi.fn> };
 
@@ -25,7 +22,7 @@ describe('SourceImportPanelComponent', () => {
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
     projects = createProjectsFake(appProject);
     sourceImport = createSourceImportFake();
-    drafts = { load: vi.fn() };
+    sourceDocumentActivity = vi.fn<(projectId: string) => void>();
     operations = createOperationsFake();
     api = {
       getDocumentAudioSource: vi.fn(() => of(new Blob(['audio'], { type: 'audio/mpeg' }))),
@@ -34,7 +31,6 @@ describe('SourceImportPanelComponent', () => {
       imports: [SourceImportPanelComponent],
       providers: [
         { provide: CERT_PREP_API, useValue: api },
-        { provide: DraftReviewStore, useValue: drafts },
         { provide: OperationStore, useValue: operations },
         { provide: ProjectStore, useValue: projects },
         { provide: SourceImportStore, useValue: sourceImport },
@@ -61,6 +57,7 @@ describe('SourceImportPanelComponent', () => {
 
   it('keeps upload and document selection orchestration at the coordinator', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    fixture.componentInstance.sourceDocumentActivity.subscribe(sourceDocumentActivity);
     fixture.detectChanges();
     const component = fixture.componentInstance as unknown as {
       handleAction(action: SourceImportAction): void;
@@ -71,18 +68,19 @@ describe('SourceImportPanelComponent', () => {
 
     expect(sourceImport.uploadDocuments).toHaveBeenCalledTimes(1);
     expect(sourceImport.selectDocument).toHaveBeenCalledWith('document-1');
-    expect(drafts.load).toHaveBeenNthCalledWith(1, appProject.id);
-    expect(drafts.load).toHaveBeenNthCalledWith(2, appProject.id);
+    expect(sourceDocumentActivity).toHaveBeenNthCalledWith(1, appProject.id);
+    expect(sourceDocumentActivity).toHaveBeenNthCalledWith(2, appProject.id);
   });
 
-  it('reloads drafts when an uploaded document becomes active', () => {
+  it('reports source document activity when an uploaded document becomes active', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    fixture.componentInstance.sourceDocumentActivity.subscribe(sourceDocumentActivity);
     fixture.detectChanges();
 
     sourceImport.activeDocumentId.set('document-1');
     fixture.detectChanges();
 
-    expect(drafts.load).toHaveBeenCalledWith(appProject.id);
+    expect(sourceDocumentActivity).toHaveBeenCalledWith(appProject.id);
   });
 
   it('preserves append upload intent through a sequential crop queue', () => {

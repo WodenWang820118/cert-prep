@@ -8,7 +8,7 @@ import type { DocumentOperationEvent } from '../../core/domain';
 import type {
   SourceUploadItem,
   SourceUploadLifecycleHooks,
-} from './contracts/source-import.contracts';
+} from '../domain';
 import { SourceUploadLifecycle } from './source-upload-lifecycle';
 
 describe('SourceUploadLifecycle', () => {

@@ -1,9 +1,6 @@
 import { computed, Injectable, signal } from '@angular/core';
 import type { ChunkRead, DocumentRead } from '../../core/domain';
-import {
-  CHUNK_PREVIEW_STEP,
-  INITIAL_CHUNK_PREVIEW_LIMIT,
-} from './constants/source-import.constants';
+import { CHUNK_PREVIEW_STEP, INITIAL_CHUNK_PREVIEW_LIMIT } from '../domain';
 
 @Injectable({ providedIn: 'root' })
 export class DocumentLibraryStore {

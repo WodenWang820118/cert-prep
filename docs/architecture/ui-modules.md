@@ -8,7 +8,6 @@ flowchart LR
   n_apps_cert_prep_src_app_components_draft_review_panel["apps/cert-prep/src/app/components/draft-review-panel<br/>layer:component"]
   n_apps_cert_prep_src_app_components_model_health["apps/cert-prep/src/app/components/model-health<br/>layer:component"]
   n_apps_cert_prep_src_app_components_practice_panel["apps/cert-prep/src/app/components/practice-panel<br/>layer:component"]
-  n_apps_cert_prep_src_app_components_source_import_panel["apps/cert-prep/src/app/components/source-import-panel<br/>layer:component"]
   n_apps_cert_prep_src_app_components_wrong_answer_dashboard["apps/cert-prep/src/app/components/wrong-answer-dashboard<br/>layer:component"]
   n_apps_cert_prep_src_app_components_wrong_answer_review["apps/cert-prep/src/app/components/wrong-answer-review<br/>layer:component"]
   n_apps_cert_prep_src_app_contracts["apps/cert-prep/src/app/contracts<br/>layer:contract"]
@@ -26,13 +25,16 @@ flowchart LR
   n_apps_cert_prep_src_app_projects_data["apps/cert-prep/src/app/projects/data<br/>context:projects, type:data"]
   n_apps_cert_prep_src_app_projects_feature["apps/cert-prep/src/app/projects/feature<br/>context:projects, type:feature"]
   n_apps_cert_prep_src_app_services["apps/cert-prep/src/app/services<br/>layer:service"]
+  n_apps_cert_prep_src_app_source_library_data["apps/cert-prep/src/app/source-library/data<br/>context:source-library, type:data"]
+  n_apps_cert_prep_src_app_source_library_domain["apps/cert-prep/src/app/source-library/domain<br/>context:source-library, type:domain"]
+  n_apps_cert_prep_src_app_source_library_feature["apps/cert-prep/src/app/source-library/feature<br/>context:source-library, type:feature"]
+  n_apps_cert_prep_src_app_source_library_ui["apps/cert-prep/src/app/source-library/ui<br/>context:source-library, type:ui"]
   n_apps_cert_prep_src_app_stores["apps/cert-prep/src/app/stores<br/>layer:store"]
   n_apps_cert_prep_src_app_stores_capture_runtime["apps/cert-prep/src/app/stores/capture-runtime<br/>layer:store"]
   n_apps_cert_prep_src_app_stores_desktop_runtime["apps/cert-prep/src/app/stores/desktop-runtime<br/>layer:store"]
   n_apps_cert_prep_src_app_stores_draft_review["apps/cert-prep/src/app/stores/draft-review<br/>layer:store"]
   n_apps_cert_prep_src_app_stores_health["apps/cert-prep/src/app/stores/health<br/>layer:store"]
   n_apps_cert_prep_src_app_stores_practice["apps/cert-prep/src/app/stores/practice<br/>layer:store"]
-  n_apps_cert_prep_src_app_stores_source_import["apps/cert-prep/src/app/stores/source-import<br/>layer:store"]
   n_apps_cert_prep_src_app_stores_wrong_answer_review["apps/cert-prep/src/app/stores/wrong-answer-review<br/>layer:store"]
   n_libs_cert_prep_api_src["libs/cert-prep-api/src<br/>layer:api-client"]
   n_libs_ui_badge_src["libs/ui/badge/src<br/>layer:shared-ui"]
@@ -47,8 +49,8 @@ flowchart LR
   n_apps_cert_prep_src_app_components_draft_review_panel --> n_apps_cert_prep_src_app_core_data
   n_apps_cert_prep_src_app_components_draft_review_panel --> n_apps_cert_prep_src_app_core_ui
   n_apps_cert_prep_src_app_components_draft_review_panel --> n_apps_cert_prep_src_app_services
+  n_apps_cert_prep_src_app_components_draft_review_panel --> n_apps_cert_prep_src_app_source_library_data
   n_apps_cert_prep_src_app_components_draft_review_panel --> n_apps_cert_prep_src_app_stores_draft_review
-  n_apps_cert_prep_src_app_components_draft_review_panel --> n_apps_cert_prep_src_app_stores_source_import
   n_apps_cert_prep_src_app_components_draft_review_panel --> n_libs_ui_input_src
   n_apps_cert_prep_src_app_components_model_health --> n_apps_cert_prep_src_app_core_domain
   n_apps_cert_prep_src_app_components_model_health --> n_apps_cert_prep_src_app_core_ui
@@ -61,35 +63,26 @@ flowchart LR
   n_apps_cert_prep_src_app_components_practice_panel --> n_apps_cert_prep_src_app_core_ui
   n_apps_cert_prep_src_app_components_practice_panel --> n_apps_cert_prep_src_app_projects_data
   n_apps_cert_prep_src_app_components_practice_panel --> n_apps_cert_prep_src_app_services
+  n_apps_cert_prep_src_app_components_practice_panel --> n_apps_cert_prep_src_app_source_library_data
   n_apps_cert_prep_src_app_components_practice_panel --> n_apps_cert_prep_src_app_stores_draft_review
   n_apps_cert_prep_src_app_components_practice_panel --> n_apps_cert_prep_src_app_stores_practice
-  n_apps_cert_prep_src_app_components_practice_panel --> n_apps_cert_prep_src_app_stores_source_import
-  n_apps_cert_prep_src_app_components_source_import_panel --> n_apps_cert_prep_src_app_core_data
-  n_apps_cert_prep_src_app_components_source_import_panel --> n_apps_cert_prep_src_app_core_domain
-  n_apps_cert_prep_src_app_components_source_import_panel --> n_apps_cert_prep_src_app_core_ui
-  n_apps_cert_prep_src_app_components_source_import_panel --> n_apps_cert_prep_src_app_projects_data
-  n_apps_cert_prep_src_app_components_source_import_panel --> n_apps_cert_prep_src_app_stores_draft_review
-  n_apps_cert_prep_src_app_components_source_import_panel --> n_apps_cert_prep_src_app_stores_source_import
-  n_apps_cert_prep_src_app_components_source_import_panel --> n_libs_ui_badge_src
-  n_apps_cert_prep_src_app_components_source_import_panel --> n_libs_ui_dialog_src
-  n_apps_cert_prep_src_app_components_source_import_panel --> n_libs_ui_switch_src
   n_apps_cert_prep_src_app_components_wrong_answer_dashboard --> n_apps_cert_prep_src_app_core_data
   n_apps_cert_prep_src_app_components_wrong_answer_dashboard --> n_apps_cert_prep_src_app_core_domain
   n_apps_cert_prep_src_app_components_wrong_answer_dashboard --> n_apps_cert_prep_src_app_core_ui
   n_apps_cert_prep_src_app_components_wrong_answer_dashboard --> n_apps_cert_prep_src_app_projects_data
   n_apps_cert_prep_src_app_components_wrong_answer_dashboard --> n_apps_cert_prep_src_app_services
+  n_apps_cert_prep_src_app_components_wrong_answer_dashboard --> n_apps_cert_prep_src_app_source_library_data
   n_apps_cert_prep_src_app_components_wrong_answer_dashboard --> n_apps_cert_prep_src_app_stores
   n_apps_cert_prep_src_app_components_wrong_answer_dashboard --> n_apps_cert_prep_src_app_stores_practice
-  n_apps_cert_prep_src_app_components_wrong_answer_dashboard --> n_apps_cert_prep_src_app_stores_source_import
   n_apps_cert_prep_src_app_components_wrong_answer_review --> n_apps_cert_prep_src_app_core_data
   n_apps_cert_prep_src_app_components_wrong_answer_review --> n_apps_cert_prep_src_app_core_domain
   n_apps_cert_prep_src_app_components_wrong_answer_review --> n_apps_cert_prep_src_app_core_ui
   n_apps_cert_prep_src_app_components_wrong_answer_review --> n_apps_cert_prep_src_app_projects_data
   n_apps_cert_prep_src_app_components_wrong_answer_review --> n_apps_cert_prep_src_app_services
+  n_apps_cert_prep_src_app_components_wrong_answer_review --> n_apps_cert_prep_src_app_source_library_data
   n_apps_cert_prep_src_app_components_wrong_answer_review --> n_apps_cert_prep_src_app_stores
   n_apps_cert_prep_src_app_components_wrong_answer_review --> n_apps_cert_prep_src_app_stores_draft_review
   n_apps_cert_prep_src_app_components_wrong_answer_review --> n_apps_cert_prep_src_app_stores_practice
-  n_apps_cert_prep_src_app_components_wrong_answer_review --> n_apps_cert_prep_src_app_stores_source_import
   n_apps_cert_prep_src_app_contracts --> n_apps_cert_prep_src_app_core_domain
   n_apps_cert_prep_src_app_core_data --> n_apps_cert_prep_src_app_core_domain
   n_apps_cert_prep_src_app_core_data --> n_libs_cert_prep_api_src
@@ -107,22 +100,23 @@ flowchart LR
   n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_pages_wrong_answer_review
   n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_projects_data
   n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_projects_feature
+  n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_source_library_data
   n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_stores
   n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_stores_desktop_runtime
   n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_stores_draft_review
   n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_stores_health
   n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_stores_practice
-  n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_stores_source_import
   n_apps_cert_prep_src_app_core_ui --> n_libs_ui_button_src
   n_apps_cert_prep_src_app_pages_build_workbench --> n_apps_cert_prep_src_app_components_draft_review_panel
-  n_apps_cert_prep_src_app_pages_build_workbench --> n_apps_cert_prep_src_app_components_source_import_panel
   n_apps_cert_prep_src_app_pages_build_workbench --> n_apps_cert_prep_src_app_core_ui
+  n_apps_cert_prep_src_app_pages_build_workbench --> n_apps_cert_prep_src_app_source_library_feature
+  n_apps_cert_prep_src_app_pages_build_workbench --> n_apps_cert_prep_src_app_stores_draft_review
   n_apps_cert_prep_src_app_pages_capture_workbench_trial --> n_apps_cert_prep_src_app_core_data
   n_apps_cert_prep_src_app_pages_capture_workbench_trial --> n_apps_cert_prep_src_app_core_ui
   n_apps_cert_prep_src_app_pages_capture_workbench_trial --> n_apps_cert_prep_src_app_projects_data
+  n_apps_cert_prep_src_app_pages_capture_workbench_trial --> n_apps_cert_prep_src_app_source_library_data
   n_apps_cert_prep_src_app_pages_capture_workbench_trial --> n_apps_cert_prep_src_app_stores_capture_runtime
   n_apps_cert_prep_src_app_pages_capture_workbench_trial --> n_apps_cert_prep_src_app_stores_desktop_runtime
-  n_apps_cert_prep_src_app_pages_capture_workbench_trial --> n_apps_cert_prep_src_app_stores_source_import
   n_apps_cert_prep_src_app_pages_capture_workbench_trial --> n_libs_cert_prep_api_src
   n_apps_cert_prep_src_app_pages_dashboard --> n_apps_cert_prep_src_app_components_wrong_answer_dashboard
   n_apps_cert_prep_src_app_pages_full_exam --> n_apps_cert_prep_src_app_components_practice_panel
@@ -142,6 +136,22 @@ flowchart LR
   n_apps_cert_prep_src_app_projects_feature --> n_libs_ui_input_src
   n_apps_cert_prep_src_app_projects_feature --> n_libs_ui_textarea_src
   n_apps_cert_prep_src_app_services --> n_apps_cert_prep_src_app_contracts
+  n_apps_cert_prep_src_app_source_library_data --> n_apps_cert_prep_src_app_core_data
+  n_apps_cert_prep_src_app_source_library_data --> n_apps_cert_prep_src_app_core_domain
+  n_apps_cert_prep_src_app_source_library_data --> n_apps_cert_prep_src_app_projects_data
+  n_apps_cert_prep_src_app_source_library_data --> n_apps_cert_prep_src_app_source_library_domain
+  n_apps_cert_prep_src_app_source_library_domain --> n_apps_cert_prep_src_app_core_domain
+  n_apps_cert_prep_src_app_source_library_feature --> n_apps_cert_prep_src_app_core_data
+  n_apps_cert_prep_src_app_source_library_feature --> n_apps_cert_prep_src_app_projects_data
+  n_apps_cert_prep_src_app_source_library_feature --> n_apps_cert_prep_src_app_source_library_data
+  n_apps_cert_prep_src_app_source_library_feature --> n_apps_cert_prep_src_app_source_library_domain
+  n_apps_cert_prep_src_app_source_library_feature --> n_apps_cert_prep_src_app_source_library_ui
+  n_apps_cert_prep_src_app_source_library_ui --> n_apps_cert_prep_src_app_core_domain
+  n_apps_cert_prep_src_app_source_library_ui --> n_apps_cert_prep_src_app_core_ui
+  n_apps_cert_prep_src_app_source_library_ui --> n_apps_cert_prep_src_app_source_library_domain
+  n_apps_cert_prep_src_app_source_library_ui --> n_libs_ui_badge_src
+  n_apps_cert_prep_src_app_source_library_ui --> n_libs_ui_dialog_src
+  n_apps_cert_prep_src_app_source_library_ui --> n_libs_ui_switch_src
   n_apps_cert_prep_src_app_stores --> n_apps_cert_prep_src_app_core_data
   n_apps_cert_prep_src_app_stores --> n_apps_cert_prep_src_app_core_domain
   n_apps_cert_prep_src_app_stores --> n_apps_cert_prep_src_app_projects_data
@@ -151,19 +161,16 @@ flowchart LR
   n_apps_cert_prep_src_app_stores_draft_review --> n_apps_cert_prep_src_app_core_data
   n_apps_cert_prep_src_app_stores_draft_review --> n_apps_cert_prep_src_app_core_domain
   n_apps_cert_prep_src_app_stores_draft_review --> n_apps_cert_prep_src_app_projects_data
+  n_apps_cert_prep_src_app_stores_draft_review --> n_apps_cert_prep_src_app_source_library_data
   n_apps_cert_prep_src_app_stores_draft_review --> n_apps_cert_prep_src_app_stores_health
-  n_apps_cert_prep_src_app_stores_draft_review --> n_apps_cert_prep_src_app_stores_source_import
   n_apps_cert_prep_src_app_stores_health --> n_apps_cert_prep_src_app_core_data
   n_apps_cert_prep_src_app_stores_health --> n_apps_cert_prep_src_app_core_domain
   n_apps_cert_prep_src_app_stores_practice --> n_apps_cert_prep_src_app_core_data
   n_apps_cert_prep_src_app_stores_practice --> n_apps_cert_prep_src_app_core_domain
   n_apps_cert_prep_src_app_stores_practice --> n_apps_cert_prep_src_app_projects_data
+  n_apps_cert_prep_src_app_stores_practice --> n_apps_cert_prep_src_app_source_library_data
   n_apps_cert_prep_src_app_stores_practice --> n_apps_cert_prep_src_app_stores
   n_apps_cert_prep_src_app_stores_practice --> n_apps_cert_prep_src_app_stores_draft_review
-  n_apps_cert_prep_src_app_stores_practice --> n_apps_cert_prep_src_app_stores_source_import
-  n_apps_cert_prep_src_app_stores_source_import --> n_apps_cert_prep_src_app_core_data
-  n_apps_cert_prep_src_app_stores_source_import --> n_apps_cert_prep_src_app_core_domain
-  n_apps_cert_prep_src_app_stores_source_import --> n_apps_cert_prep_src_app_projects_data
   n_libs_ui_badge_src --> n_libs_ui_utils_src
   n_libs_ui_button_src --> n_libs_ui_utils_src
   n_libs_ui_dialog_src --> n_libs_ui_button_src

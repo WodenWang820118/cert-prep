@@ -14,7 +14,7 @@
   </div>
 
   <div class="build-workbench-grid">
-    <app-source-import-panel />
+    <app-source-import-panel (sourceDocumentActivity)="drafts.load($event)" />
     <app-draft-review-panel />
   </div>
 </section>
