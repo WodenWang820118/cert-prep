@@ -31,7 +31,7 @@ export const CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS = Object.freeze([
   'apps/cert-prep-desktop/scripts/package-qa/constants.mts',
   'tools/install-capture-runtime.mts',
   'tools/capture-runtime-consumer-smoke.mts',
-  'apps/cert-prep/src/app/pages/capture-workbench-trial/cert-prep-capture-client.ts',
+  'apps/cert-prep/src/app/capture/data/cert-prep-capture-client.ts',
   'libs/cert-prep-api/src/lib/cert-prep-api.generated.ts',
 ] as const);
 

@@ -4,8 +4,8 @@ import type {
   DesktopRuntimeStatus,
   RuntimePhase,
   RuntimeUpdateNotice,
-} from './contracts/desktop-runtime.contracts';
-import { RUNTIME_UPDATE_COPY } from './constants/runtime-update-copy.constants';
+} from '../domain';
+import { RUNTIME_UPDATE_COPY } from '../domain';
 
 /**
  * Maps raw runtime command data into stable UI/runtime state primitives.

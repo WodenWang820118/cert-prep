@@ -1,6 +1,6 @@
 import { inject, Injectable, signal } from '@angular/core';
 import { defer, from, of } from 'rxjs';
-import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
+import { DesktopRuntimeStore } from '../../runtime/data';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { HealthStore } from '../../stores/health/health.store';
 import { OperationStore } from '../data';

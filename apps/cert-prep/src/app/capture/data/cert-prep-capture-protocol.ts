@@ -31,7 +31,7 @@ import type {
   OcrComputePreflight,
   OcrComputeReasonCode,
   UnknownRecord,
-} from './contracts/capture-workbench-trial.contracts';
+} from '../domain';
 
 export function mapReady(response: ApiRuntimeReady): CaptureRuntimeReady {
   if (response.service !== 'capture-runtime') {

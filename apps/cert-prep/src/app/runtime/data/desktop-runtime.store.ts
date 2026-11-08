@@ -4,7 +4,7 @@ import type {
   DesktopRuntimeInstallation,
   DesktopRuntimeStatus,
   RuntimeUpdateNotice,
-} from './contracts/desktop-runtime.contracts';
+} from '../domain';
 import { DesktopRuntimeBridgeService } from './desktop-runtime-bridge.service';
 import { DesktopRuntimeViewService } from './desktop-runtime-view.service';
 import { OperationStore } from '../../core/data';
@@ -12,7 +12,7 @@ import {
   RUNTIME_INSTALL_POLL_INTERVAL_MS,
   RUNTIME_UPDATE_POLL_INTERVAL_MS,
   RUNTIME_UPDATE_SUCCESS_VISIBLE_MS,
-} from './constants/desktop-runtime.constants';
+} from '../domain';
 import { CertPrepRuntimeConfig } from '../../core/data';
 
 @Injectable({ providedIn: 'root' })

@@ -12,8 +12,8 @@ import {
   backendHealth,
   emptyWrongAnswerSummary,
 } from '../../testing/app.spec-helpers';
-import { DesktopRuntimeBridgeService } from '../../stores/desktop-runtime/desktop-runtime-bridge.service';
-import type { DesktopRuntimeStatus } from '../../stores/desktop-runtime/contracts/desktop-runtime.contracts';
+import { DesktopRuntimeBridgeService } from '../../runtime/data/desktop-runtime-bridge.service';
+import type { DesktopRuntimeStatus } from '../../runtime/domain';
 import { OperationStore } from '../data';
 import { ProjectStore } from '../../projects/data';
 import { WorkspaceFacade } from './workspace.facade';

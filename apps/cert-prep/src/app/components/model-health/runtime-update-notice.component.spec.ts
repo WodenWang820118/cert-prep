@@ -1,9 +1,9 @@
 import { TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 import { CertPrepRuntimeConfig } from '../../core/data';
-import type { RuntimeUpdateNotice } from '../../stores/desktop-runtime/contracts/desktop-runtime.contracts';
-import { DesktopRuntimeBridgeService } from '../../stores/desktop-runtime/desktop-runtime-bridge.service';
-import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
+import type { RuntimeUpdateNotice } from '../../runtime/domain';
+import { DesktopRuntimeBridgeService } from '../../runtime/data/desktop-runtime-bridge.service';
+import { DesktopRuntimeStore } from '../../runtime/data';
 import { RuntimeUpdateNoticeComponent } from './runtime-update-notice.component';
 
 describe('RuntimeUpdateNoticeComponent', () => {

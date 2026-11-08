@@ -248,3 +248,14 @@ sequenceDiagram
 - **列舉與概念集對應**：
   - `RuntimeRequirementKind` 對應到 `runtime-provisioning.requirement-kind.*`
   - `RuntimeInstallationStatus`（OpenAPI 元件名稱 `cert_prep_contracts__runtime__RuntimeInstallationStatus`）對應到 `runtime-provisioning.installation-status.*`
+
+## 前端
+
+程式：`apps/cert-prep/src/app/runtime`。前端的 `runtime` 含執行環境與 AI 供應的畫面，是教材來源、擷取整合、題目編寫與練習的上游（[決策 D18](../../.agents/PLANS/ddd-refactor/decisions.md)）。規則在 `sheriff.config.ts`：每一層是一個 Sheriff 模組，標上 `context:runtime` 與 `type:<層>`，別的模組只能經它的 `index.ts` 引用。
+
+| 層       | 公開（`index.ts`）                               | 內容                                                                                                                                                                                         |
+| -------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `domain` | 全部（`export *`）                               | 桌面端執行環境的狀態、安裝與更新通知的型別（`DesktopRuntimeStatus`、`DesktopRuntimeInstallation`、`RuntimeUpdateNotice`）、輪詢間隔與更新通知的文字                                           |
+| `data`   | `DesktopRuntimeStore`、`DesktopRuntimeViewService` | Tauri 宿主回報的後端與 Capture Runtime 狀態、打包 Python 與 Capture Runtime 的安裝與啟動、執行環境更新；`DesktopRuntimeBridgeService` 包住 Tauri 指令，只在這一層使用。都是 `providedIn: 'root'` |
+
+這是桌面端（Tauri）的狀態，不是後端 `/runtime` 的安裝工作。C7 第三部分先搬這一塊，因為擷取整合的頁面（`capture/feature`）要用它，而上下文的模組不能引用還沒搬的技術資料夾。使用者：殼層（`App`、`BackendRuntimeReadyGuard`、`WorkspaceFacade`）、擷取整合的頁面、模型健康的元件與執行環境管理頁。執行環境其餘的前端程式（`stores/health`、`components/model-health`、`pages/runtime-manager`）仍在技術分層，由執行環境的 PR 搬移。

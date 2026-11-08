@@ -26,7 +26,7 @@ import type { StudyNavigationGroup } from './app.contracts';
 import { RuntimeManagerPage } from '../../pages/runtime-manager/runtime-manager.page';
 import { OperationStore } from '../data';
 import { ProjectStore } from '../../projects/data';
-import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
+import { DesktopRuntimeStore } from '../../runtime/data';
 import { WorkspaceFacade } from './workspace.facade';
 import { LAST_PROJECT_STORAGE_KEY } from '../domain';
 import { AppIconComponent } from '../ui';

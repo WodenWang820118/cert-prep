@@ -6,9 +6,7 @@ export const appRoutes: Route[] = [
   {
     path: 'capture-workbench-trial',
     loadComponent: () =>
-      import('../../pages/capture-workbench-trial/capture-workbench-trial.page').then(
-        (m) => m.CaptureWorkbenchTrialPage,
-      ),
+      import('../../capture/feature').then((m) => m.CaptureWorkbenchTrialPage),
     title: 'Capture Workbench - Cert Prep',
   },
   {

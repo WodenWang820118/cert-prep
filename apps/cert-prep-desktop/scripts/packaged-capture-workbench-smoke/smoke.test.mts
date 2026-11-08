@@ -92,7 +92,7 @@ test('requires a supplied exe and fresh isolated output paths', () => {
 test('waits for the current host-managed Capture Workbench ready status', () => {
   const captureTrialPageSource = readFileSync(
     new URL(
-      '../../../../apps/cert-prep/src/app/pages/capture-workbench-trial/capture-workbench-trial.page.ts',
+      '../../../../apps/cert-prep/src/app/capture/feature/capture-workbench-trial/capture-workbench-trial.page.ts',
       import.meta.url,
     ),
     'utf8',

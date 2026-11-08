@@ -4,14 +4,14 @@ import type { DocumentRead } from '@cert-prep/api';
 import { CAPTURE_RUNTIME_VERSION } from '@cert-prep/capture-runtime-version';
 import { of, Subject } from 'rxjs';
 import type { CaptureCompletedEvent } from '@gx-capture/capture-workbench-ui';
-import { ProjectStore } from '../../projects/data';
-import { SourceImportStore } from '../../source-library/data';
-import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
-import { DesktopRuntimeBridgeService } from '../../stores/desktop-runtime/desktop-runtime-bridge.service';
-import { CertPrepRuntimeConfig } from '../../core/data';
-import { CertPrepCaptureClient } from './cert-prep-capture-client';
+import { ProjectStore } from '../../../projects/data';
+import { SourceImportStore } from '../../../source-library/data';
+import { DesktopRuntimeStore } from '../../../runtime/data';
+import { DesktopRuntimeBridgeService } from '../../../runtime/data/desktop-runtime-bridge.service';
+import { CertPrepRuntimeConfig } from '../../../core/data';
+import { CertPrepCaptureClient } from '../../data';
 import { CaptureWorkbenchTrialPage } from './capture-workbench-trial.page';
-import { CaptureRuntimePreflightStore } from '../../stores/capture-runtime/capture-runtime-preflight.store';
+import { CaptureRuntimePreflightStore } from '../../data';
 
 describe('CaptureWorkbenchTrialPage', () => {
   const activeDocument = signal<DocumentRead | null>(null);

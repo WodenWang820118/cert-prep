@@ -1,6 +1,4 @@
 [
-  "eslint|@softarc/sheriff/dependency-rule|apps/cert-prep/src/app/stores/capture-runtime/capture-runtime-preflight.store.ts|eslint-disable",
-  "eslint|@softarc/sheriff/dependency-rule|apps/cert-prep/src/app/stores/capture-runtime/capture-runtime-preflight.store.ts|eslint-disable#2",
   "import-linter|Each context layers api and infrastructure over application over domain|apps/cert-prep-backend/pyproject.toml|cert_prep_backend.capture_integration.api.runtime_router -> cert_prep_backend.capture_integration.infrastructure.host_models",
   "import-linter|Other contexts reach AI Providers only through its application and domain|apps/cert-prep-backend/pyproject.toml|cert_prep_backend.runtime_provisioning.api.router -> cert_prep_backend.ai_providers.api.schemas"
 ]

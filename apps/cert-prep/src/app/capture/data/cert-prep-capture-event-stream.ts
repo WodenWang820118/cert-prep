@@ -20,18 +20,15 @@ import {
   MAX_SSE_PAYLOAD_BYTES,
   MAX_SSE_SEGMENTS,
   STREAMING_EVENT_TYPES,
-} from './constants/capture-workbench-trial.constants';
+} from '../domain';
 import {
   SseFrameParser,
   type RawSseFrame,
   type SseFrameLimits,
 } from '../../core/data';
-import type {
-  CertPrepCaptureEventStreamInit,
-  SseEventFrame,
-} from './contracts/capture-workbench-trial.contracts';
+import type { CertPrepCaptureEventStreamInit, SseEventFrame } from '../domain';
 
-export type { CertPrepCaptureEventStreamInit } from './contracts/capture-workbench-trial.contracts';
+export type { CertPrepCaptureEventStreamInit } from '../domain';
 
 /** Cold authenticated SSE: every subscription fetches; teardown aborts fetch. */
 export function certPrepCaptureEventStream(
