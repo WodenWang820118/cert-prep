@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from sqlite3 import Connection, Row
 from uuid import uuid4
 
 from cert_prep_backend.platform.database import Database, utc_now
+from cert_prep_backend.authoring.application.ports import DocumentExamState
 from cert_prep_backend.authoring.domain.draft import DraftEdit, NewQuestionDraft, QuestionDraft
 from cert_prep_backend.authoring.domain.models import DraftSuggestion, UnavailableDraftBlock
 from cert_prep_backend.authoring.domain.generation import DraftJobCanceledError
 from cert_prep_backend.source_library.infrastructure import repository as documents_repository
 from cert_prep_backend.projects.infrastructure.repository import ensure_project_exists
 from cert_prep_backend.platform.errors import NotFoundError
+
+BindDocumentExamState = Callable[[Connection], DocumentExamState]
+"""Source Library's exam state of documents on the given connection, so it joins the commit."""
 
 
 def create_draft(db: Database, project_id: str, payload: NewQuestionDraft) -> QuestionDraft:
@@ -108,42 +112,27 @@ def append_generated_drafts_and_complete_job(
     effective_provider: str | None,
     effective_model: str | None,
     fallback_reason: str | None,
+    exam_state: BindDocumentExamState,
 ) -> list[QuestionDraft]:
-    """Commit generated drafts and their exact successful job attribution atomically."""
+    """Commit generated drafts, the document's exam state and the job's exact successful
+    attribution atomically. The job ran after the document was imported, so Source Library
+    records the import's draft count."""
 
     ensure_project_exists(db, project_id)
     with db.connect() as connection:
+        # The count and the document's status are read and written under one write lock, as
+        # the single UPDATE that used to do both was.
+        connection.execute("BEGIN IMMEDIATE")
         rows = _append_generated_drafts(
             connection,
             project_id=project_id,
             document_id=document_id,
             suggestions=suggestions,
         )
-        now = utc_now()
-        connection.execute(
-            """
-            UPDATE documents
-            SET status = CASE
-                    WHEN status = 'processing' THEN 'processing'
-                    WHEN has_text = 1 AND EXISTS (
-                        SELECT 1
-                        FROM document_chunks
-                        WHERE document_chunks.project_id = documents.project_id
-                          AND document_chunks.document_id = documents.id
-                    ) THEN 'ready'
-                    ELSE 'exam_failed'
-                END,
-                exam_item_count = (
-                    SELECT COUNT(*)
-                    FROM question_drafts
-                    WHERE question_drafts.project_id = documents.project_id
-                      AND question_drafts.document_id = documents.id
-                ),
-                updated_at = ?
-            WHERE project_id = ? AND id = ?
-            """,
-            (now, project_id, document_id),
+        exam_state(connection).record_import_draft_count(
+            project_id, document_id, _document_draft_count(connection, project_id, document_id)
         )
+        now = utc_now()
         updated_job = connection.execute(
             """
             UPDATE draft_generation_jobs
@@ -199,34 +188,26 @@ def append_generated_drafts_and_complete_manual_operation(
     effective_provider: str | None,
     effective_model: str | None,
     fallback_reason: str | None,
+    exam_state: BindDocumentExamState,
     unavailable_blocks: Sequence[UnavailableDraftBlock] = (),
 ) -> list[QuestionDraft]:
-    """Atomically publish manual drafts and the operation's final attribution."""
+    """Atomically publish manual drafts, the document's exam state and the operation's final
+    attribution."""
 
     ensure_project_exists(db, project_id)
     with db.connect() as connection:
+        # One write lock over the count and the document's status, as for a job commit.
+        connection.execute("BEGIN IMMEDIATE")
         rows = _append_generated_drafts(
             connection,
             project_id=project_id,
             document_id=document_id,
             suggestions=suggestions,
         )
-        now = utc_now()
-        connection.execute(
-            """
-            UPDATE documents
-            SET status = CASE WHEN status = 'processing' THEN 'processing' ELSE 'ready' END,
-                exam_item_count = (
-                    SELECT COUNT(*)
-                    FROM question_drafts
-                    WHERE question_drafts.project_id = documents.project_id
-                      AND question_drafts.document_id = documents.id
-                ),
-                updated_at = ?
-            WHERE project_id = ? AND id = ?
-            """,
-            (now, project_id, document_id),
+        exam_state(connection).record_draft_count(
+            project_id, document_id, _document_draft_count(connection, project_id, document_id)
         )
+        now = utc_now()
         updated = connection.execute(
             """
             UPDATE manual_draft_generation_operations
@@ -273,6 +254,19 @@ def append_generated_drafts_and_complete_manual_operation(
                 "Manual draft generation was not in its atomic commit phase."
             )
     return [_draft_from_row(row) for row in rows]
+
+
+def _document_draft_count(connection: Connection, project_id: str, document_id: str) -> int:
+    """Every draft of the document, whatever its status: the document's exam item count."""
+
+    return connection.execute(
+        """
+        SELECT COUNT(*)
+        FROM question_drafts
+        WHERE project_id = ? AND document_id = ?
+        """,
+        (project_id, document_id),
+    ).fetchone()[0]
 
 
 def _insert_generated_draft(

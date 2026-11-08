@@ -53,11 +53,14 @@ class DraftGenerationJobRepository(Protocol):
 
     def cancel(self, project_id: str, document_id: str, job_id: str) -> DraftGenerationJob: ...
 
+    def discard_unfinished(self, project_id: str, document_id: str) -> None:
+        """Delete the document's pending, running and cancel-requested jobs; ended ones stay."""
+        ...
 
-class DraftSources(Protocol):
-    """A document's source chunks in Source Library, and its count of drafts."""
 
-    def chunks_of(self, project_id: str, document_id: str) -> list[SourceChunk]: ...
+class DocumentExamState(Protocol):
+    """A source document's count of drafts and the status that follows from it. Source Library
+    owns documents (D17)."""
 
     def record_draft_count(self, project_id: str, document_id: str, count: int) -> None: ...
 
@@ -65,6 +68,12 @@ class DraftSources(Protocol):
         """Record the drafts written while the document was imported; a document without text
         or chunks is marked exam_failed."""
         ...
+
+
+class DraftSources(DocumentExamState, Protocol):
+    """A document's source chunks in Source Library, and its count of drafts."""
+
+    def chunks_of(self, project_id: str, document_id: str) -> list[SourceChunk]: ...
 
 
 class DraftWriting(Protocol):

@@ -30,7 +30,7 @@ class SourceLibraryDraftSources:
             self._db,
             project_id=project_id,
             document_id=document_id,
-            status="processing" if document.status == "processing" else "ready",
+            status=document.status_after_drafts(),
             exam_item_count=count,
         )
 

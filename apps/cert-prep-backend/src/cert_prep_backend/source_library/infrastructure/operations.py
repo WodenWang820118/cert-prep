@@ -1,10 +1,16 @@
 """Storage of document operations. The transition rules live on DocumentOperation; each
 function loads the operation, lets the aggregate decide, and applies the result with an
-update guarded by the state it was decided from."""
+update guarded by the state it was decided from.
+
+Stopping or retrying a run discards the document's unfinished draft generation jobs. Question
+Authoring owns those jobs, so the functions that do it take `draft_jobs`, which binds that
+context's jobs to the run's connection: the jobs go in the run's transaction. The repositories
+check that the project exists before they call these functions.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from sqlite3 import Connection, Row
 from uuid import uuid4
@@ -17,6 +23,7 @@ from cert_prep_backend.platform.errors import (
     DocumentProcessingCanceledError,
     NotFoundError,
 )
+from cert_prep_backend.source_library.application.ports import DocumentDraftJobs
 from cert_prep_backend.source_library.domain.document import PdfExtractionResult, SourceDocument
 from cert_prep_backend.source_library.domain.operation import (
     DocumentOperation,
@@ -36,8 +43,10 @@ from cert_prep_backend.source_library.infrastructure.progress import (
 from cert_prep_backend.source_library.infrastructure.records import (
     document_from_row,
     document_query,
-    ensure_project_exists,
 )
+
+BindDraftJobs = Callable[[Connection], DocumentDraftJobs]
+"""Question Authoring's draft jobs on the given connection, so they join its transaction."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,7 +63,6 @@ def claim_operation(
 ) -> DocumentOperationClaim:
     """Atomically claim a global upload operation id."""
 
-    ensure_project_exists(db, project_id)
     claimed = DocumentOperation.claim_upload(
         operation_id=operation_id, project_id=project_id, now=utc_now()
     )
@@ -84,7 +92,6 @@ def cancel_operation(
 ) -> DocumentOperation:
     """Create a cancel tombstone or atomically request active-work cancellation."""
 
-    ensure_project_exists(db, project_id)
     now = utc_now()
     with db.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
@@ -115,7 +122,6 @@ def cancel_document_processing(
 ) -> DocumentOperation:
     """Cancel the operation owning a document without a lookup/cancel race."""
 
-    ensure_project_exists(db, project_id)
     now = utc_now()
     with db.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
@@ -173,7 +179,6 @@ def create_and_attach_document(
 ) -> SourceDocument:
     """Insert a document and attach it to the sole operation claimant atomically."""
 
-    ensure_project_exists(db, project_id)
     now = utc_now()
     next_document_id = document_id or str(uuid4())
     with db.connect() as connection:
@@ -409,6 +414,7 @@ def acknowledge_cancellation(
     *,
     project_id: str,
     operation_id: str,
+    draft_jobs: BindDraftJobs,
 ) -> DocumentOperation:
     now = utc_now()
     with db.connect() as connection:
@@ -418,7 +424,9 @@ def acknowledge_cancellation(
         canceled = operation.acknowledge_cancellation(now)
         if canceled is operation:
             return operation
-        _record_stopped_document(connection, canceled, now=now)
+        _record_stopped_document(
+            connection, canceled, draft_jobs=draft_jobs(connection), now=now
+        )
         _apply(
             connection,
             operation,
@@ -434,6 +442,7 @@ def finish_failed(
     project_id: str,
     operation_id: str,
     error: str,
+    draft_jobs: BindDraftJobs,
     document_status: str | None = None,
     extraction_method: str | None = None,
 ) -> DocumentOperation:
@@ -448,6 +457,7 @@ def finish_failed(
         _record_stopped_document(
             connection,
             stopped,
+            draft_jobs=draft_jobs(connection),
             document_status=document_status,
             extraction_method=extraction_method,
             now=now,
@@ -461,11 +471,11 @@ def start_retry_operation(
     *,
     project_id: str,
     document_id: str,
+    draft_jobs: BindDraftJobs,
     operation_id: str | None = None,
 ) -> DocumentOperation:
     """Reset retryable parsing state and create its linked running operation atomically."""
 
-    ensure_project_exists(db, project_id)
     next_operation_id = operation_id or str(uuid4())
     now = utc_now()
     with db.connect() as connection:
@@ -492,6 +502,7 @@ def start_retry_operation(
         )
         _reset_document_derived_state(
             connection,
+            draft_jobs=draft_jobs(connection),
             project_id=project_id,
             document_id=document_id,
             status="processing",
@@ -529,7 +540,7 @@ def start_retry_operation(
         return _required_operation(_operation_query_by_id(connection, next_operation_id))
 
 
-def recover_operations(db: Database) -> int:
+def recover_operations(db: Database, *, draft_jobs: BindDraftJobs) -> int:
     """Fail interrupted work while honoring durable user cancellation."""
 
     with db.connect() as connection:
@@ -547,6 +558,7 @@ def recover_operations(db: Database) -> int:
                 db,
                 project_id=str(row["project_id"]),
                 operation_id=str(row["id"]),
+                draft_jobs=draft_jobs,
             )
         else:
             finish_failed(
@@ -554,6 +566,7 @@ def recover_operations(db: Database) -> int:
                 project_id=str(row["project_id"]),
                 operation_id=str(row["id"]),
                 error="Document processing was interrupted by an app restart.",
+                draft_jobs=draft_jobs,
             )
     return len(rows)
 
@@ -667,6 +680,7 @@ def _record_stopped_document(
     connection: Connection,
     stopped: DocumentOperation,
     *,
+    draft_jobs: DocumentDraftJobs,
     document_status: str | None = None,
     extraction_method: str | None = None,
     now: str,
@@ -686,7 +700,13 @@ def _record_stopped_document(
             if stopped.status is DocumentOperationStatus.CANCELED
             else _preserve_failed_audio_state
         )
-        preserve(connection, project_id=project_id, document_id=document_id, now=now)
+        preserve(
+            connection,
+            draft_jobs=draft_jobs,
+            project_id=project_id,
+            document_id=document_id,
+            now=now,
+        )
         return
     state = failure_state(
         stopped,
@@ -696,6 +716,7 @@ def _record_stopped_document(
     )
     _reset_document_derived_state(
         connection,
+        draft_jobs=draft_jobs,
         project_id=project_id,
         document_id=document_id,
         status=state.status,
@@ -732,6 +753,7 @@ def _operation_values(
 def _reset_document_derived_state(
     connection: Connection,
     *,
+    draft_jobs: DocumentDraftJobs,
     project_id: str,
     document_id: str,
     status: str,
@@ -740,14 +762,7 @@ def _reset_document_derived_state(
     processed_page_count: int = 0,
     now: str,
 ) -> None:
-    connection.execute(
-        """
-        DELETE FROM draft_generation_jobs
-        WHERE project_id = ? AND document_id = ?
-            AND status IN ('pending', 'running', 'cancel_requested')
-        """,
-        (project_id, document_id),
-    )
+    draft_jobs.discard_unfinished(project_id, document_id)
     connection.execute(
         "DELETE FROM document_chunks WHERE project_id = ? AND document_id = ?",
         (project_id, document_id),
@@ -790,18 +805,12 @@ def _operation_query_by_id(connection: Connection, operation_id: str) -> Row | N
 def _preserve_canceled_audio_state(
     connection: Connection,
     *,
+    draft_jobs: DocumentDraftJobs,
     project_id: str,
     document_id: str,
     now: str,
 ) -> None:
-    connection.execute(
-        """
-        DELETE FROM draft_generation_jobs
-        WHERE project_id = ? AND document_id = ?
-            AND status IN ('pending', 'running', 'cancel_requested')
-        """,
-        (project_id, document_id),
-    )
+    draft_jobs.discard_unfinished(project_id, document_id)
     chunks_count = connection.execute(
         """
         SELECT COUNT(*) FROM document_chunks
@@ -848,20 +857,14 @@ def _preserve_canceled_audio_state(
 def _preserve_failed_audio_state(
     connection: Connection,
     *,
+    draft_jobs: DocumentDraftJobs,
     project_id: str,
     document_id: str,
     now: str,
 ) -> None:
     """Keep incremental transcript data while making an audio failure retryable."""
 
-    connection.execute(
-        """
-        DELETE FROM draft_generation_jobs
-        WHERE project_id = ? AND document_id = ?
-            AND status IN ('pending', 'running', 'cancel_requested')
-        """,
-        (project_id, document_id),
-    )
+    draft_jobs.discard_unfinished(project_id, document_id)
     chunks_count = connection.execute(
         """
         SELECT COUNT(*) FROM document_chunks
@@ -927,6 +930,7 @@ def _operation_from_row(row: Row) -> DocumentOperation:
 
 
 __all__ = [
+    "BindDraftJobs",
     "DocumentOperationClaim",
     "acknowledge_cancellation",
     "cancel_document_processing",

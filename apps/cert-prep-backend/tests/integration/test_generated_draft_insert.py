@@ -5,6 +5,7 @@ import json
 import pytest
 
 from cert_prep_backend.authoring.domain.models import DraftSuggestion
+from cert_prep_backend.bootstrap.authoring_links import bind_document_exam_state
 from cert_prep_backend.authoring.infrastructure import draft_jobs
 from cert_prep_backend.authoring.infrastructure import repository as drafts_repository
 
@@ -52,6 +53,7 @@ def _create_via_job_path(db, project_id, document_id, suggestions):
     draft_jobs.begin_commit(db, job.id)
     return drafts_repository.append_generated_drafts_and_complete_job(
         db,
+        exam_state=bind_document_exam_state(db),
         job_id=job.id,
         project_id=project_id,
         document_id=document_id,

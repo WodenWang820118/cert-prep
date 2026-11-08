@@ -52,6 +52,12 @@ class DocumentRepository(Protocol):
         """Store a processing document and attach it to the upload that claimed the operation."""
         ...
 
+    def record_exam_state(
+        self, project_id: str, document_id: str, *, status: str, exam_item_count: int
+    ) -> None:
+        """Store the document's status and its count of question drafts."""
+        ...
+
 
 class DocumentOperationRepository(Protocol):
     """Operations; each transition is stored atomically, guarded by the state it came from."""
@@ -96,6 +102,21 @@ class DocumentOperationRepository(Protocol):
 
     def recover_interrupted(self) -> int:
         """Acknowledge requested cancellations and fail work an app restart interrupted."""
+        ...
+
+
+class StudyProjects(Protocol):
+    """Whether a study project exists. Study Projects owns that fact (D17)."""
+
+    def exists(self, project_id: str) -> bool: ...
+
+
+class DocumentDraftJobs(Protocol):
+    """Question Authoring's draft generation jobs of a document. Question Authoring owns them
+    (D17)."""
+
+    def discard_unfinished(self, project_id: str, document_id: str) -> None:
+        """Drop the document's jobs that have not ended; ended jobs stay as its draft history."""
         ...
 
 

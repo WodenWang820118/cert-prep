@@ -66,6 +66,8 @@ __all__ = [
     "list_documents",
     "open_audio_source",
     "receive_upload",
+    "record_draft_count",
+    "record_import_draft_count",
     "recover_interrupted_work",
     "retry_document_processing",
     "translate_chunk",
@@ -106,6 +108,33 @@ def view_document(
     documents: DocumentRepository, project_id: str, document_id: str
 ) -> SourceDocument:
     return documents.document(project_id, document_id)
+
+
+def record_draft_count(
+    documents: DocumentRepository, project_id: str, document_id: str, count: int
+) -> None:
+    """Record the document's count of drafts after the learner had drafts written: a processing
+    document stays processing, any other becomes ready."""
+
+    document = documents.document(project_id, document_id)
+    documents.record_exam_state(
+        project_id, document_id, status=document.status_after_drafts(), exam_item_count=count
+    )
+
+
+def record_import_draft_count(
+    documents: DocumentRepository, project_id: str, document_id: str, count: int
+) -> None:
+    """Record the document's count of drafts written after it was imported: ready when it has
+    text and chunks, exam_failed otherwise, and still processing if it was."""
+
+    document = documents.document(project_id, document_id)
+    documents.record_exam_state(
+        project_id,
+        document_id,
+        status=document.status_after_import_drafts(),
+        exam_item_count=count,
+    )
 
 
 def export_markdown(

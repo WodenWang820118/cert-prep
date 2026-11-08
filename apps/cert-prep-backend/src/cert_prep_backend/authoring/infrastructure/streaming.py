@@ -68,8 +68,11 @@ class StreamingDraftGenerationManager:
         provider: LLMProvider,
         async_jobs: bool = True,
         reading_lexicon: ReadingLexicon | None = None,
+        exam_state: drafts_repository.BindDocumentExamState,
     ) -> None:
         self._settings = settings
+        # Source Library's exam state of a document, written in the commit of its drafts.
+        self._exam_state = exam_state
         self._provider = provider
         self._async_jobs = async_jobs
         self._reading_lexicon = reading_lexicon if settings.reading_solver_enabled else None
@@ -265,6 +268,7 @@ class StreamingDraftGenerationManager:
                 effective_provider=attribution.effective_provider,
                 effective_model=attribution.effective_model,
                 fallback_reason=attribution.fallback_reason,
+                exam_state=self._exam_state,
             )
         except DraftJobCanceledError:
             draft_jobs.mark_canceled(db, job_id)
@@ -392,6 +396,7 @@ class StreamingDraftGenerationManager:
                 effective_provider=attribution.effective_provider,
                 effective_model=attribution.effective_model,
                 fallback_reason=attribution.fallback_reason,
+                exam_state=self._exam_state,
                 unavailable_blocks=generation.unavailable_blocks,
             )
         except DraftJobCanceledError:

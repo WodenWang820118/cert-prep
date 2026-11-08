@@ -2,7 +2,7 @@
 
 狀態：**已核可**（2026-10-26）：產品負責人核可方向與產品決策，見 [decisions.md](decisions.md)；實作安排見第 10 節。結構比照 LAW 已定案的 DDD 重構計畫（`gx.law-prep/.agents/PLANS/ddd-refactor/`，決策 A30、A31）。決策見 [decisions.md](decisions.md)，術語見 [glossary.md](glossary.md)，每個上下文的說明見 [docs/domain/](../../../docs/domain/README.md)。
 
-進度（2026-11-04）：C0–C4、C2 收尾、C6、C8 與 C5 第一部分（練習經所屬上下文讀資料表）已完成。剩下 C5 的其餘部分（https://github.com/gx-capture/capture-workbench/issues/200）與 C7 前端（https://github.com/gx-capture/capture-workbench/issues/201），總表是 https://github.com/gx-capture/capture-workbench/issues/178。
+進度（2026-11-08）：C0–C4、C2 收尾、C6、C8、C5 第一部分（練習經所屬上下文讀資料表）與第二部分（教材來源、題目編寫、學習專案之間的 SQL：作業停止或重試時刪產生工作、提交草稿時寫教材題目數、教材來源確認專案存在，都改經所屬上下文的用例，原本同一個交易的仍在同一個交易）已完成。剩下 C5 第三部分（題目編寫與擷取整合 infrastructure 直接引用其他上下文 infrastructure 的已知例外：https://github.com/gx-capture/capture-workbench/issues/200）與 C7 前端（https://github.com/gx-capture/capture-workbench/issues/201），總表是 https://github.com/gx-capture/capture-workbench/issues/178。
 
 這份文件給產品負責人和之後加入的人讀。程式名稱用英文，說明用繁體中文。數字取自 2026-10-26 對 `origin/main`（`826b49b`）的唯讀盤點。
 
@@ -69,16 +69,16 @@ flowchart LR
 
 實線箭頭由上游指向下游：下游使用上游公開的介面與資料，上游不知道下游；第 5 節的規則就是依這些箭頭檢查。擷取整合在使用者確認後經教材來源的介面寫入段落，所以教材來源是它的上游。虛線箭頭是**防腐層**：外部格式只在這一層轉換。
 
-| 上下文     | 套件（重構後）         | 負責                                                          | 主要模型                                               | 現在的程式                                                                                   |
-| ---------- | ---------------------- | ------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
-| 學習專案   | `projects`             | 專案身分與範圍                                                | `Project`                                              | `domains/projects`、`routers/projects`；前端 `project.store`、`project-rail`                 |
-| 教材來源   | `source_library`       | 匯入檔案、儲存、段落、內容類型、匯入作業、音訊翻譯            | `SourceDocument`、`DocumentChunk`、`DocumentOperation` | `domains/source_documents`、`exam_content`、`routers/documents`；前端 `stores/source-import` |
-| 擷取整合   | `capture_integration`  | Capture Runtime 的擷取、檢閱、確認後寫入教材                  | `CaptureReviewSession`                                 | `domains/capture_workbench`、`routers/capture_workbench`、`routers/capture_runtime`          |
-| 題目編寫   | `authoring`            | 解析、產生與編修題目草稿、產生工作                            | `QuestionDraft`、`DraftGenerationJob`                  | `domains/mock_exams`（模型、repository、parser、streaming）                                  |
-| 練習與複習 | `practice`             | 練習、作答、錯題、解說                                        | `PracticeSession`、`PracticeAttempt`、`WrongAnswer`    | `domains/practice`、`routers/practice`；前端 `stores/practice`                               |
-| AI 供應    | `ai_providers`         | 選擇與呼叫 LLM、模型清單、假供應者                            | `DraftGenerationProvider`（port）                      | `mock_exams` 的 provider*、ollama\_*、fake_provider；`packages/cert-prep-ollama`             |
-| 執行環境   | `runtime_provisioning` | 安裝與檢查 Ollama 執行環境與語言模型（Capture Runtime 由 Tauri 安裝）| `RuntimeInstallationJob`                               | `domains/runtime_installations`、`routers/runtime`；Tauri crate                              |
-| 平台       | `platform`             | 設定、錯誤型別、資料庫與 migration、SSE、作業事件、背景工作池 | —                                                      | `core/`、`persistence/`、`api/sse`、`operation_events`                                       |
+| 上下文     | 套件（重構後）         | 負責                                                                  | 主要模型                                               | 現在的程式                                                                                   |
+| ---------- | ---------------------- | --------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| 學習專案   | `projects`             | 專案身分與範圍                                                        | `Project`                                              | `domains/projects`、`routers/projects`；前端 `project.store`、`project-rail`                 |
+| 教材來源   | `source_library`       | 匯入檔案、儲存、段落、內容類型、匯入作業、音訊翻譯                    | `SourceDocument`、`DocumentChunk`、`DocumentOperation` | `domains/source_documents`、`exam_content`、`routers/documents`；前端 `stores/source-import` |
+| 擷取整合   | `capture_integration`  | Capture Runtime 的擷取、檢閱、確認後寫入教材                          | `CaptureReviewSession`                                 | `domains/capture_workbench`、`routers/capture_workbench`、`routers/capture_runtime`          |
+| 題目編寫   | `authoring`            | 解析、產生與編修題目草稿、產生工作                                    | `QuestionDraft`、`DraftGenerationJob`                  | `domains/mock_exams`（模型、repository、parser、streaming）                                  |
+| 練習與複習 | `practice`             | 練習、作答、錯題、解說                                                | `PracticeSession`、`PracticeAttempt`、`WrongAnswer`    | `domains/practice`、`routers/practice`；前端 `stores/practice`                               |
+| AI 供應    | `ai_providers`         | 選擇與呼叫 LLM、模型清單、假供應者                                    | `DraftGenerationProvider`（port）                      | `mock_exams` 的 provider*、ollama\_*、fake_provider；`packages/cert-prep-ollama`             |
+| 執行環境   | `runtime_provisioning` | 安裝與檢查 Ollama 執行環境與語言模型（Capture Runtime 由 Tauri 安裝） | `RuntimeInstallationJob`                               | `domains/runtime_installations`、`routers/runtime`；Tauri crate                              |
+| 平台       | `platform`             | 設定、錯誤型別、資料庫與 migration、SSE、作業事件、背景工作池         | —                                                      | `core/`、`persistence/`、`api/sse`、`operation_events`                                       |
 
 ## 4. 程式結構
 
@@ -140,16 +140,16 @@ flowchart TB
 
 ## 5. 自動檢查
 
-| 範圍     | 工具                                                                                                     | 規則                                                                                                                                                                                                                                              |
+| 範圍 | 工具 | 規則 |
 | -------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ---- | ------------------------------------------------------------------------------------------------- |
-| 後端     | import-linter（`apps/cert-prep-backend/pyproject.toml`，Nx target `lint-architecture`，CI 的 lint 步驟） | 每個上下文 `api`／`infrastructure` → `application` → `domain`；`domain` 不 import FastAPI、starlette、sqlite3、httpx、ollama、`capture_runtime_client`；上下文只依地圖方向引用，不引用別人的 `infrastructure`、`api`；`platform` 不引用任何上下文 |
-| 前端     | Sheriff（`sheriff.config.ts`，經 `@softarc/eslint-plugin-sheriff` 跑在既有 ESLint）                      | 資料夾標上 `context:*` 與 `layer:feature                                                                                                                                                                                                          | ui  | data | domain`；`feature`→`ui`、`data`、`domain`，`data`→`domain`；上下文之間只經 `index.ts`、依地圖方向 |
-| Nx 專案  | 既有 `@nx/enforce-module-boundaries`                                                                     | 把目前不生效的 `type:data` 規則改成實際的標籤規則（`type:app` → `type:api`、`scope:shared`）                                                                                                                                                      |
-| Rust     | 模組可見性（`pub(crate)`）與 `src-tauri` 一個允許清單測試                                                | `backend.rs` 不再是所有模組的中心；排在最後                                                                                                                                                                                                       |
-| 已知例外 | import-linter `ignore_imports`、ESLint bulk suppressions                                                 | 規則上線時把現有違規逐條列入，每個 PR 只能減少；新增違規讓 CI 失敗                                                                                                                                                                                |
-| 用語     | 測試（`tests/unit/test_ubiquitous_language.py`）                                                         | `domain` 的公開類別與列舉名稱都在 glossary 的程式名稱欄；OpenAPI 的每個列舉值都對應到概念集裡的一個概念                                                                                                                                           |
-| 用例     | 測試（`tests/unit/test_use_cases.py`）                                                                   | `docs/domain/<上下文>.md` 的用例表與 `application` 公開的用例一一對應                                                                                                                                                                             |
-| 領域物件 | 測試（`tests/unit/test_repositories_return_domain_objects.py`）                                          | repository 的公開函式不以 `dict` 為參數或回傳值（C4 起逐上下文加入）                                                                                                                                                                              |
+| 後端 | import-linter（`apps/cert-prep-backend/pyproject.toml`，Nx target `lint-architecture`，CI 的 lint 步驟） | 每個上下文 `api`／`infrastructure` → `application` → `domain`；`domain` 不 import FastAPI、starlette、sqlite3、httpx、ollama、`capture_runtime_client`；上下文只依地圖方向引用，不引用別人的 `infrastructure`、`api`；`platform` 不引用任何上下文 |
+| 前端 | Sheriff（`sheriff.config.ts`，經 `@softarc/eslint-plugin-sheriff` 跑在既有 ESLint） | 資料夾標上 `context:*` 與 `layer:feature                                                                                                                                                                                                          | ui  | data | domain`；`feature`→`ui`、`data`、`domain`，`data`→`domain`；上下文之間只經 `index.ts`、依地圖方向 |
+| Nx 專案 | 既有 `@nx/enforce-module-boundaries` | 把目前不生效的 `type:data` 規則改成實際的標籤規則（`type:app` → `type:api`、`scope:shared`） |
+| Rust | 模組可見性（`pub(crate)`）與 `src-tauri` 一個允許清單測試 | `backend.rs` 不再是所有模組的中心；排在最後 |
+| 已知例外 | import-linter `ignore_imports`、ESLint bulk suppressions | 規則上線時把現有違規逐條列入，每個 PR 只能減少；新增違規讓 CI 失敗 |
+| 用語 | 測試（`tests/unit/test_ubiquitous_language.py`） | `domain` 的公開類別與列舉名稱都在 glossary 的程式名稱欄；OpenAPI 的每個列舉值都對應到概念集裡的一個概念 |
+| 用例 | 測試（`tests/unit/test_use_cases.py`） | `docs/domain/<上下文>.md` 的用例表與 `application` 公開的用例一一對應 |
+| 領域物件 | 測試（`tests/unit/test_repositories_return_domain_objects.py`） | repository 的公開函式不以 `dict` 為參數或回傳值（C4 起逐上下文加入） |
 
 ## 6. 遷移步驟
 

@@ -123,22 +123,23 @@ stateDiagram-v2
 
 ## 用例
 
-| 用例           | 程式名稱                   | 說明                                                         |
-| -------------- | -------------------------- | ------------------------------------------------------------ |
-| 列出草稿       | `list_drafts`              | 專案的所有題目草稿，新的在前                                 |
-| 已核可的題目   | `approved_questions`       | 專案已核可的草稿，依 id；一份教材則依來源順序                |
-| 查看一題草稿   | `find_question_draft`      | 專案裡這一題目前的草稿；沒有時是 None                        |
-| 查看這些草稿   | `question_drafts_for`      | 這些 id 目前的草稿；沒有草稿的 id 不在結果裡                 |
-| 手寫草稿       | `write_draft`              | 寫一題草稿，可以引用一份教材的一個段落                       |
-| 編修草稿       | `edit_draft`               | 修正草稿；只改有給的欄位                                     |
-| 為教材產生草稿 | `generate_document_drafts` | 立即用整份教材的段落產生草稿，略過重複的，並記錄教材的題目數 |
-| 列出產生工作   | `list_generation_jobs`     | 教材各段落的產生工作與狀態                                   |
-| 重試產生工作   | `retry_generation_jobs`    | 讓因模型或供應者跳過、失敗或取消的工作重新排隊並執行         |
-| 取消產生工作   | `cancel_generation_job`    | 等待中的工作立即取消，執行中的要求停止；開始提交後不能取消   |
-| 開始手動產生   | `start_manual_generation`  | 在背景為整份教材產生草稿；已有進行中的作業時回傳那一個       |
-| 查看手動產生   | `view_manual_generation`   | 一個手動產生作業的狀態、產生數量與待檢查的解析題             |
-| 取消手動產生   | `cancel_manual_generation` | 排隊中的作業立即取消，執行中的要求停止；提交後不能取消       |
-| 匯入後起草     | `draft_imported_document`  | 匯入後有段落的教材：排入產生工作，或依設定立即寫出草稿       |
+| 用例             | 程式名稱                             | 說明                                                                     |
+| ---------------- | ------------------------------------ | ------------------------------------------------------------------------ |
+| 列出草稿         | `list_drafts`                        | 專案的所有題目草稿，新的在前                                             |
+| 已核可的題目     | `approved_questions`                 | 專案已核可的草稿，依 id；一份教材則依來源順序                            |
+| 查看一題草稿     | `find_question_draft`                | 專案裡這一題目前的草稿；沒有時是 None                                    |
+| 查看這些草稿     | `question_drafts_for`                | 這些 id 目前的草稿；沒有草稿的 id 不在結果裡                             |
+| 手寫草稿         | `write_draft`                        | 寫一題草稿，可以引用一份教材的一個段落                                   |
+| 編修草稿         | `edit_draft`                         | 修正草稿；只改有給的欄位                                                 |
+| 為教材產生草稿   | `generate_document_drafts`           | 立即用整份教材的段落產生草稿，略過重複的，並記錄教材的題目數             |
+| 列出產生工作     | `list_generation_jobs`               | 教材各段落的產生工作與狀態                                               |
+| 重試產生工作     | `retry_generation_jobs`              | 讓因模型或供應者跳過、失敗或取消的工作重新排隊並執行                     |
+| 取消產生工作     | `cancel_generation_job`              | 等待中的工作立即取消，執行中的要求停止；開始提交後不能取消               |
+| 丟棄未結束的工作 | `discard_unfinished_generation_jobs` | 給教材來源：教材的處理停止或重試時，刪掉還沒結束的工作；已結束的留作紀錄 |
+| 開始手動產生     | `start_manual_generation`            | 在背景為整份教材產生草稿；已有進行中的作業時回傳那一個                   |
+| 查看手動產生     | `view_manual_generation`             | 一個手動產生作業的狀態、產生數量與待檢查的解析題                         |
+| 取消手動產生     | `cancel_manual_generation`           | 排隊中的作業立即取消，執行中的要求停止；提交後不能取消                   |
+| 匯入後起草       | `draft_imported_document`            | 匯入後有段落的教材：排入產生工作，或依設定立即寫出草稿                   |
 
 教材來源的 `import_document` 與 `retry_document_processing` 擷取出段落後，經教材來源的 port `ImportedDocumentDrafting` 呼叫 `draft_imported_document`；實作這個 port 的是 `infrastructure/import_drafting.py` 的 `ImportedDocumentDrafts`，它依設定（`streaming_draft_generation_on_upload`、`auto_generate_exam_on_upload`、`auto_generate_exam_limit`）呼叫用例。匯入時直接產生草稿時，模型無法使用就不寫草稿；之後記錄教材的題目數，有文字與段落的教材記為可用，否則記為 `exam_failed`（`SourceDocument.status_after_import_drafts`）。
 
@@ -161,7 +162,9 @@ sequenceDiagram
   Manager->>Drafts: append_generated_drafts_and_complete_job（同一個交易寫草稿、更新教材題目數、工作成功）
 ```
 
-`create_app` 建立 `SqliteQuestionDraftRepository`、`SqliteDraftGenerationJobRepository`、`StreamingDraftGenerationWork`、`SourceLibraryDraftSources`、`ProviderDraftWriting`、`ImportedDocumentDrafts`，放在 `app.state.question_draft_repository`、`draft_generation_job_repository`、`draft_generation_work`、`draft_sources`、`draft_writing`、`imported_document_drafting`；router 只依 `application/ports.py` 的 port 呼叫用例。
+提交草稿的交易以 `BEGIN IMMEDIATE` 開始：寫入草稿、數出教材的草稿數，再經 port `DocumentExamState` 請教材來源記錄題目數與教材狀態（工作用 `record_import_draft_count`，手動作業用 `record_draft_count`），最後把工作或作業標為成功。`bootstrap/authoring_links.py` 的 `bind_document_exam_state` 把這個交易的連線交給教材來源的 repository，任何一步失敗時全部復原。以前這是題目編寫自己的一個 `UPDATE documents`，草稿數在同一句裡數；現在數和寫在同一個寫入鎖裡，結果相同。
+
+`create_app` 建立 `StreamingDraftGenerationManager`（接上 `bind_document_exam_state`）、`SqliteQuestionDraftRepository`、`SqliteDraftGenerationJobRepository`、`StreamingDraftGenerationWork`、`SourceLibraryDraftSources`、`ProviderDraftWriting`、`ImportedDocumentDrafts`，放在 `app.state.question_draft_repository`、`draft_generation_job_repository`、`draft_generation_work`、`draft_sources`、`draft_writing`、`imported_document_drafting`；router 只依 `application/ports.py` 的 port 呼叫用例。
 
 ### 漢字讀音解答
 
@@ -224,7 +227,8 @@ flowchart TD
 
 ## 與其他上下文的關係
 
-- 教材來源：為教材產生草稿時，經 `source_library.application` 的 `list_chunks` 與 `view_document` 讀段落與教材；更新教材的題目數、背景產生讀段落與更新教材狀態仍直接呼叫教材來源的儲存函式（已知例外，C5 資料表歸屬改經教材來源的用例：https://github.com/gx-capture/capture-workbench/issues/200）。
+- 教材來源：為教材產生草稿時，經 `source_library.application` 的 `list_chunks` 與 `view_document` 讀段落與教材。背景工作與手動作業提交草稿時，經 port `DocumentExamState` 在同一個交易裡呼叫教材來源的 `record_import_draft_count`、`record_draft_count`。`SourceLibraryDraftSources` 更新題目數與背景產生讀段落仍直接呼叫教材來源的儲存函式（已知例外，C5 第三部分改經教材來源的用例：https://github.com/gx-capture/capture-workbench/issues/200）。
+- 教材來源：教材的作業失敗、取消或重試時，教材來源經它的 port `DocumentDraftJobs` 呼叫 `discard_unfinished_generation_jobs`；`bootstrap/source_library_links.py` 把作業交易的連線交給 `SqliteDraftGenerationJobRepository`，工作和教材的重設一起寫入或一起復原。
 - AI 供應：`draft_writer_for` 依設定的供應者挑選寫草稿者；Ollama 經 JSON 對話寫草稿；串流產生使用串流參數、產生歸屬與釋放資源（見 [ai_providers.md](ai_providers.md)）。
 - 學習專案：確認專案存在仍直接呼叫 `projects.infrastructure`（已知例外，C5 處理）。
 - 練習與複習：練習經自己的 port `PracticeQuestions` 呼叫 `approved_questions`、`find_question_draft`、`question_drafts_for`。實作把練習交易的連線交給 `SqliteQuestionDraftRepository`，所以讀到的是這次交易裡的草稿。
@@ -234,7 +238,7 @@ flowchart TD
 
 ## 規則與資料來源
 
-- 資料表：`question_drafts`、`draft_generation_jobs`、`manual_draft_generation_operations`；migration 在 `platform/database.py`。
+- 資料表：`question_drafts`、`draft_generation_jobs`、`manual_draft_generation_operations` 屬題目編寫；migration 在 `platform/database.py`。題目編寫的 SQL 不再寫 `documents` 或讀 `document_chunks`。
 - 確定性解析：`domain/deterministic_parser.py` 與教材來源的 `exam_content`。
 - HTTP：`/projects/{project_id}/question-drafts`、`/projects/{project_id}/documents/{document_id}/drafts`、`…/draft-jobs`、`…/draft-operations`（DTO 在 `authoring/api/schemas.py`）；產生工作與手動作業的即時狀態經 `authoring/api/operation_events.py` 的 server-sent events（`…/draft-jobs/events`、`…/draft-operations/{operation_id}/events`）；串流與心跳由 `platform/sse.py` 提供，快照來自 `list_generation_jobs` 與 `view_manual_generation`，所有工作都結束時（`all_jobs_ended`）或作業結束時串流結束。
 - API 的 `DraftStatus`、`AnswerKeySource`、`DraftGenerationStrategy`、`DraftGenerationJobStatus`、`ManualDraftOperationStatus` 列舉值對應到概念集的 `authoring.*`。

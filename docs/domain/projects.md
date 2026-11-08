@@ -50,7 +50,7 @@ classDiagram
 | 修改專案       | `edit_project`    | 改名稱或說明，沒給的保持原值                       |
 | 刪除專案       | `delete_project`  | 刪除專案；不存在時是 `NotFoundError`               |
 | 確認專案存在   | `require_project` | 給其他上下文：開始屬於某個專案的工作前，確認它存在 |
-| 確認專案在不在 | `project_exists`  | 專案是否還在；練習在同一個 SQLite 交易裡讀它       |
+| 確認專案在不在 | `project_exists`  | 專案是否還在；練習與教材來源經自己的 port 讀它     |
 
 ## 主要流程
 
@@ -75,9 +75,9 @@ sequenceDiagram
 
 學習專案是最上游的上下文，不依賴任何其他上下文（import-linter「Study Projects does not depend on other contexts」）。
 
-練習在自己的 `BEGIN IMMEDIATE` 交易裡經 port 呼叫 `project_exists`（`bootstrap/practice_reads.py` 的 `ProjectExistence` 把練習的連線交給 `SqliteProjectRepository`）。
+練習在自己的 `BEGIN IMMEDIATE` 交易裡經 port 呼叫 `project_exists`（`bootstrap/study_projects.py` 的 `ProjectExistence`；`bootstrap/practice_reads.py` 把練習的連線交給 `SqliteProjectRepository`）。教材來源的 repository 經它的 port `StudyProjects` 呼叫 `project_exists`（`bootstrap/source_library_links.py`），用自己的連線。
 
-教材來源與擷取整合經 port `ProjectRepository` 與 `require_project` 確認專案存在。題目編寫的 infrastructure（`draft_jobs`、`manual_operations`、`repository`）仍直接 import `projects.infrastructure` 的 `ensure_project_exists(db, project_id)`，列為已知例外（「Other contexts reach Study Projects only through its application and domain」）；教材來源的 `infrastructure/records.py` 也仍直接查 `projects` 資料表。兩者由 C5 改經學習專案的用例（https://github.com/gx-capture/capture-workbench/issues/200）。
+教材來源與擷取整合經 port `ProjectRepository` 與 `require_project` 確認專案存在。題目編寫的 infrastructure（`draft_jobs`、`manual_operations`、`repository`）仍直接 import `projects.infrastructure` 的 `ensure_project_exists(db, project_id)`，列為已知例外（「Other contexts reach Study Projects only through its application and domain」），由 C5 第三部分改經學習專案的用例（https://github.com/gx-capture/capture-workbench/issues/200）。
 
 ## 規則與資料來源
 
