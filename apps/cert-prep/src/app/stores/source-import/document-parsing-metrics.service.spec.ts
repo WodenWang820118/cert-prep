@@ -1,4 +1,4 @@
-import type { DocumentRead } from '../../contracts/api.contracts';
+import type { DocumentRead } from '../../core/domain';
 import { DocumentParsingMetricsService } from './document-parsing-metrics.service';
 
 describe('DocumentParsingMetricsService', () => {

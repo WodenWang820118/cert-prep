@@ -9,7 +9,7 @@ import type {
   SourceDocumentStatusViewModel,
   SourceImportAction,
 } from './source-import-panel.contracts';
-import { AppIconComponent } from '../ui/app-icon.component';
+import { AppIconComponent } from '../../core/ui';
 import { HlmBadge } from '@spartan-ng/helm/badge';
 
 @Component({

@@ -1,11 +1,11 @@
 import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { of, Subject } from 'rxjs';
-import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
-import type { DocumentRead, ProjectRead } from '../../contracts/api.contracts';
+import { CERT_PREP_API } from '../../core/data';
+import type { DocumentRead, ProjectRead } from '../../core/domain';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
-import { OperationStore } from '../../stores/operation.store';
-import { ProjectStore } from '../../stores/project.store';
+import { OperationStore } from '../../core/data';
+import { ProjectStore } from '../../projects/data';
 import type { SourceUploadItem } from '../../stores/source-import/contracts/source-import.contracts';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { appDocument, appProject, secondAppProject } from '../../testing/app.spec-helpers';

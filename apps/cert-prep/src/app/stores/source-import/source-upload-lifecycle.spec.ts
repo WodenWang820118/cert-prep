@@ -3,8 +3,8 @@ import { defer, of, Subject } from 'rxjs';
 import type {
   DocumentOperationRead,
   DocumentRead,
-} from '../../contracts/api.contracts';
-import type { DocumentOperationEvent } from '../../contracts/operation-events.contracts';
+} from '../../core/domain';
+import type { DocumentOperationEvent } from '../../core/domain';
 import type {
   SourceUploadItem,
   SourceUploadLifecycleHooks,

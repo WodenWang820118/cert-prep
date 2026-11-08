@@ -1,0 +1,394 @@
+import { CdkTrapFocus } from '@angular/cdk/a11y';
+import {
+  Component,
+  ElementRef,
+  OnDestroy,
+  OnInit,
+  ViewChild,
+  effect,
+  inject,
+  signal,
+  ChangeDetectionStrategy,
+} from '@angular/core';
+import {
+  NavigationEnd,
+  Router,
+  RouterLink,
+  RouterLinkActive,
+  RouterOutlet,
+} from '@angular/router';
+import { Subscription } from 'rxjs';
+import { RuntimeConsentDialogsComponent } from '../../components/model-health/runtime-consent-dialogs.component';
+import { RuntimeUpdateNoticeComponent } from '../../components/model-health/runtime-update-notice.component';
+import { ProjectRailComponent } from '../../projects/feature';
+import { BACKEND_READINESS_POLL_LIMIT } from './app.constants';
+import type { StudyNavigationGroup } from './app.contracts';
+import { RuntimeManagerPage } from '../../pages/runtime-manager/runtime-manager.page';
+import { OperationStore } from '../data';
+import { ProjectStore } from '../../projects/data';
+import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
+import { WorkspaceFacade } from './workspace.facade';
+import { LAST_PROJECT_STORAGE_KEY } from '../domain';
+import { AppIconComponent } from '../ui';
+
+@Component({
+  imports: [CdkTrapFocus, ProjectRailComponent, RuntimeManagerPage, RuntimeConsentDialogsComponent, RuntimeUpdateNoticeComponent, RouterLink, RouterLinkActive, RouterOutlet, AppIconComponent],
+  selector: 'app-root',
+  templateUrl: './app.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
+  styleUrl: './app.component.css',
+})
+export class App implements OnInit, OnDestroy {
+  @ViewChild('runtimeManagerDialog')
+  private runtimeManagerDialog?: ElementRef<HTMLElement>;
+
+  protected readonly title = 'Cert Prep';
+  protected readonly studyNavigationGroups: readonly StudyNavigationGroup[] = [
+    {
+      id: 'build',
+      label: 'Build',
+      pages: [
+        { id: 'build', label: 'Build', icon: 'lucideWrench', path: '/build' },
+        {
+          id: 'capture_workbench_trial',
+          label: 'Capture Workbench',
+          icon: 'lucideBox',
+          path: '/capture-workbench-trial',
+        },
+      ],
+    },
+    {
+      id: 'practice',
+      label: 'Practice',
+      pages: [
+        {
+          id: 'full_exam',
+          label: 'Full Exam',
+          icon: 'lucideFileCheck',
+          path: '/full-exam',
+        },
+        {
+          id: 'random_quiz',
+          label: 'Random Quiz',
+          icon: 'lucideRefreshCcw',
+          path: '/random-quiz',
+        },
+      ],
+    },
+    {
+      id: 'review',
+      label: 'Review',
+      pages: [
+        {
+          id: 'dashboard',
+          label: 'Dashboard',
+          icon: 'lucideChartColumn',
+          path: '/dashboard',
+        },
+        {
+          id: 'review',
+          label: 'Wrong Answers',
+          icon: 'lucideHistory',
+          path: '/review',
+        },
+      ],
+    },
+  ];
+  protected readonly desktopRuntime = inject(DesktopRuntimeStore);
+  protected readonly operations = inject(OperationStore);
+  protected readonly projects = inject(ProjectStore);
+  protected readonly currentPath = signal('');
+  protected readonly runtimeManagerOpen = signal(false);
+  protected readonly aboutDialogOpen = signal(false);
+  private readonly router = inject(Router);
+  private readonly workspace = inject(WorkspaceFacade);
+  private readonly startupProjectId = this.readLastProjectId();
+  private hasAttemptedInitialStartupLoad = false;
+  private lastObservedBackendReady: boolean | null = null;
+  private readonly hasAppliedStartupProjectSelection = signal(false);
+  private readonly loadingStartupState = signal(false);
+  private backendReadinessPollAttempts = 0;
+  private backendReadinessPollTimer: ReturnType<typeof setTimeout> | null = null;
+  private runtimeManagerRestoreFocus: HTMLElement | null = null;
+  private runtimeManagerFocusTimer: ReturnType<typeof setTimeout> | null = null;
+  private runtimeManagerRestoreFocusTimer: ReturnType<typeof setTimeout> | null =
+    null;
+  private readonly routerEventsSubscription: Subscription;
+
+  constructor() {
+    this.currentPath.set(this.urlPath(this.router.url));
+    this.routerEventsSubscription = this.router.events.subscribe((event) => {
+      if (event instanceof NavigationEnd) {
+        this.currentPath.set(this.urlPath(event.urlAfterRedirects));
+      }
+    });
+
+    effect(() => {
+      const selectedProjectId = this.projects.selectedProjectId();
+      const backendReady = this.desktopRuntime.isBackendReady();
+      const backendStateLoaded = this.workspace.hasLoadedBackendState();
+      const backendBecameReady =
+        this.lastObservedBackendReady === false && backendReady;
+      this.lastObservedBackendReady = backendReady;
+
+      if (
+        this.hasAppliedStartupProjectSelection() &&
+        selectedProjectId !== null
+      ) {
+        this.writeLastProjectId(selectedProjectId);
+      }
+
+      if (
+        !this.hasAttemptedInitialStartupLoad ||
+        (this.desktopRuntime.isDesktop() && !backendBecameReady) ||
+        !backendReady ||
+        backendStateLoaded ||
+        this.loadingStartupState()
+      ) {
+        return;
+      }
+
+      queueMicrotask(() => {
+        this.loadStartupState();
+      });
+    });
+
+    effect(() => {
+      const backendStateLoaded = this.workspace.hasLoadedBackendState();
+      const projectStatus = this.projects.projectsResource.status();
+      if (
+        !backendStateLoaded ||
+        this.loadingStartupState() ||
+        this.hasAppliedStartupProjectSelection() ||
+        !['resolved', 'local', 'error'].includes(projectStatus)
+      ) {
+        return;
+      }
+
+      queueMicrotask(() => {
+        this.applyStartupProjectSelection();
+      });
+    });
+  }
+
+  ngOnInit(): void {
+    this.desktopRuntime.watchRuntimeUpdate();
+    this.loadStartupState();
+    this.hasAttemptedInitialStartupLoad = true;
+    this.scheduleBackendReadinessPoll();
+  }
+
+  /** The project rail's selection: the facade resets and reloads every context. */
+  protected selectProject(projectId: string): void {
+    this.workspace.selectProject(projectId);
+  }
+
+  ngOnDestroy(): void {
+    this.routerEventsSubscription.unsubscribe();
+    this.clearRuntimeManagerFocusTimer();
+    this.clearRuntimeManagerRestoreFocusTimer();
+    this.clearBackendReadinessPollTimer();
+  }
+
+  private loadStartupState(): void {
+    if (this.loadingStartupState()) {
+      return;
+    }
+
+    this.loadingStartupState.set(true);
+    if (!this.workspace.hasLoadedBackendState()) {
+      this.hasAppliedStartupProjectSelection.set(false);
+    }
+    this.workspace.loadStartupState();
+    this.applyStartupProjectSelection();
+    this.loadingStartupState.set(false);
+  }
+
+  /**
+   * The native shell starts an already-installed backend off the UI thread so
+   * the first paint remains responsive. Poll only the installed/starting
+   * states until that handoff is visible to Angular, then the readiness effect
+   * loads the workspace once.
+   */
+  private scheduleBackendReadinessPoll(): void {
+    if (
+      this.backendReadinessPollTimer !== null ||
+      !this.desktopRuntime.isDesktop() ||
+      this.workspace.hasLoadedBackendState() ||
+      this.backendReadinessPollAttempts >= BACKEND_READINESS_POLL_LIMIT
+    ) {
+      return;
+    }
+
+    this.backendReadinessPollTimer = setTimeout(() => {
+      this.backendReadinessPollTimer = null;
+      if (
+        this.workspace.hasLoadedBackendState() ||
+        this.desktopRuntime.isBackendReady()
+      ) {
+        return;
+      }
+
+      const status = this.desktopRuntime.status();
+      // After an app update the host first reinstalls the backend as a
+      // startup job (`python_runtime_installing`); keep polling through it.
+      const retry =
+        status.available ||
+        this.desktopRuntime.isInstallActive() ||
+        this.desktopRuntime.isRuntimeUpdateApplying() ||
+        status.unavailableReason === 'python_runtime_installing' ||
+        status.status === 'starting';
+      if (retry) {
+        this.backendReadinessPollAttempts += 1;
+        this.desktopRuntime.load().subscribe();
+        this.scheduleBackendReadinessPoll();
+      }
+    }, 500);
+  }
+
+  private clearBackendReadinessPollTimer(): void {
+    if (this.backendReadinessPollTimer !== null) {
+      clearTimeout(this.backendReadinessPollTimer);
+      this.backendReadinessPollTimer = null;
+    }
+  }
+
+  private applyStartupProjectSelection(): void {
+    if (!this.workspace.hasLoadedBackendState()) {
+      return;
+    }
+
+    const projects = this.projects.projects();
+    if (projects.length === 0) {
+      if (
+        ['idle', 'loading', 'reloading'].includes(
+          this.projects.projectsResource.status(),
+        )
+      ) {
+        return;
+      }
+      this.hasAppliedStartupProjectSelection.set(true);
+      return;
+    }
+
+    const targetProjectId =
+      this.startupProjectId !== null &&
+      projects.some((project) => project.id === this.startupProjectId)
+        ? this.startupProjectId
+        : projects[0].id;
+
+    if (this.projects.selectedProjectId() !== targetProjectId) {
+      this.workspace.selectProject(targetProjectId);
+    } else {
+      this.operations.status.set('Project loaded');
+    }
+
+    this.writeLastProjectId(targetProjectId);
+    this.hasAppliedStartupProjectSelection.set(true);
+  }
+
+  private readLastProjectId(): string | null {
+    const value = this.projectStorage()
+      ?.getItem(LAST_PROJECT_STORAGE_KEY)
+      ?.trim();
+    return value === undefined || value.length === 0 ? null : value;
+  }
+
+  private writeLastProjectId(projectId: string): void {
+    try {
+      this.projectStorage()?.setItem(LAST_PROJECT_STORAGE_KEY, projectId);
+    } catch (error) {
+      console.warn('Unable to persist the last selected project.', error);
+      // Storage persistence is a convenience; startup should continue without it.
+    }
+  }
+
+  private projectStorage(): Storage | null {
+    const windowRef = globalThis as typeof globalThis & { window?: Window };
+    if (typeof windowRef.window === 'undefined') {
+      return null;
+    }
+
+    try {
+      return windowRef.window.localStorage;
+    } catch {
+      return null;
+    }
+  }
+
+  protected isBackendIndependentRoute(): boolean {
+    return ['/runtime', '/capture-workbench-trial'].includes(this.currentPath());
+  }
+
+  protected openRuntimeManager(): void {
+    this.clearRuntimeManagerRestoreFocusTimer();
+    this.runtimeManagerRestoreFocus = this.activeElement();
+    this.runtimeManagerOpen.set(true);
+    this.runtimeManagerFocusTimer = setTimeout(() => {
+      this.runtimeManagerFocusTimer = null;
+      this.focusRuntimeManagerDialog();
+    });
+  }
+
+  protected openAboutDialog(): void {
+    this.aboutDialogOpen.set(true);
+  }
+
+  protected closeAboutDialog(): void {
+    this.aboutDialogOpen.set(false);
+  }
+
+  protected closeRuntimeManager(): void {
+    if (!this.runtimeManagerOpen()) {
+      return;
+    }
+
+    this.clearRuntimeManagerFocusTimer();
+    this.runtimeManagerOpen.set(false);
+    const restoreFocus = this.runtimeManagerRestoreFocus;
+    this.runtimeManagerRestoreFocus = null;
+    if (restoreFocus?.isConnected) {
+      this.runtimeManagerRestoreFocusTimer = setTimeout(() => {
+        this.runtimeManagerRestoreFocusTimer = null;
+        restoreFocus.focus();
+      });
+    }
+  }
+
+  private urlPath(url: string): string {
+    return url.split(/[?#]/, 1)[0];
+  }
+
+  private focusRuntimeManagerDialog(): void {
+    const dialog = this.runtimeManagerDialog?.nativeElement;
+    if (!this.runtimeManagerOpen() || dialog === undefined) {
+      return;
+    }
+
+    (
+      dialog.querySelector<HTMLElement>(
+        'button[aria-label="Close runtime manager"], button:not([disabled])',
+      ) ?? dialog
+    ).focus();
+  }
+
+  private clearRuntimeManagerFocusTimer(): void {
+    if (this.runtimeManagerFocusTimer !== null) {
+      clearTimeout(this.runtimeManagerFocusTimer);
+      this.runtimeManagerFocusTimer = null;
+    }
+  }
+
+  private clearRuntimeManagerRestoreFocusTimer(): void {
+    if (this.runtimeManagerRestoreFocusTimer !== null) {
+      clearTimeout(this.runtimeManagerRestoreFocusTimer);
+      this.runtimeManagerRestoreFocusTimer = null;
+    }
+  }
+
+  private activeElement(): HTMLElement | null {
+    return document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+  }
+}

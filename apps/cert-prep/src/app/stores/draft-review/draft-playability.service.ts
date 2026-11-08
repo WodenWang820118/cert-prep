@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import type { QuestionDraftRead } from '../../contracts/api.contracts';
+import type { QuestionDraftRead } from '../../core/domain';
 import { PLAYABLE_DRAFT_STATUS } from './constants/draft-review.constants';
 
 @Injectable({ providedIn: 'root' })

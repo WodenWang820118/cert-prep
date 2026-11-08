@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import type { DocumentRead } from '../../contracts/api.contracts';
+import type { DocumentRead } from '../../core/domain';
 import { appDocument } from '../../testing/app.spec-helpers';
 import type {
   SourceDocumentStatusViewModel,

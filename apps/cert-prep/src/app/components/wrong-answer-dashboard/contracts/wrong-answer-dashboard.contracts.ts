@@ -1,4 +1,4 @@
-import type { WrongAnswerSummaryRead } from '../../../contracts/api.contracts';
+import type { WrongAnswerSummaryRead } from '../../../core/domain';
 
 export type WrongAnswerCluster = WrongAnswerSummaryRead['clusters'][number];
 export type WrongAnswerRepeatedMiss =

@@ -18,12 +18,12 @@ import {
   type CaptureWorkbenchElement,
 } from '@gx-capture/capture-workbench-ui';
 import { Subscription } from 'rxjs';
-import { ProjectStore } from '../../stores/project.store';
+import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { CertPrepCaptureClient } from './cert-prep-capture-client';
 import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
 import { CaptureRuntimePreflightStore } from '../../stores/capture-runtime/capture-runtime-preflight.store';
-import { AppIconComponent } from '../../components/ui/app-icon.component';
+import { AppIconComponent } from '../../core/ui';
 
 @Component({
   selector: 'app-capture-workbench-trial-page',

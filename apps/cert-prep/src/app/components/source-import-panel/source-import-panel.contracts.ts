@@ -1,4 +1,4 @@
-import type { ChunkRead, DocumentRead } from '../../contracts/api.contracts';
+import type { ChunkRead, DocumentRead } from '../../core/domain';
 import type {
   LanguageHint,
   SourceUploadItem,

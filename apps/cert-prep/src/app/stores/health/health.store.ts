@@ -1,11 +1,11 @@
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
 import { from } from 'rxjs';
-import { CertPrepHttpResourceClient } from '../../services/cert-prep-http-resource-client.service';
+import { CertPrepHttpResourceClient } from '../../core/data';
 import type { RuntimeKind } from './contracts/health-runtime.contracts';
 import { HealthStatusStore } from './health-status.store';
 import { RuntimeActionsStore } from './runtime-actions.store';
 import { RuntimeApiClientsService } from './runtime-api-clients.service';
-import { OperationStore } from '../operation.store';
+import { OperationStore } from '../../core/data';
 
 @Injectable({ providedIn: 'root' })
 export class HealthStore {

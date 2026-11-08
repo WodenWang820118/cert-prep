@@ -7,12 +7,12 @@ import {
   untracked,
 } from '@angular/core';
 import { forkJoin, from, map, Subscription } from 'rxjs';
-import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
-import type { ChunkRead, DocumentRead } from '../../contracts/api.contracts';
-import { isDocumentOperationEventTerminal } from '../../contracts/operation-events.contracts';
-import type { DocumentOperationEvent } from '../../contracts/operation-events.contracts';
-import { CertPrepHttpResourceClient } from '../../services/cert-prep-http-resource-client.service';
-import { CertPrepSseClient } from '../../services/cert-prep-sse-client.service';
+import { CERT_PREP_API } from '../../core/data';
+import type { ChunkRead, DocumentRead } from '../../core/domain';
+import { isDocumentOperationEventTerminal } from '../../core/domain';
+import type { DocumentOperationEvent } from '../../core/domain';
+import { CertPrepHttpResourceClient } from '../../core/data';
+import { CertPrepSseClient } from '../../core/data';
 import type {
   DocumentParsingMetric,
   LanguageHint,
@@ -22,8 +22,8 @@ import type {
 } from './contracts/source-import.contracts';
 import { DocumentParsingMetricsService } from './document-parsing-metrics.service';
 import { DocumentLibraryStore } from './document-library.store';
-import { OperationStore } from '../operation.store';
-import { ProjectStore } from '../project.store';
+import { OperationStore } from '../../core/data';
+import { ProjectStore } from '../../projects/data';
 import { SourceUploadLifecycle } from './source-upload-lifecycle';
 import {
   DEFAULT_UPLOAD_BATCH_SIZE,

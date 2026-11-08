@@ -8,17 +8,17 @@ import {
   input,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import type { PracticeAttemptRead } from '../../contracts/api.contracts';
+import type { PracticeAttemptRead } from '../../core/domain';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
-import { OperationStore } from '../../stores/operation.store';
+import { OperationStore } from '../../core/data';
 import type { PracticeSessionMode } from '../../stores/practice/contracts/practice.contracts';
 import { PracticeStore } from '../../stores/practice/practice.store';
-import { ProjectStore } from '../../stores/project.store';
+import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import type { QuestionNavigatorItem } from './contracts/practice-panel.contracts';
 import { ChoiceKeyService } from '../../services/choice-key.service';
 import { displayChoice } from '../../services/choice-display';
-import { AppIconComponent } from '../ui/app-icon.component';
+import { AppIconComponent } from '../../core/ui';
 
 @Component({
   selector: 'app-practice-panel',

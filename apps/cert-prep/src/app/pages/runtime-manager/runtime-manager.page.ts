@@ -11,9 +11,9 @@ import { ModelHealthViewModelFacade } from '../../components/model-health/model-
 import { RuntimeStatusRowComponent } from '../../components/model-health/runtime-status-row.component';
 import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
 import { HealthStore } from '../../stores/health/health.store';
-import { OperationStore } from '../../stores/operation.store';
-import { ActionButtonComponent } from '../../components/ui/action-button.component';
-import { AppIconComponent } from '../../components/ui/app-icon.component';
+import { OperationStore } from '../../core/data';
+import { ActionButtonComponent } from '../../core/ui';
+import { AppIconComponent } from '../../core/ui';
 import { HlmProgressImports } from '@spartan-ng/helm/progress';
 
 @Component({

@@ -1,0 +1,79 @@
+<div class="project-rail">
+  <div class="project-rail-heading">
+    <div class="project-rail-icon" aria-hidden="true">
+      <app-icon name="lucideFolder" />
+    </div>
+    <div>
+      <p class="workbench-section-label">Local Workspace</p>
+      <h2>Projects</h2>
+    </div>
+  </div>
+
+  @if (!createFormOpen()) {
+    <button
+      class="project-create-toggle"
+      type="button"
+      (click)="openCreateForm()"
+    >
+      <app-icon name="lucidePlus" />
+      <span>Create project</span>
+    </button>
+  } @else {
+    <form
+      class="project-create-form"
+      data-testid="project-create-form"
+      (ngSubmit)="createProject()"
+    >
+      <label class="workbench-field" for="projectName">
+        <span>Name</span>
+        <input
+          hlmInput
+          id="projectName"
+          name="projectName"
+          type="text"
+          autocomplete="off"
+          [ngModel]="projects.projectName()"
+          (ngModelChange)="projects.setProjectName($event)"
+        />
+      </label>
+      <label class="workbench-field" for="projectDescription">
+        <span>Description</span>
+        <textarea
+          hlmTextarea
+          id="projectDescription"
+          name="projectDescription"
+          rows="3"
+          [ngModel]="projects.projectDescription()"
+          (ngModelChange)="projects.setProjectDescription($event)"
+        ></textarea>
+      </label>
+      <button
+        class="project-create-toggle"
+        type="submit"
+        [disabled]="operations.isBusyFor('project') || projects.projectName().trim().length === 0"
+      >
+        <app-icon name="lucidePlus" [busy]="operations.isBusyFor('project')" />
+        <span>Create project</span>
+      </button>
+    </form>
+  }
+
+  <section class="project-list-section" aria-label="Project list">
+    <p class="project-list-label">Recent Projects</p>
+    @for (project of projects.projects(); track project.id) {
+      <button
+        type="button"
+        class="project-list-item"
+        [class.is-selected]="project.id === projects.selectedProjectId()"
+        (click)="projectSelected.emit(project.id)"
+      >
+        <strong>{{ project.name }}</strong>
+        @if (project.description) {
+          <span>{{ project.description }}</span>
+        }
+      </button>
+    } @empty {
+      <p class="project-empty-state">No projects yet.</p>
+    }
+  </section>
+</div>

@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import { CERT_PREP_API } from '../../core/data';
 import { BuildWorkbenchPage } from './build-workbench.page';
 
 describe('BuildWorkbenchPage', () => {

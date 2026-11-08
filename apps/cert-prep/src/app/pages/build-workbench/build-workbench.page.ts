@@ -1,7 +1,7 @@
 import { Component, ChangeDetectionStrategy } from '@angular/core';
 import { DraftReviewPanelComponent } from '../../components/draft-review-panel/draft-review-panel.component';
 import { SourceImportPanelComponent } from '../../components/source-import-panel/source-import-panel.component';
-import { AppIconComponent } from '../../components/ui/app-icon.component';
+import { AppIconComponent } from '../../core/ui';
 
 @Component({
   selector: 'app-build-workbench-page',

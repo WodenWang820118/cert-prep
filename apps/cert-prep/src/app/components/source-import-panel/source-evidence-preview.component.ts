@@ -6,12 +6,12 @@ import {
   output,
   viewChild,
 } from '@angular/core';
-import type { ChunkRead } from '../../contracts/api.contracts';
+import type { ChunkRead } from '../../core/domain';
 import type {
   SourceEvidenceViewModel,
   SourceImportAction,
 } from './source-import-panel.contracts';
-import { AppIconComponent } from '../ui/app-icon.component';
+import { AppIconComponent } from '../../core/ui';
 
 @Component({
   selector: 'app-source-evidence-preview',

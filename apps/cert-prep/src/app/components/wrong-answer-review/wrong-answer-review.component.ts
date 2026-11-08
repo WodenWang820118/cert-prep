@@ -5,17 +5,17 @@ import {
   signal,
   ChangeDetectionStrategy,
 } from '@angular/core';
-import type { WrongAnswerRead } from '../../contracts/api.contracts';
+import type { WrongAnswerRead } from '../../core/domain';
 import { ReviewDisplayService } from '../../services/review-display.service';
 import { displayChoice } from '../../services/choice-display';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
-import { OperationStore } from '../../stores/operation.store';
+import { OperationStore } from '../../core/data';
 import { ReviewRetryNavigationService } from '../../stores/practice/review-retry-navigation.service';
-import { ProjectStore } from '../../stores/project.store';
+import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { WrongAnswerReviewStore } from '../../stores/wrong-answer-review.store';
-import { AiInferredAnswerBadgeComponent } from '../ui/ai-inferred-answer-badge.component';
-import { AppIconComponent } from '../ui/app-icon.component';
+import { AiInferredAnswerBadgeComponent } from '../../core/ui';
+import { AppIconComponent } from '../../core/ui';
 
 @Component({
   selector: 'app-wrong-answer-review',

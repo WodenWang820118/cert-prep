@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
-import { CertPrepRuntimeConfig } from '../../services/cert-prep-api.service';
+import { CertPrepRuntimeConfig } from '../../core/data';
 import {
   RUNTIME_UPDATE_POLL_INTERVAL_MS,
   RUNTIME_UPDATE_SUCCESS_VISIBLE_MS,

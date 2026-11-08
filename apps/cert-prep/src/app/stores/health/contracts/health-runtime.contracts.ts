@@ -4,13 +4,13 @@ import type {
   ModelDownloadRead,
   RuntimeInstallationRead,
   RuntimeRequirementRead,
-} from '../../../contracts/api.contracts';
-import type { LLMProviderSelectionRead as GeneratedLLMProviderSelectionRead } from '../../../contracts/api.contracts';
+} from '../../../core/domain';
+import type { LLMProviderSelectionRead as GeneratedLLMProviderSelectionRead } from '../../../core/domain';
 import type { Observable } from 'rxjs';
 import type {
   ModelDownloadEvent,
   RuntimeInstallationEvent,
-} from '../../../contracts/operation-events.contracts';
+} from '../../../core/domain';
 
 /**
  * Runtime job lifecycle normalized for UI state and event-stream decisions.

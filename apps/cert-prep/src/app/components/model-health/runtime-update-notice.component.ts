@@ -7,7 +7,7 @@ import {
 import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
 import { DesktopRuntimeViewService } from '../../stores/desktop-runtime/desktop-runtime-view.service';
 import { RUNTIME_UPDATE_COPY } from '../../stores/desktop-runtime/constants/runtime-update-copy.constants';
-import { AppIconComponent } from '../ui/app-icon.component';
+import { AppIconComponent } from '../../core/ui';
 
 /**
  * Shell strip for the one-time runtime refresh after an app update. In
