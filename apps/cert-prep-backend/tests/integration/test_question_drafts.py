@@ -9,7 +9,8 @@ from cert_prep_backend.authoring.domain.models import (
     DraftSuggestion,
 )
 from cert_prep_backend.authoring.infrastructure import repository as drafts_repository
-from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.bootstrap.study_projects import authoring_projects
+from cert_prep_backend.platform.errors import NotFoundError, ProviderUnavailableError
 from cert_prep_backend.ai_providers.domain.provider import ProviderHealth
 from cert_prep_backend.authoring.api.schemas import DraftGenerateRequest
 
@@ -169,7 +170,8 @@ def _append_generated_drafts(
     document_id: str,
     suggestions: list[DraftSuggestion],
 ):
-    drafts_repository.ensure_project_exists(db, project_id)
+    if not authoring_projects(db).exists(project_id):
+        raise NotFoundError("Project not found.")
     with db.connect() as connection:
         rows = drafts_repository._append_generated_drafts(
             connection,

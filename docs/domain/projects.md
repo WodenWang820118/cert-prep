@@ -77,7 +77,7 @@ sequenceDiagram
 
 練習在自己的 `BEGIN IMMEDIATE` 交易裡經 port 呼叫 `project_exists`（`bootstrap/study_projects.py` 的 `ProjectExistence`；`bootstrap/practice_reads.py` 把練習的連線交給 `SqliteProjectRepository`）。教材來源的 repository 經它的 port `StudyProjects` 呼叫 `project_exists`（`bootstrap/source_library_links.py`），用自己的連線。
 
-教材來源與擷取整合經 port `ProjectRepository` 與 `require_project` 確認專案存在。題目編寫的 infrastructure（`draft_jobs`、`manual_operations`、`repository`）仍直接 import `projects.infrastructure` 的 `ensure_project_exists(db, project_id)`，列為已知例外（「Other contexts reach Study Projects only through its application and domain」），由 C5 第三部分改經學習專案的用例（https://github.com/gx-capture/capture-workbench/issues/200）。
+教材來源與擷取整合經 port `ProjectRepository` 與 `require_project` 確認專案存在；題目編寫經 port `StudyProjects` 與 `project_exists` 確認專案存在，由 `bootstrap/study_projects.py` 接線。該契約的所有已知例外已在 C5 第三部分完全消除。
 
 ## 規則與資料來源
 

@@ -11,7 +11,6 @@ from sqlite3 import Connection
 
 import pytest
 
-from cert_prep_backend.authoring.infrastructure.repository import SqliteQuestionDraftRepository
 from cert_prep_backend.bootstrap.practice_reads import bind_practice_reads, practice_documents
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.database import Database
@@ -24,6 +23,7 @@ from cert_prep_backend.practice.domain.session import (
 )
 from cert_prep_backend.practice.infrastructure.repository import SqlitePracticeStore
 from cert_prep_backend.projects.infrastructure.repository import SqliteProjectRepository
+from cert_prep_backend.bootstrap.authoring_links import question_draft_repository
 
 
 class _LeaveUncommitted(Exception):
@@ -290,7 +290,7 @@ def test_practice_transaction_sees_uncommitted_projects_and_drafts(tmp_path: Pat
                 "draft-new",
             ]
             assert SqliteProjectRepository(database).get("new-project") is None
-            assert SqliteQuestionDraftRepository(database).approved(
+            assert question_draft_repository(database).approved(
                 "new-project", document_id=None
             ) == []
             with pytest.raises(NotFoundError, match="^Document not found.$"):

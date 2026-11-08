@@ -7,6 +7,7 @@ from collections.abc import Callable
 
 from capture_runtime_client import CaptureSourceKind
 
+from cert_prep_backend.capture_integration.application.ports import CapturePublication
 from cert_prep_backend.capture_integration.infrastructure.coordinator import (
     PDF_OCR_UNAVAILABLE_MESSAGE,
     CaptureRuntimeCanceledError,
@@ -17,7 +18,6 @@ from cert_prep_backend.capture_integration.infrastructure.coordinator import (
 from cert_prep_backend.capture_integration.infrastructure.persistence import (
     publish_capture_document,
 )
-from cert_prep_backend.platform.database import Database
 from cert_prep_backend.platform.errors import (
     DocumentProcessingCanceledError,
     ProviderUnavailableError,
@@ -55,9 +55,14 @@ class CaptureSourceExtraction:
     """Runs one capture without a review, stores its result as the document's chunks, and
     deletes the runtime's copy. Capture errors become the Source Library's errors."""
 
-    def __init__(self, coordinator: CertPrepCaptureCoordinator, db: Database) -> None:
+    def __init__(
+        self,
+        coordinator: CertPrepCaptureCoordinator,
+        *,
+        publication: CapturePublication,
+    ) -> None:
         self._coordinator = coordinator
-        self._db = db
+        self._publication = publication
 
     def extract(
         self,
@@ -103,7 +108,6 @@ class CaptureSourceExtraction:
             raise SourceExtractionFailed(str(error)) from error
 
         document = publish_capture_document(
-            self._db,
             project_id=project_id,
             document_id=document_id,
             operation_id=operation_id,
@@ -111,6 +115,7 @@ class CaptureSourceExtraction:
             expected_sha256=sha256,
             document=capture.document,
             ocr_projection=capture.ocr_projection,
+            publication=self._publication,
         )
         try:
             self._coordinator.delete(capture.capture_id)

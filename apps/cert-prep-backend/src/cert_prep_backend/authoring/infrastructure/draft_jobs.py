@@ -4,14 +4,17 @@ from collections.abc import Callable
 from sqlite3 import Connection, Row
 from uuid import uuid4
 
+from cert_prep_backend.authoring.application.ports import (
+    DraftSources,
+    ProjectDocuments,
+    StudyProjects,
+)
 from cert_prep_backend.authoring.domain.generation import (
     JOB_RETRYABLE_STATUSES,
     DraftGenerationJob,
     DraftGenerationJobStatus,
 )
 from cert_prep_backend.platform.database import Database, utc_now
-from cert_prep_backend.projects.infrastructure.repository import ensure_project_exists
-from cert_prep_backend.source_library.infrastructure import repository as documents_repository
 from cert_prep_backend.platform.errors import NotFoundError
 
 
@@ -25,11 +28,14 @@ def enqueue_chunk_job(
     strategy: str,
     provider: str,
     model: str,
+    projects: StudyProjects,
+    sources: DraftSources,
 ) -> DraftGenerationJob:
     """Create or return the idempotent draft job for one source chunk."""
 
-    ensure_project_exists(db, project_id)
-    documents_repository.get_chunk(db, project_id, document_id, chunk_id)
+    if not projects.exists(project_id):
+        raise NotFoundError("Project not found.")
+    sources.chunk(project_id, document_id, chunk_id)
     now = utc_now()
     with db.connect() as connection:
         connection.execute(
@@ -72,9 +78,13 @@ def enqueue_chunk_job(
 
 
 def list_document_jobs(
-    db: Database, project_id: str, document_id: str
+    db: Database,
+    project_id: str,
+    document_id: str,
+    *,
+    documents: ProjectDocuments,
 ) -> list[DraftGenerationJob]:
-    documents_repository.ensure_document_exists(db, project_id, document_id)
+    documents.require(project_id, document_id)
     with db.connect() as connection:
         rows = connection.execute(
             """
@@ -166,10 +176,11 @@ def retry_document_jobs(
     document_id: str,
     provider: str,
     model: str,
+    documents: ProjectDocuments,
 ) -> list[DraftGenerationJob]:
     """Requeue retryable terminal jobs for a document after runtime blockers clear."""
 
-    documents_repository.ensure_document_exists(db, project_id, document_id)
+    documents.require(project_id, document_id)
     now = utc_now()
     retryable_statuses = tuple(status.value for status in JOB_RETRYABLE_STATUSES)
     with db.connect() as connection:
@@ -245,10 +256,11 @@ def request_cancel(
     project_id: str,
     document_id: str,
     job_id: str,
+    documents: ProjectDocuments,
 ) -> DraftGenerationJob:
     """Cancel pending work or request cooperative cancellation for running work."""
 
-    documents_repository.ensure_document_exists(db, project_id, document_id)
+    documents.require(project_id, document_id)
     return _transition(
         db,
         job_id,
@@ -385,18 +397,29 @@ def _discard_unfinished_jobs(connection: Connection, project_id: str, document_i
 class SqliteDraftGenerationJobRepository:
     """Draft generation jobs stored in SQLite."""
 
-    def __init__(self, db: Database, connection: Connection | None = None) -> None:
+    def __init__(
+        self,
+        db: Database,
+        connection: Connection | None = None,
+        *,
+        documents: ProjectDocuments,
+    ) -> None:
         # A caller's connection joins that transaction. Source Library passes the connection
         # of the document run it stops or retries, so the jobs go with that run's writes.
         self._db = db
         self._connection = connection
+        self._documents = documents
 
     def jobs_of(self, project_id: str, document_id: str) -> list[DraftGenerationJob]:
-        return list_document_jobs(self._db, project_id, document_id)
+        return list_document_jobs(self._db, project_id, document_id, documents=self._documents)
 
     def cancel(self, project_id: str, document_id: str, job_id: str) -> DraftGenerationJob:
         return request_cancel(
-            self._db, project_id=project_id, document_id=document_id, job_id=job_id
+            self._db,
+            project_id=project_id,
+            document_id=document_id,
+            job_id=job_id,
+            documents=self._documents,
         )
 
     def discard_unfinished(self, project_id: str, document_id: str) -> None:

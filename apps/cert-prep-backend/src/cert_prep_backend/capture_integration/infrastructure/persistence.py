@@ -3,17 +3,16 @@
 from __future__ import annotations
 
 from capture_runtime_client import CaptureDocument
+from cert_prep_backend.capture_integration.application.ports import CapturePublication
 from cert_prep_backend.capture_integration.infrastructure.host_models import CaptureReview
 from cert_prep_backend.capture_integration.infrastructure.mapping import (
     capture_document_to_audio_segments,
     capture_document_to_pdf_extraction,
 )
-from cert_prep_backend.source_library.infrastructure import operations
-from cert_prep_backend.platform.database import Database
+from cert_prep_backend.source_library.domain.document import SourceDocument
 
 
 def publish_capture_document(
-    db: Database,
     *,
     project_id: str,
     document_id: str,
@@ -23,15 +22,15 @@ def publish_capture_document(
     document: CaptureDocument,
     review: CaptureReview | None = None,
     ocr_projection: object | None = None,
-) -> dict:
+    publication: CapturePublication,
+) -> SourceDocument:
     if document.source.sha256 != expected_sha256:
         raise ValueError("Capture Runtime result does not match the stored source digest")
 
     if source_kind == "audio":
         mapped = capture_document_to_audio_segments(document)
         warning = "; ".join(document.warnings) or None
-        return operations.publish_capture_audio_success(
-            db,
+        return publication.publish_audio_success(
             project_id=project_id,
             operation_id=operation_id,
             document_id=document_id,
@@ -52,8 +51,7 @@ def publish_capture_document(
         review=review,
         ocr_projection=ocr_projection,
     )
-    return operations.publish_success(
-        db,
+    return publication.publish_success(
         project_id=project_id,
         operation_id=operation_id,
         document_id=document_id,

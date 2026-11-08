@@ -36,6 +36,7 @@ from cert_prep_backend.capture_integration.infrastructure import review_workflow
 from cert_prep_backend.capture_integration.infrastructure.persistence import (
     publish_capture_document,
 )
+from cert_prep_backend.bootstrap.capture_links import capture_publication
 from cert_prep_backend.source_library.infrastructure import operations
 from cert_prep_backend.source_library.domain.document import ExtractedPage, PdfExtractionResult
 from capture_runtime_client import (
@@ -207,7 +208,6 @@ def test_public_capture_publication_rejects_noncanonical_write_provenance(
         assert isinstance(document, CaptureDocument)
         with pytest.raises(ValueError, match="OCR-only"):
             publish_capture_document(
-                app.state.database,
                 project_id=str(fixture["project_id"]),
                 document_id=str(fixture["document_id"]),
                 operation_id=str(fixture["operation_id"]),
@@ -215,6 +215,7 @@ def test_public_capture_publication_rejects_noncanonical_write_provenance(
                 expected_sha256="a" * 64,
                 document=document,
                 ocr_projection=projection,
+                publication=capture_publication(app.state.database),
             )
 
         assert _public_capture_counts(
@@ -238,7 +239,6 @@ def test_public_capture_publication_maps_exact_producer_engine_to_durable_method
         projection = fixture["projection"]
         assert isinstance(document, CaptureDocument)
         result = publish_capture_document(
-            app.state.database,
             project_id=str(fixture["project_id"]),
             document_id=str(fixture["document_id"]),
             operation_id=str(fixture["operation_id"]),
@@ -246,6 +246,7 @@ def test_public_capture_publication_maps_exact_producer_engine_to_durable_method
             expected_sha256="a" * 64,
             document=document,
             ocr_projection=projection,
+            publication=capture_publication(app.state.database),
         )
 
         assert result.extraction_method == "windowsml_ocr"
@@ -278,7 +279,6 @@ def test_public_capture_publication_rejects_projection_engine_mismatch(
 
         with pytest.raises(ValueError, match="provenance"):
             publish_capture_document(
-                app.state.database,
                 project_id=str(fixture["project_id"]),
                 document_id=str(fixture["document_id"]),
                 operation_id=str(fixture["operation_id"]),
@@ -286,6 +286,7 @@ def test_public_capture_publication_rejects_projection_engine_mismatch(
                 expected_sha256="a" * 64,
                 document=document,
                 ocr_projection=projection,
+                publication=capture_publication(app.state.database),
             )
 
         assert _public_capture_counts(
@@ -312,7 +313,6 @@ def test_public_capture_publication_rejects_page_provenance_mismatch_without_wri
 
         with pytest.raises(ValueError, match="provenance"):
             publish_capture_document(
-                app.state.database,
                 project_id=str(fixture["project_id"]),
                 document_id=str(fixture["document_id"]),
                 operation_id=str(fixture["operation_id"]),
@@ -320,6 +320,7 @@ def test_public_capture_publication_rejects_page_provenance_mismatch_without_wri
                 expected_sha256="a" * 64,
                 document=document,
                 ocr_projection=projection,
+                publication=capture_publication(app.state.database),
             )
 
         assert _public_capture_counts(
@@ -347,7 +348,6 @@ def test_public_capture_publication_rejects_unresolved_page_without_writes(
 
         with pytest.raises(ValueError, match="provenance"):
             publish_capture_document(
-                app.state.database,
                 project_id=str(fixture["project_id"]),
                 document_id=str(fixture["document_id"]),
                 operation_id=str(fixture["operation_id"]),
@@ -355,6 +355,7 @@ def test_public_capture_publication_rejects_unresolved_page_without_writes(
                 expected_sha256="a" * 64,
                 document=document,
                 ocr_projection=projection,
+                publication=capture_publication(app.state.database),
             )
 
         assert _public_capture_counts(
@@ -380,7 +381,6 @@ def test_public_capture_publication_uses_projection_validation_for_embedded_mode
         document.extraction_engine.model = "embedded-text-model"
 
         result = publish_capture_document(
-            app.state.database,
             project_id=str(fixture["project_id"]),
             document_id=str(fixture["document_id"]),
             operation_id=str(fixture["operation_id"]),
@@ -388,6 +388,7 @@ def test_public_capture_publication_uses_projection_validation_for_embedded_mode
             expected_sha256="a" * 64,
             document=document,
             ocr_projection=projection,
+            publication=capture_publication(app.state.database),
         )
 
         assert result.extraction_method == "windowsml_ocr"

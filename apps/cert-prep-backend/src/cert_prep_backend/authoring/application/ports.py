@@ -16,6 +16,20 @@ from cert_prep_backend.authoring.domain.models import (
 from cert_prep_backend.authoring.domain.reading_solver import ReadingSpan
 
 
+class StudyProjects(Protocol):
+    """Whether a study project exists. Study Projects owns that fact (D17)."""
+
+    def exists(self, project_id: str) -> bool: ...
+
+
+class ProjectDocuments(Protocol):
+    """Whether a source document belongs to a project. Source Library owns documents (D17)."""
+
+    def require(self, project_id: str, document_id: str) -> None:
+        """NotFoundError unless the document belongs to the project."""
+        ...
+
+
 class ReadingLexicon(Protocol):
     def kanji_span_readings(self, text: str) -> Iterable[ReadingSpan]: ...
 
@@ -74,6 +88,8 @@ class DraftSources(DocumentExamState, Protocol):
     """A document's source chunks in Source Library, and its count of drafts."""
 
     def chunks_of(self, project_id: str, document_id: str) -> list[SourceChunk]: ...
+
+    def chunk(self, project_id: str, document_id: str, chunk_id: str) -> SourceChunk: ...
 
 
 class DraftWriting(Protocol):

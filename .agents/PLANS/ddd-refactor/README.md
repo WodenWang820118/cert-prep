@@ -2,7 +2,7 @@
 
 狀態：**已核可**（2026-10-26）：產品負責人核可方向與產品決策，見 [decisions.md](decisions.md)；實作安排見第 10 節。結構比照 LAW 已定案的 DDD 重構計畫（`gx.law-prep/.agents/PLANS/ddd-refactor/`，決策 A30、A31）。決策見 [decisions.md](decisions.md)，術語見 [glossary.md](glossary.md)，每個上下文的說明見 [docs/domain/](../../../docs/domain/README.md)。
 
-進度（2026-11-08）：C0–C4、C2 收尾、C6、C8、C5 第一部分（練習經所屬上下文讀資料表）與第二部分（教材來源、題目編寫、學習專案之間的 SQL：作業停止或重試時刪產生工作、提交草稿時寫教材題目數、教材來源確認專案存在，都改經所屬上下文的用例，原本同一個交易的仍在同一個交易）已完成。剩下 C5 第三部分（題目編寫與擷取整合 infrastructure 直接引用其他上下文 infrastructure 的已知例外：https://github.com/gx-capture/capture-workbench/issues/200）與 C7 前端（https://github.com/gx-capture/capture-workbench/issues/201），總表是 https://github.com/gx-capture/capture-workbench/issues/178。
+進度（2026-11-08）：C0–C4、C2 收尾、C6、C8、C5 全部三部分（第一部分：練習經所屬上下文讀資料表；第二部分：教材來源、題目編寫、學習專案之間的 SQL；第三部分：題目編寫與擷取整合 infrastructure 直接引用其他上下文 infrastructure 的 11 項已知例外完全消除：https://github.com/gx-capture/capture-workbench/issues/200）已完成。剩下 C7 前端（https://github.com/gx-capture/capture-workbench/issues/201），總表是 https://github.com/gx-capture/capture-workbench/issues/178。
 
 這份文件給產品負責人和之後加入的人讀。程式名稱用英文，說明用繁體中文。數字取自 2026-10-26 對 `origin/main`（`826b49b`）的唯讀盤點。
 

@@ -26,6 +26,11 @@ class DocumentRepository(Protocol):
 
     def chunks_of(self, project_id: str, document_id: str) -> list[DocumentChunk]: ...
 
+    def chunk(self, project_id: str, document_id: str, chunk_id: str) -> DocumentChunk:
+        """One chunk of the document; NotFoundError "Document chunk not found." when the
+        document has no such chunk (whether or not the document exists)."""
+        ...
+
     def edit_chunk_text(
         self, project_id: str, document_id: str, chunk_id: str, text: str
     ) -> DocumentChunk:

@@ -71,10 +71,8 @@ from cert_prep_backend.ai_providers.infrastructure.ollama_server import (
     ollama_server_coordinator_from_settings,
 )
 from cert_prep_backend.ai_providers.infrastructure.provider import lazy_provider_from_settings
-from cert_prep_backend.authoring.infrastructure.draft_jobs import SqliteDraftGenerationJobRepository
 from cert_prep_backend.authoring.infrastructure.draft_writing import ProviderDraftWriting
 from cert_prep_backend.authoring.infrastructure.import_drafting import ImportedDocumentDrafts
-from cert_prep_backend.authoring.infrastructure.repository import SqliteQuestionDraftRepository
 from cert_prep_backend.authoring.infrastructure.sources import SourceLibraryDraftSources
 from cert_prep_backend.authoring.infrastructure.sudachi_reading_lexicon import SudachiReadingLexicon
 from cert_prep_backend.authoring.infrastructure.streaming import (
@@ -106,12 +104,23 @@ from cert_prep_backend.runtime_provisioning.api import (
 from cert_prep_backend.authoring.api import router as drafts
 from cert_prep_backend.authoring.api import operation_events as draft_generation_events
 from cert_prep_backend.practice.api import router as practice
-from cert_prep_backend.bootstrap.authoring_links import bind_document_exam_state
+from cert_prep_backend.bootstrap.authoring_links import (
+    authoring_documents,
+    bind_document_exam_state,
+    draft_generation_job_repository,
+    question_draft_repository,
+)
+from cert_prep_backend.bootstrap.capture_links import (
+    bind_capture_review_commit,
+    capture_operations,
+    capture_publication,
+)
 from cert_prep_backend.bootstrap.practice_reads import bind_practice_reads, practice_documents
 from cert_prep_backend.bootstrap.source_library_links import (
     document_operation_repository,
     document_repository,
 )
+from cert_prep_backend.bootstrap.study_projects import authoring_projects
 from cert_prep_backend.practice.infrastructure.repository import SqlitePracticeStore
 from cert_prep_backend.projects.api import router as projects
 from cert_prep_backend.projects.infrastructure.repository import SqliteProjectRepository
@@ -232,6 +241,12 @@ def create_app(
         app.state.database,
         app.state.capture_coordinator,
         app.state.document_operation_repository,
+        documents=app.state.document_repository,
+        publication=capture_publication(app.state.database),
+        bind_commit=bind_capture_review_commit(),
+        operations=capture_operations(
+            app.state.database, app.state.document_operation_repository
+        ),
     )
     app.state.capture_review_maintenance = CaptureReviewMaintenanceAdapter(
         app.state.database,
@@ -255,30 +270,34 @@ def create_app(
     app.state.capture_background_work = PoolCaptureBackgroundWork(app.state.document_worker_pool)
     app.state.document_work = PoolDocumentWork(app.state.document_worker_pool)
     app.state.source_extraction = (
-        CaptureSourceExtraction(app.state.capture_coordinator, app.state.database)
+        CaptureSourceExtraction(
+            app.state.capture_coordinator,
+            publication=capture_publication(app.state.database),
+        )
         if app.state.capture_coordinator is not None
         else None
     )
     app.state.document_processing_async_jobs = document_processing_async_jobs
     app.state.runtime_installation_async_jobs = runtime_installation_async_jobs
     reading_lexicon = SudachiReadingLexicon() if app_settings.reading_solver_enabled else None
+    app.state.draft_sources = SourceLibraryDraftSources(app.state.document_repository)
     app.state.streaming_draft_generation_manager = StreamingDraftGenerationManager(
         settings=app_settings,
         provider=app.state.llm_provider,
         async_jobs=streaming_draft_generation_async_jobs,
         reading_lexicon=reading_lexicon,
         exam_state=bind_document_exam_state(app.state.database),
+        sources=app.state.draft_sources,
+        projects=authoring_projects(app.state.database),
+        documents=authoring_documents(app.state.database),
     )
     app.state.streaming_draft_generation_manager.recover_jobs(app.state.database)
-    app.state.question_draft_repository = SqliteQuestionDraftRepository(app.state.database)
-    app.state.draft_generation_job_repository = SqliteDraftGenerationJobRepository(
+    app.state.question_draft_repository = question_draft_repository(app.state.database)
+    app.state.draft_generation_job_repository = draft_generation_job_repository(
         app.state.database
     )
     app.state.draft_generation_work = StreamingDraftGenerationWork(
         app.state.streaming_draft_generation_manager, app.state.database
-    )
-    app.state.draft_sources = SourceLibraryDraftSources(
-        app.state.document_repository, app.state.database
     )
     app.state.draft_writing = ProviderDraftWriting(reading_lexicon=reading_lexicon)
     app.state.imported_document_drafting = ImportedDocumentDrafts(

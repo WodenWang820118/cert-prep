@@ -27,14 +27,21 @@ from cert_prep_backend.capture_integration.infrastructure.coordinator import (
     CaptureRuntimeRequirementUnavailableError,
     CertPrepCaptureCoordinator,
 )
+from cert_prep_backend.capture_integration.application.ports import (
+    BindCaptureReviewCommit,
+    CaptureOperations,
+    CapturePublication,
+)
 from cert_prep_backend.capture_integration.infrastructure.persistence import (
     publish_capture_document,
 )
 from cert_prep_backend.capture_integration.infrastructure import review_sessions
-from cert_prep_backend.source_library.application.ports import DocumentOperationRepository
+from cert_prep_backend.source_library.application import use_cases as source_library
+from cert_prep_backend.source_library.application.ports import (
+    DocumentOperationRepository,
+    DocumentRepository,
+)
 from cert_prep_backend.source_library.domain.document import SourceDocument
-from cert_prep_backend.source_library.infrastructure import operations
-from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
 from cert_prep_backend.platform.database import Database
 
 
@@ -63,6 +70,7 @@ def begin_capture_commit(
     session_id: str,
     candidate: CaptureDocument,
     client_request_id: str,
+    bind_commit: BindCaptureReviewCommit,
 ) -> CaptureCommitClaim:
     """Claim the review session and operation in one SQLite transaction."""
 
@@ -77,8 +85,7 @@ def begin_capture_commit(
             review_digest=candidate_digest(candidate),
         )
         if acquired:
-            operations.begin_capture_review_commit_in_connection(
-                connection,
+            bind_commit(connection).begin_commit(
                 project_id=project_id,
                 document_id=document_id,
                 operation_id=operation_id,
@@ -99,6 +106,8 @@ def begin_review_capture(
     media_type: str,
     source_kind: CaptureSourceKind,
     should_cancel: Callable[[], bool],
+    operations: CaptureOperations,
+    documents: DocumentRepository,
     on_runtime_started: Callable[[str], None] | None = None,
 ) -> SourceDocument:
     def persist_runtime_id(operation) -> None:
@@ -128,8 +137,7 @@ def begin_review_capture(
             session_id=session_id,
             sequence=operation.last_event_sequence,
         )
-        operations.mark_capture_review_pending(
-            db,
+        operations.mark_review_pending(
             project_id=project_id,
             document_id=document_id,
             operation_id=operation_id,
@@ -137,7 +145,7 @@ def begin_review_capture(
     except Exception:
         coordinator.cancel(operation.capture_id)
         raise
-    return source_documents_repository.get_document(db, project_id, document_id)
+    return source_library.view_document(documents, project_id, document_id)
 
 
 def commit_review_capture(
@@ -151,6 +159,8 @@ def commit_review_capture(
     session_id: str,
     candidate: CaptureDocument,
     should_cancel: Callable[[], bool],
+    documents: DocumentRepository,
+    publication: CapturePublication,
 ) -> SourceDocument:
     session = review_sessions.get(db, project_id=project_id, session_id=session_id)
     runtime_capture_id = session.runtime_capture_id
@@ -165,9 +175,8 @@ def commit_review_capture(
             should_cancel=should_cancel,
         )
         terminal_sequence = capture.last_event_sequence
-        source = source_documents_repository.get_document(db, project_id, document_id)
+        source = source_library.view_document(documents, project_id, document_id)
         document = publish_capture_document(
-            db,
             project_id=project_id,
             document_id=document_id,
             operation_id=operation_id,
@@ -175,6 +184,7 @@ def commit_review_capture(
             expected_sha256=source.sha256,
             document=capture.document,
             ocr_projection=capture.ocr_projection,
+            publication=publication,
         )
         review_sessions.finish(
             db,
@@ -301,10 +311,19 @@ class CaptureReviewWorkflowAdapter:
         db: Database,
         coordinator: CertPrepCaptureCoordinator | None,
         document_operations: DocumentOperationRepository,
+        *,
+        documents: DocumentRepository,
+        publication: CapturePublication,
+        bind_commit: BindCaptureReviewCommit,
+        operations: CaptureOperations,
     ) -> None:
         self._db = db
         self._coordinator = coordinator
         self._document_operations = document_operations
+        self._documents = documents
+        self._publication = publication
+        self._bind_commit = bind_commit
+        self._operations = operations
 
     def begin_review(
         self,
@@ -335,6 +354,8 @@ class CaptureReviewWorkflowAdapter:
                 source_kind=runtime_kind,
                 should_cancel=should_cancel,
                 on_runtime_started=on_runtime_started,
+                operations=self._operations,
+                documents=self._documents,
             )
         except CaptureRuntimeCanceledError as error:
             raise CaptureExtractionCanceled() from error
@@ -369,6 +390,7 @@ class CaptureReviewWorkflowAdapter:
             session_id=session_id,
             candidate=cast(CaptureDocument, candidate),
             client_request_id=client_request_id,
+            bind_commit=self._bind_commit,
         )
         return claim.session, claim.acquired
 
@@ -393,6 +415,8 @@ class CaptureReviewWorkflowAdapter:
                 session_id=session_id,
                 candidate=cast(CaptureDocument, candidate),
                 should_cancel=should_cancel,
+                documents=self._documents,
+                publication=self._publication,
             )
         except CaptureRuntimeCanceledError as error:
             raise CaptureExtractionCanceled() from error

@@ -21,11 +21,16 @@ from cert_prep_backend.authoring.domain.models import DraftSuggestion
 from cert_prep_backend.authoring.infrastructure import draft_jobs
 from cert_prep_backend.authoring.infrastructure import manual_operations
 from cert_prep_backend.authoring.infrastructure import repository as drafts_repository
-from cert_prep_backend.bootstrap.authoring_links import bind_document_exam_state
+from cert_prep_backend.authoring.infrastructure.sources import SourceLibraryDraftSources
+from cert_prep_backend.bootstrap.authoring_links import (
+    authoring_documents,
+    bind_document_exam_state,
+)
 from cert_prep_backend.bootstrap.source_library_links import (
     document_operation_repository,
     document_repository,
 )
+from cert_prep_backend.bootstrap.study_projects import authoring_projects
 from cert_prep_backend.capture_integration.infrastructure.review_workflow import (
     CaptureReviewMaintenanceAdapter,
 )
@@ -227,6 +232,7 @@ def test_a_committed_draft_job_records_the_document_exam_state(
         effective_provider="future-provider",
         effective_model="qwen3.5:4b",
         fallback_reason=None,
+        projects=authoring_projects(db),
     )
 
     document = _document_row(db, "doc")
@@ -256,6 +262,7 @@ def test_a_draft_job_without_new_drafts_still_counts_the_document_drafts(
         effective_provider=None,
         effective_model=None,
         fallback_reason=None,
+        projects=authoring_projects(db),
     )
 
     document = _document_row(db, "doc")
@@ -290,6 +297,7 @@ def test_a_committed_manual_operation_records_the_document_exam_state(
         effective_provider="future-provider",
         effective_model="qwen3.5:4b",
         fallback_reason=None,
+        projects=authoring_projects(db),
     )
 
     document = _document_row(db, "doc")
@@ -319,6 +327,8 @@ def test_the_document_exam_state_rolls_back_with_the_draft_commit(
             strategy="hybrid_reasoning",
             provider="future-provider",
             model="qwen3.5:4b",
+            projects=authoring_projects(db),
+            sources=SourceLibraryDraftSources(document_repository(db)),
         )
         with pytest.raises(NotFoundError, match="atomic commit phase"):
             drafts_repository.append_generated_drafts_and_complete_job(
@@ -331,6 +341,7 @@ def test_the_document_exam_state_rolls_back_with_the_draft_commit(
                 effective_provider=None,
                 effective_model=None,
                 fallback_reason=None,
+                projects=authoring_projects(db),
             )
     else:
         operation = manual_operations.create_operation(
@@ -341,6 +352,8 @@ def test_the_document_exam_state_rolls_back_with_the_draft_commit(
             strategy="hybrid_reasoning",
             provider="future-provider",
             model="qwen3.5:4b",
+            projects=authoring_projects(db),
+            documents=authoring_documents(db),
         )
         with pytest.raises(NotFoundError):
             drafts_repository.append_generated_drafts_and_complete_manual_operation(
@@ -353,13 +366,14 @@ def test_the_document_exam_state_rolls_back_with_the_draft_commit(
                 effective_provider=None,
                 effective_model=None,
                 fallback_reason=None,
+                projects=authoring_projects(db),
             )
 
     document = _document_row(db, "doc")
     assert document["status"] == "exam_failed"
     assert document["exam_item_count"] == 0
     assert document["updated_at"] == "t0"
-    assert drafts_repository.list_drafts(db, "proj") == []
+    assert drafts_repository.list_drafts(db, "proj", projects=authoring_projects(db)) == []
 
 
 def _operations(db: Database) -> SqliteDocumentOperationRepository:
@@ -502,6 +516,8 @@ def _committing_job(db: Database, document_id: str):
         strategy="hybrid_reasoning",
         provider="future-provider",
         model="qwen3.5:4b",
+        projects=authoring_projects(db),
+        sources=SourceLibraryDraftSources(document_repository(db)),
     )
     draft_jobs.mark_running(db, job.id)
     draft_jobs.begin_commit(db, job.id)
@@ -517,6 +533,8 @@ def _committing_manual_operation(db: Database, document_id: str):
         strategy="hybrid_reasoning",
         provider="future-provider",
         model="qwen3.5:4b",
+        projects=authoring_projects(db),
+        documents=authoring_documents(db),
     )
     manual_operations.mark_running(db, operation.id)
     manual_operations.begin_commit(db, operation.id)

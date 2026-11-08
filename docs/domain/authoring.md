@@ -164,7 +164,7 @@ sequenceDiagram
 
 提交草稿的交易以 `BEGIN IMMEDIATE` 開始：寫入草稿、數出教材的草稿數，再經 port `DocumentExamState` 請教材來源記錄題目數與教材狀態（工作用 `record_import_draft_count`，手動作業用 `record_draft_count`），最後把工作或作業標為成功。`bootstrap/authoring_links.py` 的 `bind_document_exam_state` 把這個交易的連線交給教材來源的 repository，任何一步失敗時全部復原。以前這是題目編寫自己的一個 `UPDATE documents`，草稿數在同一句裡數；現在數和寫在同一個寫入鎖裡，結果相同。
 
-`create_app` 建立 `StreamingDraftGenerationManager`（接上 `bind_document_exam_state`）、`SqliteQuestionDraftRepository`、`SqliteDraftGenerationJobRepository`、`StreamingDraftGenerationWork`、`SourceLibraryDraftSources`、`ProviderDraftWriting`、`ImportedDocumentDrafts`，放在 `app.state.question_draft_repository`、`draft_generation_job_repository`、`draft_generation_work`、`draft_sources`、`draft_writing`、`imported_document_drafting`；router 只依 `application/ports.py` 的 port 呼叫用例。
+`create_app` 建立 `StreamingDraftGenerationManager`（接上 `bind_document_exam_state`、`authoring_projects` 與 `authoring_documents`）、`SqliteQuestionDraftRepository`、`SqliteDraftGenerationJobRepository`、`StreamingDraftGenerationWork`、`SourceLibraryDraftSources`、`ProviderDraftWriting`、`ImportedDocumentDrafts`，放在 `app.state.question_draft_repository`、`draft_generation_job_repository`、`draft_generation_work`、`draft_sources`、`draft_writing`、`imported_document_drafting`；題目編寫對專案與教材的檢查分別經 port `StudyProjects`、`ProjectDocuments` 與 `DraftSources`，不直接引用其他上下文的 infrastructure；router 只依 `application/ports.py` 的 port 呼叫用例。
 
 ### 漢字讀音解答
 

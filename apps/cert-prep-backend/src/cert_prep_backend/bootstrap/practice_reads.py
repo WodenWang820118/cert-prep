@@ -15,7 +15,7 @@ from sqlite3 import Connection
 from cert_prep_backend.authoring.application import use_cases as authoring
 from cert_prep_backend.authoring.application.ports import QuestionDraftRepository
 from cert_prep_backend.authoring.domain.draft import QuestionDraft
-from cert_prep_backend.authoring.infrastructure.repository import SqliteQuestionDraftRepository
+from cert_prep_backend.bootstrap.authoring_links import question_draft_repository
 from cert_prep_backend.bootstrap.source_library_links import document_repository
 from cert_prep_backend.bootstrap.study_projects import ProjectExistence
 from cert_prep_backend.platform.database import Database
@@ -72,7 +72,7 @@ def bind_practice_reads(
 
     return (
         ProjectExistence(SqliteProjectRepository(db, connection)),
-        DraftsAsPracticeQuestions(SqliteQuestionDraftRepository(db, connection)),
+        DraftsAsPracticeQuestions(question_draft_repository(db, connection)),
     )
 
 

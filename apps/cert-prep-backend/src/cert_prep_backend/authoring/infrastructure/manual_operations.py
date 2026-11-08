@@ -7,14 +7,13 @@ from sqlite3 import Connection, Row
 from typing import Any
 from uuid import uuid4
 
+from cert_prep_backend.authoring.application.ports import ProjectDocuments, StudyProjects
 from cert_prep_backend.authoring.domain.generation import (
     ManualDraftOperation,
     ManualDraftOperationStatus,
 )
-from cert_prep_backend.platform.errors import NotFoundError
-from cert_prep_backend.projects.infrastructure.repository import ensure_project_exists
-from cert_prep_backend.source_library.infrastructure import repository as documents_repository
 from cert_prep_backend.platform.database import Database, utc_now
+from cert_prep_backend.platform.errors import NotFoundError
 
 
 def create_operation(
@@ -26,9 +25,12 @@ def create_operation(
     strategy: str,
     provider: str,
     model: str,
+    projects: StudyProjects,
+    documents: ProjectDocuments,
 ) -> ManualDraftOperation:
-    ensure_project_exists(db, project_id)
-    documents_repository.ensure_document_exists(db, project_id, document_id)
+    if not projects.exists(project_id):
+        raise NotFoundError("Project not found.")
+    documents.require(project_id, document_id)
     queued = ManualDraftOperation.queue(
         operation_id=str(uuid4()),
         project_id=project_id,
@@ -141,8 +143,9 @@ def request_cancel(
     project_id: str,
     document_id: str,
     operation_id: str,
+    documents: ProjectDocuments,
 ) -> ManualDraftOperation:
-    documents_repository.ensure_document_exists(db, project_id, document_id)
+    documents.require(project_id, document_id)
     return _transition(
         db,
         operation_id,

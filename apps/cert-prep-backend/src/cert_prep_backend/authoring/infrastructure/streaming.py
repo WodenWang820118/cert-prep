@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from threading import BoundedSemaphore, Lock, Thread
 
-from cert_prep_backend.authoring.application.ports import ReadingLexicon
+from cert_prep_backend.authoring.application.ports import (
+    DraftSources,
+    ProjectDocuments,
+    ReadingLexicon,
+    StudyProjects,
+)
 
 from cert_prep_backend.platform.errors import ProviderUnavailableError
 from cert_prep_backend.platform.config import Settings
@@ -17,7 +22,6 @@ from cert_prep_backend.authoring.domain.models import (
     DraftGenerationStrategy,
     DraftSuggestion,
     SourceChunk,
-    source_chunk_from_document_chunk,
 )
 from cert_prep_backend.authoring.domain.normalization import as_editable_question
 from cert_prep_backend.ai_providers.domain.generation_errors import (
@@ -49,7 +53,6 @@ from cert_prep_backend.authoring.infrastructure.draft_writing import (
     generate_drafts_for_strategy,
     generate_drafts_with_annotations_for_strategy,
 )
-from cert_prep_backend.source_library.infrastructure import repository as documents_repository
 from cert_prep_backend.platform.database import Database
 
 
@@ -69,6 +72,9 @@ class StreamingDraftGenerationManager:
         async_jobs: bool = True,
         reading_lexicon: ReadingLexicon | None = None,
         exam_state: drafts_repository.BindDocumentExamState,
+        sources: DraftSources,
+        projects: StudyProjects,
+        documents: ProjectDocuments,
     ) -> None:
         self._settings = settings
         # Source Library's exam state of a document, written in the commit of its drafts.
@@ -76,6 +82,9 @@ class StreamingDraftGenerationManager:
         self._provider = provider
         self._async_jobs = async_jobs
         self._reading_lexicon = reading_lexicon if settings.reading_solver_enabled else None
+        self._sources = sources
+        self._projects = projects
+        self._documents = documents
         self._job_slots = BoundedSemaphore(settings.streaming_draft_workers)
         self._job_threads: list[Thread] = []
         self._manual_schedule_lock = Lock()
@@ -94,11 +103,12 @@ class StreamingDraftGenerationManager:
         strategy = self._settings.streaming_draft_generation_strategy
         max_jobs = self._settings.streaming_draft_generation_page_limit
         jobs: list[DraftGenerationJob] = []
-        for chunk in documents_repository.get_source_chunks(db, project_id, document_id):
+        chunks = self._sources.chunks_of(project_id, document_id)
+        for chunk in chunks:
             if len(jobs) >= max_jobs:
                 break
 
-            source_chunk = source_chunk_from_document_chunk(chunk)
+            source_chunk = chunk
             if not _should_enqueue_streaming_chunk(source_chunk, DraftGenerationStrategy(strategy)):
                 continue
 
@@ -112,11 +122,15 @@ class StreamingDraftGenerationManager:
                     strategy=strategy,
                     provider=str(getattr(self._provider, "provider", "unknown")),
                     model=str(getattr(self._provider, "model", "")),
+                    projects=self._projects,
+                    sources=self._sources,
                 )
             )
 
         self._schedule_jobs(db, jobs)
-        return draft_jobs.list_document_jobs(db, project_id, document_id)
+        return draft_jobs.list_document_jobs(
+            db, project_id, document_id, documents=self._documents
+        )
 
     def close(self) -> None:
         for worker in self._job_threads:
@@ -140,7 +154,9 @@ class StreamingDraftGenerationManager:
         document_id: str,
     ) -> list[DraftGenerationJob]:
         if not self._settings.streaming_draft_generation_on_upload:
-            return draft_jobs.list_document_jobs(db, project_id, document_id)
+            return draft_jobs.list_document_jobs(
+                db, project_id, document_id, documents=self._documents
+            )
 
         jobs = draft_jobs.retry_document_jobs(
             db,
@@ -148,9 +164,12 @@ class StreamingDraftGenerationManager:
             document_id=document_id,
             provider=str(getattr(self._provider, "provider", "unknown")),
             model=str(getattr(self._provider, "model", "")),
+            documents=self._documents,
         )
         self._schedule_jobs(db, jobs)
-        return draft_jobs.list_document_jobs(db, project_id, document_id)
+        return draft_jobs.list_document_jobs(
+            db, project_id, document_id, documents=self._documents
+        )
 
     def start_manual_operation(
         self,
@@ -169,6 +188,8 @@ class StreamingDraftGenerationManager:
             strategy=strategy,
             provider=str(getattr(self._provider, "provider", "unknown")),
             model=str(getattr(self._provider, "model", "")),
+            projects=self._projects,
+            documents=self._documents,
         )
         if operation.status == ManualDraftOperationStatus.QUEUED:
             self._schedule_manual_operation(db, operation.id)
@@ -207,6 +228,7 @@ class StreamingDraftGenerationManager:
             project_id=project_id,
             document_id=document_id,
             operation_id=operation_id,
+            documents=self._documents,
         )
 
     def _schedule_jobs(self, db: Database, jobs: list[DraftGenerationJob]) -> int:
@@ -237,10 +259,9 @@ class StreamingDraftGenerationManager:
                 return
             _reset_generation_attribution(self._provider)
 
-            chunk = documents_repository.get_chunk(
-                db, job.project_id, job.document_id, job.chunk_id
+            source_chunk = self._sources.chunk(
+                job.project_id, job.document_id, job.chunk_id
             )
-            source_chunk = source_chunk_from_document_chunk(chunk)
             suggestions = [
                 as_editable_question(suggestion)
                 for suggestion in _generate_streaming_fast_first_drafts(
@@ -269,6 +290,7 @@ class StreamingDraftGenerationManager:
                 effective_model=attribution.effective_model,
                 fallback_reason=attribution.fallback_reason,
                 exam_state=self._exam_state,
+                projects=self._projects,
             )
         except DraftJobCanceledError:
             draft_jobs.mark_canceled(db, job_id)
@@ -360,14 +382,7 @@ class StreamingDraftGenerationManager:
             operation = manual_operations.mark_running(db, operation_id)
             if operation.status != ManualDraftOperationStatus.RUNNING:
                 return
-            chunks = [
-                source_chunk_from_document_chunk(chunk)
-                for chunk in documents_repository.get_source_chunks(
-                    db,
-                    operation.project_id,
-                    operation.document_id,
-                )
-            ]
+            chunks = self._sources.chunks_of(operation.project_id, operation.document_id)
             if not chunks:
                 raise ValueError("Document has no extracted text chunks.")
             _reset_generation_attribution(self._provider)
@@ -398,6 +413,7 @@ class StreamingDraftGenerationManager:
                 fallback_reason=attribution.fallback_reason,
                 exam_state=self._exam_state,
                 unavailable_blocks=generation.unavailable_blocks,
+                projects=self._projects,
             )
         except DraftJobCanceledError:
             manual_operations.mark_canceled(db, operation_id)
