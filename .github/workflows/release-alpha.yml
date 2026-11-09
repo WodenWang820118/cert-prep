@@ -38,6 +38,10 @@ env:
   CI: 'true'
   NX_CLOUD_DISTRIBUTED_EXECUTION: 'false'
   PYTHON_VERSION: '3.14'
+  # uv downloads CPython from GitHub release downloads, which answered 504 for
+  # hours at a time (2026-11-09). Astral's mirror serves the same
+  # python-build-standalone files, and uv still verifies their checksums.
+  UV_PYTHON_INSTALL_MIRROR: https://releases.astral.sh/github/python-build-standalone/releases/download
 
 jobs:
   build-candidate:
