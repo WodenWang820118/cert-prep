@@ -2,8 +2,8 @@ import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 import { CAPTURE_RUNTIME_VERSION } from '@cert-prep/capture-runtime-version';
 import { CAPTURE_RUNTIME_VERSION as SDK_RUNTIME_VERSION } from '@gx-capture/capture-workbench-ui';
-import { CertPrepCaptureClient } from '../../pages/capture-workbench-trial/cert-prep-capture-client';
-import type { CaptureRuntimeReady } from '../../pages/capture-workbench-trial/contracts/capture-workbench-trial.contracts';
+import { CertPrepCaptureClient } from './cert-prep-capture-client';
+import type { CaptureRuntimeReady } from '../domain';
 import { CaptureRuntimePreflightStore } from './capture-runtime-preflight.store';
 
 describe('CaptureRuntimePreflightStore', () => {

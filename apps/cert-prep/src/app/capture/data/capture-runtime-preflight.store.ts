@@ -1,12 +1,10 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { catchError, Observable, of, tap } from 'rxjs';
-// eslint-disable-next-line @softarc/sheriff/dependency-rule -- Known before C7: the store reuses the trial page's client; C7 moves the client into the capture context.
-import { CertPrepCaptureClient } from '../../pages/capture-workbench-trial/cert-prep-capture-client';
-// eslint-disable-next-line @softarc/sheriff/dependency-rule -- Known before C7: the store reuses the trial page's client; C7 moves the client into the capture context.
+import { CertPrepCaptureClient } from './cert-prep-capture-client';
 import type {
   CaptureRuntimeReady,
   OcrComputePreflight,
-} from '../../pages/capture-workbench-trial/contracts/capture-workbench-trial.contracts';
+} from '../domain';
 
 export type CaptureRuntimePreflightStatus =
   | 'idle'

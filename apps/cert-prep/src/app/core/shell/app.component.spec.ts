@@ -16,7 +16,7 @@ import {
 } from '../../testing/app.spec-helpers';
 import { OperationStore } from '../data';
 import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
-import { CaptureRuntimePreflightStore } from '../../stores/capture-runtime/capture-runtime-preflight.store';
+import { CaptureRuntimePreflightStore } from '../../capture/data';
 
 describe('App', () => {
   let apiClient: ReturnType<typeof createApiClient>;

@@ -48,10 +48,7 @@ import {
   text,
   toApiCaptureDocument,
 } from './cert-prep-capture-protocol';
-import type {
-  CaptureRecord,
-  CaptureRuntimeReady,
-} from './contracts/capture-workbench-trial.contracts';
+import type { CaptureRecord, CaptureRuntimeReady } from '../domain';
 
 /**
  * Adapts Cert Prep's durable document pipeline to the published streaming v2

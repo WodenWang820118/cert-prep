@@ -9,7 +9,7 @@ import {
 } from '@angular/core';
 import { ModelHealthViewModelFacade } from '../../components/model-health/model-health-view-model.facade';
 import { RuntimeStatusRowComponent } from '../../components/model-health/runtime-status-row.component';
-import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
+import { DesktopRuntimeStore } from '../../runtime/data';
 import { HealthStore } from '../../stores/health/health.store';
 import { OperationStore } from '../../core/data';
 import { ActionButtonComponent } from '../../core/ui';

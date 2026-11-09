@@ -552,7 +552,7 @@ function readCaptureRuntimeConsumerInventoryFromSource(
   const installScript = 'tools/install-capture-runtime.mts';
   const consumerSmoke = 'tools/capture-runtime-consumer-smoke.mts';
   const frontendCompatibility =
-    'apps/cert-prep/src/app/pages/capture-workbench-trial/cert-prep-capture-client.ts';
+    'apps/cert-prep/src/app/capture/data/cert-prep-capture-client.ts';
   const generated = 'libs/cert-prep-api/src/lib/cert-prep-api.generated.ts';
 
   const cargoLockContent = readSource(
@@ -1419,7 +1419,7 @@ export function assertCaptureRuntimeConsumerVersions(
   );
   requireMatch(
     workspaceRoot,
-    'apps/cert-prep/src/app/pages/capture-workbench-trial/cert-prep-capture-client.ts',
+    'apps/cert-prep/src/app/capture/data/cert-prep-capture-client.ts',
     /assertCaptureRuntimeCompatible\(ready, CAPTURE_RUNTIME_MAJOR, 'host'\)/,
   );
   requireMatch(

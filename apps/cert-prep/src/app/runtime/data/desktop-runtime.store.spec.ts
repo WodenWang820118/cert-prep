@@ -4,7 +4,7 @@ import { CAPTURE_RUNTIME_VERSION } from '@cert-prep/capture-runtime-version';
 import type {
   DesktopRuntimeInstallation,
   DesktopRuntimeStatus,
-} from './contracts/desktop-runtime.contracts';
+} from '../domain';
 import { CertPrepRuntimeConfig } from '../../core/data';
 import { DesktopRuntimeBridgeService } from './desktop-runtime-bridge.service';
 import { DesktopRuntimeStore } from './desktop-runtime.store';

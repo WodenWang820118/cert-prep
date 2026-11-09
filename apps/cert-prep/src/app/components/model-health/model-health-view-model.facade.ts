@@ -1,7 +1,7 @@
 import { computed, inject, Injectable } from '@angular/core';
 import type { ModelHealthViewModel } from './contracts/model-health.contracts';
 import { ModelHealthViewModelService } from './model-health-view-model.service';
-import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
+import { DesktopRuntimeStore } from '../../runtime/data';
 import { HealthStore } from '../../stores/health/health.store';
 
 @Injectable({ providedIn: 'root' })

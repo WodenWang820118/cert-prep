@@ -216,4 +216,4 @@ sequenceDiagram
 
 教材來源是題目編寫的上游，不知道草稿：匯入面板在上傳、選教材，以及教材變成目前的教材時送出 `sourceDocumentActivity`（目前專案的 id），組合兩個面板的 `BuildWorkbenchPage`（`pages/build-workbench`）接住後呼叫題目編寫的 `DraftReviewStore.load`，所以上傳之後才完成的教材不會被當成專案沒有草稿。
 
-下游經 `source-library/data` 讀 `SourceImportStore`：題目編寫（`DraftReviewStore`、`DraftStreamingJobsStore`、草稿面板）、練習（`PracticeStore`、練習面板、錯題）、擷取整合（`capture-workbench-trial` 頁）與殼層（`WorkspaceFacade` 切換專案時重設並載入最新的教材）。
+下游經 `source-library/data` 讀 `SourceImportStore`：題目編寫（`DraftReviewStore`、`DraftStreamingJobsStore`、草稿面板）、練習（`PracticeStore`、練習面板、錯題）、擷取整合（`capture/feature` 的 `CaptureWorkbenchTrialPage`）與殼層（`WorkspaceFacade` 切換專案時重設並載入最新的教材）。

@@ -61,6 +61,11 @@ export const config: SheriffConfig = {
     },
     'libs/ui/<component>/src': ['layer:shared-ui'],
     'libs/cert-prep-api/src': ['layer:api-client'],
+    // The Capture adoption pin (`@cert-prep/capture-runtime-version`,
+    // tools/capture-runtime-version.mts) is the only tools file the app
+    // imports. Only Capture Integration's data layer reads it, for the
+    // client's runtime-minor compatibility check.
+    tools: ['layer:capture-runtime-version'],
   },
   depRules: {
     root: ['layer:*', 'type:*', 'root'],
@@ -69,7 +74,12 @@ export const config: SheriffConfig = {
     'type:shell': ['type:*', 'layer:*', 'root'],
     'type:feature': ['type:ui', 'type:data', 'type:domain', ...sharedLibraries],
     'type:ui': ['type:ui', 'type:domain', 'layer:shared-ui'],
-    'type:data': ['type:data', 'type:domain', 'layer:api-client'],
+    'type:data': [
+      'type:data',
+      'type:domain',
+      'layer:api-client',
+      'layer:capture-runtime-version',
+    ],
     'type:domain': ['type:domain', 'layer:api-client'],
 
     // Target structure: context map (upstream contexts only). Runtime also
@@ -88,6 +98,7 @@ export const config: SheriffConfig = {
       'context:source-library',
       'context:projects',
       'context:runtime',
+      'layer:capture-runtime-version',
     ),
     'context:authoring': contextRule(
       'context:authoring',
@@ -151,6 +162,7 @@ export const config: SheriffConfig = {
     'layer:contract': ['layer:contract', 'layer:api-client', 'type:domain'],
     'layer:shared-ui': ['layer:shared-ui', 'noTag'],
     'layer:api-client': ['layer:api-client', 'noTag'],
+    'layer:capture-runtime-version': ['layer:capture-runtime-version', 'noTag'],
     'layer:testing': ['layer:*', 'type:*', 'root'],
     noTag: ['noTag', 'root', 'layer:*', 'type:*'],
   },

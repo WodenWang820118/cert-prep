@@ -210,3 +210,21 @@ sequenceDiagram
 - 安裝請求的 `consent: true` 與 UUID `X-Idempotency-Key` 留在 router。安裝進入 `completed`、`failed`、`cancelled` 或 `manual_action_required` 時，client 清掉 discovery 快取。
 - `CaptureReviewStatus` 不是 OpenAPI 的列舉，概念集沒有對應項目。
 - 已知例外仍在 `apps/cert-prep-backend/pyproject.toml`：runtime router 對 `host_models`（`RuntimeReady` 也由 infrastructure 的 Capture SDK client 解析）；`persistence` 與 `review_workflow` 對教材來源的 infrastructure。
+
+## 前端
+
+程式：`apps/cert-prep/src/app/capture`（C7 第三部分）。規則在 `sheriff.config.ts`：每一層是一個 Sheriff 模組，標上 `context:capture` 與 `type:<層>`，別的模組只能經它的 `index.ts` 引用。
+
+| 層        | 公開（`index.ts`）                                      | 內容                                                                                                                                                                                                                                                                                                                                    |
+| --------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `domain`  | 全部（`export *`）                                      | 擷取紀錄、SSE frame 與事件串流的型別，OCR 運算預檢（`OcrComputePreflight`）與帶預檢的 runtime 就緒（`CaptureRuntimeReady`），以及事件串流的事件種類與大小上限                                                                                                                                                                           |
+| `data`    | `CertPrepCaptureClient`、`CaptureRuntimePreflightStore` | `CertPrepCaptureClient` 把工作台的 streaming v2 client 與結構化介面接到已驗證的 Cert Prep 後端（`/capture-runtime` 與 `/capture-workbench/captures`），連同 API 回應與 SDK 型別互轉的 `cert-prep-capture-protocol` 與事件串流；`CaptureRuntimePreflightStore` 讀 runtime 就緒與 OCR 運算預檢，決定能不能匯入。都是 `providedIn: 'root'` |
+| `feature` | `CaptureWorkbenchTrialPage`                             | `/capture-workbench-trial` 頁（`app-capture-workbench-trial-page`，殼層路由 lazy 載入）：Capture Runtime 可用後載入預檢、註冊 `@gx-capture/capture-workbench-ui` 的 Web Component、擷取完成後重新整理教材，並下載 Markdown                                                                                                              |
+
+沒有 `ui`：畫面是工作台套件的 Web Component。
+
+擷取整合只引用自己、教材來源（`source-library/data` 的 `SourceImportStore`：擷取完成後 `refreshUploadedDocument` 與 `loadLatestDocument`）、學習專案（`projects/data` 的 `ProjectStore`）、執行環境（`runtime/data` 的 `DesktopRuntimeStore`：桌面端 Capture Runtime 的狀態、安裝與啟動）與 `core`。它不引用題目編寫或練習，所以沒有要反轉的呼叫。
+
+Capture Runtime 的就緒、來源證明、需求與安裝屬於擷取整合（見上文「負責與不負責」），所以 OCR 預檢的 store 在 `capture/data`，不在 `runtime`。它原本在 `stores/capture-runtime`，反向引用 `pages/capture-workbench-trial` 的 client 與型別（最後兩項 Sheriff 已知例外）；client 搬到同一層、型別搬到 `capture/domain` 後，store 經同層與 `../domain` 引用，兩項例外移除。
+
+`cert-prep-capture-protocol` 以 Cert Prep 的採用版本（`@cert-prep/capture-runtime-version`，`tools/capture-runtime-version.mts`）檢查 runtime 的 minor 版本。Sheriff 把 `tools` 標成 `layer:capture-runtime-version`，只有 `type:data` 與 `context:capture` 可以引用。`tools/capture-runtime-consumer-source.mts` 與 `tools/capture-runtime-version-check.mts` 用 `capture/data/cert-prep-capture-client.ts` 的路徑檢查採用的 SDK。

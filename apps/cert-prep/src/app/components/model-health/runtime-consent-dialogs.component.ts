@@ -1,5 +1,5 @@
 import { Component, inject, ChangeDetectionStrategy } from '@angular/core';
-import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
+import { DesktopRuntimeStore } from '../../runtime/data';
 import { HealthStore } from '../../stores/health/health.store';
 import { HlmDialogImports } from '@spartan-ng/helm/dialog';
 import { ActionButtonComponent } from '../../core/ui';
