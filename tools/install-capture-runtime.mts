@@ -70,6 +70,17 @@ export interface InstallCaptureRuntimeOptions {
   readonly baseUrl?: string;
   readonly releaseDirectory?: string;
   readonly outputRoot?: string;
+  readonly fetch?: typeof globalThis.fetch;
+  readonly sleep?: (ms: number) => Promise<void>;
+  readonly retryDelays?: readonly number[];
+  readonly githubToken?: string;
+}
+
+export interface DownloadAssetOptions {
+  readonly fetch?: typeof globalThis.fetch;
+  readonly sleep?: (ms: number) => Promise<void>;
+  readonly retryDelays?: readonly number[];
+  readonly githubToken?: string;
 }
 
 export function defaultCaptureRuntimeRoot(workspaceRoot: string): string {
@@ -283,53 +294,326 @@ export async function verifyCaptureRuntimeReleaseDirectory(
   return manifest;
 }
 
-async function downloadAsset(
+class TerminalError extends Error {
+  readonly status?: number;
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = 'TerminalError';
+    this.status = status;
+  }
+}
+
+class RetryableHttpError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'RetryableHttpError';
+    this.status = status;
+  }
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
+}
+
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  delays: readonly number[],
+  sleep: (ms: number) => Promise<void>,
+): Promise<T> {
+  const maxAttempts = delays.length + 1;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (attempt > 0) {
+      await sleep(delays[attempt - 1]);
+    }
+    try {
+      return await operation();
+    } catch (error) {
+      if (error instanceof TerminalError) {
+        throw error;
+      }
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
+function validateRedirectUrl(
+  sourceUrl: string,
+  location: string | null,
+  allowedSourceHost: string,
+  name: string,
+): URL {
+  let redirectedUrl: URL;
+  try {
+    redirectedUrl = new URL(location ?? '', sourceUrl);
+  } catch {
+    throw new TerminalError(
+      `Capture runtime artifact ${name} returned an invalid redirect.`,
+    );
+  }
+  const source = new URL(sourceUrl);
+  if (
+    source.protocol !== 'https:' ||
+    source.hostname !== allowedSourceHost ||
+    redirectedUrl.protocol !== 'https:' ||
+    redirectedUrl.username ||
+    redirectedUrl.password ||
+    redirectedUrl.port ||
+    !GITHUB_RELEASE_ASSET_HOSTS.has(redirectedUrl.hostname)
+  ) {
+    throw new TerminalError(
+      `Capture runtime artifact ${name} returned an untrusted redirect.`,
+    );
+  }
+  return redirectedUrl;
+}
+
+function parseGitHubReleaseCoordinates(baseUrl: string): {
+  readonly owner: string;
+  readonly repo: string;
+  readonly tag: string;
+} {
+  for (const candidate of [baseUrl, DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL]) {
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.hostname === 'github.com') {
+        const segments = parsed.pathname.split('/').filter(Boolean);
+        if (
+          segments.length >= 5 &&
+          segments[2] === 'releases' &&
+          segments[3] === 'download'
+        ) {
+          return {
+            owner: segments[0],
+            repo: segments[1],
+            tag: segments[4],
+          };
+        }
+      }
+    } catch {
+      // Continue to next candidate
+    }
+  }
+  throw new Error(
+    `Cannot derive GitHub release coordinates from base URL: ${baseUrl}`,
+  );
+}
+
+async function downloadFromPublicUrl(
   baseUrl: string,
   name: string,
   destination: string,
+  options: DownloadAssetOptions,
 ): Promise<void> {
+  const fetchFn = options.fetch ?? globalThis.fetch;
   const sourceUrl = `${baseUrl}/${name}`;
-  let response = await fetch(sourceUrl, {
+  let response = await fetchFn(sourceUrl, {
     redirect: 'manual',
     headers: { Connection: 'close' },
   });
+  if (response.status >= 500 && response.status < 600) {
+    throw new RetryableHttpError(
+      `Capture runtime artifact ${name} download failed with HTTP ${response.status}.`,
+      response.status,
+    );
+  }
   if (response.status >= 300 && response.status < 400) {
     const location = response.headers.get('location');
-    let redirectedUrl: URL;
-    try {
-      redirectedUrl = new URL(location ?? '', sourceUrl);
-    } catch {
-      throw new Error(
-        `Capture runtime artifact ${name} returned an invalid redirect.`,
-      );
-    }
-    const source = new URL(sourceUrl);
-    if (
-      source.protocol !== 'https:' ||
-      source.hostname !== 'github.com' ||
-      redirectedUrl.protocol !== 'https:' ||
-      redirectedUrl.username ||
-      redirectedUrl.password ||
-      redirectedUrl.port ||
-      !GITHUB_RELEASE_ASSET_HOSTS.has(redirectedUrl.hostname)
-    ) {
-      throw new Error(
-        `Capture runtime artifact ${name} returned an untrusted redirect.`,
-      );
-    }
-    response = await fetch(redirectedUrl, {
+    const redirectedUrl = validateRedirectUrl(
+      sourceUrl,
+      location,
+      'github.com',
+      name,
+    );
+    response = await fetchFn(redirectedUrl, {
       redirect: 'error',
       headers: { Connection: 'close' },
     });
+    if (response.status >= 500 && response.status < 600) {
+      throw new RetryableHttpError(
+        `Capture runtime artifact ${name} download failed with HTTP ${response.status}.`,
+        response.status,
+      );
+    }
   }
   if (!response.ok || !response.body) {
-    throw new Error(
+    throw new TerminalError(
       `Capture runtime artifact ${name} download failed with HTTP ${response.status}.`,
+      response.status,
     );
   }
   await writeFile(destination, new Uint8Array(await response.arrayBuffer()), {
     flag: 'wx',
   });
+}
+
+async function downloadFromApi(
+  baseUrl: string,
+  name: string,
+  destination: string,
+  options: DownloadAssetOptions,
+): Promise<void> {
+  const fetchFn = options.fetch ?? globalThis.fetch;
+  const coordinates = parseGitHubReleaseCoordinates(baseUrl);
+  const tag = coordinates.tag.startsWith('v')
+    ? coordinates.tag
+    : `v${coordinates.tag}`;
+  const releaseApiUrl = `https://api.github.com/repos/${coordinates.owner}/${coordinates.repo}/releases/tags/${tag}`;
+
+  const token = options.githubToken ?? process.env.GITHUB_TOKEN?.trim();
+  const apiHeaders: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'cert-prep-install-capture-runtime',
+  };
+  if (token) {
+    apiHeaders.Authorization = `Bearer ${token}`;
+  }
+
+  const releaseResponse = await fetchFn(releaseApiUrl, {
+    headers: apiHeaders,
+  });
+
+  if (releaseResponse.status >= 500 && releaseResponse.status < 600) {
+    throw new RetryableHttpError(
+      `Capture runtime artifact ${name} download failed with HTTP ${releaseResponse.status}.`,
+      releaseResponse.status,
+    );
+  }
+  if (!releaseResponse.ok) {
+    throw new TerminalError(
+      `Capture runtime artifact ${name} download failed with HTTP ${releaseResponse.status}.`,
+      releaseResponse.status,
+    );
+  }
+
+  const releaseData = (await releaseResponse.json()) as {
+    readonly assets?: ReadonlyArray<{
+      readonly name?: string;
+      readonly url?: string;
+    }>;
+  };
+  const matchingAsset = releaseData.assets?.find(
+    (asset) => asset.name === name,
+  );
+  if (!matchingAsset?.url) {
+    throw new TerminalError(
+      `Capture runtime artifact ${name} not found in GitHub release ${tag}.`,
+      404,
+    );
+  }
+
+  const assetHeaders: Record<string, string> = {
+    Accept: 'application/octet-stream',
+    'User-Agent': 'cert-prep-install-capture-runtime',
+  };
+  if (token) {
+    assetHeaders.Authorization = `Bearer ${token}`;
+  }
+
+  let assetResponse = await fetchFn(matchingAsset.url, {
+    redirect: 'manual',
+    headers: assetHeaders,
+  });
+
+  if (assetResponse.status >= 500 && assetResponse.status < 600) {
+    throw new RetryableHttpError(
+      `Capture runtime artifact ${name} download failed with HTTP ${assetResponse.status}.`,
+      assetResponse.status,
+    );
+  }
+
+  if (assetResponse.status >= 300 && assetResponse.status < 400) {
+    const location = assetResponse.headers.get('location');
+    const redirectedUrl = validateRedirectUrl(
+      matchingAsset.url,
+      location,
+      'api.github.com',
+      name,
+    );
+    assetResponse = await fetchFn(redirectedUrl, {
+      redirect: 'error',
+      headers: { Connection: 'close' },
+    });
+  }
+  // The asset endpoint may also answer 200 with the bytes itself; those are
+  // written below and verified against the manifest like any other download.
+
+  if (assetResponse.status >= 500 && assetResponse.status < 600) {
+    throw new RetryableHttpError(
+      `Capture runtime artifact ${name} download failed with HTTP ${assetResponse.status}.`,
+      assetResponse.status,
+    );
+  }
+  if (!assetResponse.ok || !assetResponse.body) {
+    throw new TerminalError(
+      `Capture runtime artifact ${name} download failed with HTTP ${assetResponse.status}.`,
+      assetResponse.status,
+    );
+  }
+
+  await writeFile(
+    destination,
+    new Uint8Array(await assetResponse.arrayBuffer()),
+    { flag: 'wx' },
+  );
+}
+
+export async function downloadAsset(
+  baseUrl: string,
+  name: string,
+  destination: string,
+  options: DownloadAssetOptions = {},
+): Promise<void> {
+  const delays = options.retryDelays ?? [1000, 2000];
+  const sleepFn = options.sleep ?? defaultSleep;
+
+  let publicError: unknown;
+  try {
+    await withRetry(
+      () => downloadFromPublicUrl(baseUrl, name, destination, options),
+      delays,
+      sleepFn,
+    );
+    return;
+  } catch (error) {
+    if (error instanceof TerminalError) {
+      throw error;
+    }
+    publicError = error;
+  }
+
+  try {
+    await withRetry(
+      () => downloadFromApi(baseUrl, name, destination, options),
+      delays,
+      sleepFn,
+    );
+  } catch (apiError) {
+    if (
+      apiError instanceof TerminalError &&
+      apiError.message.includes('redirect')
+    ) {
+      throw apiError;
+    }
+
+    const status =
+      (apiError as { status?: number }).status ??
+      (publicError as { status?: number }).status;
+
+    if (status) {
+      throw new Error(
+        `Capture runtime artifact ${name} download failed with HTTP ${status} (public URL and API).`,
+      );
+    }
+
+    const message =
+      apiError instanceof Error ? apiError.message : String(apiError);
+    throw new Error(
+      `Capture runtime artifact ${name} download failed: ${message} (public URL and API).`,
+    );
+  }
 }
 
 async function copyReleaseAsset(
@@ -340,17 +624,24 @@ async function copyReleaseAsset(
   await copyFile(join(sourceDirectory, name), destination);
 }
 
-export async function installCaptureRuntime({
-  workspaceRoot,
-  baseUrl = process.env[CAPTURE_RUNTIME_RELEASE_BASE_URL_ENV] ??
-    DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL,
-  releaseDirectory = process.env[CAPTURE_RUNTIME_RELEASE_DIRECTORY_ENV],
-  outputRoot = process.env[CAPTURE_RUNTIME_ROOT_ENV] ||
-    defaultCaptureRuntimeRoot(workspaceRoot),
-}: InstallCaptureRuntimeOptions): Promise<{
+export async function installCaptureRuntime(
+  options: InstallCaptureRuntimeOptions,
+): Promise<{
   readonly outputRoot: string;
   readonly manifest: CaptureRuntimeReleaseManifest;
 }> {
+  const {
+    workspaceRoot,
+    baseUrl = process.env[CAPTURE_RUNTIME_RELEASE_BASE_URL_ENV] ??
+      DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL,
+    releaseDirectory = process.env[CAPTURE_RUNTIME_RELEASE_DIRECTORY_ENV],
+    outputRoot = process.env[CAPTURE_RUNTIME_ROOT_ENV] ||
+      defaultCaptureRuntimeRoot(workspaceRoot),
+    fetch: customFetch,
+    sleep,
+    retryDelays,
+    githubToken,
+  } = options;
   if (!baseUrl && !releaseDirectory) {
     throw new Error(
       `${CAPTURE_RUNTIME_RELEASE_BASE_URL_ENV} or ${CAPTURE_RUNTIME_RELEASE_DIRECTORY_ENV} is required; install the versioned release before preparing Tauri resources.`,
@@ -395,6 +686,12 @@ export async function installCaptureRuntime({
           validatedBaseUrl as string,
           name,
           join(temporaryRoot, name),
+          {
+            fetch: customFetch,
+            sleep,
+            retryDelays,
+            githubToken,
+          },
         );
       }
     }
