@@ -9,7 +9,7 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import type { PracticeAttemptRead } from '../../core/domain';
-import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
+import { DraftReviewStore } from '../../authoring/data';
 import { OperationStore } from '../../core/data';
 import type { PracticeSessionMode } from '../../stores/practice/contracts/practice.contracts';
 import { PracticeStore } from '../../stores/practice/practice.store';
@@ -17,7 +17,7 @@ import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../../source-library/data';
 import type { QuestionNavigatorItem } from './contracts/practice-panel.contracts';
 import { ChoiceKeyService } from '../../services/choice-key.service';
-import { displayChoice } from '../../services/choice-display';
+import { displayChoice } from '../../authoring/domain';
 import { AppIconComponent } from '../../core/ui';
 
 @Component({

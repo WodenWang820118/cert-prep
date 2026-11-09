@@ -12,7 +12,6 @@ import { SourceImportPanelComponent } from './source-import-panel.component';
 describe('SourceImportPanelComponent', () => {
   let projects: ReturnType<typeof createProjectsFake>;
   let sourceImport: ReturnType<typeof createSourceImportFake>;
-  let sourceDocumentActivity: ReturnType<typeof vi.fn<(projectId: string) => void>>;
   let operations: ReturnType<typeof createOperationsFake>;
   let api: { getDocumentAudioSource: ReturnType<typeof vi.fn> };
 
@@ -22,7 +21,6 @@ describe('SourceImportPanelComponent', () => {
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
     projects = createProjectsFake(appProject);
     sourceImport = createSourceImportFake();
-    sourceDocumentActivity = vi.fn<(projectId: string) => void>();
     operations = createOperationsFake();
     api = {
       getDocumentAudioSource: vi.fn(() => of(new Blob(['audio'], { type: 'audio/mpeg' }))),
@@ -57,7 +55,6 @@ describe('SourceImportPanelComponent', () => {
 
   it('keeps upload and document selection orchestration at the coordinator', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
-    fixture.componentInstance.sourceDocumentActivity.subscribe(sourceDocumentActivity);
     fixture.detectChanges();
     const component = fixture.componentInstance as unknown as {
       handleAction(action: SourceImportAction): void;
@@ -68,19 +65,6 @@ describe('SourceImportPanelComponent', () => {
 
     expect(sourceImport.uploadDocuments).toHaveBeenCalledTimes(1);
     expect(sourceImport.selectDocument).toHaveBeenCalledWith('document-1');
-    expect(sourceDocumentActivity).toHaveBeenNthCalledWith(1, appProject.id);
-    expect(sourceDocumentActivity).toHaveBeenNthCalledWith(2, appProject.id);
-  });
-
-  it('reports source document activity when an uploaded document becomes active', () => {
-    const fixture = TestBed.createComponent(SourceImportPanelComponent);
-    fixture.componentInstance.sourceDocumentActivity.subscribe(sourceDocumentActivity);
-    fixture.detectChanges();
-
-    sourceImport.activeDocumentId.set('document-1');
-    fixture.detectChanges();
-
-    expect(sourceDocumentActivity).toHaveBeenCalledWith(appProject.id);
   });
 
   it('preserves append upload intent through a sequential crop queue', () => {

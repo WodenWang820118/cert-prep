@@ -214,6 +214,6 @@ sequenceDiagram
 
 教材來源只引用自己、學習專案（`projects/data` 的 `ProjectStore`）與 `core`（`core/data` 的 `CERT_PREP_API`、`CertPrepHttpResourceClient`、`CertPrepSseClient`、`OperationStore`，`core/domain` 的型別，`core/ui` 的圖示與按鈕）。
 
-教材來源是題目編寫的上游，不知道草稿：匯入面板在上傳、選教材，以及教材變成目前的教材時送出 `sourceDocumentActivity`（目前專案的 id），組合兩個面板的 `BuildWorkbenchPage`（`pages/build-workbench`）接住後呼叫題目編寫的 `DraftReviewStore.load`，所以上傳之後才完成的教材不會被當成專案沒有草稿。
+教材來源是題目編寫的上游，不知道草稿：`SourceImportStore.documentActivity`（`SourceDocumentActivity`，目前專案的 id）在學習者上傳、選教材（再選同一份也算），以及有教材變成目前的教材時換成新的物件。題目編寫的 `DraftReviewStore` 監看它並重新載入專案的草稿，所以上傳之後才完成的教材不會被當成專案沒有草稿（[決策 D19](../../.agents/PLANS/ddd-refactor/decisions.md)）。匯入面板只呼叫 store，不送出事件；`/build` 頁（`core/shell` 的 `BuildWorkbenchPage`）只排版兩個面板。
 
 下游經 `source-library/data` 讀 `SourceImportStore`：題目編寫（`DraftReviewStore`、`DraftStreamingJobsStore`、草稿面板）、練習（`PracticeStore`、練習面板、錯題）、擷取整合（`capture/feature` 的 `CaptureWorkbenchTrialPage`）與殼層（`WorkspaceFacade` 切換專案時重設並載入最新的教材）。

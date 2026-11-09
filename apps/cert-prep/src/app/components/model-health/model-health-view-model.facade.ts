@@ -2,7 +2,7 @@ import { computed, inject, Injectable } from '@angular/core';
 import type { ModelHealthViewModel } from './contracts/model-health.contracts';
 import { ModelHealthViewModelService } from './model-health-view-model.service';
 import { DesktopRuntimeStore } from '../../runtime/data';
-import { HealthStore } from '../../stores/health/health.store';
+import { HealthStore } from '../../runtime/data';
 
 @Injectable({ providedIn: 'root' })
 export class ModelHealthViewModelFacade {
