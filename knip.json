@@ -10,7 +10,8 @@
     "apps/cert-prep-desktop/scripts/packaged-flow-smoke.mts",
     "apps/cert-prep-desktop/scripts/packaged-image-upload-smoke.mts",
     "**/*.{spec,test}.{ts,mts}",
-    "sheriff.config.ts"
+    "sheriff.config.ts",
+    "tools/run-local-ci.mts"
   ],
   "project": [
     "apps/cert-prep/src/**/*.ts!",

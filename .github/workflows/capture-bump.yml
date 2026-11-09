@@ -12,10 +12,9 @@ name: Capture bump
 #   bot/capture-bump-<version>. breaking or manual-review classifications
 #   open a draft titled "需遷移 / migration required".
 #
-# GitHub limitation: a PR created with GITHUB_TOKEN triggers no other
-# workflow, so ci.yml does not run on it by itself. Close and reopen the PR
-# (or push a commit) to run ci.yml before merging; the PR body carries that
-# checklist. No PAT or extra secret is used on purpose.
+# Pull requests do not run CI on GitHub (ci.yml runs weekly and on dispatch),
+# so the PR body carries the merge gate: run `pnpm ci:local` on the branch and
+# paste its summary. No PAT or extra secret is used on purpose.
 
 on:
   schedule:

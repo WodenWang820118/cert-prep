@@ -218,7 +218,7 @@ function prBody(
     '',
     '## Before merging',
     '',
-    '- [ ] Close and reopen this PR (or push a commit) so `ci.yml` runs both jobs (portable quality on Linux; packaging, Capture Runtime install and Tauri host on Windows), and merge only when both pass.',
+    '- [ ] Check out this branch and run `pnpm ci:local` (portable quality; packaging, Capture Runtime install and Tauri host on Windows), paste its summary into this PR, and merge only when it passes.',
     '- [ ] Run the real OCR acceptance `pnpm nx run cert-prep-desktop:acceptance-real` on the packaged app.',
     '',
     'This PR was opened with `GITHUB_TOKEN`, so it triggers no other workflow; the checks above are the gate.',
