@@ -12,6 +12,7 @@ import {
   CAPTURE_RUNTIME_FILE,
   CAPTURE_RUNTIME_RELEASE_ASSETS,
   DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL,
+  downloadAsset,
   installCaptureRuntime,
   validateCaptureRuntimeReleaseBaseUrl,
   verifyCaptureRuntimeReleaseDirectory,
@@ -46,8 +47,7 @@ afterEach(async () => {
 });
 
 test(`pins the canonical gx-capture v${CAPTURE_RUNTIME_VERSION} release URL`, () => {
-  const expected =
-    `https://github.com/gx-capture/capture-workbench/releases/download/v${CAPTURE_RUNTIME_VERSION}`;
+  const expected = `https://github.com/gx-capture/capture-workbench/releases/download/v${CAPTURE_RUNTIME_VERSION}`;
   assert.equal(DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL, expected);
   assert.equal(validateCaptureRuntimeReleaseBaseUrl(expected), expected);
 });
@@ -284,6 +284,317 @@ test('accepts only versioned secure release base URLs', () => {
       /versioned URL|HTTP only|credentials|query|fragment|path separators/iu,
     );
   }
+});
+
+test('retries public download on 5xx and succeeds without API fallback', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cert-prep-test-'));
+  temporaryRoots.push(dir);
+  const destination = join(dir, 'artifact.bin');
+
+  const sleeps: number[] = [];
+  const requestedUrls: string[] = [];
+  let attempts = 0;
+
+  const mockFetch = (async (
+    input: string | URL | Request,
+  ): Promise<Response> => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    requestedUrls.push(url);
+    attempts += 1;
+    if (attempts === 1) {
+      return new Response('gateway timeout', { status: 504 });
+    }
+    return new Response('artifact content', { status: 200 });
+  }) as typeof fetch;
+
+  await downloadAsset(
+    DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL,
+    'artifact.bin',
+    destination,
+    {
+      fetch: mockFetch,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+      retryDelays: [1000, 2000],
+    },
+  );
+
+  assert.equal(await readFile(destination, 'utf8'), 'artifact content');
+  assert.equal(attempts, 2);
+  assert.deepEqual(sleeps, [1000]);
+  assert.ok(requestedUrls.every((url) => !url.includes('api.github.com')));
+});
+
+test('falls back to GitHub API when public download persistently fails with 5xx', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cert-prep-test-'));
+  temporaryRoots.push(dir);
+  const destination = join(dir, 'artifact.bin');
+
+  const sleeps: number[] = [];
+  const requestedUrls: string[] = [];
+  const assetId = 42;
+  const assetApiUrl = `https://api.github.com/repos/gx-capture/capture-workbench/releases/assets/${assetId}`;
+  const assetDownloadUrl = 'https://objects.githubusercontent.com/test-asset';
+
+  const mockFetch = (async (
+    input: string | URL | Request,
+    init?: RequestInit,
+  ): Promise<Response> => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    requestedUrls.push(url);
+
+    if (
+      url.includes('github.com/gx-capture/capture-workbench/releases/download')
+    ) {
+      return new Response('Gateway Timeout', { status: 504 });
+    }
+
+    if (
+      url.includes(
+        'api.github.com/repos/gx-capture/capture-workbench/releases/tags',
+      )
+    ) {
+      return new Response(
+        JSON.stringify({
+          assets: [
+            {
+              name: 'artifact.bin',
+              url: assetApiUrl,
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+
+    if (url === assetApiUrl) {
+      assert.equal(
+        init?.headers && (init.headers as Record<string, string>)['Accept'],
+        'application/octet-stream',
+      );
+      assert.equal(init?.redirect, 'manual');
+      return new Response(null, {
+        status: 302,
+        headers: { Location: assetDownloadUrl },
+      });
+    }
+
+    if (url === assetDownloadUrl) {
+      assert.equal(init?.redirect, 'error');
+      return new Response('fallback asset content', { status: 200 });
+    }
+
+    throw new Error(`Unexpected request to ${url}`);
+  }) as typeof fetch;
+
+  await downloadAsset(
+    DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL,
+    'artifact.bin',
+    destination,
+    {
+      fetch: mockFetch,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+      retryDelays: [1000, 2000],
+    },
+  );
+
+  assert.equal(await readFile(destination, 'utf8'), 'fallback asset content');
+  assert.deepEqual(sleeps, [1000, 2000]);
+  assert.ok(
+    requestedUrls.some((url) =>
+      url.includes(
+        'api.github.com/repos/gx-capture/capture-workbench/releases/tags',
+      ),
+    ),
+  );
+  assert.ok(requestedUrls.some((url) => url === assetApiUrl));
+  assert.ok(requestedUrls.some((url) => url === assetDownloadUrl));
+});
+
+test('accepts asset bytes the GitHub API returns directly with HTTP 200', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cert-prep-test-'));
+  temporaryRoots.push(dir);
+  const destination = join(dir, 'artifact.bin');
+  const assetApiUrl =
+    'https://api.github.com/repos/gx-capture/capture-workbench/releases/assets/7';
+
+  const mockFetch = (async (
+    input: string | URL | Request,
+  ): Promise<Response> => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    if (
+      url.includes('github.com/gx-capture/capture-workbench/releases/download')
+    ) {
+      return new Response('Gateway Timeout', { status: 504 });
+    }
+    if (url.includes('/releases/tags/')) {
+      return new Response(
+        JSON.stringify({
+          assets: [{ name: 'artifact.bin', url: assetApiUrl }],
+        }),
+        { status: 200 },
+      );
+    }
+    if (url === assetApiUrl) {
+      return new Response('direct asset content', { status: 200 });
+    }
+    throw new Error(`Unexpected request to ${url}`);
+  }) as typeof fetch;
+
+  await downloadAsset(
+    DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL,
+    'artifact.bin',
+    destination,
+    { fetch: mockFetch, sleep: () => Promise.resolve(), retryDelays: [0, 0] },
+  );
+
+  assert.equal(await readFile(destination, 'utf8'), 'direct asset content');
+});
+
+test('does not retry 4xx errors and does not fall back to API', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cert-prep-test-'));
+  temporaryRoots.push(dir);
+  const destination = join(dir, 'artifact.bin');
+
+  const sleeps: number[] = [];
+  const requestedUrls: string[] = [];
+
+  const mockFetch = (async (
+    input: string | URL | Request,
+  ): Promise<Response> => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    requestedUrls.push(url);
+    return new Response('Not Found', { status: 404 });
+  }) as typeof fetch;
+
+  await assert.rejects(
+    downloadAsset(
+      DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL,
+      'artifact.bin',
+      destination,
+      {
+        fetch: mockFetch,
+        sleep: async (ms) => {
+          sleeps.push(ms);
+        },
+        retryDelays: [1000, 2000],
+      },
+    ),
+    /download failed with HTTP 404/iu,
+  );
+
+  assert.equal(requestedUrls.length, 1);
+  assert.equal(sleeps.length, 0);
+  assert.ok(requestedUrls.every((url) => !url.includes('api.github.com')));
+});
+
+test('rejects untrusted redirects from the API download path', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cert-prep-test-'));
+  temporaryRoots.push(dir);
+  const destination = join(dir, 'artifact.bin');
+
+  const assetApiUrl =
+    'https://api.github.com/repos/gx-capture/capture-workbench/releases/assets/99';
+
+  const mockFetch = (async (
+    input: string | URL | Request,
+  ): Promise<Response> => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+
+    if (
+      url.includes('github.com/gx-capture/capture-workbench/releases/download')
+    ) {
+      return new Response('Gateway Timeout', { status: 504 });
+    }
+
+    if (
+      url.includes(
+        'api.github.com/repos/gx-capture/capture-workbench/releases/tags',
+      )
+    ) {
+      return new Response(
+        JSON.stringify({
+          assets: [{ name: 'artifact.bin', url: assetApiUrl }],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+
+    if (url === assetApiUrl) {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: 'https://evil.attacker.test/malicious-artifact' },
+      });
+    }
+
+    throw new Error(`Unexpected request: ${url}`);
+  }) as typeof fetch;
+
+  await assert.rejects(
+    downloadAsset(
+      DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL,
+      'artifact.bin',
+      destination,
+      {
+        fetch: mockFetch,
+        sleep: () => Promise.resolve(),
+        retryDelays: [0, 0],
+      },
+    ),
+    /untrusted redirect/iu,
+  );
+});
+
+test('fails with compound error when all download paths fail', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cert-prep-test-'));
+  temporaryRoots.push(dir);
+  const destination = join(dir, 'artifact.bin');
+
+  const mockFetch = (async (): Promise<Response> => {
+    return new Response('Gateway Timeout', { status: 504 });
+  }) as typeof fetch;
+
+  await assert.rejects(
+    downloadAsset(
+      DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL,
+      'artifact.bin',
+      destination,
+      {
+        fetch: mockFetch,
+        sleep: () => Promise.resolve(),
+        retryDelays: [0, 0],
+      },
+    ),
+    /Capture runtime artifact artifact\.bin download failed with HTTP 504 \(public URL and API\)\./,
+  );
 });
 
 async function createFixture(): Promise<string> {
