@@ -21,8 +21,6 @@ the `cross-repo` label.
   [#260](https://github.com/gx-capture/capture-workbench/issues/260).
 - GPU selection step 3 (device override, observed device in the API status,
   external-Ollama guidance) [#258](https://github.com/gx-capture/capture-workbench/issues/258); steps 1 and 2 are PR #91 and PR #93.
-- Move `OllamaTraditionalChineseTranslator` to the AI providers context
-  [#262](https://github.com/gx-capture/capture-workbench/issues/262).
 - Release version literals in tests [#253](https://github.com/gx-capture/capture-workbench/issues/253).
 
 Known limitation: handwritten OCR quality (Capture Runtime,

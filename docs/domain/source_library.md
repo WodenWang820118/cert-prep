@@ -179,7 +179,7 @@ sequenceDiagram
   UC-->>API: DocumentOperation
 ```
 
-`create_app` 經 `bootstrap/source_library_links.py` 的 `document_repository` 與 `document_operation_repository` 建立 `SqliteDocumentRepository`、`SqliteDocumentOperationRepository`，再建立 `LocalSourceFileStore`、`OllamaChunkTranslator`、`PoolDocumentWork`，放在 `app.state.document_repository`、`document_operation_repository`、`source_file_store`、`chunk_translator`、`document_work`；擷取與起草的 port 由下游的上下文實作，放在 `app.state.source_extraction`（Capture Runtime 沒有設定時是 `None`，匯入與重試回 503）與 `imported_document_drafting`。router 只依 `application/ports.py` 的 port 呼叫用例。作業的每一次轉換是一個交易，在 repository 裡讀出作業、交給 `DocumentOperation` 決定、以原狀態為條件寫回。作業失敗、取消或重試時，同一個交易也重設教材、刪掉它的段落，並刪掉它還沒結束的草稿產生工作（見下節「題目編寫」）。
+`create_app` 經 `bootstrap/source_library_links.py` 的 `document_repository` 與 `document_operation_repository` 建立 `SqliteDocumentRepository`、`SqliteDocumentOperationRepository`，再建立 `LocalSourceFileStore`、`DocumentChunkTranslator`、`PoolDocumentWork`，放在 `app.state.document_repository`、`document_operation_repository`、`source_file_store`、`chunk_translator`、`document_work`；擷取與起草的 port 由下游的上下文實作，放在 `app.state.source_extraction`（Capture Runtime 沒有設定時是 `None`，匯入與重試回 503）與 `imported_document_drafting`。router 只依 `application/ports.py` 的 port 呼叫用例。作業的每一次轉換是一個交易，在 repository 裡讀出作業、交給 `DocumentOperation` 決定、以原狀態為條件寫回。作業失敗、取消或重試時，同一個交易也重設教材、刪掉它的段落，並刪掉它還沒結束的草稿產生工作（見下節「題目編寫」）。
 
 ## 與其他上下文的關係
 
@@ -190,7 +190,7 @@ sequenceDiagram
 - 題目編寫：寫入產生的草稿時，題目編寫經它的 port `DocumentExamState` 呼叫 `record_draft_count` 或 `record_import_draft_count`；實作把題目編寫寫入交易的連線交給 `SqliteDocumentRepository`，教材的狀態與題目數和草稿一起寫入。
 - 題目編寫：讀段落與更新題目數經題目編寫的 port `DraftSources` 與教材來源用例 `list_chunks`、`view_chunk`、`record_draft_count`、`record_import_draft_count`，教材存在檢查經 `ProjectDocuments`，不直接呼叫 `source_library.infrastructure`。
 - 練習與複習：整份教材模式經 `view_document` 確認教材屬於這個專案。這次讀取用自己的連線，在練習的寫入交易之前。
-- AI 供應：翻譯用 Ollama 模型（`OllamaTraditionalChineseTranslator`，在教材來源的 `infrastructure/audio.py`；移到 AI 供應見 [#262](https://github.com/gx-capture/capture-workbench/issues/262)）。
+- AI 供應：經 `application/ports.py` 的 `TraditionalChineseTranslator` 翻譯文字；`ChunkTranslator` 仍負責段落翻譯操作。`bootstrap/source_library_links.py` 注入 AI 供應的 `OllamaTraditionalChineseTranslator`，教材來源負責段落版本檢查、取消、翻譯結果的保存與批次結束時釋放資源。
 
 其他上下文只能經 `source_library.application` 與 `source_library.domain` 使用教材來源（import-linter「Other contexts reach Source Library only through its application and domain」），該契約的所有已知例外已在 C5 第三部分完全消除。
 

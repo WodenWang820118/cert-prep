@@ -81,7 +81,6 @@ from cert_prep_backend.authoring.infrastructure.streaming import (
 )
 from cert_prep_backend.runtime_provisioning.application import use_cases as runtime_installations
 from cert_prep_backend.source_library.application import use_cases as source_library
-from cert_prep_backend.source_library.infrastructure.audio import OllamaChunkTranslator
 from cert_prep_backend.source_library.infrastructure.storage import LocalSourceFileStore
 from cert_prep_backend.source_library.infrastructure.worker_pool import PoolDocumentWork
 from cert_prep_backend.platform.document_worker_pool import (
@@ -117,6 +116,7 @@ from cert_prep_backend.bootstrap.capture_links import (
 )
 from cert_prep_backend.bootstrap.practice_reads import bind_practice_reads, practice_documents
 from cert_prep_backend.bootstrap.source_library_links import (
+    chunk_translator,
     document_operation_repository,
     document_repository,
 )
@@ -199,7 +199,7 @@ def create_app(
     app.state.document_repository = document_repository(app.state.database)
     app.state.document_operation_repository = document_operation_repository(app.state.database)
     app.state.source_file_store = LocalSourceFileStore(app_settings)
-    app.state.chunk_translator = OllamaChunkTranslator(app.state.database, app_settings)
+    app.state.chunk_translator = chunk_translator(app.state.database, app_settings)
     source_library.recover_interrupted_work(
         app.state.document_operation_repository, app.state.document_repository
     )

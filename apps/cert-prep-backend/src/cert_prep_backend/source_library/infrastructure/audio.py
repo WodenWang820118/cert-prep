@@ -3,79 +3,34 @@ from __future__ import annotations
 from collections.abc import Callable
 from sqlite3 import Connection
 
-from ollama import Client
-
-from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.errors import (
     DocumentOperationStateError,
     DocumentProcessingCanceledError,
 )
 from cert_prep_backend.platform.database import Database
+from cert_prep_backend.source_library.application.ports import TraditionalChineseTranslator
 from cert_prep_backend.source_library.domain.document import DocumentChunk
 from cert_prep_backend.source_library.infrastructure import chunks
 
 
-TRANSLATION_OPTIONS = {
-    'temperature': 0,
-    'num_ctx': 2048,
-    'num_predict': 512,
-}
-BATCH_TRANSLATION_KEEP_ALIVE = '5m'
+class DocumentChunkTranslator:
+    """Translates a document's transcript chunks with the injected text translator."""
 
-
-class OllamaTraditionalChineseTranslator:
     def __init__(
         self,
-        settings: Settings,
+        db: Database,
         *,
-        keep_alive: str | float | int | None = 0,
+        translator: Callable[[], TraditionalChineseTranslator],
+        batch_translator: Callable[[], TraditionalChineseTranslator],
     ) -> None:
-        self._client = Client(
-            host=settings.ollama_host,
-            timeout=settings.ollama_timeout_seconds,
-        )
-        self._model = settings.ollama_model
-        self._keep_alive = keep_alive
-        self._released = False
-
-    def translate(self, japanese: str) -> str:
-        response = self._client.chat(
-            model=self._model,
-            messages=[
-                {
-                    'role': 'system',
-                    'content': (
-                        'Translate Japanese into natural Traditional Chinese used in Taiwan. '
-                        'Return only the translation. Preserve names, numbers, and meaning.'
-                    ),
-                },
-                {'role': 'user', 'content': japanese},
-            ],
-            options=TRANSLATION_OPTIONS,
-            think=False,
-            stream=False,
-            keep_alive=self._keep_alive,
-        )
-        return str(response.message.content or '').strip()
-
-    def release_resources(self) -> None:
-        if self._released or self._keep_alive == 0:
-            return
-        self._released = True
-        self._client.generate(model=self._model, keep_alive=0)
-
-
-class OllamaChunkTranslator:
-    """Translates a document's transcript chunks with the configured Ollama model."""
-
-    def __init__(self, db: Database, settings: Settings) -> None:
         self._db = db
-        self._settings = settings
+        self._translator = translator
+        self._batch_translator = batch_translator
 
     def translate_chunk(self, project_id: str, document_id: str, chunk_id: str) -> DocumentChunk:
         return translate_chunk(
             self._db,
-            translator=OllamaTraditionalChineseTranslator(self._settings),
+            translator=self._translator(),
             project_id=project_id,
             document_id=document_id,
             chunk_id=chunk_id,
@@ -84,9 +39,7 @@ class OllamaChunkTranslator:
     def translate_stale_chunks(self, project_id: str, document_id: str) -> list[DocumentChunk]:
         return translate_stale_chunks(
             self._db,
-            translator=OllamaTraditionalChineseTranslator(
-                self._settings, keep_alive=BATCH_TRANSLATION_KEEP_ALIVE
-            ),
+            translator=self._batch_translator(),
             project_id=project_id,
             document_id=document_id,
         )
@@ -95,7 +48,7 @@ class OllamaChunkTranslator:
 def translate_chunk(
     db: Database,
     *,
-    translator,
+    translator: TraditionalChineseTranslator,
     project_id: str,
     document_id: str,
     chunk_id: str,
@@ -140,7 +93,7 @@ def translate_chunk(
 def translate_stale_chunks(
     db: Database,
     *,
-    translator,
+    translator: TraditionalChineseTranslator,
     project_id: str,
     document_id: str,
     should_cancel: Callable[[], bool] | None = None,
