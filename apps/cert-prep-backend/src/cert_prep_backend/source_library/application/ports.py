@@ -185,6 +185,12 @@ class SourceUpload(Protocol):
     async def read(self, size: int = -1) -> bytes: ...
 
 
+class TraditionalChineseTranslator(Protocol):
+    """Translate transcript text into Traditional Chinese used in Taiwan."""
+
+    def translate(self, japanese: str) -> str: ...
+
+
 class ChunkTranslator(Protocol):
     def translate_chunk(
         self, project_id: str, document_id: str, chunk_id: str

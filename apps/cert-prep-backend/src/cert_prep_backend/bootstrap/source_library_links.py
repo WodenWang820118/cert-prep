@@ -11,12 +11,17 @@ from __future__ import annotations
 
 from sqlite3 import Connection
 
+from cert_prep_backend.ai_providers.infrastructure.translation import (
+    OllamaTraditionalChineseTranslator,
+)
 from cert_prep_backend.authoring.application import use_cases as authoring
 from cert_prep_backend.authoring.application.ports import DraftGenerationJobRepository
 from cert_prep_backend.bootstrap.study_projects import ProjectExistence
+from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.projects.infrastructure.repository import SqliteProjectRepository
-from cert_prep_backend.source_library.application.ports import DocumentDraftJobs, StudyProjects
+from cert_prep_backend.source_library.application.ports import ChunkTranslator, DocumentDraftJobs, StudyProjects
+from cert_prep_backend.source_library.infrastructure.audio import DocumentChunkTranslator
 from cert_prep_backend.source_library.infrastructure.operations import BindDraftJobs
 from cert_prep_backend.source_library.infrastructure.repository import (
     SqliteDocumentOperationRepository,
@@ -62,4 +67,14 @@ def document_repository(db: Database, connection: Connection | None = None) -> S
 def document_operation_repository(db: Database) -> SqliteDocumentOperationRepository:
     return SqliteDocumentOperationRepository(
         db, projects=source_library_projects(db), draft_jobs=bind_document_draft_jobs(db)
+    )
+
+
+def chunk_translator(db: Database, settings: Settings) -> ChunkTranslator:
+    """Supply AI Providers text translation to Source Library; one client per request."""
+
+    return DocumentChunkTranslator(
+        db,
+        translator=lambda: OllamaTraditionalChineseTranslator(settings),
+        batch_translator=lambda: OllamaTraditionalChineseTranslator(settings, keep_alive="5m"),
     )
