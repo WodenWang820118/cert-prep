@@ -125,3 +125,17 @@ sequenceDiagram
 - 資料表：`practice_sessions`、`practice_session_questions`（題目快照）、`practice_attempts` 屬練習與複習；migration 在 `platform/database.py`。專案、草稿與教材由所屬上下文的用例讀取，練習的 infrastructure 不查那些資料表。
 - HTTP：`/projects/{project_id}/practice-sessions`、`/projects/{project_id}/wrong-answers`、`POST /projects/{project_id}/practice-questions/{question_id}/regrade`（DTO 在 `practice/api/schemas.py`）。
 - API 的 `PracticeSessionStatus`、`PracticeSessionMode` 列舉值對應到概念集的 `practice.session-status.*`、`practice.session-mode.*`。
+
+## 前端
+
+程式：`apps/cert-prep/src/app/practice`（C7 第五部分）。每層是一個 Sheriff 模組，其他模組只經該層的 `index.ts` 使用；只建立有內容的層。
+
+| 層        | 公開 API（`index.ts`）                                                                                                                                              | 負責                                                                                                                               |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `domain`  | 全部型別與常數（`export *`）                                                                                                                                        | 練習模式、建立練習的 payload、題目快照、題目導覽與錯題總覽 view model、解說與答案訂正狀態、教材標籤與初始狀態                      |
+| `data`    | `PracticeStore`、`WrongAnswerReviewStore`、`PracticeSessionPayloadService`、`ReviewRetryNavigationService`、`ChoiceKeyService`、`ReviewDisplayService`              | 開始練習、作答與放棄、載入錯題與總覽、請求解說、訂正答案與重評、重練導覽、組合 payload 與顯示標籤；保留原本的 `providedIn: 'root'` |
+| `feature` | `PracticePanelComponent`、`WrongAnswerDashboardComponent`、`WrongAnswerReviewComponent`、`DashboardPage`、`FullExamPage`、`RandomQuizPage`、`WrongAnswerReviewPage` | 三個注入 store 或 service 的容器與四個路由頁面；保留 selector、DI 順序、模板及樣式                                                 |
+
+三個容器都注入 store 或 service，因此歸 `feature`；本次沒有獨立的 `ui` 層。練習只經上游的公開 API 使用題目編寫（`authoring/data` 的 `DraftReviewStore`、`authoring/domain` 的 `displayChoice`）、教材來源（`source-library/data` 的 `SourceImportStore`）、學習專案（`projects/data` 的 `ProjectStore`）及 `core` 的 API、作業狀態、型別與展示元件。沒有反向呼叫，也沒有新增架構例外。
+
+殼層的 `loadComponent` 改經 `practice/feature` 公開 API；路由仍為 `/dashboard`、`/full-exam`、`/random-quiz` 與 `/review`。`model-health` 與 `runtime-manager` 留待執行環境的下一個 PR；`api`、`utils`、`testing` 不搬移。

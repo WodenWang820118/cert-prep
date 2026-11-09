@@ -4,10 +4,10 @@ import { DesktopRuntimeStore } from '../../runtime/data';
 import { DraftReviewStore } from '../../authoring/data';
 import { HealthStore } from '../../runtime/data';
 import { OperationStore } from '../data';
-import { PracticeStore } from '../../stores/practice/practice.store';
+import { PracticeStore } from '../../practice/data';
 import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../../source-library/data';
-import { WrongAnswerReviewStore } from '../../stores/wrong-answer-review.store';
+import { WrongAnswerReviewStore } from '../../practice/data';
 
 @Injectable({ providedIn: 'root' })
 export class WorkspaceFacade {
