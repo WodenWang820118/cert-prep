@@ -20,7 +20,7 @@ export const appRoutes: Route[] = [
     path: 'full-exam',
     canActivate: [BackendRuntimeReadyGuard],
     loadComponent: () =>
-      import('../../pages/full-exam/full-exam.page').then(
+      import('../../practice/feature').then(
         (m) => m.FullExamPage,
       ),
     title: 'Full Exam - Cert Prep',
@@ -29,7 +29,7 @@ export const appRoutes: Route[] = [
     path: 'random-quiz',
     canActivate: [BackendRuntimeReadyGuard],
     loadComponent: () =>
-      import('../../pages/random-quiz/random-quiz.page').then(
+      import('../../practice/feature').then(
         (m) => m.RandomQuizPage,
       ),
     title: 'Random Quiz - Cert Prep',
@@ -38,7 +38,7 @@ export const appRoutes: Route[] = [
     path: 'dashboard',
     canActivate: [BackendRuntimeReadyGuard],
     loadComponent: () =>
-      import('../../pages/dashboard/dashboard.page').then(
+      import('../../practice/feature').then(
         (m) => m.DashboardPage,
       ),
     title: 'Dashboard - Cert Prep',
@@ -55,7 +55,7 @@ export const appRoutes: Route[] = [
     path: 'review',
     canActivate: [BackendRuntimeReadyGuard],
     loadComponent: () =>
-      import('../../pages/wrong-answer-review/wrong-answer-review.page').then(
+      import('../../practice/feature').then(
         (m) => m.WrongAnswerReviewPage,
       ),
     title: 'Review - Cert Prep',
