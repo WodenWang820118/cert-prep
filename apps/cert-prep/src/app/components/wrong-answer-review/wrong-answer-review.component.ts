@@ -7,8 +7,8 @@ import {
 } from '@angular/core';
 import type { WrongAnswerRead } from '../../core/domain';
 import { ReviewDisplayService } from '../../services/review-display.service';
-import { displayChoice } from '../../services/choice-display';
-import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
+import { displayChoice } from '../../authoring/domain';
+import { DraftReviewStore } from '../../authoring/data';
 import { OperationStore } from '../../core/data';
 import { ReviewRetryNavigationService } from '../../stores/practice/review-retry-navigation.service';
 import { ProjectStore } from '../../projects/data';

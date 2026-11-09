@@ -13,9 +13,7 @@ export const appRoutes: Route[] = [
     path: 'build',
     canActivate: [BackendRuntimeReadyGuard],
     loadComponent: () =>
-      import('../../pages/build-workbench/build-workbench.page').then(
-        (m) => m.BuildWorkbenchPage,
-      ),
+      import('./build-workbench.page').then((m) => m.BuildWorkbenchPage),
     title: 'Build - Cert Prep',
   },
   {

@@ -4,7 +4,6 @@ import {
   computed,
   effect,
   inject,
-  output,
   signal,
   viewChild,
 } from '@angular/core';
@@ -74,14 +73,6 @@ export class SourceImportPanelComponent {
   protected readonly cropPosition = signal(0);
   protected readonly cropTotal = signal(0);
 
-  /**
-   * Emits the selected project's id when the learner uploads or selects a
-   * source document, and when a document becomes active (an upload can finish
-   * after the first draft query ran). Source Library is upstream of Authoring,
-   * so the composing page reloads that project's drafts (D18).
-   */
-  readonly sourceDocumentActivity = output<string>();
-
   protected readonly uploadQueueModel = computed<SourceUploadQueueViewModel>(
     () => ({
       accept: this.sourceImport.sourceFileAccept,
@@ -132,16 +123,6 @@ export class SourceImportPanelComponent {
           : null,
       );
     });
-    effect(() => {
-      const projectId = this.projects.selectedProject()?.id ?? null;
-      const documentId = this.sourceImport.activeDocumentId();
-      if (projectId !== null && documentId !== null) {
-        // An upload can finish after the initial draft query was enabled. Tell
-        // the page when the source becomes active so the first empty response
-        // is not mistaken for a project with no drafts.
-        this.sourceDocumentActivity.emit(projectId);
-      }
-    });
   }
 
   protected handleAction(action: SourceImportAction): void {
@@ -156,7 +137,7 @@ export class SourceImportPanelComponent {
         this.setCropImagesBeforeUpload(action.enabled);
         return;
       case 'upload':
-        this.uploadDocument();
+        this.sourceImport.uploadDocuments();
         return;
       case 'cancel-upload':
         this.sourceImport.cancelUploadItem(action.itemId);
@@ -165,7 +146,7 @@ export class SourceImportPanelComponent {
         this.sourceImport.retryUploadItem(action.itemId);
         return;
       case 'select-document':
-        this.selectDocument(action.documentId);
+        this.sourceImport.selectDocument(action.documentId);
         return;
       case 'cancel-processing':
         this.sourceImport.cancelActiveDocumentProcessing();
@@ -246,22 +227,6 @@ export class SourceImportPanelComponent {
   private keepOriginalImage(): void {
     if (this.pendingCropIndexes[this.pendingCropCursor] !== undefined) {
       this.advanceCropReview();
-    }
-  }
-
-  private uploadDocument(): void {
-    this.sourceImport.uploadDocuments();
-    const project = this.projects.selectedProject();
-    if (project !== null) {
-      this.sourceDocumentActivity.emit(project.id);
-    }
-  }
-
-  private selectDocument(documentId: string): void {
-    this.sourceImport.selectDocument(documentId);
-    const project = this.projects.selectedProject();
-    if (project !== null) {
-      this.sourceDocumentActivity.emit(project.id);
     }
   }
 

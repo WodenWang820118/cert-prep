@@ -11,7 +11,7 @@ import type {
   PracticeSessionRead,
   QuestionDraftRead,
 } from '../../core/domain';
-import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
+import { DraftReviewStore } from '../../authoring/data';
 import { OperationStore } from '../../core/data';
 import { PracticeStore } from '../../stores/practice/practice.store';
 import { ProjectStore } from '../../projects/data';

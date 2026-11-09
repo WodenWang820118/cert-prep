@@ -11,7 +11,7 @@ import type {
   WrongAnswerRead,
 } from '../../core/domain';
 import { OperationStore } from '../../core/data';
-import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
+import { DraftReviewStore } from '../../authoring/data';
 import { editableAppQuestion } from '../../testing/app.spec-helpers';
 import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../../source-library/data';

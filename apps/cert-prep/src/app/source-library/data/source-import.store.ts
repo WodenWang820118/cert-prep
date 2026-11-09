@@ -16,6 +16,7 @@ import { CertPrepSseClient } from '../../core/data';
 import type {
   DocumentParsingMetric,
   LanguageHint,
+  SourceDocumentActivity,
   SourceFileSelectionOptions,
   SourceUploadItem,
   UploadTransportRun,
@@ -122,6 +123,17 @@ export class SourceImportStore {
   readonly uploadBatchSize = signal(DEFAULT_UPLOAD_BATCH_SIZE);
   readonly uploadItems = signal<SourceUploadItem[]>([]);
   readonly streamError = signal<string | null>(null);
+  private readonly latestDocumentActivity =
+    signal<SourceDocumentActivity | null>(null);
+  /**
+   * The selected project's latest source document activity: an upload, a
+   * document selection (re-selecting the same document included) or a
+   * document becoming active (an upload can finish after the first draft
+   * query ran). Source Library is upstream of Question Authoring and does not
+   * know about drafts; Authoring's `DraftReviewStore` reloads the project's
+   * drafts on every activity (D19).
+   */
+  readonly documentActivity = this.latestDocumentActivity.asReadonly();
   readonly selectedFiles = computed(() =>
     this.uploadItems().map((item) => item.file),
   );
@@ -290,6 +302,13 @@ export class SourceImportStore {
         untracked(() => this.library.setChunks(this.chunksResource.value()));
       }
     });
+    effect(() => {
+      const projectId = this.projects.selectedProject()?.id ?? null;
+      const documentId = this.activeDocumentId();
+      if (projectId !== null && documentId !== null) {
+        untracked(() => this.latestDocumentActivity.set({ projectId }));
+      }
+    });
   }
 
   chooseFile(
@@ -392,6 +411,11 @@ export class SourceImportStore {
   }
 
   uploadDocuments(): void {
+    this.startUploads();
+    this.reportDocumentActivity();
+  }
+
+  private startUploads(): void {
     const project = this.projects.selectedProject();
     const uploadItems = this.uploadItems().filter((item) =>
       ['queued', 'failed'].includes(item.status),
@@ -530,6 +554,11 @@ export class SourceImportStore {
   }
 
   selectDocument(documentId: string): void {
+    this.showDocument(documentId);
+    this.reportDocumentActivity();
+  }
+
+  private showDocument(documentId: string): void {
     const projectId = this.projects.selectedProject()?.id;
     const previousDocumentId = this.activeDocumentId();
     this.setActiveDocumentId(documentId);
@@ -547,6 +576,13 @@ export class SourceImportStore {
     }
     this.activeDocumentResource.reload();
     this.chunksResource.reload();
+  }
+
+  private reportDocumentActivity(): void {
+    const project = this.projects.selectedProject();
+    if (project !== null) {
+      this.latestDocumentActivity.set({ projectId: project.id });
+    }
   }
 
   refreshUploadedDocument(

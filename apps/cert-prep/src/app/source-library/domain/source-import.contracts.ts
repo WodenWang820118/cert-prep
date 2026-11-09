@@ -41,6 +41,16 @@ export interface SourceUploadItem {
   readonly error: string | null;
 }
 
+/**
+ * One source document activity in a project: the learner uploaded or selected
+ * a document (re-selecting the same one included), or a document became
+ * active. Every activity is a new object, so a reader sees each one even when
+ * the active document did not change.
+ */
+export interface SourceDocumentActivity {
+  readonly projectId: string;
+}
+
 export interface SourceFileSelectionOptions {
   readonly append?: boolean;
   readonly autoUpload?: boolean;

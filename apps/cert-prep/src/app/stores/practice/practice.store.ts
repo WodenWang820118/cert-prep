@@ -13,7 +13,7 @@ import type {
   PracticeSessionQuestion,
 } from './contracts/practice.contracts';
 import { PracticeSessionPayloadService } from './practice-session-payload.service';
-import { DraftReviewStore } from '../draft-review/draft-review.store';
+import { DraftReviewStore } from '../../authoring/data';
 import { OperationStore } from '../../core/data';
 import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../../source-library/data';

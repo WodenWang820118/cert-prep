@@ -7,7 +7,7 @@ import type {
   ProjectRead,
   QuestionDraftRead,
 } from '../../core/domain';
-import { DraftReviewStore } from '../draft-review/draft-review.store';
+import { DraftReviewStore } from '../../authoring/data';
 import { PracticeStore } from './practice.store';
 import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../../source-library/data';

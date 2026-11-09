@@ -242,3 +242,27 @@ flowchart TD
 - 確定性解析：`domain/deterministic_parser.py` 與教材來源的 `exam_content`。
 - HTTP：`/projects/{project_id}/question-drafts`、`/projects/{project_id}/documents/{document_id}/drafts`、`…/draft-jobs`、`…/draft-operations`（DTO 在 `authoring/api/schemas.py`）；產生工作與手動作業的即時狀態經 `authoring/api/operation_events.py` 的 server-sent events（`…/draft-jobs/events`、`…/draft-operations/{operation_id}/events`）；串流與心跳由 `platform/sse.py` 提供，快照來自 `list_generation_jobs` 與 `view_manual_generation`，所有工作都結束時（`all_jobs_ended`）或作業結束時串流結束。
 - API 的 `DraftStatus`、`AnswerKeySource`、`DraftGenerationStrategy`、`DraftGenerationJobStatus`、`ManualDraftOperationStatus` 列舉值對應到概念集的 `authoring.*`。
+
+## 前端
+
+程式：`apps/cert-prep/src/app/authoring`（C7 第四部分）。規則在 `sheriff.config.ts`：每一層是一個 Sheriff 模組，標上 `context:authoring` 與 `type:<層>`，別的模組只能經它的 `index.ts` 引用。
+
+| 層        | 公開（`index.ts`）                                                   | 內容                                                                                                                                                                                                                                                                            |
+| --------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `domain`  | 全部（`export *`）                                                   | 草稿編修、產生策略與背景產生工作摘要的型別（`DraftEdit`、`DraftGenerationStrategy`、`DraftJobSummary`）、可練習的草稿狀態、草稿面板的動作與 view model（`DraftGenerationAction`、`DraftQuestionEditorAction`）與文字格式化，以及顯示選項時去掉原卷題號的 `displayChoice`        |
+| `data`    | `DraftReviewStore`                                                   | 專案的草稿（`/question-drafts` 的 HTTP resource）、編修中的草稿（`DraftEditSessionStore`、`DraftEditService`）、可練習的判斷（`DraftPlayabilityService`）、手動產生作業與它的事件串流、匯入後背景產生工作與它的事件串流（`DraftStreamingJobsStore`）；都是 `providedIn: 'root'` |
+| `ui`      | `DraftGenerationStatusComponent`、`DraftQuestionEditorCardComponent` | 只收 view model、送出動作的元件：產生狀態與產生、重試、取消的按鈕；一題草稿的檢視與編修卡片                                                                                                                                                                                     |
+| `feature` | `DraftReviewPanelComponent`                                          | 草稿面板（`app-draft-review-panel`）：注入 store、組出 view model、處理 `ui` 的動作                                                                                                                                                                                             |
+
+題目編寫只引用自己、教材來源（`source-library/data` 的 `SourceImportStore`：目前的教材、教材活動、產生或重試後重新整理教材）、學習專案（`projects/data` 的 `ProjectStore`）、執行環境（`runtime/data` 的 `HealthStore`：AI 供應不能用時開啟 Ollama 安裝或模型下載的同意對話框）與 `core`。它不引用練習，所以沒有要反轉的呼叫。下游經 `authoring/data` 用 `DraftReviewStore`：練習（`PracticeStore`、練習面板、錯題複習）與殼層（`WorkspaceFacade` 切換專案時重設並載入草稿）；練習面板與錯題複習經 `authoring/domain` 用 `displayChoice`。
+
+### 草稿的重新載入
+
+`DraftReviewStore.load(projectId)` 載入目前專案的草稿：第一次打開查詢，之後重新查詢。它在這些時候被呼叫：
+
+- 殼層的 `WorkspaceFacade` 切換專案時。
+- 教材來源的 `SourceImportStore.documentActivity` 換成新的值時：學習者上傳、選教材（再選同一份也算），以及有教材變成目前的教材。上傳在第一次查詢草稿之後才完成時，教材變成目前的教材，草稿再查一次，所以不會被當成專案沒有草稿（[決策 D19](../../.agents/PLANS/ddd-refactor/decisions.md)）。
+- 手動產生或重試完成，以及背景產生工作的事件串流報告進度時。
+- 練習的 `PracticeStore` 與練習面板需要最新的已核可題目時。
+
+`DraftReviewStore` 在 app 啟動時由 `WorkspaceFacade` 建立，在每一頁都監看教材活動：在其他頁切換專案時，最新的教材變成目前的教材，草稿也會再查一次；回到 `/build` 時不再重新查詢。`/build` 頁（`core/shell` 的 `BuildWorkbenchPage`）只排版教材來源的匯入面板與草稿面板，沒有狀態也沒有邏輯。`core/shell/build-route-draft-reload.spec.ts` 以真的路由、殼層與 store 對 `HttpTestingController` 記錄每個請求與事件串流的順序：打開 `/build`、第一次查詢回空之後才完成的上傳、選另一份教材、再選同一份、切換專案。
