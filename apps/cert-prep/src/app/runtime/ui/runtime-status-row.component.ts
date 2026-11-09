@@ -1,5 +1,5 @@
 import { Component, Input, ChangeDetectionStrategy } from '@angular/core';
-import type { RuntimeStatusSectionView } from './contracts/model-health.contracts';
+import type { RuntimeStatusSectionView } from '../domain';
 import { HlmBadge } from '@spartan-ng/helm/badge';
 
 @Component({

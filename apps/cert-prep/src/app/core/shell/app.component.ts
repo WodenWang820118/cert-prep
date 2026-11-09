@@ -18,12 +18,12 @@ import {
   RouterOutlet,
 } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { RuntimeConsentDialogsComponent } from '../../components/model-health/runtime-consent-dialogs.component';
-import { RuntimeUpdateNoticeComponent } from '../../components/model-health/runtime-update-notice.component';
+import { RuntimeConsentDialogsComponent } from '../../runtime/feature';
+import { RuntimeUpdateNoticeComponent } from '../../runtime/feature';
 import { ProjectRailComponent } from '../../projects/feature';
 import { BACKEND_READINESS_POLL_LIMIT } from './app.constants';
 import type { StudyNavigationGroup } from './app.contracts';
-import { RuntimeManagerPage } from '../../pages/runtime-manager/runtime-manager.page';
+import { RuntimeManagerPage } from '../../runtime/feature';
 import { OperationStore } from '../data';
 import { ProjectStore } from '../../projects/data';
 import { DesktopRuntimeStore } from '../../runtime/data';

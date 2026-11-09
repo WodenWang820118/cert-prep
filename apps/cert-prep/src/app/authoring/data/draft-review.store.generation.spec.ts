@@ -4,7 +4,7 @@ import { CERT_PREP_API } from '../../core/data';
 import { CertPrepSseClient } from '../../core/data';
 import { OperationStore } from '../../core/data';
 import { DraftReviewStore } from './draft-review.store';
-import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
+import { provideCertPrepHttpResourceClientFake } from '../../core/testing';
 import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../../source-library/data';
 import {

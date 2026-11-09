@@ -11,7 +11,7 @@ import {
   modelDownload,
   providerSelection,
 } from './health.store.spec-helpers';
-import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
+import { provideCertPrepHttpResourceClientFake } from '../../core/testing';
 
 describe('HealthStore model downloads', () => {
   const apiClient = {

@@ -9,7 +9,7 @@ import type {
 import { OperationStore } from '../../core/data';
 import { ProjectStore } from '../../projects/data';
 import { WrongAnswerReviewStore } from './wrong-answer-review.store';
-import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
+import { provideCertPrepHttpResourceClientFake } from '../../core/testing';
 
 describe('WrongAnswerReviewStore', () => {
   const project: ProjectRead = {

@@ -1,5 +1,5 @@
-import type { HealthResponse, LLMHealthRead } from '../../../core/domain';
-import type { LLMProviderSelectionRead } from '../../../runtime/domain';
+import type { HealthResponse, LLMHealthRead } from '../../core/domain';
+import type { LLMProviderSelectionRead } from './health-runtime.contracts';
 
 /**
  * Badge colours used by the health/runtime status UI.

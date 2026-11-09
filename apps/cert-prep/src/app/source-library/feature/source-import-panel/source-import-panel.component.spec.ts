@@ -4,7 +4,7 @@ import { of, Subject } from 'rxjs';
 import { CERT_PREP_API, OperationStore } from '../../../core/data';
 import type { DocumentRead, ProjectRead } from '../../../core/domain';
 import { ProjectStore } from '../../../projects/data';
-import { appDocument, appProject, secondAppProject } from '../../../testing/app.spec-helpers';
+import { appDocument, appProject, secondAppProject } from '../../../core/testing';
 import { SourceImportStore } from '../../data';
 import type { SourceImportAction, SourceUploadItem } from '../../domain';
 import { SourceImportPanelComponent } from './source-import-panel.component';

@@ -13,9 +13,9 @@ import {
   emptyWrongAnswerSummary,
   secondAppDocument,
   secondAppProject,
-} from '../../testing/app.spec-helpers';
+} from '../testing';
 import { ProjectStore } from '../../projects/data';
-import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
+import { provideCertPrepHttpResourceClientFake } from '../testing';
 
 describe('App project selection', () => {
   let apiClient: ReturnType<typeof createApiClient>;

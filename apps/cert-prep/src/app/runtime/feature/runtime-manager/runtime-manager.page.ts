@@ -7,13 +7,13 @@ import {
   inject,
   ChangeDetectionStrategy
 } from '@angular/core';
-import { ModelHealthViewModelFacade } from '../../components/model-health/model-health-view-model.facade';
-import { RuntimeStatusRowComponent } from '../../components/model-health/runtime-status-row.component';
-import { DesktopRuntimeStore } from '../../runtime/data';
-import { HealthStore } from '../../runtime/data';
-import { OperationStore } from '../../core/data';
-import { ActionButtonComponent } from '../../core/ui';
-import { AppIconComponent } from '../../core/ui';
+import { ModelHealthViewModelFacade } from '../../data';
+import { RuntimeStatusRowComponent } from '../../ui';
+import { DesktopRuntimeStore } from '../../data';
+import { HealthStore } from '../../data';
+import { OperationStore } from '../../../core/data';
+import { ActionButtonComponent } from '../../../core/ui';
+import { AppIconComponent } from '../../../core/ui';
 import { HlmProgressImports } from '@spartan-ng/helm/progress';
 
 @Component({

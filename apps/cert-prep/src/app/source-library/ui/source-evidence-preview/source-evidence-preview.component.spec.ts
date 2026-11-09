@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import type { ChunkRead } from '../../../core/domain';
-import { appDocument } from '../../../testing/app.spec-helpers';
+import { appDocument } from '../../../core/testing';
 import type {
   SourceEvidenceViewModel,
   SourceImportAction,

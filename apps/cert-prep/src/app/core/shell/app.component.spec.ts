@@ -13,9 +13,9 @@ import {
   availableLlmHealth,
   backendHealth,
   emptyWrongAnswerSummary,
-} from '../../testing/app.spec-helpers';
+} from '../testing';
 import { OperationStore } from '../data';
-import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
+import { provideCertPrepHttpResourceClientFake } from '../testing';
 import { CaptureRuntimePreflightStore } from '../../capture/data';
 
 describe('App', () => {

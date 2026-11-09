@@ -7,7 +7,7 @@ import type {
 } from '../../core/domain';
 import type { DocumentOperationEvent } from '../../core/domain';
 import { CertPrepSseClient } from '../../core/data';
-import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
+import { provideCertPrepHttpResourceClientFake } from '../../core/testing';
 import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from './source-import.store';
 import { of, Subject } from 'rxjs';

@@ -1,14 +1,14 @@
 import { computed, effect, signal, untracked } from '@angular/core';
 import type { HttpResourceRef } from '@angular/common/http';
-import type { CertPrepGeneratedClient } from '../core/domain';
+import type { CertPrepGeneratedClient } from '../domain';
 import { from, map, Observable, of, Subscription } from 'rxjs';
 import type { ObservableInput } from 'rxjs';
-import { CertPrepHttpResourceClient } from '../core/data';
+import { CertPrepHttpResourceClient } from '../data';
 import type {
   CertPrepHttpResource,
   CertPrepResourceKey,
   CertPrepResourceTrigger,
-} from '../core/domain';
+} from '../domain';
 import type { FakeApi } from './contracts/testing.contracts';
 
 export function provideCertPrepHttpResourceClientFake(api: FakeApi) {

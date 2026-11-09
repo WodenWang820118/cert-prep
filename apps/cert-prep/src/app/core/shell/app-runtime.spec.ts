@@ -11,13 +11,13 @@ import {
   availableLlmHealth,
   backendHealth,
   emptyWrongAnswerSummary,
-} from '../../testing/app.spec-helpers';
+} from '../testing';
 import { DesktopRuntimeBridgeService } from '../../runtime/data/desktop-runtime-bridge.service';
 import type { DesktopRuntimeStatus } from '../../runtime/domain';
 import { OperationStore } from '../data';
 import { ProjectStore } from '../../projects/data';
 import { WorkspaceFacade } from './workspace.facade';
-import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
+import { provideCertPrepHttpResourceClientFake } from '../testing';
 
 describe('App runtime loading', () => {
   let apiClient: ReturnType<typeof createApiClient>;

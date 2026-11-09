@@ -3,7 +3,7 @@ import type {
   ModelHealthViewModel,
   ModelHealthViewState,
   RuntimeStatusSectionView,
-} from './contracts/model-health.contracts';
+} from '../domain';
 
 @Injectable({ providedIn: 'root' })
 export class ModelHealthViewModelService {
