@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
+import { createConnection } from 'node:net';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { join, relative, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -109,17 +110,56 @@ function killProcessTree(pid: number): void {
   }
 }
 
+function isPortAcceptingConnections(
+  port: number,
+  timeoutMilliseconds = 250,
+): Promise<boolean> {
+  return new Promise((resolvePromise) => {
+    const socket = createConnection({ host: '127.0.0.1', port });
+    let settled = false;
+    const finish = (accepting: boolean): void => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolvePromise(accepting);
+    };
+    socket.setTimeout(timeoutMilliseconds);
+    socket.once('connect', () => finish(true));
+    socket.once('timeout', () => finish(false));
+    socket.on('error', () => finish(false));
+  });
+}
+
+// The published runtime is a PyInstaller one-file build: the spawned process is
+// a bootloader whose child owns the HTTP listener. Killing the bootloader first
+// orphans that child (taskkill /T cannot walk a tree whose root has exited), and
+// the orphan keeps the inherited stderr pipe open, so node never exits. Kill the
+// tree while the bootloader is alive. netstat does not list the listener on
+// every machine (seen on Windows 11, 2026-11-09), so probe the port instead.
 async function stopRuntime(child: ChildProcess, port: number): Promise<void> {
-  if (child.exitCode === null && child.signalCode === null) child.kill();
-  await delay(250);
-  const pids = new Set(listeningProcessIds(port));
-  if (child.pid) pids.add(child.pid);
-  for (const pid of pids) killProcessTree(pid);
-  await delay(500);
-  if (listeningProcessIds(port).length > 0) {
-    throw new Error(
-      `Downloaded capture-runtime listener remained on port ${port}.`,
-    );
+  try {
+    if (process.platform === 'win32' && child.pid) {
+      killProcessTree(child.pid);
+    } else if (child.exitCode === null && child.signalCode === null) {
+      child.kill();
+    }
+    await delay(250);
+    const pids = new Set(listeningProcessIds(port));
+    if (child.pid) pids.add(child.pid);
+    for (const pid of pids) killProcessTree(pid);
+
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      if (!(await isPortAcceptingConnections(port))) return;
+      await delay(100);
+    }
+    if (await isPortAcceptingConnections(port)) {
+      throw new Error(
+        `Downloaded capture-runtime listener remained on port ${port}.`,
+      );
+    }
+  } finally {
+    child.stderr?.destroy();
   }
 }
 
@@ -128,9 +168,14 @@ function startRuntime(
   port: number,
   token: string,
   dataRoot: string,
+  tempRoot: string,
 ): ChildProcess {
   const environment = {
     ...process.env,
+    // The PyInstaller bootloader unpacks into %TEMP%\_MEI*, and a forced tree
+    // kill skips its cleanup; keep that folder inside the smoke's own root.
+    TEMP: tempRoot,
+    TMP: tempRoot,
     CAPTURE_HOST: '127.0.0.1',
     CAPTURE_PORT: String(port),
     CAPTURE_API_TOKEN: token,
@@ -175,9 +220,11 @@ async function waitForPublishedRuntimeContract(
         await Promise.all([
           fetch(`${baseUrl}/v2/health/ready`, {
             headers: { Connection: 'close' },
+            signal: AbortSignal.timeout(1_000),
           }),
           fetch(`${baseUrl}/v2/runtime/requirements`, {
             headers: { Connection: 'close' },
+            signal: AbortSignal.timeout(1_000),
           }),
         ]);
       if (unauthenticatedReady.status !== 401) {
@@ -318,7 +365,15 @@ async function runSmoke(): Promise<void> {
     runtimePort = await findFreePort();
     const runtimeData = join(temporaryRoot, 'runtime-data-published-release');
     await mkdir(runtimeData, { recursive: true });
-    runtime = startRuntime(installed.outputRoot, runtimePort, token, runtimeData);
+    const runtimeTemp = join(temporaryRoot, 'runtime-temp');
+    await mkdir(runtimeTemp, { recursive: true });
+    runtime = startRuntime(
+      installed.outputRoot,
+      runtimePort,
+      token,
+      runtimeData,
+      runtimeTemp,
+    );
     await waitForPublishedRuntimeContract(runtime, runtimePort, token);
     // The runtime is OCR-only: its fake extraction mode still requires the real OCR
     // compute preflight, so the former fake host-protocol leg cannot run here.
