@@ -4,9 +4,9 @@ import {
   computed,
   inject,
 } from '@angular/core';
-import { DesktopRuntimeStore } from '../../runtime/data';
-import { DesktopRuntimeViewService } from '../../runtime/data';
-import { RUNTIME_UPDATE_COPY } from '../../runtime/domain';
+import { DesktopRuntimeStore } from '../data';
+import { DesktopRuntimeViewService } from '../data';
+import { RUNTIME_UPDATE_COPY } from '../domain';
 import { AppIconComponent } from '../../core/ui';
 
 /**

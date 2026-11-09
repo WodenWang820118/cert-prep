@@ -2,7 +2,7 @@ import type {
   DocumentRead,
   ProjectRead,
   QuestionDraftRead,
-} from '../../core/domain';
+} from '../../domain';
 
 export const appProject: ProjectRead = {
   id: 'project-1',

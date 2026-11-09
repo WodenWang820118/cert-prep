@@ -2,7 +2,7 @@ import type {
   HealthResponse,
   LLMHealthRead,
   WrongAnswerSummaryRead,
-} from '../core/domain';
+} from '../domain';
 export {
   appDocument,
   appProject,

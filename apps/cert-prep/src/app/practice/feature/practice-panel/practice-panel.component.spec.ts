@@ -4,7 +4,7 @@ import {
   appDocument,
   appProject,
   editableAppQuestion,
-} from '../../../testing/app.spec-helpers';
+} from '../../../core/testing';
 import { CERT_PREP_API } from '../../../core/data';
 import type {
   PracticeAttemptRead,
@@ -16,7 +16,7 @@ import { OperationStore } from '../../../core/data';
 import { PracticeStore } from '../../data';
 import { ProjectStore } from '../../../projects/data';
 import { PracticePanelComponent } from './practice-panel.component';
-import { provideCertPrepHttpResourceClientFake } from '../../../testing/cert-prep-http-resource-client.fake';
+import { provideCertPrepHttpResourceClientFake } from '../../../core/testing';
 
 describe('PracticePanelComponent', () => {
   let apiClient: ReturnType<typeof createApiClient>;

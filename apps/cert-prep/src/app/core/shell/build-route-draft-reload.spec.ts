@@ -24,7 +24,7 @@ import {
   emptyWrongAnswerSummary,
   secondAppDocument,
   secondAppProject,
-} from '../../testing/app.spec-helpers';
+} from '../testing';
 import { App } from './app.component';
 import { appRoutes } from './app-routes.constants';
 

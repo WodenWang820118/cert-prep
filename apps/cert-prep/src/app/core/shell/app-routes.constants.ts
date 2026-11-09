@@ -46,7 +46,7 @@ export const appRoutes: Route[] = [
   {
     path: 'runtime',
     loadComponent: () =>
-      import('../../pages/runtime-manager/runtime-manager.page').then(
+      import('../../runtime/feature').then(
         (m) => m.RuntimeManagerPage,
       ),
     title: 'Manage Runtime - Cert Prep',

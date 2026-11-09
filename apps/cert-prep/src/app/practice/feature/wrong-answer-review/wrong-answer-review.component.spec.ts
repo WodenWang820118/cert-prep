@@ -12,11 +12,11 @@ import type {
 } from '../../../core/domain';
 import { OperationStore } from '../../../core/data';
 import { DraftReviewStore } from '../../../authoring/data';
-import { editableAppQuestion } from '../../../testing/app.spec-helpers';
+import { editableAppQuestion } from '../../../core/testing';
 import { ProjectStore } from '../../../projects/data';
 import { SourceImportStore } from '../../../source-library/data';
 import { WrongAnswerReviewStore } from '../../data';
-import { provideCertPrepHttpResourceClientFake } from '../../../testing/cert-prep-http-resource-client.fake';
+import { provideCertPrepHttpResourceClientFake } from '../../../core/testing';
 import { WrongAnswerReviewComponent } from './wrong-answer-review.component';
 
 describe('WrongAnswerReviewComponent', () => {

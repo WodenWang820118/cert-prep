@@ -12,12 +12,10 @@ flowchart LR
   n_apps_cert_prep_src_app_capture_data["apps/cert-prep/src/app/capture/data<br/>context:capture, type:data"]
   n_apps_cert_prep_src_app_capture_domain["apps/cert-prep/src/app/capture/domain<br/>context:capture, type:domain"]
   n_apps_cert_prep_src_app_capture_feature["apps/cert-prep/src/app/capture/feature<br/>context:capture, type:feature"]
-  n_apps_cert_prep_src_app_components_model_health["apps/cert-prep/src/app/components/model-health<br/>layer:component"]
   n_apps_cert_prep_src_app_core_data["apps/cert-prep/src/app/core/data<br/>context:core, type:data"]
   n_apps_cert_prep_src_app_core_domain["apps/cert-prep/src/app/core/domain<br/>context:core, type:domain"]
   n_apps_cert_prep_src_app_core_shell["apps/cert-prep/src/app/core/shell<br/>type:shell"]
   n_apps_cert_prep_src_app_core_ui["apps/cert-prep/src/app/core/ui<br/>context:core, type:ui"]
-  n_apps_cert_prep_src_app_pages_runtime_manager["apps/cert-prep/src/app/pages/runtime-manager<br/>layer:page"]
   n_apps_cert_prep_src_app_practice_data["apps/cert-prep/src/app/practice/data<br/>context:practice, type:data"]
   n_apps_cert_prep_src_app_practice_domain["apps/cert-prep/src/app/practice/domain<br/>context:practice, type:domain"]
   n_apps_cert_prep_src_app_practice_feature["apps/cert-prep/src/app/practice/feature<br/>context:practice, type:feature"]
@@ -25,6 +23,8 @@ flowchart LR
   n_apps_cert_prep_src_app_projects_feature["apps/cert-prep/src/app/projects/feature<br/>context:projects, type:feature"]
   n_apps_cert_prep_src_app_runtime_data["apps/cert-prep/src/app/runtime/data<br/>context:runtime, type:data"]
   n_apps_cert_prep_src_app_runtime_domain["apps/cert-prep/src/app/runtime/domain<br/>context:runtime, type:domain"]
+  n_apps_cert_prep_src_app_runtime_feature["apps/cert-prep/src/app/runtime/feature<br/>context:runtime, type:feature"]
+  n_apps_cert_prep_src_app_runtime_ui["apps/cert-prep/src/app/runtime/ui<br/>context:runtime, type:ui"]
   n_apps_cert_prep_src_app_source_library_data["apps/cert-prep/src/app/source-library/data<br/>context:source-library, type:data"]
   n_apps_cert_prep_src_app_source_library_domain["apps/cert-prep/src/app/source-library/domain<br/>context:source-library, type:domain"]
   n_apps_cert_prep_src_app_source_library_feature["apps/cert-prep/src/app/source-library/feature<br/>context:source-library, type:feature"]
@@ -64,36 +64,24 @@ flowchart LR
   n_apps_cert_prep_src_app_capture_feature --> n_apps_cert_prep_src_app_projects_data
   n_apps_cert_prep_src_app_capture_feature --> n_apps_cert_prep_src_app_runtime_data
   n_apps_cert_prep_src_app_capture_feature --> n_apps_cert_prep_src_app_source_library_data
-  n_apps_cert_prep_src_app_components_model_health --> n_apps_cert_prep_src_app_core_domain
-  n_apps_cert_prep_src_app_components_model_health --> n_apps_cert_prep_src_app_core_ui
-  n_apps_cert_prep_src_app_components_model_health --> n_apps_cert_prep_src_app_runtime_data
-  n_apps_cert_prep_src_app_components_model_health --> n_apps_cert_prep_src_app_runtime_domain
-  n_apps_cert_prep_src_app_components_model_health --> n_libs_ui_badge_src
-  n_apps_cert_prep_src_app_components_model_health --> n_libs_ui_dialog_src
   n_apps_cert_prep_src_app_core_data --> n_apps_cert_prep_src_app_core_domain
   n_apps_cert_prep_src_app_core_data --> n_libs_cert_prep_api_src
   n_apps_cert_prep_src_app_core_domain --> n_libs_cert_prep_api_src
   n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_authoring_data
   n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_authoring_feature
   n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_capture_feature
-  n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_components_model_health
   n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_core_data
   n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_core_domain
   n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_core_ui
-  n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_pages_runtime_manager
   n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_practice_data
   n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_practice_feature
   n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_projects_data
   n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_projects_feature
   n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_runtime_data
+  n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_runtime_feature
   n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_source_library_data
   n_apps_cert_prep_src_app_core_shell --> n_apps_cert_prep_src_app_source_library_feature
   n_apps_cert_prep_src_app_core_ui --> n_libs_ui_button_src
-  n_apps_cert_prep_src_app_pages_runtime_manager --> n_apps_cert_prep_src_app_components_model_health
-  n_apps_cert_prep_src_app_pages_runtime_manager --> n_apps_cert_prep_src_app_core_data
-  n_apps_cert_prep_src_app_pages_runtime_manager --> n_apps_cert_prep_src_app_core_ui
-  n_apps_cert_prep_src_app_pages_runtime_manager --> n_apps_cert_prep_src_app_runtime_data
-  n_apps_cert_prep_src_app_pages_runtime_manager --> n_libs_ui_progress_src
   n_apps_cert_prep_src_app_practice_data --> n_apps_cert_prep_src_app_authoring_data
   n_apps_cert_prep_src_app_practice_data --> n_apps_cert_prep_src_app_core_data
   n_apps_cert_prep_src_app_practice_data --> n_apps_cert_prep_src_app_core_domain
@@ -121,6 +109,15 @@ flowchart LR
   n_apps_cert_prep_src_app_runtime_data --> n_apps_cert_prep_src_app_core_domain
   n_apps_cert_prep_src_app_runtime_data --> n_apps_cert_prep_src_app_runtime_domain
   n_apps_cert_prep_src_app_runtime_domain --> n_apps_cert_prep_src_app_core_domain
+  n_apps_cert_prep_src_app_runtime_feature --> n_apps_cert_prep_src_app_core_data
+  n_apps_cert_prep_src_app_runtime_feature --> n_apps_cert_prep_src_app_core_ui
+  n_apps_cert_prep_src_app_runtime_feature --> n_apps_cert_prep_src_app_runtime_data
+  n_apps_cert_prep_src_app_runtime_feature --> n_apps_cert_prep_src_app_runtime_domain
+  n_apps_cert_prep_src_app_runtime_feature --> n_apps_cert_prep_src_app_runtime_ui
+  n_apps_cert_prep_src_app_runtime_feature --> n_libs_ui_dialog_src
+  n_apps_cert_prep_src_app_runtime_feature --> n_libs_ui_progress_src
+  n_apps_cert_prep_src_app_runtime_ui --> n_apps_cert_prep_src_app_runtime_domain
+  n_apps_cert_prep_src_app_runtime_ui --> n_libs_ui_badge_src
   n_apps_cert_prep_src_app_source_library_data --> n_apps_cert_prep_src_app_core_data
   n_apps_cert_prep_src_app_source_library_data --> n_apps_cert_prep_src_app_core_domain
   n_apps_cert_prep_src_app_source_library_data --> n_apps_cert_prep_src_app_projects_data

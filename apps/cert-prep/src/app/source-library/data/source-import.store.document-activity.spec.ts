@@ -3,8 +3,8 @@ import { NEVER, of } from 'rxjs';
 import { CERT_PREP_API, CertPrepSseClient } from '../../core/data';
 import type { DocumentRead } from '../../core/domain';
 import { ProjectStore } from '../../projects/data';
-import { appDocument, appProject } from '../../testing/app.spec-helpers';
-import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
+import { appDocument, appProject } from '../../core/testing';
+import { provideCertPrepHttpResourceClientFake } from '../../core/testing';
 import { SourceImportStore } from './source-import.store';
 
 const otherDocument: DocumentRead = {

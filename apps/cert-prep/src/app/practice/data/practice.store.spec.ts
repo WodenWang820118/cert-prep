@@ -11,7 +11,7 @@ import { DraftReviewStore } from '../../authoring/data';
 import { PracticeStore } from './practice.store';
 import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../../source-library/data';
-import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
+import { provideCertPrepHttpResourceClientFake } from '../../core/testing';
 
 describe('PracticeStore session modes', () => {
   const project: ProjectRead = {

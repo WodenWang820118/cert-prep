@@ -11,7 +11,7 @@ import {
   manualDraftOperation,
   questionDraft,
 } from './draft-review.store.spec-helpers';
-import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
+import { provideCertPrepHttpResourceClientFake } from '../../core/testing';
 
 describe('DraftReviewStore editable questions', () => {
   const apiClient = {

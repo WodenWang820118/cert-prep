@@ -4,7 +4,7 @@ import { CERT_PREP_API } from '../../core/data';
 import type { ProjectRead } from '../../core/domain';
 import { OperationStore } from '../../core/data';
 import { ProjectStore } from './project.store';
-import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
+import { provideCertPrepHttpResourceClientFake } from '../../core/testing';
 
 describe('ProjectStore', () => {
   const project: ProjectRead = {

@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import type { DocumentRead } from '../../../core/domain';
-import { appDocument } from '../../../testing/app.spec-helpers';
+import { appDocument } from '../../../core/testing';
 import type {
   SourceDocumentStatusViewModel,
   SourceImportAction,
