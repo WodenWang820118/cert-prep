@@ -43,8 +43,8 @@ readiness contract, Tauri lifecycle, package QA and real smoke evidence.
 
 ## Release evidence
 
-CI (`ci.yml`) runs lint, tests, packaging, the Capture Runtime install and the
-Tauri host checks. During a Capture release the producer runs Cert's
+`pnpm ci:local` (before every merge) and the weekly `ci.yml` run lint, tests,
+packaging, the Capture Runtime install and the Tauri host checks. During a Capture release the producer runs Cert's
 `capture-candidate-gate.yml`. `release-alpha.yml` reruns the checks on the exact
 release source, verifies the Capture release attestation, runs the
 published-byte consumer smoke and the built-binary stack check, and then

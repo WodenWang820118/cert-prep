@@ -142,7 +142,7 @@ for (const classification of ['additive', 'no-impact'] as const) {
     assert.match(body, new RegExp(`\`${classification}\``, 'u'));
     assert.match(body, new RegExp(SHA_A, 'u'));
     assert.match(body, new RegExp(SHA_B, 'u'));
-    assert.match(body, /`ci\.yml` runs both jobs/u);
+    assert.match(body, /`pnpm ci:local`/u);
     assert.doesNotMatch(create.args.join(' '), /需遷移/u);
   });
 }
