@@ -449,10 +449,7 @@ test('clears document draft practice and review state when switching projects', 
   await seedMockApiConfig(page, apiBaseUrl, devToken);
 
   await createWorkspaceWithUploadedDocument(page, api);
-  await page.getByRole('button', { name: 'Create project' }).click();
-  await page.getByLabel('Name').fill(api.secondaryProject.name);
-  await page.getByLabel('Description').fill(api.secondaryProject.description);
-  await page.getByRole('button', { name: 'Create project' }).click();
+  await createProject(page, api, api.secondaryProject);
   await uploadDocumentAndExpectDraft(page, api, {
     document: api.secondaryDocument,
     draft: api.secondaryDraft,
@@ -599,16 +596,28 @@ async function installUploadCapture(page: Page): Promise<void> {
       window as unknown as { __certPrepCapturedUploads: CapturedUpload[] }
     ).__certPrepCapturedUploads = captured;
     const originalAppend = FormData.prototype.append;
-    FormData.prototype.append = function (
+    // Same overloads as FormData.append in the DOM lib. `.call` on the
+    // overloaded method only sees the Blob signature, so forward with apply.
+    const append: {
+      (this: FormData, name: string, value: string | Blob): void;
+      (this: FormData, name: string, value: string): void;
+      (
+        this: FormData,
+        name: string,
+        blobValue: Blob,
+        filename?: string,
+      ): void;
+    } = function (
+      this: FormData,
       name: string,
       value: string | Blob,
       filename?: string,
     ): void {
       if (name === 'file' && value instanceof Blob) {
-        const file = value as File;
         const capture: CapturedUpload = {
-          filename: filename ?? file.name,
-          contentType: file.type,
+          filename:
+            filename ?? (value instanceof File ? value.name : 'blob'),
+          contentType: value.type,
           bytes: [],
         };
         captured.push(capture);
@@ -618,14 +627,15 @@ async function installUploadCapture(page: Page): Promise<void> {
             capture.bytes = Array.from(new Uint8Array(reader.result));
           }
         });
-        reader.readAsArrayBuffer(file);
+        reader.readAsArrayBuffer(value);
       }
       if (filename === undefined) {
-        originalAppend.call(this, name, value as string);
+        Reflect.apply(originalAppend, this, [name, value]);
       } else {
-        originalAppend.call(this, name, value as Blob, filename);
+        Reflect.apply(originalAppend, this, [name, value, filename]);
       }
     };
+    FormData.prototype.append = append;
   });
 }
 

@@ -80,7 +80,6 @@ const steps: readonly Step[] = [
       'run-many',
       '-t',
       'typecheck',
-      '--exclude=cert-prep-e2e',
       '--parallel=3',
     ],
   },
