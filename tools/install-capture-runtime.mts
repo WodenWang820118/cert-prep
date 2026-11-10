@@ -38,11 +38,20 @@ export const DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL =
   CAPTURE_RUNTIME_RELEASE_BASE_URL;
 export const CAPTURE_RUNTIME_ROOT_ENV = 'CERT_PREP_CAPTURE_RUNTIME_ROOT';
 export const CAPTURE_RUNTIME_CHECKSUM_FILE = `${CAPTURE_RUNTIME_FILE}.sha256`;
+/** Assets every Capture Runtime release must publish. */
 export const CAPTURE_RUNTIME_RELEASE_ASSETS = Object.freeze([
   CAPTURE_RUNTIME_FILE,
-  CAPTURE_RUNTIME_CHECKSUM_FILE,
   'capture-runtime-manifest.json',
   CAPTURE_DOCUMENT_SCHEMA_FILE,
+]);
+/**
+ * Assets a release may publish. Releases up to 0.9.0 carry the executable's
+ * `.sha256` sidecar; later ones do not (capture-workbench#278), because the
+ * runtime manifest already records the executable's SHA-256. When present,
+ * the sidecar must agree with the manifest.
+ */
+export const CAPTURE_RUNTIME_OPTIONAL_RELEASE_ASSETS = Object.freeze([
+  CAPTURE_RUNTIME_CHECKSUM_FILE,
 ]);
 
 const LOWERCASE_SHA256 = /^[0-9a-f]{64}$/u;
@@ -241,11 +250,14 @@ export async function verifyCaptureRuntimeReleaseDirectory(
   expectedVersion = CAPTURE_RUNTIME_VERSION,
 ): Promise<CaptureRuntimeReleaseManifest> {
   const entries = await readdir(directory, { withFileTypes: true });
-  const names = entries.map((entry) => entry.name).sort();
-  const expectedNames = [...CAPTURE_RUNTIME_RELEASE_ASSETS].sort();
+  const names = new Set(entries.map((entry) => entry.name));
+  const allowedNames = new Set<string>([
+    ...CAPTURE_RUNTIME_RELEASE_ASSETS,
+    ...CAPTURE_RUNTIME_OPTIONAL_RELEASE_ASSETS,
+  ]);
   if (
-    names.length !== expectedNames.length ||
-    names.some((name, index) => name !== expectedNames[index]) ||
+    CAPTURE_RUNTIME_RELEASE_ASSETS.some((name) => !names.has(name)) ||
+    [...names].some((name) => !allowedNames.has(name)) ||
     entries.some((entry) => !entry.isFile())
   ) {
     throw new Error(
@@ -278,20 +290,31 @@ export async function verifyCaptureRuntimeReleaseDirectory(
   if ((await sha256File(schemaPath)) !== CAPTURE_DOCUMENT_SCHEMA_SHA256) {
     throw new Error('Capture document schema checksum mismatch.');
   }
-  const checksum = (
-    await readFile(join(directory, CAPTURE_RUNTIME_CHECKSUM_FILE), 'utf8')
-  ).trim();
-  const checksumMatch = checksum.match(/^([0-9a-f]{64})\s+(.+)$/u);
-  if (
-    !checksumMatch ||
-    checksumMatch[1] !== manifest.sha256 ||
-    checksumMatch[2] !== manifest.fileName
-  ) {
-    throw new Error(
+  if (names.has(CAPTURE_RUNTIME_CHECKSUM_FILE)) {
+    assertChecksumSidecar(
+      await readFile(join(directory, CAPTURE_RUNTIME_CHECKSUM_FILE), 'utf8'),
+      manifest.fileName,
+      manifest.sha256,
       'Capture runtime checksum file does not match the manifest.',
     );
   }
   return manifest;
+}
+
+/**
+ * Checks a `<sha256>  <fileName>` sidecar against the digest and file name
+ * recorded elsewhere. Sidecars are optional; one that is present must agree.
+ */
+export function assertChecksumSidecar(
+  text: string,
+  fileName: string,
+  sha256: string,
+  message: string,
+): void {
+  const match = text.trim().match(/^([0-9a-f]{64})\s+(.+)$/u);
+  if (!match || match[1] !== sha256 || match[2] !== fileName) {
+    throw new Error(message);
+  }
 }
 
 class TerminalError extends Error {
@@ -300,6 +323,18 @@ class TerminalError extends Error {
     super(message);
     this.name = 'TerminalError';
     this.status = status;
+  }
+}
+
+/**
+ * The release does not publish the asset: the public download URL answered
+ * 404, or the release's API asset list omits it. Only this error lets an
+ * optional asset be skipped; every other download failure stays fatal.
+ */
+class AssetNotFoundError extends TerminalError {
+  constructor(message: string) {
+    super(message, 404);
+    this.name = 'AssetNotFoundError';
   }
 }
 
@@ -419,6 +454,11 @@ async function downloadFromPublicUrl(
       response.status,
     );
   }
+  if (response.status === 404) {
+    throw new AssetNotFoundError(
+      `Capture runtime artifact ${name} download failed with HTTP 404.`,
+    );
+  }
   if (response.status >= 300 && response.status < 400) {
     const location = response.headers.get('location');
     const redirectedUrl = validateRedirectUrl(
@@ -497,9 +537,14 @@ async function downloadFromApi(
   const matchingAsset = releaseData.assets?.find(
     (asset) => asset.name === name,
   );
-  if (!matchingAsset?.url) {
-    throw new TerminalError(
+  if (!matchingAsset) {
+    throw new AssetNotFoundError(
       `Capture runtime artifact ${name} not found in GitHub release ${tag}.`,
+    );
+  }
+  if (!matchingAsset.url) {
+    throw new TerminalError(
+      `Capture runtime artifact ${name} has no download URL in GitHub release ${tag}.`,
       404,
     );
   }
@@ -598,6 +643,12 @@ export async function downloadAsset(
       throw apiError;
     }
 
+    if (apiError instanceof AssetNotFoundError) {
+      throw new AssetNotFoundError(
+        `Capture runtime artifact ${name} download failed with HTTP 404 (public URL and API).`,
+      );
+    }
+
     const status =
       (apiError as { status?: number }).status ??
       (publicError as { status?: number }).status;
@@ -622,6 +673,37 @@ async function copyReleaseAsset(
   destination: string,
 ): Promise<void> {
   await copyFile(join(sourceDirectory, name), destination);
+}
+
+/** Copies or downloads one release asset; an optional one may be absent. */
+async function stageReleaseAsset(
+  name: string,
+  destination: string,
+  optional: boolean,
+  source: {
+    readonly releaseDirectory?: string;
+    readonly baseUrl?: string;
+    readonly download: DownloadAssetOptions;
+  },
+): Promise<void> {
+  try {
+    if (source.releaseDirectory) {
+      await copyReleaseAsset(source.releaseDirectory, name, destination);
+    } else {
+      await downloadAsset(
+        source.baseUrl as string,
+        name,
+        destination,
+        source.download,
+      );
+    }
+  } catch (error) {
+    const absent = source.releaseDirectory
+      ? (error as NodeJS.ErrnoException).code === 'ENOENT'
+      : error instanceof AssetNotFoundError;
+    if (optional && absent) return;
+    throw error;
+  }
 }
 
 export async function installCaptureRuntime(
@@ -674,26 +756,16 @@ export async function installCaptureRuntime(
     join(parent, `.capture-runtime-${CAPTURE_RUNTIME_VERSION}-`),
   );
   try {
+    const source = {
+      releaseDirectory: resolvedReleaseDirectory,
+      baseUrl: validatedBaseUrl,
+      download: { fetch: customFetch, sleep, retryDelays, githubToken },
+    };
     for (const name of CAPTURE_RUNTIME_RELEASE_ASSETS) {
-      if (resolvedReleaseDirectory) {
-        await copyReleaseAsset(
-          resolvedReleaseDirectory,
-          name,
-          join(temporaryRoot, name),
-        );
-      } else {
-        await downloadAsset(
-          validatedBaseUrl as string,
-          name,
-          join(temporaryRoot, name),
-          {
-            fetch: customFetch,
-            sleep,
-            retryDelays,
-            githubToken,
-          },
-        );
-      }
+      await stageReleaseAsset(name, join(temporaryRoot, name), false, source);
+    }
+    for (const name of CAPTURE_RUNTIME_OPTIONAL_RELEASE_ASSETS) {
+      await stageReleaseAsset(name, join(temporaryRoot, name), true, source);
     }
     const manifest = await verifyCaptureRuntimeReleaseDirectory(temporaryRoot);
     try {

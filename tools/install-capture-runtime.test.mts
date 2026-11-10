@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -10,6 +10,7 @@ import { afterEach, test } from 'node:test';
 import {
   CAPTURE_RUNTIME_CHECKSUM_FILE,
   CAPTURE_RUNTIME_FILE,
+  CAPTURE_RUNTIME_OPTIONAL_RELEASE_ASSETS,
   CAPTURE_RUNTIME_RELEASE_ASSETS,
   DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL,
   downloadAsset,
@@ -64,7 +65,7 @@ test('pins the published CaptureDocument schema bytes', async () => {
   );
 });
 
-test('installs a valid release and reuses identical staging', async () => {
+test('installs a valid release with its checksum sidecar and reuses identical staging', async () => {
   const root = await createFixture();
   const mirror = await startMirror(root);
   const workspaceRoot = await mkdtemp(
@@ -84,11 +85,148 @@ test('installs a valid release and reuses identical staging', async () => {
   assert.equal(first.outputRoot, second.outputRoot);
   assert.deepEqual(
     (await readdir(first.outputRoot)).sort(),
-    [...CAPTURE_RUNTIME_RELEASE_ASSETS].sort(),
+    [
+      ...CAPTURE_RUNTIME_RELEASE_ASSETS,
+      ...CAPTURE_RUNTIME_OPTIONAL_RELEASE_ASSETS,
+    ].sort(),
   );
   assert.equal(
     await readFile(join(first.outputRoot, CAPTURE_RUNTIME_FILE), 'utf8'),
     'runtime executable',
+  );
+});
+
+test('installs a release that publishes no checksum sidecar', async () => {
+  const root = await createFixture({ checksumSidecar: false });
+  const mirror = await startMirror(root);
+  const workspaceRoot = await mkdtemp(
+    join(tmpdir(), 'cert-prep-capture-runtime-test-'),
+  );
+  temporaryRoots.push(workspaceRoot);
+
+  const installed = await installCaptureRuntime({
+    workspaceRoot,
+    baseUrl: mirror,
+  });
+
+  assert.deepEqual(
+    (await readdir(installed.outputRoot)).sort(),
+    [...CAPTURE_RUNTIME_RELEASE_ASSETS].sort(),
+  );
+  assert.equal(
+    (await installCaptureRuntime({ workspaceRoot, baseUrl: mirror }))
+      .outputRoot,
+    installed.outputRoot,
+  );
+});
+
+test('fails when the checksum sidecar download fails with anything but 404', async () => {
+  const root = await createFixture();
+  const mirror = await startMirror(
+    root,
+    new Map([[CAPTURE_RUNTIME_CHECKSUM_FILE, 403]]),
+  );
+  const workspaceRoot = await mkdtemp(
+    join(tmpdir(), 'cert-prep-capture-runtime-test-'),
+  );
+  temporaryRoots.push(workspaceRoot);
+
+  await assert.rejects(
+    installCaptureRuntime({ workspaceRoot, baseUrl: mirror }),
+    /download failed with HTTP 403/u,
+  );
+});
+
+test('refuses a release whose checksum sidecar disagrees with the manifest', async () => {
+  const root = await createFixture();
+  await writeFile(
+    join(root, CAPTURE_RUNTIME_CHECKSUM_FILE),
+    `${'0'.repeat(64)}  ${CAPTURE_RUNTIME_FILE}\n`,
+  );
+  const mirror = await startMirror(root);
+  const workspaceRoot = await mkdtemp(
+    join(tmpdir(), 'cert-prep-capture-runtime-test-'),
+  );
+  temporaryRoots.push(workspaceRoot);
+
+  await assert.rejects(
+    installCaptureRuntime({ workspaceRoot, baseUrl: mirror }),
+    /checksum file does not match the manifest/u,
+  );
+});
+
+test('installs through the GitHub API when the release lists no checksum sidecar', async () => {
+  const root = await createFixture({ checksumSidecar: false });
+  const workspaceRoot = await mkdtemp(
+    join(tmpdir(), 'cert-prep-capture-runtime-api-test-'),
+  );
+  temporaryRoots.push(workspaceRoot);
+  const assetApiUrl = (name: string): string =>
+    `https://api.github.com/repos/gx-capture/capture-workbench/releases/assets/${encodeURIComponent(name)}`;
+
+  const mockFetch = (async (
+    input: string | URL | Request,
+  ): Promise<Response> => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    if (url.includes('/releases/download/')) {
+      return new Response('Gateway Timeout', { status: 504 });
+    }
+    if (url.includes('/releases/tags/')) {
+      return new Response(
+        JSON.stringify({
+          assets: CAPTURE_RUNTIME_RELEASE_ASSETS.map((name) => ({
+            name,
+            url: assetApiUrl(name),
+          })),
+        }),
+        { status: 200 },
+      );
+    }
+    const name = CAPTURE_RUNTIME_RELEASE_ASSETS.find(
+      (candidate) => url === assetApiUrl(candidate),
+    );
+    if (name) {
+      return new Response(new Uint8Array(await readFile(join(root, name))), {
+        status: 200,
+      });
+    }
+    throw new Error(`Unexpected request to ${url}`);
+  }) as typeof fetch;
+
+  const installed = await installCaptureRuntime({
+    workspaceRoot,
+    baseUrl: DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL,
+    fetch: mockFetch,
+    sleep: () => Promise.resolve(),
+    retryDelays: [0],
+  });
+
+  assert.deepEqual(
+    (await readdir(installed.outputRoot)).sort(),
+    [...CAPTURE_RUNTIME_RELEASE_ASSETS].sort(),
+  );
+});
+
+test('installs a local release directory that has no checksum sidecar', async () => {
+  const root = await createFixture({ checksumSidecar: false });
+  const workspaceRoot = await mkdtemp(
+    join(tmpdir(), 'cert-prep-capture-runtime-local-test-'),
+  );
+  temporaryRoots.push(workspaceRoot);
+
+  const installed = await installCaptureRuntime({
+    workspaceRoot,
+    releaseDirectory: root,
+  });
+
+  assert.deepEqual(
+    (await readdir(installed.outputRoot)).sort(),
+    [...CAPTURE_RUNTIME_RELEASE_ASSETS].sort(),
   );
 });
 
@@ -111,7 +249,10 @@ test('installs the canonical assets from a local release directory without a URL
   assert.equal(installed.manifest.runtimeVersion, CAPTURE_RUNTIME_VERSION);
   assert.deepEqual(
     (await readdir(installed.outputRoot)).sort(),
-    [...CAPTURE_RUNTIME_RELEASE_ASSETS].sort(),
+    [
+      ...CAPTURE_RUNTIME_RELEASE_ASSETS,
+      ...CAPTURE_RUNTIME_OPTIONAL_RELEASE_ASSETS,
+    ].sort(),
   );
 });
 
@@ -134,8 +275,14 @@ test('fails closed when an existing pinned staging has different bytes', async (
   );
 });
 
-test('rejects executable, schema, manifest, checksum, and platform drift', async () => {
-  const root = await createFixture();
+for (const checksumSidecar of [true, false]) {
+test(`rejects executable, schema, manifest, checksum, platform and unknown-file drift ${checksumSidecar ? 'with' : 'without'} a checksum sidecar`, async () => {
+  const root = await createFixture({ checksumSidecar });
+  assert.equal(
+    (await verifyCaptureRuntimeReleaseDirectory(await cloneFixture(root)))
+      .sha256,
+    createHash('sha256').update('runtime executable').digest('hex'),
+  );
   const mutations: ReadonlyArray<
     readonly [string, (target: string) => Promise<void>]
   > = [
@@ -237,6 +384,7 @@ test('rejects executable, schema, manifest, checksum, and platform drift', async
     );
   }
 });
+}
 
 test('rejects HTTP redirects instead of following them', async () => {
   const server = createServer((_request, response) => {
@@ -597,7 +745,9 @@ test('fails with compound error when all download paths fail', async () => {
   );
 });
 
-async function createFixture(): Promise<string> {
+async function createFixture(
+  options: { readonly checksumSidecar?: boolean } = {},
+): Promise<string> {
   const root = await mkdtemp(
     join(tmpdir(), 'cert-prep-capture-runtime-release-'),
   );
@@ -619,10 +769,13 @@ async function createFixture(): Promise<string> {
     schemaSha256: CAPTURE_DOCUMENT_SCHEMA_SHA256,
   };
   await writeFile(join(root, CAPTURE_RUNTIME_FILE), executable);
-  await writeFile(
-    join(root, CAPTURE_RUNTIME_CHECKSUM_FILE),
-    `${digest}  ${CAPTURE_RUNTIME_FILE}\n`,
-  );
+  // Releases up to 0.9.0 publish this sidecar; later ones do not.
+  if (options.checksumSidecar ?? true) {
+    await writeFile(
+      join(root, CAPTURE_RUNTIME_CHECKSUM_FILE),
+      `${digest}  ${CAPTURE_RUNTIME_FILE}\n`,
+    );
+  }
   await writeFile(
     join(root, 'capture-runtime-manifest.json'),
     JSON.stringify(manifest),
@@ -642,19 +795,33 @@ async function cloneFixture(source: string): Promise<string> {
     join(tmpdir(), 'cert-prep-capture-runtime-release-copy-'),
   );
   temporaryRoots.push(target);
-  for (const name of CAPTURE_RUNTIME_RELEASE_ASSETS) {
+  for (const name of await readdir(source)) {
     await writeFile(join(target, name), await readFile(join(source, name)));
   }
   return target;
 }
 
-async function startMirror(root: string): Promise<string> {
+/** Serves the release assets present in `root`; `statuses` forces an HTTP status per asset. */
+async function startMirror(
+  root: string,
+  statuses: ReadonlyMap<string, number> = new Map(),
+): Promise<string> {
+  const published = new Set<string>([
+    ...CAPTURE_RUNTIME_RELEASE_ASSETS,
+    ...CAPTURE_RUNTIME_OPTIONAL_RELEASE_ASSETS,
+  ]);
   const server = createServer((request, response) => {
     const name = request.url?.split('/').at(-1);
+    const status = name ? statuses.get(name) : undefined;
+    if (status !== undefined) {
+      response.writeHead(status).end();
+      return;
+    }
     if (
       request.method !== 'GET' ||
       !name ||
-      !CAPTURE_RUNTIME_RELEASE_ASSETS.includes(name)
+      !published.has(name) ||
+      !existsSync(join(root, name))
     ) {
       response.writeHead(404).end();
       return;
