@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+import hashlib
 import os
 import platform
 import re
@@ -53,6 +54,8 @@ class OllamaDevicePolicy:
     environment: dict[str, str] = field(default_factory=dict)
     cleared: tuple[str, ...] = field(default_factory=tuple)
     reason: str = ""
+    # How the caller's preference was applied. Not a log line: callers compare it.
+    application: Literal["applied", "adapter_missing", "not_applicable"] = "applied"
 
     @property
     def name(self) -> str | None:
@@ -149,29 +152,204 @@ def _integrated_gpu_sort_key(acc: MachineAcceleratorSnapshot) -> tuple[int, str]
     return (-mem, acc.name)
 
 
-def select_ollama_device_policy(
-    inventory: MachineInventorySnapshot | None,
-    *,
-    platform_name: str | None = None,
-) -> OllamaDevicePolicy:
-    """Choose Ollama device execution target and environment based on inventory."""
-    resolved_platform = (
-        inventory.platform if inventory is not None else platform_name or platform.system()
-    )
-    if resolved_platform.casefold() != "windows" or inventory is None:
-        return OllamaDevicePolicy(
-            target="unmanaged",
-            backend=None,
-            reason="Unmanaged Ollama device policy: platform is not Windows or inventory is missing.",
-        )
+@dataclass(frozen=True, slots=True)
+class OllamaDevicePreference:
+    """User choice of Ollama device. Auto is the default.
 
-    # Consider only kind == 'gpu' accelerators and ignore software adapters
-    gpu_accelerators = [
+    ``adapter_name`` and the PCI ids are the fallback identity used when
+    ``adapter_key`` no longer matches, for example after the card moves slots.
+    """
+
+    mode: Literal["auto", "cpu", "adapter"] = "auto"
+    adapter_key: str | None = None
+    adapter_name: str | None = None
+    pci_vendor_id: str | None = None
+    pci_device_id: str | None = None
+
+
+def _adapter_key_material(adapter: MachineAcceleratorSnapshot) -> str | None:
+    """First identity that survives a reboot. The DXGI LUID changes every boot."""
+
+    pnp_id = (adapter.pnp_device_id or "").strip()
+    if pnp_id:
+        return f"pnp:{pnp_id}"
+    device_id = (adapter.device_id or "").strip()
+    if device_id.startswith("GPU-"):
+        return f"nvidia:{device_id}"
+    vendor = (adapter.pci_vendor_id or "").strip().casefold()
+    device = (adapter.pci_device_id or "").strip().casefold()
+    name = normalize_device_name(adapter.name)
+    if vendor and device and name:
+        return f"pci:{vendor}:{device}:{name}"
+    return None
+
+
+def adapter_key(adapter: MachineAcceleratorSnapshot) -> str | None:
+    """Opaque adapter id: the first 16 hex characters of sha256 of its stable identity."""
+
+    material = _adapter_key_material(adapter)
+    if material is None:
+        return None
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
+
+
+def _gpu_accelerators(
+    inventory: MachineInventorySnapshot,
+) -> list[MachineAcceleratorSnapshot]:
+    """Physical GPUs. Software adapters are ignored, as they are for Auto."""
+
+    return [
         acc
         for acc in inventory.accelerators
         if acc.kind.casefold() == "gpu" and acc.classification != "software"
     ]
 
+
+def _selectable(adapter: MachineAcceleratorSnapshot) -> bool:
+    return adapter.classification in ("dedicated", "integrated")
+
+
+def _pci_ids_match(
+    adapter: MachineAcceleratorSnapshot,
+    vendor: str | None,
+    device: str | None,
+) -> bool:
+    stored_vendor = (vendor or "").strip().casefold()
+    stored_device = (device or "").strip().casefold()
+    if not stored_vendor or not stored_device:
+        return False
+    return (
+        (adapter.pci_vendor_id or "").strip().casefold() == stored_vendor
+        and (adapter.pci_device_id or "").strip().casefold() == stored_device
+    )
+
+
+def _preferred_adapter(
+    inventory: MachineInventorySnapshot,
+    preference: OllamaDevicePreference,
+) -> MachineAcceleratorSnapshot | None:
+    """The one selectable adapter for this preference, or None when it cannot be chosen."""
+
+    gpus = _gpu_accelerators(inventory)
+    wanted = (preference.adapter_key or "").strip()
+    if wanted:
+        keyed = [acc for acc in gpus if adapter_key(acc) == wanted]
+        # Two adapters that share a key are both not selectable.
+        if len(keyed) > 1:
+            return None
+        if len(keyed) == 1:
+            return keyed[0] if _selectable(keyed[0]) else None
+    matched = [
+        acc
+        for acc in gpus
+        if _pci_ids_match(acc, preference.pci_vendor_id, preference.pci_device_id)
+    ]
+    if len(matched) == 1 and _selectable(matched[0]):
+        return matched[0]
+    return None
+
+
+def _accelerator_policy(
+    chosen: MachineAcceleratorSnapshot,
+    *,
+    target: TargetDeviceKind,
+    backend: BackendKind,
+    environment: dict[str, str],
+    reason: str,
+) -> OllamaDevicePolicy:
+    return OllamaDevicePolicy(
+        target=target,
+        backend=backend,
+        adapter_name=chosen.name,
+        pci_vendor_id=chosen.pci_vendor_id,
+        pci_device_id=chosen.pci_device_id,
+        adapter_luid=chosen.adapter_luid,
+        device_id=chosen.device_id,
+        environment=environment,
+        cleared=_compute_cleared(environment),
+        reason=reason,
+        application="applied",
+    )
+
+
+def _policy_for_dedicated(chosen: MachineAcceleratorSnapshot) -> OllamaDevicePolicy:
+    """Vendor branch for one dedicated GPU. Variable order matches the historical Auto branch."""
+
+    env: dict[str, str] = {}
+    if _is_nvidia_accelerator(chosen):
+        if chosen.device_id and chosen.device_id.startswith("GPU-"):
+            env["CUDA_VISIBLE_DEVICES"] = chosen.device_id
+        env["HIP_VISIBLE_DEVICES"] = "-1"
+        env["GGML_VK_VISIBLE_DEVICES"] = "-1"
+        env["OLLAMA_VULKAN"] = "0"
+        env["OLLAMA_IGPU_ENABLE"] = "0"
+        reason = f"Dedicated NVIDIA GPU selected for CUDA: {chosen.name}"
+        backend: BackendKind = "cuda"
+    elif _is_amd_accelerator(chosen):
+        env["CUDA_VISIBLE_DEVICES"] = "-1"
+        # HIP_VISIBLE_DEVICES unset until discovery
+        env["GGML_VK_VISIBLE_DEVICES"] = "-1"
+        env["OLLAMA_VULKAN"] = "0"
+        env["OLLAMA_IGPU_ENABLE"] = "0"
+        reason = f"Dedicated AMD GPU selected for ROCm: {chosen.name}"
+        backend = "rocm"
+    else:
+        env["CUDA_VISIBLE_DEVICES"] = "-1"
+        env["HIP_VISIBLE_DEVICES"] = "-1"
+        # GGML_VK_VISIBLE_DEVICES unset
+        env["OLLAMA_VULKAN"] = "1"
+        env["OLLAMA_IGPU_ENABLE"] = "0"
+        reason = f"Dedicated GPU selected for Vulkan: {chosen.name}"
+        backend = "vulkan"
+    return _accelerator_policy(
+        chosen,
+        target="dedicated_gpu",
+        backend=backend,
+        environment=env,
+        reason=reason,
+    )
+
+
+def _policy_for_integrated(chosen: MachineAcceleratorSnapshot) -> OllamaDevicePolicy:
+    """Vulkan with the iGPU enabled. CUDA and HIP are hidden; Vulkan's device is pinned later."""
+
+    env = {
+        "CUDA_VISIBLE_DEVICES": "-1",
+        "HIP_VISIBLE_DEVICES": "-1",
+        "OLLAMA_VULKAN": "1",
+        "OLLAMA_IGPU_ENABLE": "1",
+    }
+    return _accelerator_policy(
+        chosen,
+        target="integrated_gpu",
+        backend="vulkan",
+        environment=env,
+        reason=f"Integrated GPU selected for Vulkan: {chosen.name}",
+    )
+
+
+def _policy_for_cpu(reason: str) -> OllamaDevicePolicy:
+    env = {
+        "CUDA_VISIBLE_DEVICES": "-1",
+        "HIP_VISIBLE_DEVICES": "-1",
+        "GGML_VK_VISIBLE_DEVICES": "-1",
+        "OLLAMA_VULKAN": "0",
+        "OLLAMA_IGPU_ENABLE": "0",
+    }
+    return OllamaDevicePolicy(
+        target="cpu",
+        backend="cpu",
+        environment=env,
+        cleared=_compute_cleared(env),
+        reason=reason,
+        application="applied",
+    )
+
+
+def _select_auto_policy(inventory: MachineInventorySnapshot) -> OllamaDevicePolicy:
+    """Today's automatic choice. Environment order is the historical branch order."""
+
+    gpu_accelerators = _gpu_accelerators(inventory)
     dedicated_gpus = [acc for acc in gpu_accelerators if acc.classification == "dedicated"]
     unknown_gpus = [
         acc for acc in gpu_accelerators if acc.classification in ("unknown", None)
@@ -181,98 +359,64 @@ def select_ollama_device_policy(
     # 1. A confirmed dedicated GPU wins over unknown ones
     if dedicated_gpus:
         chosen = sorted(dedicated_gpus, key=_dedicated_gpu_sort_key)[0]
-        env: dict[str, str] = {}
-
-        if _is_nvidia_accelerator(chosen):
-            target: TargetDeviceKind = "dedicated_gpu"
-            backend: BackendKind = "cuda"
-            if chosen.device_id and chosen.device_id.startswith("GPU-"):
-                env["CUDA_VISIBLE_DEVICES"] = chosen.device_id
-            env["HIP_VISIBLE_DEVICES"] = "-1"
-            env["GGML_VK_VISIBLE_DEVICES"] = "-1"
-            env["OLLAMA_VULKAN"] = "0"
-            env["OLLAMA_IGPU_ENABLE"] = "0"
-            reason = f"Dedicated NVIDIA GPU selected for CUDA: {chosen.name}"
-        elif _is_amd_accelerator(chosen):
-            target = "dedicated_gpu"
-            backend = "rocm"
-            env["CUDA_VISIBLE_DEVICES"] = "-1"
-            # HIP_VISIBLE_DEVICES unset until discovery
-            env["GGML_VK_VISIBLE_DEVICES"] = "-1"
-            env["OLLAMA_VULKAN"] = "0"
-            env["OLLAMA_IGPU_ENABLE"] = "0"
-            reason = f"Dedicated AMD GPU selected for ROCm: {chosen.name}"
-        else:
-            target = "dedicated_gpu"
-            backend = "vulkan"
-            env["CUDA_VISIBLE_DEVICES"] = "-1"
-            env["HIP_VISIBLE_DEVICES"] = "-1"
-            # GGML_VK_VISIBLE_DEVICES unset
-            env["OLLAMA_VULKAN"] = "1"
-            env["OLLAMA_IGPU_ENABLE"] = "0"
-            reason = f"Dedicated GPU selected for Vulkan: {chosen.name}"
-
-        cleared = _compute_cleared(env)
-        return OllamaDevicePolicy(
-            target=target,
-            backend=backend,
-            adapter_name=chosen.name,
-            pci_vendor_id=chosen.pci_vendor_id,
-            pci_device_id=chosen.pci_device_id,
-            adapter_luid=chosen.adapter_luid,
-            device_id=chosen.device_id,
-            environment=env,
-            cleared=cleared,
-            reason=reason,
-        )
+        return _policy_for_dedicated(chosen)
 
     # 2. No dedicated GPU, but an unknown GPU is present -> unmanaged
     if unknown_gpus:
         return OllamaDevicePolicy(
             target="unmanaged",
             backend=None,
-            reason="Unmanaged Ollama device policy: GPU classification is unknown and none is dedicated.",
+            reason=(
+                "Unmanaged Ollama device policy: GPU classification is unknown "
+                "and none is dedicated."
+            ),
+            application="applied",
         )
 
     # 3. No dedicated GPU, at least one integrated, no unknown/None -> integrated_gpu / vulkan
     if integrated_gpus:
         chosen = sorted(integrated_gpus, key=_integrated_gpu_sort_key)[0]
-        env = {
-            "CUDA_VISIBLE_DEVICES": "-1",
-            "HIP_VISIBLE_DEVICES": "-1",
-            "OLLAMA_VULKAN": "1",
-            "OLLAMA_IGPU_ENABLE": "1",
-        }
-        cleared = _compute_cleared(env)
-        return OllamaDevicePolicy(
-            target="integrated_gpu",
-            backend="vulkan",
-            adapter_name=chosen.name,
-            pci_vendor_id=chosen.pci_vendor_id,
-            pci_device_id=chosen.pci_device_id,
-            adapter_luid=chosen.adapter_luid,
-            device_id=chosen.device_id,
-            environment=env,
-            cleared=cleared,
-            reason=f"Integrated GPU selected for Vulkan: {chosen.name}",
-        )
+        return _policy_for_integrated(chosen)
 
     # 4. No GPU, or only software adapters -> cpu / cpu
-    env = {
-        "CUDA_VISIBLE_DEVICES": "-1",
-        "HIP_VISIBLE_DEVICES": "-1",
-        "GGML_VK_VISIBLE_DEVICES": "-1",
-        "OLLAMA_VULKAN": "0",
-        "OLLAMA_IGPU_ENABLE": "0",
-    }
-    cleared = _compute_cleared(env)
-    return OllamaDevicePolicy(
-        target="cpu",
-        backend="cpu",
-        environment=env,
-        cleared=cleared,
-        reason="CPU mode selected: no physical GPU confirmed in inventory.",
+    return _policy_for_cpu("CPU mode selected: no physical GPU confirmed in inventory.")
+
+
+def select_ollama_device_policy(
+    inventory: MachineInventorySnapshot | None,
+    *,
+    platform_name: str | None = None,
+    preference: OllamaDevicePreference | None = None,
+) -> OllamaDevicePolicy:
+    """Choose the Ollama device target and child environment for one inventory.
+
+    ``preference`` defaults to Auto, which is the historical choice. A missing
+    or no-longer selectable adapter falls back to that choice and sets
+    ``application`` to ``adapter_missing``. Non-Windows and a missing inventory
+    stay unmanaged and report ``not_applicable``.
+    """
+
+    chosen = preference if preference is not None else OllamaDevicePreference()
+    resolved_platform = (
+        inventory.platform if inventory is not None else platform_name or platform.system()
     )
+    if resolved_platform.casefold() != "windows" or inventory is None:
+        return OllamaDevicePolicy(
+            target="unmanaged",
+            backend=None,
+            reason="Unmanaged Ollama device policy: platform is not Windows or inventory is missing.",
+            application="not_applicable",
+        )
+    if chosen.mode == "cpu":
+        return _policy_for_cpu("CPU mode selected: the device preference forces CPU.")
+    if chosen.mode == "adapter":
+        adapter = _preferred_adapter(inventory, chosen)
+        if adapter is None:
+            return replace(_select_auto_policy(inventory), application="adapter_missing")
+        if adapter.classification == "integrated":
+            return _policy_for_integrated(adapter)
+        return _policy_for_dedicated(adapter)
+    return _select_auto_policy(inventory)
 
 
 def _compute_cleared(env: Mapping[str, str]) -> tuple[str, ...]:
@@ -412,6 +556,7 @@ def corrected_device_policy(
         pci_bus=matched.pci_id or policy.pci_bus,
         environment=new_env,
         cleared=cleared,
+        application=policy.application,
         reason=(
             f"Corrected from Ollama discovery: {policy.backend} on {matched.name} "
             f"(filter_id={matched.filter_id}, lib={lib_token})"
@@ -422,6 +567,8 @@ def corrected_device_policy(
 __all__ = [
     "EnvironmentResolution",
     "OllamaDevicePolicy",
+    "OllamaDevicePreference",
+    "adapter_key",
     "corrected_device_policy",
     "normalize_device_name",
     "ollama_child_environment",

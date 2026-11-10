@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 from cert_prep_contracts.hardware import MachineInventorySnapshot
 from cert_prep_ollama.device_policy import (
     OllamaDevicePolicy,
+    OllamaDevicePreference,
     corrected_device_policy,
     ollama_child_environment,
     select_ollama_device_policy,
@@ -75,6 +76,12 @@ def _is_local_host(host: str) -> bool:
     return hostname in ("127.0.0.1", "localhost", "::1")
 
 
+def _auto_device_preference() -> OllamaDevicePreference:
+    """Default until a later slice reads the stored choice. Auto keeps today's policy."""
+
+    return OllamaDevicePreference()
+
+
 class OllamaServerCoordinator:
     """Coordinates the lifecycle, environment policy, and verification of an Ollama server."""
 
@@ -91,6 +98,7 @@ class OllamaServerCoordinator:
         sleep: Callable[[float], None] = time.sleep,
         base_environment: Mapping[str, str] | None = None,
         platform_name: str | None = None,
+        preference_provider: Callable[[], OllamaDevicePreference] = _auto_device_preference,
     ) -> None:
         self.host = host
         self._inventory_provider = inventory_provider
@@ -102,6 +110,11 @@ class OllamaServerCoordinator:
         self._sleep = sleep
         self._base_environment = base_environment if base_environment is not None else os.environ
         self._platform_name = platform_name
+        self._preference_provider = preference_provider
+        self._policy_preference: OllamaDevicePreference | None = None
+        # A corrected environment belongs to one preference. The next start keeps
+        # it only while that preference is still the one it was built for.
+        self._policy_is_correction = False
         self._is_windows = (
             (platform_name.casefold() == "windows")
             if platform_name is not None
@@ -260,20 +273,39 @@ class OllamaServerCoordinator:
                     self._ownership = "none"
                 return self._start_owned_server(timeout_seconds)
 
+    def _owned_policy(self, pinned: OllamaDevicePolicy | None = None) -> OllamaDevicePolicy:
+        """Policy for a server this process is about to start.
+
+        The preference is read on every start. A corrected policy is kept only
+        while that read still matches the preference the correction was built for.
+        """
+
+        preference = self._preference_provider()
+        current = self._policy
+        if (
+            self._policy_is_correction
+            and current is not None
+            and preference == self._policy_preference
+        ):
+            return pinned if pinned is not None else current
+        policy = select_ollama_device_policy(
+            self._inventory_provider(),
+            platform_name=self._platform_name,
+            preference=preference,
+        )
+        self._policy = policy
+        self._policy_preference = preference
+        self._policy_is_correction = False
+        return policy
+
     def _start_owned_server(self, timeout_seconds: float) -> bool:
-        # A corrected policy survives a later respawn; otherwise read the inventory.
-        if self._restarts and self._policy is not None:
-            policy = self._policy
-        else:
-            policy = select_ollama_device_policy(
-                self._inventory_provider(), platform_name=self._platform_name
-            )
-            self._policy = policy
+        policy = self._owned_policy()
         logger.info(
-            "Ollama device policy: target=%s, backend=%s, adapter=%s, vars=%s",
+            "Ollama device policy: target=%s, backend=%s, adapter=%s, application=%s, vars=%s",
             policy.target,
             policy.backend,
             policy.adapter_name,
+            policy.application,
             policy.environment,
         )
 
@@ -394,6 +426,7 @@ class OllamaServerCoordinator:
             if corrected is not None:
                 self._restarts += 1
                 self._policy = corrected
+                self._policy_is_correction = True
                 try:
                     restarted = self._restart_server(corrected)
                     if not restarted:
@@ -446,14 +479,17 @@ class OllamaServerCoordinator:
                     self._ownership = "none"
                     return False
 
+                policy = self._owned_policy(new_policy)
                 logger.info(
-                    "Restarting Ollama with corrected policy: target=%s, backend=%s, adapter=%s, vars=%s",
-                    new_policy.target,
-                    new_policy.backend,
-                    new_policy.adapter_name,
-                    new_policy.environment,
+                    "Restarting Ollama with corrected policy: "
+                    "target=%s, backend=%s, adapter=%s, application=%s, vars=%s",
+                    policy.target,
+                    policy.backend,
+                    policy.adapter_name,
+                    policy.application,
+                    policy.environment,
                 )
-                proc = self._spawn_server(executable, new_policy)
+                proc = self._spawn_server(executable, policy)
 
                 deadline = self._clock() + 30.0
                 while self._clock() < deadline:
