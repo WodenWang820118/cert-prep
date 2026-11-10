@@ -21,6 +21,7 @@ from cert_prep_ollama.device_policy import (
     ollama_child_environment,
     select_ollama_device_policy,
 )
+from cert_prep_ollama.device_status import DeviceStatus, build_device_status
 from cert_prep_ollama.device_verification import (
     DeviceExecution,
     ServerOwnership,
@@ -470,9 +471,35 @@ class OllamaServerCoordinator:
                 self._restarting = False
                 self._admission_cond.notify_all()
 
-    def device_execution(self) -> DeviceExecution | None:
-        """Return the latest DeviceExecution record, or None if not verified yet."""
-        return self._device_execution
+    def note_api_answered(self) -> None:
+        """Record that the Ollama API answered.
+
+        A server this process does not own is external. That includes a tray app
+        that was already running, and any non-local host.
+        """
+
+        with self._lock:
+            if self._closed or self._owns_live_process():
+                return
+            self._ownership = "external"
+
+    def device_status(self) -> DeviceStatus:
+        """Return one consistent device snapshot for health.
+
+        ``_verify_latest_load`` holds ``_verify_lock`` and then takes ``_lock``
+        while it restarts. The same order avoids a deadlock with that path.
+        """
+
+        with self._verify_lock, self._lock:
+            return build_device_status(
+                local_host=_is_local_host(self.host),
+                ownership=self._ownership,
+                owns_live_process=self._owns_live_process(),
+                policy=self._policy,
+                verification_pending=self._verification_pending,
+                restarts=self._restarts,
+                execution=self._device_execution,
+            )
 
     def close(self) -> None:
         """Terminate owned process tree and join stdout drain thread; never touch external."""

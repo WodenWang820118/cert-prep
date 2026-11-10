@@ -46,7 +46,7 @@
       "executor": "nx:run-commands",
       "metadata": { "description": "import-linter contracts for the DDD refactor (.agents/PLANS/ddd-refactor/)." },
       "inputs": ["default"],
-      "options": { "cwd": "apps/cert-prep-backend", "env": { "PYTHONPATH": "src" }, "command": "uv run lint-imports" }
+      "options": { "cwd": "apps/cert-prep-backend", "env": { "PYTHONPATH": "src", "PYTHONUTF8": "1" }, "command": "uv run lint-imports" }
     },
     "build-backend-runtime": {
       "cache": true,

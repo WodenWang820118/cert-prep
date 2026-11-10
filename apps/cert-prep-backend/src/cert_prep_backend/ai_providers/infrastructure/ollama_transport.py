@@ -6,6 +6,15 @@ import logging
 from threading import local
 from typing import TYPE_CHECKING, Any, TypeVar
 
+from cert_prep_backend.ai_providers.domain.device import (
+    DeviceBackend,
+    DeviceTarget,
+    DeviceVerification,
+    ObservedDevice,
+    OllamaDeviceStatus,
+    OllamaServerOwnership,
+    RequestedDevice,
+)
 from cert_prep_backend.ai_providers.domain.generation_errors import short_error
 from cert_prep_backend.ai_providers.domain.provider import (
     DEFAULT_KEEP_ALIVE,
@@ -21,11 +30,11 @@ from cert_prep_contracts.llm import (
 from cert_prep_backend.platform.errors import ProviderUnavailableError
 from cert_prep_contracts.llm_profiles import OllamaProfileSelection
 from cert_prep_contracts.runtime import RuntimeRequirementKind
+from cert_prep_ollama.device_status import DeviceStatus
 from cert_prep_ollama.models import extract_model_names, pull_progress
 from cert_prep_ollama.server import ensure_ollama_server_running, resolve_ollama_executable
 
 if TYPE_CHECKING:
-    from cert_prep_ollama.device_verification import DeviceExecution
     from cert_prep_ollama.server_coordinator import OllamaServerCoordinator
 
 
@@ -83,10 +92,6 @@ class OllamaProvider:
             fallback_reason=None,
         )
 
-    def device_execution(self) -> DeviceExecution | None:
-        """Return the device execution status from the coordinator if one is attached."""
-        return self._server.device_execution() if self._server is not None else None
-
     def health(self) -> ProviderHealth:
         """Return Ollama process and configured-model availability."""
 
@@ -128,6 +133,10 @@ class OllamaProvider:
         return self._health_from_model_names(model_names)
 
     def _health_from_model_names(self, model_names: set[str]) -> ProviderHealth:
+        # list() succeeded. A server this process does not own is external,
+        # including a tray app that was already running.
+        if self._server is not None:
+            self._server.note_api_answered()
         effective_model = self._effective_model_from(model_names)
         available = effective_model is not None
         detail = self._health_detail(effective_model)
@@ -148,6 +157,7 @@ class OllamaProvider:
         fields: dict[str, object] = {
             "execution_mode": self.execution_policy.mode,
             "execution_warning": self.execution_policy.warning,
+            "device": self._device_for_health(),
         }
         selection = self.profile_selection
         if selection is None:
@@ -162,6 +172,11 @@ class OllamaProvider:
             }
         )
         return fields
+
+    def _device_for_health(self) -> OllamaDeviceStatus | None:
+        if self._server is None:
+            return None
+        return _domain_device(self._server.device_status())
 
     def _chat_options(self, *, num_ctx: int, num_predict: int) -> dict[str, int]:
         options = {
@@ -280,6 +295,35 @@ class OllamaProvider:
             ) from exc
         self._generation_state.model = model
         return result
+
+
+def _domain_device(snapshot: DeviceStatus) -> OllamaDeviceStatus:
+    requested = snapshot.requested
+    observed = snapshot.observed
+    return OllamaDeviceStatus(
+        server=OllamaServerOwnership(snapshot.server),
+        requested=(
+            None
+            if requested is None
+            else RequestedDevice(
+                target=DeviceTarget(requested.target),
+                backend=None if requested.backend is None else DeviceBackend(requested.backend),
+                adapter_name=requested.adapter_name,
+            )
+        ),
+        verification=DeviceVerification(snapshot.verification),
+        observed=(
+            None
+            if observed is None
+            else ObservedDevice(
+                backend=None if observed.backend is None else DeviceBackend(observed.backend),
+                adapter_name=observed.adapter_name,
+                offloaded_layers=observed.offloaded_layers,
+                total_layers=observed.total_layers,
+            )
+        ),
+        corrective_restarts=snapshot.corrective_restarts,
+    )
 
 
 def _message_content(response: Any) -> str:

@@ -10,12 +10,13 @@ from fastapi.testclient import TestClient
 import pytest
 
 from cert_prep_backend.ai_providers.application.ports import MachineInventory
+from cert_prep_backend.ai_providers.domain.device import (
+    DeviceVerification,
+    OllamaServerOwnership,
+)
 from cert_prep_backend.ai_providers.infrastructure import ollama_transport
 from cert_prep_backend.ai_providers.infrastructure.ollama_transport import OllamaProvider
-from cert_prep_backend.ai_providers.infrastructure.provider import (
-    lazy_provider_from_settings,
-    provider_from_settings,
-)
+from cert_prep_backend.ai_providers.infrastructure.provider import provider_from_settings
 from cert_prep_backend.ai_providers.infrastructure.runtime_installers import (
     LazyOllamaProfileInstaller,
     configured_installer_choices,
@@ -29,6 +30,7 @@ from cert_prep_contracts.hardware import (
     MachineStorageSnapshot,
 )
 from cert_prep_contracts.llm_profiles import OllamaModelProfile
+from cert_prep_ollama.device_status import DeviceStatus
 from cert_prep_ollama.installers import OllamaRuntimeInstaller
 from cert_prep_ollama.profile_installer import OllamaProfileInstaller
 from cert_prep_ollama.server_coordinator import OllamaServerCoordinator
@@ -40,8 +42,14 @@ def _mock_coordinator() -> OllamaServerCoordinator:
     coordinator.admission.return_value.__enter__ = MagicMock(return_value=None)
     coordinator.admission.return_value.__exit__ = MagicMock(return_value=None)
     coordinator.after_model_load.return_value = None
-    coordinator.device_execution.return_value = None
     coordinator.ownership = "none"
+    coordinator.device_status.return_value = DeviceStatus(
+        server="not_running",
+        requested=None,
+        verification="not_observable",
+        observed=None,
+        corrective_restarts=0,
+    )
     return coordinator
 
 
@@ -82,6 +90,10 @@ def test_provider_uses_shared_coordinator_on_health_and_generation(
     health = provider.health()
     assert health.available is True
     coordinator.ensure_running.assert_called_once()
+    coordinator.note_api_answered.assert_called_once()
+    assert health.device is not None
+    assert health.device.server == OllamaServerOwnership.NOT_RUNNING
+    assert health.device.verification == DeviceVerification.NOT_OBSERVABLE
 
     # 2. Structured JSON generation enters admission and calls after_model_load
     fake_client.list.side_effect = None
@@ -247,14 +259,46 @@ def test_provider_from_settings_wires_coordinator() -> None:
     assert provider._server is coordinator
 
 
-def test_lazy_provider_from_settings_delegates_device_execution() -> None:
+def test_health_notes_a_server_that_was_already_answering() -> None:
     coordinator = _mock_coordinator()
-    coordinator.device_execution.return_value = "fake-device-execution"
-    settings = Settings(
-        llm_provider="ollama",
-        ollama_profile_enabled=False,
+    fake_client = MagicMock()
+    fake_client.list.return_value = {"models": [{"name": "test-model"}]}
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="test-model",
+        timeout_seconds=30.0,
+        client=fake_client,
+        server=coordinator,
     )
-    lazy_provider = lazy_provider_from_settings(settings, server=coordinator)
-    assert hasattr(lazy_provider, "device_execution")
-    assert lazy_provider.device_execution() == "fake-device-execution"
+
+    health = provider.health()
+
+    assert health.available is True
+    coordinator.ensure_running.assert_not_called()
+    coordinator.note_api_answered.assert_called_once()
+
+
+def test_health_does_not_note_an_api_answer_when_list_never_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
+    coordinator = _mock_coordinator()
+    coordinator.ensure_running.return_value = False
+    fake_client = MagicMock()
+    fake_client.list.side_effect = Exception("down")
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="test-model",
+        timeout_seconds=30.0,
+        client=fake_client,
+        server=coordinator,
+    )
+
+    health = provider.health()
+
+    assert health.available is False
+    assert health.unavailable_reason == "ollama_not_running"
+    coordinator.note_api_answered.assert_not_called()
+    assert health.device is not None
+    assert health.device.server == OllamaServerOwnership.NOT_RUNNING
 

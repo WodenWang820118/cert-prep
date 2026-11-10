@@ -644,6 +644,118 @@
       "codeName": "MachineAcceleratorRead.classification_source.unknown",
       "enum": { "enumId": "MachineAcceleratorRead.classification_source", "value": "unknown" },
       "retired": false
+    },
+    {
+      "id": "ai-providers.server-ownership.owned",
+      "label": "本程序持有",
+      "codeName": "OllamaServerOwnership.OWNED",
+      "enum": { "enumId": "OllamaServerOwnership", "value": "owned" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.server-ownership.external",
+      "label": "別處已在執行",
+      "codeName": "OllamaServerOwnership.EXTERNAL",
+      "enum": { "enumId": "OllamaServerOwnership", "value": "external" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.server-ownership.not-running",
+      "label": "沒在執行",
+      "codeName": "OllamaServerOwnership.NOT_RUNNING",
+      "enum": { "enumId": "OllamaServerOwnership", "value": "not_running" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.device-target.dedicated-gpu",
+      "label": "獨立顯示卡",
+      "codeName": "DeviceTarget.DEDICATED_GPU",
+      "enum": { "enumId": "DeviceTarget", "value": "dedicated_gpu" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.device-target.integrated-gpu",
+      "label": "內建顯示卡",
+      "codeName": "DeviceTarget.INTEGRATED_GPU",
+      "enum": { "enumId": "DeviceTarget", "value": "integrated_gpu" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.device-target.cpu",
+      "label": "只用 CPU",
+      "codeName": "DeviceTarget.CPU",
+      "enum": { "enumId": "DeviceTarget", "value": "cpu" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.device-target.unmanaged",
+      "label": "不管理裝置",
+      "codeName": "DeviceTarget.UNMANAGED",
+      "enum": { "enumId": "DeviceTarget", "value": "unmanaged" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.device-backend.cuda",
+      "label": "CUDA",
+      "codeName": "DeviceBackend.CUDA",
+      "enum": { "enumId": "DeviceBackend", "value": "cuda" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.device-backend.rocm",
+      "label": "ROCm",
+      "codeName": "DeviceBackend.ROCM",
+      "enum": { "enumId": "DeviceBackend", "value": "rocm" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.device-backend.vulkan",
+      "label": "Vulkan",
+      "codeName": "DeviceBackend.VULKAN",
+      "enum": { "enumId": "DeviceBackend", "value": "vulkan" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.device-backend.cpu",
+      "label": "CPU",
+      "codeName": "DeviceBackend.CPU",
+      "enum": { "enumId": "DeviceBackend", "value": "cpu" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.device-verification.pending",
+      "label": "待驗證",
+      "codeName": "DeviceVerification.PENDING",
+      "enum": { "enumId": "DeviceVerification", "value": "pending" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.device-verification.verified",
+      "label": "已驗證",
+      "codeName": "DeviceVerification.VERIFIED",
+      "enum": { "enumId": "DeviceVerification", "value": "verified" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.device-verification.mismatch",
+      "label": "與要求不符",
+      "codeName": "DeviceVerification.MISMATCH",
+      "enum": { "enumId": "DeviceVerification", "value": "mismatch" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.device-verification.unknown",
+      "label": "無法判斷",
+      "codeName": "DeviceVerification.UNKNOWN",
+      "enum": { "enumId": "DeviceVerification", "value": "unknown" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.device-verification.not-observable",
+      "label": "無法觀察",
+      "codeName": "DeviceVerification.NOT_OBSERVABLE",
+      "enum": { "enumId": "DeviceVerification", "value": "not_observable" },
+      "retired": false
     }
   ]
 }

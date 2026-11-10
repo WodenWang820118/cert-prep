@@ -43,6 +43,27 @@ class DeviceExecution:
     observed_at: float = field(default_factory=time.time)
 
 
+def _observation_from_logs(
+    runner_device: RunnerDevice | None,
+    backend_loaded: BackendLoaded | None,
+    scheduler_selection: SchedulerSelection | None,
+    discovered: Sequence[DiscoveredDevice],
+) -> tuple[str | None, str | None, str | None]:
+    """Library, description and PCI bus from the strongest record in the log."""
+
+    if runner_device is not None:
+        return runner_device.device_name, runner_device.description, runner_device.pci_bus
+    if backend_loaded is not None:
+        return backend_loaded.library, None, None
+    if scheduler_selection is not None:
+        return scheduler_selection.library, scheduler_selection.description, None
+    for device in discovered:
+        library = device.name or device.library or None
+        if library or device.description:
+            return library, device.description or None, device.pci_id
+    return None, None, None
+
+
 def verify_device_execution(
     policy: OllamaDevicePolicy,
     load_records: Sequence[object],
@@ -76,8 +97,9 @@ def verify_device_execution(
     offloaded_layers = layer_offload.offloaded_layers if layer_offload else None
     total_layers = layer_offload.total_layers if layer_offload else None
 
-    # Case 1: unmanaged policy or no evidence at all
-    if policy.target == "unmanaged" or (not load_records and not discovered):
+    # No log evidence at all. Unmanaged policies that do have a log keep the
+    # observed device below; they still do not count as verified or a mismatch.
+    if not load_records and not discovered:
         return DeviceExecution(
             target=policy.target,
             backend=policy.backend,
@@ -89,6 +111,29 @@ def verify_device_execution(
             total_layers=total_layers,
             state="unknown",
             detail="No device verification evidence or unmanaged policy.",
+            ownership=ownership,
+            restarts=restarts,
+            observed_at=now,
+        )
+
+    if policy.target == "unmanaged":
+        library, description, pci_bus = _observation_from_logs(
+            runner_device,
+            backend_loaded,
+            scheduler_selection,
+            discovered,
+        )
+        return DeviceExecution(
+            target=policy.target,
+            backend=policy.backend,
+            adapter_name=policy.adapter_name,
+            observed_library=library,
+            observed_description=description,
+            observed_pci_bus=pci_bus,
+            offloaded_layers=offloaded_layers,
+            total_layers=total_layers,
+            state="unknown",
+            detail="Unmanaged policy; observed device is reported without verification.",
             ownership=ownership,
             restarts=restarts,
             observed_at=now,

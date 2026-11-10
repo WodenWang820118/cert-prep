@@ -3,6 +3,7 @@
   "entry": [
     "apps/cert-prep/src/main.ts!",
     "apps/cert-prep/src/app/core/domain/generated-client.typecheck.ts",
+    "libs/cert-prep-api/src/lib/cert-prep-api.generated.ts",
     "apps/*/eslint.config.{mjs,mts}",
     "libs/*/eslint.config.{mjs,mts}",
     "libs/*/vitest.config.mts",

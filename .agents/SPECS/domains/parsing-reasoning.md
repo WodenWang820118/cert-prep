@@ -20,6 +20,12 @@ readiness after a validated CaptureDocument has been persisted.
   The server log shows where each model loads; a mismatch restarts the server
   once on the matched device. An Ollama that was already running is external
   and is never stopped or reconfigured.
+- `GET /llm/health` reports that loaded device when the provider is Ollama:
+  who runs the server, the requested target, whether the load is verified, and
+  the observed backend and adapter when the log shows them. A provider that is
+  not Ollama has no device. An external server, including a non-local host, is
+  not observable. The monotonic clock and the English verification sentence
+  stay inside the Ollama package.
 - Generated questions remain editable and require source evidence before they
   become playable.
 - Parsed blocks are completed independently: grounded completions are persisted

@@ -62,7 +62,6 @@ class LazyLLMProvider:
             "reset_generation_attribution",
             "verify_model_onboarding",
             "pull_model",
-            "device_execution",
         }
     )
 

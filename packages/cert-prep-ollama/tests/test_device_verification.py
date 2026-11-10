@@ -186,6 +186,48 @@ def test_unmanaged_policy_gives_unknown() -> None:
     ]
     execution = verify_device_execution(policy, load_records, ())
     assert execution.state == "unknown"
+    assert execution.observed_library == "CUDA0"
+    assert execution.observed_description == "RTX 4060"
+    assert execution.observed_pci_bus == "0000:63:00.0"
+    assert execution.offloaded_layers == 34
+    assert execution.total_layers == 34
+
+
+def test_unmanaged_policy_keeps_a_discovered_device() -> None:
+    policy = OllamaDevicePolicy(target="unmanaged", backend=None)
+    discovered = [
+        DiscoveredDevice(
+            library="CUDA",
+            id="0",
+            filter_id="0",
+            name="CUDA0",
+            description="NVIDIA GeForce RTX 4060 Laptop GPU",
+            pci_id="0000:63:00.0",
+            type="discrete",
+            total=8 * 1024**3,
+            available=7 * 1024**3,
+            libdirs=("ollama", "cuda_v13"),
+        )
+    ]
+
+    execution = verify_device_execution(policy, (), discovered)
+
+    assert execution.state == "unknown"
+    assert execution.observed_library == "CUDA0"
+    assert execution.observed_description == "NVIDIA GeForce RTX 4060 Laptop GPU"
+
+
+def test_unmanaged_policy_without_logs_has_no_observed_device() -> None:
+    execution = verify_device_execution(
+        OllamaDevicePolicy(target="unmanaged", backend=None),
+        (),
+        (),
+    )
+    assert execution.state == "unknown"
+    assert execution.observed_library is None
+    assert execution.observed_description is None
+    assert execution.offloaded_layers is None
+    assert execution.total_layers is None
 
 
 def test_partial_offload_is_still_verified() -> None:

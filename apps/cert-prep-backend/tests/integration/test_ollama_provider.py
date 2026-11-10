@@ -1,6 +1,9 @@
 import json
 import logging
+from io import BytesIO
 from pathlib import Path
+import threading
+import time
 
 import pytest
 
@@ -15,8 +18,16 @@ from cert_prep_backend.authoring.infrastructure.response_parsing import (
     RATIONALE_LANGUAGE_INSTRUCTION,
 )
 from cert_prep_backend.ai_providers.infrastructure.ollama_transport import OllamaProvider
+from cert_prep_contracts.hardware import (
+    MachineAcceleratorSnapshot,
+    MachineCpuSnapshot,
+    MachineInventorySnapshot,
+    MachineRamSnapshot,
+    MachineStorageSnapshot,
+)
 from cert_prep_contracts.llm import LLMExecutionMode, LLMExecutionPolicy
 from cert_prep_ollama.profiles import DEFAULT_PROFILE_ID, select_ollama_profile
+from cert_prep_ollama.server_coordinator import OllamaServerCoordinator
 from fastapi.testclient import TestClient
 from llm_test_fakes import (
     FailingListOllamaClient,
@@ -28,6 +39,104 @@ from llm_test_fakes import (
 
 
 AUTH_HEADERS = {"Authorization": "Bearer test-token"}
+_CUDA_FIXTURE = (
+    Path(__file__).resolve().parents[4]
+    / "packages/cert-prep-ollama/tests/fixtures/ollama_0_40_13/cuda-dgpu-hip-hidden.log"
+)
+
+
+def _rtx_4060_inventory() -> MachineInventorySnapshot:
+    radeon = MachineAcceleratorSnapshot(
+        kind="gpu",
+        name="AMD Radeon(TM) 880M Graphics",
+        classification="integrated",
+        pci_vendor_id="1002",
+        pci_device_id="150e",
+    )
+    rtx = MachineAcceleratorSnapshot(
+        kind="gpu",
+        name="NVIDIA GeForce RTX 4060 Laptop GPU",
+        classification="dedicated",
+        pci_vendor_id="10de",
+        pci_device_id="28a0",
+        device_id="GPU-3c990263-ad20-7ce7-1ad5-cae44a0d9df3",
+    )
+    return MachineInventorySnapshot(
+        platform="Windows",
+        platform_version="10.0.26100",
+        architecture="AMD64",
+        cpu=MachineCpuSnapshot(architecture="AMD64"),
+        ram=MachineRamSnapshot(32 * 1024**3, 16 * 1024**3),
+        storage=MachineStorageSnapshot("C:\\", 64 * 1024**3, 128 * 1024**3),
+        accelerators=(radeon, rtx),
+    )
+
+
+class _LogStdout:
+    def __init__(self, data: bytes) -> None:
+        self._bio = BytesIO(data)
+        self.drained = threading.Event()
+        if not data:
+            self.drained.set()
+
+    def readline(self, size: int = -1) -> bytes:
+        chunk = self._bio.readline(size)
+        if not chunk:
+            self.drained.set()
+        return chunk
+
+
+class _OwnedServerProcess:
+    def __init__(self, pid: int, stdout_data: bytes) -> None:
+        self.pid = pid
+        self._returncode: int | None = None
+        self.stdout = _LogStdout(stdout_data)
+
+    def poll(self) -> int | None:
+        return self._returncode
+
+    def terminate(self) -> None:
+        self._returncode = 0
+
+    def kill(self) -> None:
+        self.terminate()
+
+    def wait_drained(self, timeout: float = 2.0) -> bool:
+        return self.stdout.drained.wait(timeout=timeout)
+
+
+class _OwnedServerFleet:
+    """One fake owned server whose stdout is a log fixture."""
+
+    def __init__(self, log: str) -> None:
+        self._log = log
+        self.procs: list[_OwnedServerProcess] = []
+
+    def spawn(self, *_args, **_kwargs) -> _OwnedServerProcess:
+        proc = _OwnedServerProcess(
+            pid=5000 + len(self.procs),
+            stdout_data=self._log.encode("utf-8"),
+        )
+        self.procs.append(proc)
+        return proc
+
+    def terminate(self, pid: int) -> None:
+        for proc in self.procs:
+            if proc.pid == pid:
+                proc.terminate()
+
+    def probe(self, _host: str) -> bool:
+        return any(proc.poll() is None for proc in self.procs)
+
+    def coordinator(self) -> OllamaServerCoordinator:
+        return OllamaServerCoordinator(
+            host="http://127.0.0.1:11434",
+            inventory_provider=_rtx_4060_inventory,
+            executable_resolver=lambda: Path("ollama"),
+            process_factory=self.spawn,
+            api_probe=self.probe,
+            tree_terminator=self.terminate,
+        )
 
 
 def _cpu_execution_policy() -> LLMExecutionPolicy:
@@ -725,6 +834,127 @@ def test_ollama_health_reports_not_running_when_idle_server_start_fails(
     assert health.unavailable_reason == "ollama_not_running"
     assert "Ollama unavailable" in health.detail
     assert fake_client.pull_calls == 0
+
+def test_llm_health_reports_the_device_an_owned_server_verified(tmp_path: Path) -> None:
+    fleet = _OwnedServerFleet(_CUDA_FIXTURE.read_text(encoding="utf-8"))
+    coordinator = fleet.coordinator()
+    try:
+        assert coordinator.ensure_running() is True
+        assert fleet.procs[0].wait_drained() is True
+        deadline = time.monotonic() + 2.0
+        state = ""
+        while time.monotonic() < deadline:
+            state = coordinator.after_model_load().state
+            if state == "verified":
+                break
+            time.sleep(0.05)
+        assert state == "verified"
+        provider = OllamaProvider(
+            host="http://127.0.0.1:11434",
+            model="qwen3.5:4b",
+            timeout_seconds=1,
+            client=RecordingOllamaClient(models=["qwen3.5:4b"]),
+            server=coordinator,
+        )
+        client = TestClient(
+            create_app(
+                settings=Settings(data_dir=tmp_path, api_token="test-token"),
+                llm_provider=provider,
+            )
+        )
+        response = client.get("/llm/health", headers=AUTH_HEADERS)
+        assert response.status_code == 200
+        body = response.json()
+        device = body["device"]
+        policy = coordinator.policy
+    finally:
+        coordinator.close()
+
+    assert body["detail"] == "model available"
+    assert body["execution_mode"] == "auto"
+    assert set(device) == {
+        "server",
+        "requested",
+        "verification",
+        "observed",
+        "corrective_restarts",
+    }
+    assert device["server"] == "owned"
+    assert device["verification"] == "verified"
+    assert device["corrective_restarts"] == 0
+    assert policy is not None
+    assert device["requested"] == {
+        "target": policy.target,
+        "backend": policy.backend,
+        "adapter_name": policy.adapter_name,
+    }
+    assert device["requested"]["backend"] == "cuda"
+    assert device["observed"] == {
+        "backend": "cuda",
+        "adapter_name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+        "offloaded_layers": 34,
+        "total_layers": 34,
+    }
+
+def test_llm_health_reports_an_external_server_that_was_already_running(
+    tmp_path: Path,
+) -> None:
+    spawned: list[int] = []
+
+    def factory(*_args, **_kwargs) -> object:
+        spawned.append(1)
+        raise AssertionError("an answering server must not be started by health")
+
+    coordinator = OllamaServerCoordinator(
+        host="http://127.0.0.1:11434",
+        inventory_provider=_rtx_4060_inventory,
+        executable_resolver=lambda: Path("ollama"),
+        process_factory=factory,
+        api_probe=lambda _host: True,
+        tree_terminator=lambda _pid: None,
+    )
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3.5:4b",
+        timeout_seconds=1,
+        client=RecordingOllamaClient(models=["qwen3.5:4b"]),
+        server=coordinator,
+    )
+    client = TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            llm_provider=provider,
+        )
+    )
+
+    response = client.get("/llm/health", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    assert spawned == []
+    assert coordinator.ownership == "external"
+    device = response.json()["device"]
+    assert device["server"] == "external"
+    assert device["requested"] is None
+    assert device["verification"] == "not_observable"
+    assert device["observed"] is None
+    assert device["corrective_restarts"] == 0
+
+def test_llm_health_has_no_device_for_the_fake_provider(tmp_path: Path) -> None:
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                llm_provider="fake",
+            )
+        )
+    )
+
+    response = client.get("/llm/health", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "fake"
+    assert response.json()["device"] is None
 
 def test_ollama_fast_first_draft_maps_compact_json_to_candidate_choice(
     monkeypatch,
