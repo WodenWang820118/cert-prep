@@ -16,6 +16,7 @@ from cert_prep_contracts.hardware import (
     MachineRamSnapshot,
     MachineStorageSnapshot,
 )
+from cert_prep_ollama.device_policy import OllamaDevicePreference
 from cert_prep_ollama.server_coordinator import OllamaServerCoordinator
 
 
@@ -1105,3 +1106,152 @@ def test_device_status_reports_a_non_local_host_as_external() -> None:
     coordinator.note_api_answered()
     assert coordinator.ownership == "external"
     assert coordinator.device_status().server == "external"
+
+
+_RTX_UUID = "GPU-3c990263-ad20-7ce7-1ad5-cae44a0d9df3"
+
+
+def _owned_server(preference_provider, *, clock: FakeClock | None = None):
+    """Coordinator whose child environment is only the policy plus PATH."""
+
+    procs: list[FakeProcess] = []
+    accepting = {"value": True}
+    timing = {} if clock is None else {"clock": clock.time, "sleep": clock.sleep}
+
+    def spawn(*_args, **kwargs) -> FakeProcess:
+        proc = FakeProcess(pid=8000 + len(procs))
+        proc.env = dict(kwargs.get("env") or {})
+        procs.append(proc)
+        return proc
+
+    def terminate(pid: int) -> None:
+        for proc in procs:
+            if proc.pid == pid:
+                proc.terminate()
+
+    def probe(_host: str) -> bool:
+        return accepting["value"] and any(proc.is_running for proc in procs)
+
+    coordinator = OllamaServerCoordinator(
+        host="http://127.0.0.1:11434",
+        inventory_provider=_sample_inventory,
+        executable_resolver=lambda: Path("C:\\Ollama\\ollama.exe"),
+        process_factory=spawn,
+        api_probe=probe,
+        tree_terminator=terminate,
+        base_environment={"PATH": "C:\\Windows\\System32"},
+        platform_name="Windows",
+        preference_provider=preference_provider,
+        **timing,
+    )
+    return coordinator, procs, accepting
+
+
+def test_each_owned_start_reads_the_device_preference() -> None:
+    clock = FakeClock()
+    current = {
+        "preference": OllamaDevicePreference(
+            mode="adapter",
+            adapter_key="0123456789abcdef",
+            adapter_name="Missing Adapter",
+            pci_vendor_id="ffff",
+            pci_device_id="ffff",
+        )
+    }
+    reads: list[OllamaDevicePreference] = []
+
+    def provider() -> OllamaDevicePreference:
+        reads.append(current["preference"])
+        return current["preference"]
+
+    coordinator, procs, accepting = _owned_server(provider, clock=clock)
+    assert coordinator.ensure_running() is True
+    assert len(reads) == 1
+    assert coordinator.policy is not None
+    assert coordinator.policy.application == "adapter_missing"
+    assert procs[0].env is not None
+    assert procs[0].env["CUDA_VISIBLE_DEVICES"] == _RTX_UUID
+    assert procs[0].env["OLLAMA_VULKAN"] == "0"
+    assert "OLLAMA_LLM_LIBRARY" not in procs[0].env
+
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    accepting["value"] = False
+    assert coordinator.ensure_running(timeout_seconds=1.0) is False
+    assert len(reads) == 2
+    assert reads[1].mode == "cpu"
+    assert coordinator.policy is not None
+    assert coordinator.policy.target == "cpu"
+    assert coordinator.policy.application == "applied"
+    assert procs[1].env is not None
+    assert procs[1].env["CUDA_VISIBLE_DEVICES"] == "-1"
+    assert procs[1].env["HIP_VISIBLE_DEVICES"] == "-1"
+    assert procs[1].env["GGML_VK_VISIBLE_DEVICES"] == "-1"
+    assert procs[1].env["OLLAMA_VULKAN"] == "0"
+    assert procs[1].env["OLLAMA_IGPU_ENABLE"] == "0"
+    assert "OLLAMA_LLM_LIBRARY" not in procs[1].env
+
+
+def test_corrected_policy_is_reused_only_for_the_same_preference() -> None:
+    clock = FakeClock()
+    current = {"preference": OllamaDevicePreference()}
+    reads: list[str] = []
+
+    def provider() -> OllamaDevicePreference:
+        reads.append(current["preference"].mode)
+        return current["preference"]
+
+    mismatch_log = (
+        'time=2026-10-29T17:42:30.310+08:00 msg="inference compute" id=0 filter_id=0 '
+        'library=ROCm name=ROCm0 description="AMD Radeon(TM) 880M Graphics" '
+        "libdirs=ollama,rocm_v7_1\n"
+        'time=2026-10-29T17:42:30.310+08:00 msg="inference compute" id=0 filter_id=0 '
+        'library=CUDA name=CUDA0 description="NVIDIA GeForce RTX 4060 Laptop GPU" '
+        'libdirs=ollama,cuda_v13 pci_id=0000:63:00.0 type=discrete total="8.0 GiB" '
+        'available="6.9 GiB"\n'
+        'msg="starting llama-server"\n'
+        "llama_prepare_model_devices: using device ROCm0 (AMD Radeon(TM) 880M Graphics) "
+        "(0000:65:00.0) - 1000 MiB free\n"
+        "load_tensors: offloaded 34/34 layers to GPU\n"
+    )
+    coordinator, procs, accepting = _owned_server(provider, clock=clock)
+    real_spawn = coordinator._process_factory
+
+    def spawn(*args, **kwargs):
+        proc = real_spawn(*args, **kwargs)
+        if len(procs) == 1:
+            proc.stdout = FakeStdout(mismatch_log.encode("utf-8"))
+        return proc
+
+    coordinator._process_factory = spawn
+
+    assert coordinator.ensure_running() is True
+    assert len(reads) == 1
+    assert procs[0].wait_drained() is True
+    assert procs[0].env is not None
+    assert "OLLAMA_LLM_LIBRARY" not in procs[0].env
+
+    execution = coordinator.after_model_load()
+    assert execution is not None
+    assert execution.state == "mismatch"
+    assert len(procs) == 2
+    assert len(reads) == 2
+    assert procs[1].env is not None
+    assert procs[1].env["OLLAMA_LLM_LIBRARY"] == "cuda_v13"
+    assert procs[1].env["CUDA_VISIBLE_DEVICES"] == _RTX_UUID
+
+    accepting["value"] = False
+    assert coordinator.ensure_running(timeout_seconds=1.0) is False
+    assert len(reads) == 3
+    assert procs[2].env == procs[1].env
+
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    assert coordinator.ensure_running(timeout_seconds=1.0) is False
+    assert len(reads) == 4
+    assert reads[3] == "cpu"
+    assert procs[3].env is not None
+    assert procs[3].env["CUDA_VISIBLE_DEVICES"] == "-1"
+    assert procs[3].env["OLLAMA_VULKAN"] == "0"
+    assert procs[3].env["OLLAMA_IGPU_ENABLE"] == "0"
+    assert "OLLAMA_LLM_LIBRARY" not in procs[3].env
+    assert coordinator.policy is not None
+    assert coordinator.policy.target == "cpu"

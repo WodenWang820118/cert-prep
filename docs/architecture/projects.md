@@ -15,6 +15,8 @@ flowchart LR
   n_ui_helm["ui-helm"]
   n_cert_prep --> n_cert_prep_api
   n_cert_prep --> n_ui_helm
+  n_cert_prep_backend --> n_cert_prep_contracts
+  n_cert_prep_backend --> n_cert_prep_ollama
   n_cert_prep_desktop --> n_cert_prep
   n_cert_prep_desktop --> n_cert_prep_backend
   n_cert_prep_e2e --> n_cert_prep

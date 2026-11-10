@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
 from cert_prep_contracts.hardware import (
     MachineAcceleratorSnapshot,
     MachineCpuSnapshot,
@@ -13,6 +17,8 @@ from cert_prep_contracts.llm import LLMExecutionMode
 from cert_prep_ollama.device_policy import (
     EnvironmentResolution,
     OllamaDevicePolicy,
+    OllamaDevicePreference,
+    adapter_key,
     corrected_device_policy,
     normalize_device_name,
     ollama_child_environment,
@@ -20,7 +26,7 @@ from cert_prep_ollama.device_policy import (
     select_ollama_device_policy,
 )
 from cert_prep_ollama.profiles import select_ollama_execution_policy
-from cert_prep_ollama.server_log import DiscoveredDevice
+from cert_prep_ollama.server_log import DiscoveredDevice, OllamaLogParser
 
 
 def _make_inventory(
@@ -623,4 +629,588 @@ def test_corrected_device_policy_pci_bus_hex_formats() -> None:
     ]
     corrected_diff = corrected_device_policy(policy_4digit, discovered_diff)
     assert corrected_diff is None
+
+
+# -- Preference matrix --------------------------------------------------------
+
+_RTX = "NVIDIA GeForce RTX 4060 Laptop GPU"
+_RTX_UUID = "GPU-3c990263-ad20-7ce7-1ad5-cae44a0d9df3"
+_RADEON = "AMD Radeon(TM) 880M Graphics"
+_RX = "AMD Radeon RX 7600"
+_ARC = "Intel(R) Arc(TM) A770 Graphics"
+_IGPU = "AMD Radeon(TM) 780M"
+_PNP = r"PCI\VEN_10DE&DEV_28A0&SUBSYS_00000000&REV_A1\4&123456&0&0008"
+
+_CHILD_BASE = {"PATH": "C:\\Windows\\System32", "CUDA_VISIBLE_DEVICES": "inherited"}
+_BASE_CLEARED = (
+    "ROCR_VISIBLE_DEVICES",
+    "GPU_DEVICE_ORDINAL",
+    "HSA_OVERRIDE_GFX_VERSION",
+    "OLLAMA_LLM_LIBRARY",
+)
+
+
+def _gpu(name: str, **kwargs) -> MachineAcceleratorSnapshot:
+    return MachineAcceleratorSnapshot(kind="gpu", name=name, **kwargs)
+
+
+def _rtx(**overrides) -> MachineAcceleratorSnapshot:
+    fields = {
+        "classification": "dedicated",
+        "vendor": "nvidia",
+        "pci_vendor_id": "10de",
+        "pci_device_id": "28a0",
+        "device_id": _RTX_UUID,
+        "dedicated_memory_bytes": 8_342_470_656,
+    }
+    fields.update(overrides)
+    return _gpu(_RTX, **fields)
+
+
+_SHAPES: dict[str, dict[str, object]] = {
+    "nvidia": {
+        "env": {
+            "CUDA_VISIBLE_DEVICES": _RTX_UUID,
+            "HIP_VISIBLE_DEVICES": "-1",
+            "GGML_VK_VISIBLE_DEVICES": "-1",
+            "OLLAMA_VULKAN": "0",
+            "OLLAMA_IGPU_ENABLE": "0",
+        },
+        "child": {
+            "PATH": "C:\\Windows\\System32",
+            "CUDA_VISIBLE_DEVICES": _RTX_UUID,
+            "HIP_VISIBLE_DEVICES": "-1",
+            "GGML_VK_VISIBLE_DEVICES": "-1",
+            "OLLAMA_VULKAN": "0",
+            "OLLAMA_IGPU_ENABLE": "0",
+        },
+        "cleared": _BASE_CLEARED,
+    },
+    "amd": {
+        "env": {
+            "CUDA_VISIBLE_DEVICES": "-1",
+            "GGML_VK_VISIBLE_DEVICES": "-1",
+            "OLLAMA_VULKAN": "0",
+            "OLLAMA_IGPU_ENABLE": "0",
+        },
+        "child": {
+            "PATH": "C:\\Windows\\System32",
+            "CUDA_VISIBLE_DEVICES": "-1",
+            "GGML_VK_VISIBLE_DEVICES": "-1",
+            "OLLAMA_VULKAN": "0",
+            "OLLAMA_IGPU_ENABLE": "0",
+        },
+        "cleared": (*_BASE_CLEARED, "HIP_VISIBLE_DEVICES"),
+    },
+    "vulkan_dgpu": {
+        "env": {
+            "CUDA_VISIBLE_DEVICES": "-1",
+            "HIP_VISIBLE_DEVICES": "-1",
+            "OLLAMA_VULKAN": "1",
+            "OLLAMA_IGPU_ENABLE": "0",
+        },
+        "child": {
+            "PATH": "C:\\Windows\\System32",
+            "CUDA_VISIBLE_DEVICES": "-1",
+            "HIP_VISIBLE_DEVICES": "-1",
+            "OLLAMA_VULKAN": "1",
+            "OLLAMA_IGPU_ENABLE": "0",
+        },
+        "cleared": (*_BASE_CLEARED, "GGML_VK_VISIBLE_DEVICES"),
+    },
+    "igpu": {
+        "env": {
+            "CUDA_VISIBLE_DEVICES": "-1",
+            "HIP_VISIBLE_DEVICES": "-1",
+            "OLLAMA_VULKAN": "1",
+            "OLLAMA_IGPU_ENABLE": "1",
+        },
+        "child": {
+            "PATH": "C:\\Windows\\System32",
+            "CUDA_VISIBLE_DEVICES": "-1",
+            "HIP_VISIBLE_DEVICES": "-1",
+            "OLLAMA_VULKAN": "1",
+            "OLLAMA_IGPU_ENABLE": "1",
+        },
+        "cleared": (*_BASE_CLEARED, "GGML_VK_VISIBLE_DEVICES"),
+    },
+    "cpu": {
+        "env": {
+            "CUDA_VISIBLE_DEVICES": "-1",
+            "HIP_VISIBLE_DEVICES": "-1",
+            "GGML_VK_VISIBLE_DEVICES": "-1",
+            "OLLAMA_VULKAN": "0",
+            "OLLAMA_IGPU_ENABLE": "0",
+        },
+        "child": {
+            "PATH": "C:\\Windows\\System32",
+            "CUDA_VISIBLE_DEVICES": "-1",
+            "HIP_VISIBLE_DEVICES": "-1",
+            "GGML_VK_VISIBLE_DEVICES": "-1",
+            "OLLAMA_VULKAN": "0",
+            "OLLAMA_IGPU_ENABLE": "0",
+        },
+        "cleared": _BASE_CLEARED,
+    },
+    "unmanaged": {
+        "env": {},
+        "child": dict(_CHILD_BASE),
+        "cleared": (),
+    },
+}
+
+
+def _machine(
+    name: str,
+) -> tuple[MachineInventorySnapshot | None, dict[str, MachineAcceleratorSnapshot]]:
+    if name == "none":
+        return None, {}
+    if name == "nvidia_igpu":
+        radeon = _gpu(
+            _RADEON,
+            classification="integrated",
+            vendor="amd",
+            pci_vendor_id="1002",
+            pci_device_id="150e",
+            dedicated_memory_bytes=298_012_672,
+            shared_memory_bytes=16_706_365_440,
+        )
+        rtx = _rtx()
+        software = _gpu(
+            "Microsoft Basic Render Driver",
+            classification="software",
+            pci_vendor_id="1414",
+            pci_device_id="008c",
+        )
+        return _make_inventory([radeon, rtx, software]), {"dgpu": rtx, "igpu": radeon}
+    if name == "amd":
+        amd = _gpu(
+            _RX,
+            classification="dedicated",
+            vendor="amd",
+            pci_vendor_id="1002",
+            pci_device_id="7480",
+            dedicated_memory_bytes=8 * 1024**3,
+        )
+        return _make_inventory([amd]), {"dgpu": amd}
+    if name == "arc":
+        arc = _gpu(
+            _ARC,
+            classification="dedicated",
+            vendor="intel",
+            pci_vendor_id="8086",
+            pci_device_id="56a0",
+            dedicated_memory_bytes=16 * 1024**3,
+        )
+        return _make_inventory([arc]), {"dgpu": arc}
+    if name == "igpu":
+        igpu = _gpu(
+            _IGPU,
+            classification="integrated",
+            vendor="amd",
+            pci_vendor_id="1002",
+            pci_device_id="15bf",
+            dedicated_memory_bytes=512 * 1024**2,
+            shared_memory_bytes=16 * 1024**3,
+        )
+        return _make_inventory([igpu]), {"igpu": igpu}
+    if name == "unknown":
+        unknown = _gpu(
+            "Generic Display Adapter",
+            classification="unknown",
+            pci_vendor_id="1234",
+            pci_device_id="5678",
+        )
+        return _make_inventory([unknown]), {"self": unknown}
+    if name == "software":
+        basic = _gpu(
+            "Microsoft Basic Render Driver",
+            classification="software",
+            pci_vendor_id="1414",
+            pci_device_id="008c",
+        )
+        return _make_inventory([basic]), {}
+    if name == "no_gpu":
+        return _make_inventory([]), {}
+    if name == "linux":
+        rtx = _rtx()
+        return _make_inventory([rtx], platform_name="Linux"), {"dgpu": rtx}
+    raise AssertionError(name)
+
+
+def _preference_for(
+    choice: str,
+    adapters: dict[str, MachineAcceleratorSnapshot],
+) -> OllamaDevicePreference:
+    if choice == "auto":
+        return OllamaDevicePreference()
+    if choice == "cpu":
+        return OllamaDevicePreference(mode="cpu")
+    if choice == "missing":
+        return OllamaDevicePreference(
+            mode="adapter",
+            adapter_key="0123456789abcdef",
+            adapter_name="Missing Adapter",
+            pci_vendor_id="ffff",
+            pci_device_id="ffff",
+        )
+    adapter = adapters[choice]
+    return OllamaDevicePreference(
+        mode="adapter",
+        adapter_key=adapter_key(adapter),
+        adapter_name=adapter.name,
+        pci_vendor_id=adapter.pci_vendor_id,
+        pci_device_id=adapter.pci_device_id,
+    )
+
+
+def _assert_shape(policy: OllamaDevicePolicy, shape: str) -> None:
+    spec = _SHAPES[shape]
+    assert list(policy.environment.items()) == list(spec["env"].items())
+    assert policy.cleared == spec["cleared"]
+    child, _resolutions = ollama_child_environment(
+        _CHILD_BASE, policy, case_insensitive=True
+    )
+    assert list(child.items()) == list(spec["child"].items())
+
+
+@pytest.mark.parametrize(
+    ("machine", "choice", "target", "backend", "shape", "application", "adapter_name"),
+    [
+        ("nvidia_igpu", "auto", "dedicated_gpu", "cuda", "nvidia", "applied", _RTX),
+        ("nvidia_igpu", "cpu", "cpu", "cpu", "cpu", "applied", None),
+        ("nvidia_igpu", "dgpu", "dedicated_gpu", "cuda", "nvidia", "applied", _RTX),
+        ("nvidia_igpu", "igpu", "integrated_gpu", "vulkan", "igpu", "applied", _RADEON),
+        ("nvidia_igpu", "missing", "dedicated_gpu", "cuda", "nvidia", "adapter_missing", _RTX),
+        ("amd", "auto", "dedicated_gpu", "rocm", "amd", "applied", _RX),
+        ("amd", "cpu", "cpu", "cpu", "cpu", "applied", None),
+        ("amd", "dgpu", "dedicated_gpu", "rocm", "amd", "applied", _RX),
+        ("amd", "missing", "dedicated_gpu", "rocm", "amd", "adapter_missing", _RX),
+        ("arc", "auto", "dedicated_gpu", "vulkan", "vulkan_dgpu", "applied", _ARC),
+        ("arc", "cpu", "cpu", "cpu", "cpu", "applied", None),
+        ("arc", "dgpu", "dedicated_gpu", "vulkan", "vulkan_dgpu", "applied", _ARC),
+        ("arc", "missing", "dedicated_gpu", "vulkan", "vulkan_dgpu", "adapter_missing", _ARC),
+        ("igpu", "auto", "integrated_gpu", "vulkan", "igpu", "applied", _IGPU),
+        ("igpu", "cpu", "cpu", "cpu", "cpu", "applied", None),
+        ("igpu", "igpu", "integrated_gpu", "vulkan", "igpu", "applied", _IGPU),
+        ("igpu", "missing", "integrated_gpu", "vulkan", "igpu", "adapter_missing", _IGPU),
+        ("unknown", "auto", "unmanaged", None, "unmanaged", "applied", None),
+        ("unknown", "cpu", "cpu", "cpu", "cpu", "applied", None),
+        ("unknown", "self", "unmanaged", None, "unmanaged", "adapter_missing", None),
+        ("software", "auto", "cpu", "cpu", "cpu", "applied", None),
+        ("software", "cpu", "cpu", "cpu", "cpu", "applied", None),
+        ("software", "missing", "cpu", "cpu", "cpu", "adapter_missing", None),
+        ("no_gpu", "auto", "cpu", "cpu", "cpu", "applied", None),
+        ("no_gpu", "cpu", "cpu", "cpu", "cpu", "applied", None),
+        ("no_gpu", "missing", "cpu", "cpu", "cpu", "adapter_missing", None),
+        ("linux", "auto", "unmanaged", None, "unmanaged", "not_applicable", None),
+        ("linux", "cpu", "unmanaged", None, "unmanaged", "not_applicable", None),
+        ("linux", "dgpu", "unmanaged", None, "unmanaged", "not_applicable", None),
+        ("none", "auto", "unmanaged", None, "unmanaged", "not_applicable", None),
+        ("none", "cpu", "unmanaged", None, "unmanaged", "not_applicable", None),
+        ("none", "missing", "unmanaged", None, "unmanaged", "not_applicable", None),
+    ],
+)
+def test_device_preference_matrix(
+    machine: str,
+    choice: str,
+    target: str,
+    backend: str | None,
+    shape: str,
+    application: str,
+    adapter_name: str | None,
+) -> None:
+    inventory, adapters = _machine(machine)
+    kwargs: dict[str, object] = {"preference": _preference_for(choice, adapters)}
+    if inventory is None:
+        kwargs["platform_name"] = "Windows"
+    policy = select_ollama_device_policy(inventory, **kwargs)
+    assert policy.target == target
+    assert policy.backend == backend
+    assert policy.application == application
+    assert policy.adapter_name == adapter_name
+    _assert_shape(policy, shape)
+
+
+def test_auto_preference_matches_selection_without_a_preference() -> None:
+    for machine in (
+        "nvidia_igpu",
+        "amd",
+        "arc",
+        "igpu",
+        "unknown",
+        "software",
+        "no_gpu",
+        "linux",
+        "none",
+    ):
+        inventory, _adapters = _machine(machine)
+        kwargs: dict[str, object] = {}
+        if inventory is None:
+            kwargs["platform_name"] = "Windows"
+        bare = select_ollama_device_policy(inventory, **kwargs)
+        auto = select_ollama_device_policy(
+            inventory, preference=OllamaDevicePreference(), **kwargs
+        )
+        assert auto == bare
+        assert list(auto.environment) == list(bare.environment)
+
+    no_uuid = _make_inventory(
+        [
+            _gpu(
+                "NVIDIA GeForce GTX 1660 Ti",
+                classification="dedicated",
+                vendor="nvidia",
+                pci_vendor_id="10de",
+                pci_device_id="2182",
+                dedicated_memory_bytes=6 * 1024**3,
+            )
+        ]
+    )
+    intel = _gpu(
+        "Intel Arc A770",
+        classification="dedicated",
+        pci_vendor_id="8086",
+        dedicated_memory_bytes=16 * 1024**3,
+    )
+    amd_8gb = _gpu(
+        "AMD Radeon RX 6600",
+        classification="dedicated",
+        pci_vendor_id="1002",
+        dedicated_memory_bytes=8 * 1024**3,
+    )
+    nvidia_8gb = _gpu(
+        "NVIDIA GeForce RTX 3070",
+        classification="dedicated",
+        pci_vendor_id="10de",
+        device_id="GPU-12345678-0000-0000-0000-000000000000",
+        dedicated_memory_bytes=8 * 1024**3,
+    )
+    unknown = _gpu("Unknown GPU Adapter", classification="unknown")
+    rtx_4070 = _gpu(
+        "NVIDIA GeForce RTX 4070",
+        classification="dedicated",
+        vendor="nvidia",
+        pci_vendor_id="10de",
+        pci_device_id="2786",
+        device_id="GPU-99990000-1111-2222-3333-444455556666",
+        dedicated_memory_bytes=12 * 1024**3,
+    )
+    for inventory in (
+        no_uuid,
+        _make_inventory([amd_8gb, nvidia_8gb, intel]),
+        _make_inventory([amd_8gb, nvidia_8gb]),
+        _make_inventory([unknown, rtx_4070]),
+    ):
+        bare = select_ollama_device_policy(inventory)
+        auto = select_ollama_device_policy(inventory, preference=OllamaDevicePreference())
+        assert auto == bare
+        assert list(auto.environment) == list(bare.environment)
+
+
+def test_auto_ignores_a_stored_adapter_key() -> None:
+    inventory, adapters = _machine("nvidia_igpu")
+    igpu = adapters["igpu"]
+    stale = OllamaDevicePreference(
+        mode="auto",
+        adapter_key=adapter_key(igpu),
+        adapter_name=igpu.name,
+        pci_vendor_id=igpu.pci_vendor_id,
+        pci_device_id=igpu.pci_device_id,
+    )
+    assert select_ollama_device_policy(inventory, preference=stale) == (
+        select_ollama_device_policy(inventory)
+    )
+
+
+def test_chosen_adapter_is_used_when_auto_would_pick_another() -> None:
+    amd = _gpu(
+        "AMD Radeon RX 6600",
+        classification="dedicated",
+        vendor="amd",
+        pci_vendor_id="1002",
+        pci_device_id="73ff",
+        dedicated_memory_bytes=8 * 1024**3,
+    )
+    nvidia = _gpu(
+        "NVIDIA GeForce RTX 4090",
+        classification="dedicated",
+        vendor="nvidia",
+        pci_vendor_id="10de",
+        pci_device_id="2684",
+        device_id="GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        dedicated_memory_bytes=24 * 1024**3,
+    )
+    inventory = _make_inventory([amd, nvidia])
+    assert select_ollama_device_policy(inventory).adapter_name == nvidia.name
+    selected = select_ollama_device_policy(
+        inventory, preference=_preference_for("dgpu", {"dgpu": amd})
+    )
+    assert selected.application == "applied"
+    assert selected.adapter_name == amd.name
+    assert selected.backend == "rocm"
+    assert selected.environment["CUDA_VISIBLE_DEVICES"] == "-1"
+    assert "HIP_VISIBLE_DEVICES" not in selected.environment
+    assert selected.environment["OLLAMA_VULKAN"] == "0"
+
+
+def test_adapter_key_ignores_luid_and_survives_losing_nvidia_smi() -> None:
+    original = _rtx(pnp_device_id=_PNP, adapter_luid="000000000001a69c")
+    new_boot = _rtx(pnp_device_id=_PNP, adapter_luid="00000000000abcde")
+    without_smi = _rtx(
+        pnp_device_id=_PNP,
+        device_id=_PNP,
+        adapter_luid="00000000000fffff",
+    )
+    assert adapter_key(original) == adapter_key(new_boot)
+    assert adapter_key(original) == adapter_key(without_smi)
+    key = adapter_key(original)
+    assert key is not None
+    assert len(key) == 16
+    assert key == key.lower()
+    assert key != "000000000001a69c"
+
+    uuid_only = _rtx(pnp_device_id=None, adapter_luid="0000000000011111")
+    uuid_only_next_boot = _rtx(pnp_device_id=None, adapter_luid="0000000000022222")
+    assert adapter_key(uuid_only) == adapter_key(uuid_only_next_boot)
+    assert adapter_key(uuid_only) != key
+
+
+def test_identical_adapter_keys_are_not_selectable() -> None:
+    first = _gpu(
+        "NVIDIA GeForce RTX 3070",
+        classification="dedicated",
+        pci_vendor_id="10de",
+        pci_device_id="2484",
+        dedicated_memory_bytes=8 * 1024**3,
+        adapter_luid="aaaa",
+    )
+    second = _gpu(
+        "NVIDIA GeForce RTX 3070",
+        classification="dedicated",
+        pci_vendor_id="10de",
+        pci_device_id="2484",
+        dedicated_memory_bytes=8 * 1024**3,
+        adapter_luid="bbbb",
+    )
+    assert adapter_key(first) == adapter_key(second)
+    assert adapter_key(first) is not None
+    inventory = _make_inventory([first, second])
+    selected = select_ollama_device_policy(
+        inventory, preference=_preference_for("dgpu", {"dgpu": first})
+    )
+    auto = select_ollama_device_policy(inventory)
+    assert selected.application == "adapter_missing"
+    assert selected.target == auto.target
+    assert selected.backend == auto.backend
+    assert list(selected.environment.items()) == list(auto.environment.items())
+
+
+def test_vendor_and_device_id_select_the_adapter_when_the_key_changed() -> None:
+    original = _rtx(pnp_device_id=_PNP, adapter_luid="000000000001a69c")
+    moved = _rtx(
+        pnp_device_id=_PNP.replace("0008", "0009"),
+        adapter_luid="0000000000099999",
+    )
+    assert adapter_key(moved) != adapter_key(original)
+    inventory = _make_inventory([moved])
+    preference = OllamaDevicePreference(
+        mode="adapter",
+        adapter_key=adapter_key(original),
+        adapter_name="old label",
+        pci_vendor_id="10DE",
+        pci_device_id="28A0",
+    )
+    selected = select_ollama_device_policy(inventory, preference=preference)
+    assert selected.application == "applied"
+    assert selected.adapter_name == moved.name
+    assert selected.backend == "cuda"
+    assert selected.environment["CUDA_VISIBLE_DEVICES"] == _RTX_UUID
+
+    native_only = _rtx(pnp_device_id=None, device_id=None, adapter_luid="abc")
+    assert adapter_key(native_only) != adapter_key(original)
+    native_selected = select_ollama_device_policy(
+        _make_inventory([native_only]), preference=preference
+    )
+    assert native_selected.application == "applied"
+    assert native_selected.backend == "cuda"
+    assert "CUDA_VISIBLE_DEVICES" not in native_selected.environment
+
+
+def test_two_adapters_with_the_same_pci_ids_do_not_fall_back() -> None:
+    first = _rtx(pnp_device_id=_PNP + "A")
+    second = _rtx(
+        pnp_device_id=_PNP + "B",
+        device_id="GPU-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+    )
+    inventory = _make_inventory([first, second])
+    preference = OllamaDevicePreference(
+        mode="adapter",
+        adapter_key="0123456789abcdef",
+        adapter_name=_RTX,
+        pci_vendor_id="10de",
+        pci_device_id="28a0",
+    )
+    selected = select_ollama_device_policy(inventory, preference=preference)
+    auto = select_ollama_device_policy(inventory)
+    assert selected.application == "adapter_missing"
+    assert list(selected.environment.items()) == list(auto.environment.items())
+
+
+def test_blank_adapter_key_falls_back_to_vendor_and_device() -> None:
+    inventory, adapters = _machine("amd")
+    preference = OllamaDevicePreference(
+        mode="adapter",
+        adapter_key=None,
+        adapter_name="renamed",
+        pci_vendor_id="1002",
+        pci_device_id="7480",
+    )
+    selected = select_ollama_device_policy(inventory, preference=preference)
+    assert selected.application == "applied"
+    assert selected.adapter_name == adapters["dgpu"].name
+    assert selected.backend == "rocm"
+
+
+def _discovered_from_fixture(name: str) -> tuple[DiscoveredDevice, ...]:
+    path = Path(__file__).parent / "fixtures" / "ollama_0_40_13" / name
+    parser = OllamaLogParser()
+    parser.feed(path.read_text(encoding="utf-8"))
+    return parser.discovered_devices()
+
+
+def test_correction_pins_the_igpu_a_preference_selected() -> None:
+    inventory, adapters = _machine("nvidia_igpu")
+    policy = select_ollama_device_policy(
+        inventory, preference=_preference_for("igpu", adapters)
+    )
+    assert policy.application == "applied"
+    assert "GGML_VK_VISIBLE_DEVICES" not in policy.environment
+    corrected = corrected_device_policy(policy, _discovered_from_fixture("vulkan-igpu-enabled.log"))
+    assert corrected is not None
+    assert corrected.application == "applied"
+    assert corrected.target == "integrated_gpu"
+    assert corrected.backend == "vulkan"
+    assert corrected.environment["GGML_VK_VISIBLE_DEVICES"] == "0"
+    assert corrected.environment["OLLAMA_IGPU_ENABLE"] == "1"
+    assert corrected.environment["CUDA_VISIBLE_DEVICES"] == "-1"
+    assert corrected.environment["HIP_VISIBLE_DEVICES"] == "-1"
+    assert corrected.environment["OLLAMA_LLM_LIBRARY"] == "vulkan"
+
+
+def test_correction_keeps_adapter_missing_on_the_auto_fallback() -> None:
+    inventory, _adapters = _machine("nvidia_igpu")
+    policy = select_ollama_device_policy(
+        inventory, preference=_preference_for("missing", {})
+    )
+    assert policy.application == "adapter_missing"
+    corrected = corrected_device_policy(
+        policy, _discovered_from_fixture("cuda-dgpu-hip-hidden.log")
+    )
+    assert corrected is not None
+    assert corrected.application == "adapter_missing"
+    assert corrected.environment["CUDA_VISIBLE_DEVICES"] == _RTX_UUID
+    assert corrected.environment["OLLAMA_LLM_LIBRARY"] == "cuda_v13"
+    assert corrected.environment["HIP_VISIBLE_DEVICES"] == "-1"
+    assert corrected.environment["GGML_VK_VISIBLE_DEVICES"] == "-1"
 

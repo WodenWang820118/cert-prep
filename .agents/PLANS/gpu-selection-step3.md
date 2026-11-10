@@ -2,7 +2,7 @@
 
 All `path:line` citations are relative to `C:\software-dev\cert-prep` (`main` at 96d16fd). I read files only: I edited nothing and ran no builds, tests or nx.
 
-Slice 1 (the observed device on `GET /llm/health`) is done. The first two findings are the gaps it closed. Slices 2–7 are unchanged.
+Slice 1 (the observed device on `GET /llm/health`) and slice 2 (preference-aware policy in `cert-prep-ollama`) are done. Slice 7 was removed: the product owner declined the coarse `/api/ps` signal on 2026-11-10. Slices 3–6 are unchanged.
 
 Four findings change the shape of the work:
 - **The observed device did not reach the API.** The coordinator recorded it, and no route or schema exposed it. Slice 1 returns it as the optional `LLMHealthRead.device`.
@@ -12,12 +12,14 @@ Four findings change the shape of the work:
 
 ## 1. Today's shape
 
+Line numbers in this section, and the `device_policy.py` / `server_coordinator.py` line numbers in section 2, were taken before slice 2. Slice 2 moved the policy builders and the owned-server start path. Auto still follows the branches below. What slice 2 changed is in section 5.
+
 **Inventory**
 - Every adapter carries `classification`, PCI vendor and device ids, `adapter_luid` and an internal `pnp_device_id` (`packages/cert-prep-contracts/src/cert_prep_contracts/hardware.py:44-58`).
-- `device_id` is the NVIDIA UUID when nvidia-smi exists (`packages/cert-prep-ollama/src/cert_prep_ollama/inventory.py:228`). Otherwise it is the PnP instance id (`inventory.py:264-265`). Merged rows keep `pnp_device_id` (`inventory.py:611`).
-- The LUID is a per-boot value (`_native_gpu_inventory.py:139-142`).
-- Rows without native DXGI evidence become `unknown` (`inventory.py:622-627`).
-- Backend inventory is cached for 300 s (`apps/cert-prep-backend/src/cert_prep_backend/ai_providers/infrastructure/machine_inventory.py:13,35-41`).
+- `device_id` is not "the NVIDIA UUID, otherwise the PnP id". nvidia-smi writes the UUID (`inventory.py:228`). Win32_VideoController writes the PnP instance id into both `device_id` and `pnp_device_id` (`inventory.py:264-265`). Native DXGI writes neither (`_native_gpu_inventory.py:81-94`): only PCI ids and a LUID. Merge keeps `device_id` by legacy precedence and keeps `pnp_device_id` if any source had it (`inventory.py:607-611`). A native-only adapter therefore has no PnP id and no UUID, so its adapter key is the `pci:` fallback.
+- The LUID is the DXGI adapter LUID, which Windows assigns per boot. `_native_gpu_inventory.py:139-142` only formats it; it does not document that.
+- Rows without native DXGI evidence become `unknown` (`inventory.py:620-624`).
+- Backend inventory is cached for 300 s (`machine_inventory.py:13`). The check is in `collect_ollama_machine_inventory` (`:37-41`); `OllamaMachineInventory.inventory` is `:25-26`.
 
 **Policy and child environment** (`select_ollama_device_policy`, `device_policy.py:152-275`)
 - Non-Windows or no inventory → unmanaged (`:161-166`).
@@ -90,18 +92,18 @@ Four findings change the shape of the work:
 | Adapter missing | Auto + `adapter_missing` | ← | ← | ← | ← | ← | ← |
 
 - With an iGPU chosen on a mixed machine, Vulkan may still pick the dGPU. The existing single correction then pins `GGML_VK_VISIBLE_DEVICES` (`device_policy.py:388-395`).
-- Choices offered: GPUs with classification `dedicated` or `integrated` only. The UI can show `unknown` adapters as disabled (question 3 in section 6).
+- Choices offered: GPUs with classification `dedicated` or `integrated` only. Adapters classified `unknown` are listed but cannot be chosen (decision 3, 2026-11-10). Slice 2 enforces that in the policy; the list itself is slice 3.
 
 **When it takes effect.** Add `OllamaServerCoordinator.apply_device_preference()`:
 - Clear `_policy`, `_restarts` and `_device_execution`; each new choice gets its own one corrective restart.
-- If we own the server and it is idle (`_admissions_paused_when_idle`, `server_coordinator.py:195-208`): stop it and start it with the new policy now. A lazy start is not enough, because generation never starts the server (`ollama_transport.py:248-257`).
+- If we own the server and it is idle (`_admissions_paused_when_idle`, `server_coordinator.py:195-208` before slice 2): stop it and start it with the new policy now. A lazy start is not enough. `generate_structured_json` and `_json_chat` (`ollama_transport.py:191-244`) do not call `ensure_running`. The old citation `:248-257` is `pull_model`, which also does not start the server.
 - If a generation is running: set a pending flag. Never interrupt the call and never reuse the 30 s deadline. The switch happens at the next idle `after_model_load` (skipping verification of the old load) or the next `ensure_running`.
 - External server: save only. Not running: applies at the next start.
-- The coordinator reads `preference_provider()` (a new constructor argument, wired from the store in `ollama_server.py`) inside `_start_owned_server`.
+- The coordinator reads `preference_provider()` (a constructor argument; slice 3 wires it from the store in `ollama_server.py`) on every owned start, including a corrective restart. Slice 2 does that read inside `_owned_policy`.
 
 **CPU in the existing health fields.** When the owned policy target is `cpu`, the provider asks the coordinator per call:
 - `execution_mode=cpu`, with a warning that names the user's choice.
-- `num_gpu=0` in requests (`ollama_transport.py:172-173`).
+- `num_gpu=0` in requests (`_chat_options`, `ollama_transport.py:187-188`).
 - The existing "CPU" label then appears with no new UI (`apps/cert-prep/src/app/runtime/data/model-health-view-model.service.ts:60-64`).
 
 **API.**
@@ -149,7 +151,7 @@ Add `LLMHealthRead.device: OllamaDeviceRead | null` (optional, so the change is 
 **Implementation.**
 - Add a locked `coordinator.device_status()` snapshot built from `_policy`, `_verification_pending`, `_restarts` and `_device_execution`. The raw fields are inconsistent right after a restart (`server_coordinator.py:408-411`).
 - Add `note_api_answered()`. It marks the server external when the coordinator is open and this process does not own a live server: a tray app, a non-local host, or an owned process that has already exited while the API still answers. Health calls it only after a successful `list()`. `device_status()` reports a non-local host as external even before that call, while `ensure_running` still leaves ownership `"none"`.
-- Populate observed fields for unmanaged policies (`device_verification.py:80-95`).
+- Populate observed fields for unmanaged policies (`device_verification.py:119-140`). Lines 80-95 only unpack the load records.
 
 **Consumers that must change.**
 - `ProviderHealth`, `LLMHealthRead`, and `OllamaProvider._health_metadata_fields`.
@@ -174,7 +176,7 @@ Model it on `tests/unit/test_gpu_inventory_contract.py:22-65`.
 
 **What the app can honestly say.**
 - It cannot read an external server's log, so it cannot know which adapter or backend is used: `verification=not_observable`.
-- Ollama's `/api/ps` reports `size_vram` against `size`, which gives a coarse GPU-share or CPU signal but no adapter. This is optional (question 4 in section 6).
+- Ollama's `/api/ps` reports `size_vram` against `size`, which would give a coarse GPU-share or CPU signal but no adapter. The product owner declined that signal on 2026-11-10. It is not a slice.
 - The stored choice is saved but not applied (`status=external_server`).
 - To let Cert Prep start its own server: quit the tray Ollama, then press "Refresh all" (`runtime-manager.page.html:116-124`). Health then fails `list()`, `ensure_running` starts our own server with the stored choice, and ownership becomes owned.
 
@@ -216,9 +218,11 @@ Model it on `tests/unit/test_gpu_inventory_contract.py:22-65`.
      - integration `/llm/health` for owned/verified, external pre-started, fake → null (`tests/integration/test_ollama_provider.py`)
      - contract test
 
-2. **Preference-aware policy in the package.** No screen change.
+2. **Preference-aware policy in the package.** Status: done in this change. No screen change.
    - Depends on nothing.
-   - Changes: `device_policy.py` (`OllamaDevicePreference`, `adapter_key`, builders, `preference=`); `server_coordinator.py` (`preference_provider`, default Auto, so behavior is unchanged).
+   - Changes: `device_policy.py` (`OllamaDevicePreference`, `adapter_key`, per-adapter builders, `preference=`); `server_coordinator.py` (`preference_provider`, default Auto, so behavior is unchanged until a later slice wires a store).
+   - The returned policy's `application` is `applied`, `adapter_missing`, or `not_applicable`. A missing or no-longer selectable adapter falls back to Auto and keeps `adapter_missing`. Non-Windows or no inventory stays unmanaged and reports `not_applicable`.
+   - Every owned start, including the corrective restart, reads `preference_provider()`. A corrected policy is reused only while that read still matches the preference the correction was built for.
    - Tests:
      - parametrized matrix (section 2 table) in `test_device_policy.py`
      - key stable across LUID changes and loss of the nvidia-smi row; identical adapters ambiguous
@@ -256,9 +260,9 @@ Model it on `tests/unit/test_gpu_inventory_contract.py:22-65`.
    - Tests: store spec (PUT, then reload health and preference); e2e chooses CPU and asserts the PUT body and the CPU status.
    - Fetch the preference only on `/runtime`, or the full-journey `seenPaths` equality fails (`mocked-journeys.spec.ts:59`; `mock-api.ts:1020-1040`).
 
-7. **Optional: coarse external GPU/CPU signal via `/api/ps`.** Only if the product owner wants it (question 4).
+Slice 7 (coarse `/api/ps` GPU/CPU signal for an external server) was declined on 2026-11-10 and is not part of this plan.
 
-Slices 1–4 can be merged on green checks. Slices 5–6 need the product owner's review of the screen.
+Slices 1–4 can be merged on green checks. Slices 5–6 need the product owner's review of the screen. The wording and layout of those two screens are chosen at implementation time from the suggestions in section 4; the screens are still shown to the product owner.
 
 ## 6. Risks and open questions
 
@@ -269,14 +273,14 @@ Slices 1–4 can be merged on green checks. Slices 5–6 need the product owner'
 - **The existing 30 s corrective-restart deadline** can still cut off a running call (`server_coordinator.py:430-435`). The override does not reuse it. Fixing it is out of scope.
 - **The dead-code gate forbids test-only methods,** so slices 3 and 4 cannot shrink further.
 
-**Questions for the product owner**
-1. When the chosen adapter is missing: fall back to Auto (recommended), use CPU, or refuse to start?
-2. CPU choice with an external Ollama: send `num_gpu=0` per request? That is not reconfiguring the server, and it is already sent on machines with no GPU (`ollama_transport.py:172-173`). Or leave external untouched?
-3. Offer adapters classified `unknown` as choices, show them disabled, or hide them?
-4. Add the coarse `/api/ps` GPU/CPU signal for external servers (slice 7)?
-5. Approve the new `ollama_device_preference` table under `ai_providers` (an addition to D17).
-6. Confirm a switch never cancels a running generation; it waits instead.
-7. The language and screen choices listed in section 4.
+**Decisions by the product owner (2026-11-10)**
+1. When the chosen adapter is missing: fall back to Auto, keep the stored choice, and report `adapter_missing`. The choice applies again when the adapter returns.
+2. CPU choice with an external Ollama: still send `num_gpu=0` on each request. That does not reconfigure the server. CPU execution mode already does this in `_chat_options` (`ollama_transport.py:187-188`; the old citation `:172-173` was wrong).
+3. Adapters classified `unknown` are listed but cannot be chosen.
+4. The coarse `/api/ps` signal for external servers is not in scope. Slice 7 is removed.
+5. The new `ollama_device_preference` table under `ai_providers` is approved (an addition to D17).
+6. A device switch never cancels a running generation. It waits.
+7. Wording and layout of the two screen slices are decided at implementation time from the suggestions in section 4. The screens are still shown to the product owner.
 
 ### Critical Files for Implementation
 - C:\software-dev\cert-prep\packages\cert-prep-ollama\src\cert_prep_ollama\server_coordinator.py
