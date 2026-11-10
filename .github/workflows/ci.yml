@@ -87,11 +87,9 @@ jobs:
           cert-prep-backend
           --parallel=3
 
-      # Every typecheck target @nx/js/typescript infers. cert-prep-e2e stays
-      # out until its mocks match the generated API types
-      # (gx-capture/capture-workbench#194).
+      # Every typecheck target @nx/js/typescript infers, including cert-prep-e2e.
       - name: Type-check projects
-        run: pnpm nx run-many -t typecheck --exclude=cert-prep-e2e --parallel=3
+        run: pnpm nx run-many -t typecheck --parallel=3
 
       # knip (TypeScript), vulture (Python) and a Rust allow(dead_code) freeze.
       # --ci also fails when a baseline entry is gone, so the baseline only shrinks.

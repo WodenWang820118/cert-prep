@@ -413,11 +413,6 @@ export async function installMockCertPrepApi(
         effective_model: 'qwen3.5:4b',
         selection_reason: 'Deterministic browser-test provider.',
         fallback_reason: null,
-        hardware_compatible: false,
-        requires_terms_acceptance: false,
-        terms_accepted: false,
-        terms_version: null,
-        terms_url: null,
         runtime_requirement_kind: null,
         model_requirement_kind: null,
       } satisfies LLMProviderSelectionRead;
@@ -653,6 +648,7 @@ export async function installMockCertPrepApi(
           draft,
         });
         projectState.attempts.push(attempt);
+        session.attempts.push(attempt);
         if (!attempt.is_correct) {
           projectState.wrongAnswers.push(createWrongAnswer(attempt, draft));
         } else {
@@ -1177,6 +1173,8 @@ function createPracticeSession(args: {
     status: 'active',
     created_at: '2026-06-09T00:00:00Z',
     completed_at: null,
+    abandoned_at: null,
+    attempts: [],
   };
 }
 
@@ -1415,9 +1413,9 @@ function isCompletePlayableDraft(
   );
 }
 
-function hasSourceExcerpt(
-  draft: QuestionDraftRead,
-): draft is QuestionDraftRead & { readonly source_excerpt: string } {
+function hasSourceExcerpt<T extends QuestionDraftRead>(
+  draft: T,
+): draft is T & { readonly source_excerpt: string } {
   return (
     draft.source_excerpt !== null && draft.source_excerpt.trim().length > 0
   );
