@@ -8,7 +8,13 @@ published Capture Runtime Windows x64 executable, manifest and
 `CaptureDocument` schema `2` pinned in `tools/capture-runtime-version.json`.
 Packaging stages the versioned Capture release explicitly
 (`cert-prep-desktop:install-capture-runtime`) before resource preparation; there
-is no sibling checkout, workspace alias or development-path fallback. Cert Prep
+is no sibling checkout, workspace alias or development-path fallback. The
+staging holds those three assets and nothing else, and the executable is checked
+against the size and SHA-256 in `capture-runtime-manifest.json`. Releases up to
+0.9.0 also publish the executable's `.sha256` sidecar, later ones do not
+(capture-workbench#278): it is optional, and when present it is staged and must
+agree with the manifest. The candidate gate treats the runtime `.sha256`
+sidecars of a release candidate the same way. Cert Prep
 owns no OCR or speech provider, engine payload or fallback installer: Capture
 Runtime installs its engines from its own release catalog.
 

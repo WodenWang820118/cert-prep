@@ -20,6 +20,8 @@ import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 import {
+  assertChecksumSidecar,
+  CAPTURE_RUNTIME_CHECKSUM_FILE,
   CAPTURE_RUNTIME_FILE,
   CAPTURE_RUNTIME_RELEASE_ASSETS,
   CAPTURE_RUNTIME_VERSION,
@@ -165,18 +167,38 @@ export interface ValidatedRuntimeCandidateContent {
 export interface ValidatedRuntimeCandidateManifest extends ValidatedRuntimeCandidateContent { readonly sourceCommit: string; }
 
 const LOCAL_RUNTIME_VERSION = CAPTURE_RUNTIME_VERSION;
-const LOCAL_RUNTIME_ARTIFACT_COUNT = 20;
-
-function localRuntimeInventoryPaths(): readonly string[] {
+/**
+ * Artifacts every local runtime candidate carries. The runtime `.sha256`
+ * sidecars are optional: candidates up to 0.9.0 carry them, later ones do not
+ * (capture-workbench#278) because the runtime manifest, the engine catalog and
+ * the candidate manifest already record every digest.
+ */
+function localRuntimeRequiredPaths(): readonly string[] {
   return [
-    ...CAPTURE_RUNTIME_RELEASE_ASSETS.map((name) => `runtime/${name}`), 'runtime/capture-engine-catalog.json', 'runtime/capture-engine-catalog.json.sha256',
-    `runtime/capture-engine-ocr-${LOCAL_RUNTIME_VERSION}-windows-x64-files.json`, `runtime/capture-engine-ocr-${LOCAL_RUNTIME_VERSION}-windows-x64-files.json.sha256`,
-    `runtime/capture-engine-ocr-${LOCAL_RUNTIME_VERSION}-windows-x64.zip`, `runtime/capture-engine-ocr-${LOCAL_RUNTIME_VERSION}-windows-x64.zip.sha256`,
-    `runtime/capture-engine-whisper-${LOCAL_RUNTIME_VERSION}-windows-x64-files.json`, `runtime/capture-engine-whisper-${LOCAL_RUNTIME_VERSION}-windows-x64-files.json.sha256`,
-    `runtime/capture-engine-whisper-${LOCAL_RUNTIME_VERSION}-windows-x64.zip`, `runtime/capture-engine-whisper-${LOCAL_RUNTIME_VERSION}-windows-x64.zip.sha256`,
+    ...CAPTURE_RUNTIME_RELEASE_ASSETS.map((name) => `runtime/${name}`), 'runtime/capture-engine-catalog.json',
+    `runtime/capture-engine-ocr-${LOCAL_RUNTIME_VERSION}-windows-x64-files.json`, `runtime/capture-engine-ocr-${LOCAL_RUNTIME_VERSION}-windows-x64.zip`,
+    `runtime/capture-engine-whisper-${LOCAL_RUNTIME_VERSION}-windows-x64-files.json`, `runtime/capture-engine-whisper-${LOCAL_RUNTIME_VERSION}-windows-x64.zip`,
     `python/capture_runtime_client-${LOCAL_RUNTIME_VERSION}-py3-none-any.whl`, `python/capture_runtime_client-${LOCAL_RUNTIME_VERSION}.tar.gz`,
     `crate/capture-sidecar-launcher-${LOCAL_RUNTIME_VERSION}.crate`, 'contracts/contract-set.json', 'contracts/contract-set.sha256', 'contracts/contract-snapshot.json',
-  ].sort((left, right) => left.localeCompare(right));
+  ];
+}
+
+/** Optional `<asset>.sha256` sidecar path mapped to the runtime asset it covers. */
+function localRuntimeOptionalSidecars(): ReadonlyMap<string, string> {
+  const covered = [
+    `runtime/${CAPTURE_RUNTIME_FILE}`, 'runtime/capture-engine-catalog.json',
+    `runtime/capture-engine-ocr-${LOCAL_RUNTIME_VERSION}-windows-x64-files.json`, `runtime/capture-engine-ocr-${LOCAL_RUNTIME_VERSION}-windows-x64.zip`,
+    `runtime/capture-engine-whisper-${LOCAL_RUNTIME_VERSION}-windows-x64-files.json`, `runtime/capture-engine-whisper-${LOCAL_RUNTIME_VERSION}-windows-x64.zip`,
+  ];
+  return new Map(covered.map((path) => [`${path}.sha256`, path]));
+}
+
+/** The declared inventory must be every required path plus any optional sidecars, in canonical order. */
+function assertLocalRuntimeInventoryPaths(declared: readonly unknown[]): void {
+  const required = localRuntimeRequiredPaths(), optional = localRuntimeOptionalSidecars();
+  const present = new Set(declared);
+  const canonical = [...required, ...[...optional.keys()].filter((path) => present.has(path))].sort((left, right) => left.localeCompare(right));
+  if (declared.length !== canonical.length || canonical.some((path, index) => declared[index] !== path)) throw new Error('Local runtime candidate must contain the canonical runtime candidate inventory.');
 }
 
 function parseJsonBytes(bytes: Uint8Array, label: string): Record<string, unknown> {
@@ -197,8 +219,8 @@ async function assertLocalSubtree(root: string, directoryName: string): Promise<
 }
 
 async function readLocalCandidateArtifacts(root: string, entries: readonly Record<string, unknown>[]): Promise<Map<string, Buffer>> {
-  const expected = localRuntimeInventoryPaths();
-  if (entries.length !== LOCAL_RUNTIME_ARTIFACT_COUNT || expected.some((path, index) => entries[index]?.path !== path) || new Set(entries.map((entry) => entry.path)).size !== entries.length) throw new Error('Local runtime candidate must contain the canonical 20-artifact inventory.');
+  assertLocalRuntimeInventoryPaths(entries.map((entry) => entry.path));
+  const expected = entries.map((entry) => entry.path as string);
   for (const directoryName of ['runtime', 'contracts', 'python', 'crate']) { const actual = (await readdir(join(root, directoryName), { withFileTypes: true })).filter((entry) => entry.isFile()).map((entry) => `${directoryName}/${entry.name}`).sort(); if (JSON.stringify(actual) !== JSON.stringify(expected.filter((path) => path.startsWith(`${directoryName}/`)))) throw new Error(`Local runtime candidate ${directoryName} subtree is not canonical.`); }
   const observations = new Map<string, Buffer>();
   for (const entry of entries) {
@@ -212,6 +234,13 @@ async function readLocalCandidateArtifacts(root: string, entries: readonly Recor
     const digest = sha256(bytes);
     if (before.size !== after.size || bytes.length !== entry.bytes || digest !== entry.sha256) throw new Error(`Local runtime candidate artifact changed or mismatched: ${path}.`);
     observations.set(path, bytes);
+  }
+  // A sidecar that is present must name its artifact's digest (and, when it gives one, its file name).
+  for (const [sidecarPath, assetPath] of localRuntimeOptionalSidecars()) {
+    const sidecar = observations.get(sidecarPath);
+    if (!sidecar) continue;
+    const [digest, fileName, ...rest] = sidecar.toString('utf8').trim().split(/\s+/u);
+    if (digest !== sha256(requiredArtifact(observations, assetPath)) || (fileName !== undefined && fileName !== basename(assetPath)) || rest.length > 0) throw new Error(`Local runtime candidate checksum sidecar does not match its artifact: ${sidecarPath}.`);
   }
   return observations;
 }
@@ -1436,6 +1465,24 @@ export async function verifyCandidate(
   if (sha256(executableBytes) !== runtimeManifest.sha256) {
     throw new Error(
       'Candidate runtime executable digest does not match its manifest.',
+    );
+  }
+  // Candidates up to 0.9.0 also carry the executable's `.sha256` sidecar;
+  // later ones do not (capture-workbench#278). A sidecar that is present must
+  // agree with the manifest.
+  const checksumSidecar = await readFile(
+    join(runtime, CAPTURE_RUNTIME_CHECKSUM_FILE),
+    'utf8',
+  ).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return undefined;
+    throw error;
+  });
+  if (checksumSidecar !== undefined) {
+    assertChecksumSidecar(
+      checksumSidecar,
+      runtimeManifest.fileName,
+      runtimeManifest.sha256,
+      'Candidate runtime checksum sidecar does not match its manifest.',
     );
   }
   const schemaBytes = await readFile(

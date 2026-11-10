@@ -45,7 +45,7 @@ test('strict local runtime observation rejects an unsealed inventory', async () 
     const manifest = { schemaVersion: '1', candidateKind: 'runtime', sourceCommit: commit, releaseVersion: CAPTURE_RUNTIME_VERSION, releaseMode: 'model-enabled', artifacts: [] };
     const bytes = Buffer.from(JSON.stringify({ ...manifest, candidateId: sha256(Buffer.from(JSON.stringify(manifest))) }));
     await writeFile(join(root, 'candidate-manifest.json'), bytes);
-    await assert.rejects(() => validateRuntimeCandidateManifest({ candidate: root, candidateId: sha256(Buffer.from(JSON.stringify(manifest))), candidateManifestSha256: sha256(bytes), sourceCommit: commit }), /canonical 20-artifact inventory/u);
+    await assert.rejects(() => validateRuntimeCandidateManifest({ candidate: root, candidateId: sha256(Buffer.from(JSON.stringify(manifest))), candidateManifestSha256: sha256(bytes), sourceCommit: commit }), /canonical runtime candidate inventory/u);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -180,6 +180,205 @@ test('content-only runtime validation rejects one-byte artifact drift', async ()
     );
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('runtime validation accepts a candidate without runtime checksum sidecars', async () => {
+  const fixture = await createStrictRuntimeCandidateFixture({
+    checksumSidecars: false,
+  });
+  try {
+    assert.ok(
+      fixture.artifacts.every(
+        (artifact) =>
+          !(artifact.path.startsWith('runtime/') && artifact.path.endsWith('.sha256')),
+      ),
+    );
+    const authority = await writeStrictRuntimeCandidateManifest(fixture, commit);
+    const observation = await validateRuntimeCandidateManifest({
+      candidate: fixture.root,
+      ...authority,
+      sourceCommit: commit,
+    });
+    assert.equal(
+      observation.runtime.sha256,
+      sha256(await readFile(fixture.runtimePath)),
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('runtime validation rejects a checksum sidecar that disagrees with its artifact', async () => {
+  for (const path of [
+    `runtime/${CAPTURE_RUNTIME_FILE}.sha256`,
+    'runtime/capture-engine-catalog.json.sha256',
+  ]) {
+    const original = await createStrictRuntimeCandidateFixture();
+    try {
+      const fixture = await replaceStrictRuntimeArtifact(
+        original,
+        path,
+        Buffer.from(`${'0'.repeat(64)}  ${path.slice('runtime/'.length, -'.sha256'.length)}\n`),
+      );
+      const authority = await writeStrictRuntimeCandidateManifest(fixture, commit);
+      await assert.rejects(
+        validateRuntimeCandidateContent({ candidate: fixture.root, ...authority }),
+        /checksum sidecar does not match its artifact/u,
+        path,
+      );
+    } finally {
+      await rm(original.root, { recursive: true, force: true });
+    }
+  }
+});
+
+test('runtime validation rejects an executable that differs from the runtime manifest', async () => {
+  for (const checksumSidecars of [true, false]) {
+    const original = await createStrictRuntimeCandidateFixture({
+      checksumSidecars,
+    });
+    try {
+      // Same length, different bytes, declared in the inventory: only the
+      // runtime manifest digest (or a sidecar that is present) can catch it.
+      const fixture = await replaceStrictRuntimeArtifact(
+        original,
+        `runtime/${CAPTURE_RUNTIME_FILE}`,
+        Buffer.from('strict runtime executablX'),
+      );
+      const authority = await writeStrictRuntimeCandidateManifest(fixture, commit);
+      await assert.rejects(
+        validateRuntimeCandidateContent({ candidate: fixture.root, ...authority }),
+        checksumSidecars
+          ? /checksum sidecar does not match its artifact/u
+          : /executable identity does not match its manifest/u,
+        `checksumSidecars=${checksumSidecars}`,
+      );
+    } finally {
+      await rm(original.root, { recursive: true, force: true });
+    }
+  }
+});
+
+test('runtime validation rejects unknown or undeclared runtime files', async () => {
+  for (const checksumSidecars of [true, false]) {
+    const fixture = await createStrictRuntimeCandidateFixture({
+      checksumSidecars,
+    });
+    try {
+      const authority = await writeStrictRuntimeCandidateManifest(fixture, commit);
+      await writeFile(join(fixture.root, 'runtime', 'unknown.bin'), 'extra');
+      await assert.rejects(
+        validateRuntimeCandidateContent({ candidate: fixture.root, ...authority }),
+        /runtime subtree is not canonical/u,
+      );
+      const declared = await replaceStrictRuntimeArtifact(
+        fixture,
+        'runtime/unknown.bin',
+        Buffer.from('extra'),
+      );
+      const declaredAuthority = await writeStrictRuntimeCandidateManifest(
+        declared,
+        commit,
+      );
+      await assert.rejects(
+        validateRuntimeCandidateContent({
+          candidate: fixture.root,
+          ...declaredAuthority,
+        }),
+        /canonical runtime candidate inventory/u,
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  }
+  const withoutSidecars = await createStrictRuntimeCandidateFixture({
+    checksumSidecars: false,
+  });
+  try {
+    const authority = await writeStrictRuntimeCandidateManifest(
+      withoutSidecars,
+      commit,
+    );
+    await writeFile(
+      join(withoutSidecars.root, 'runtime', `${CAPTURE_RUNTIME_FILE}.sha256`),
+      `${sha256(await readFile(withoutSidecars.runtimePath))}  ${CAPTURE_RUNTIME_FILE}\n`,
+    );
+    await assert.rejects(
+      validateRuntimeCandidateContent({
+        candidate: withoutSidecars.root,
+        ...authority,
+      }),
+      /runtime subtree is not canonical/u,
+    );
+  } finally {
+    await rm(withoutSidecars.root, { recursive: true, force: true });
+  }
+});
+
+test('release identity accepts a candidate without the runtime checksum sidecar', async () => {
+  const fixture = await createCandidateFixture({
+    candidateVersion: LOCAL_PROBE_VERSION,
+  });
+  try {
+    await rm(join(fixture.root, 'runtime', `${CAPTURE_RUNTIME_FILE}.sha256`));
+    const result = await verifyCandidate({
+      ...fixture.input,
+      identityMode: 'release',
+      releaseVersion: LOCAL_PROBE_VERSION,
+    });
+    assert.equal(result.identity.mode, 'release');
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('release identity rejects a runtime checksum sidecar that disagrees with the manifest', async () => {
+  const fixture = await createCandidateFixture({
+    candidateVersion: LOCAL_PROBE_VERSION,
+  });
+  try {
+    await writeFile(
+      join(fixture.root, 'runtime', `${CAPTURE_RUNTIME_FILE}.sha256`),
+      `${'0'.repeat(64)}  ${CAPTURE_RUNTIME_FILE}\n`,
+    );
+    await assert.rejects(
+      verifyCandidate({
+        ...fixture.input,
+        identityMode: 'release',
+        releaseVersion: LOCAL_PROBE_VERSION,
+      }),
+      /checksum sidecar does not match its manifest/u,
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('release identity rejects runtime executable bytes that differ from the manifest', async () => {
+  for (const checksumSidecar of [true, false]) {
+    const fixture = await createCandidateFixture({
+      candidateVersion: LOCAL_PROBE_VERSION,
+    });
+    try {
+      if (!checksumSidecar) {
+        await rm(join(fixture.root, 'runtime', `${CAPTURE_RUNTIME_FILE}.sha256`));
+      }
+      const original = await readFile(fixture.corePath);
+      // Same length so the digest, not the byte count, has to catch it.
+      await writeFile(fixture.corePath, Buffer.from(original.map((byte) => byte ^ 1)));
+      await assert.rejects(
+        verifyCandidate({
+          ...fixture.input,
+          identityMode: 'release',
+          releaseVersion: LOCAL_PROBE_VERSION,
+        }),
+        /executable digest does not match its manifest/u,
+        `checksumSidecar=${checksumSidecar}`,
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
   }
 });
 
@@ -1486,7 +1685,10 @@ interface StrictRuntimeCandidateFixture {
   }[];
 }
 
-async function createStrictRuntimeCandidateFixture(): Promise<StrictRuntimeCandidateFixture> {
+/** `checksumSidecars: false` builds a post-0.9.0 candidate with no runtime `.sha256` sidecars. */
+async function createStrictRuntimeCandidateFixture(
+  options: { readonly checksumSidecars?: boolean } = {},
+): Promise<StrictRuntimeCandidateFixture> {
   const root = await mkdtemp(
     join(
       process.env.TEMP ?? process.env.TMP ?? '.',
@@ -1672,6 +1874,13 @@ async function createStrictRuntimeCandidateFixture(): Promise<StrictRuntimeCandi
     ['contracts/contract-set.sha256', Buffer.from(contractSetSha256)],
     ['contracts/contract-snapshot.json', Buffer.from('{"snapshot":"strict"}')],
   ]);
+  if (options.checksumSidecars === false) {
+    for (const path of [...artifactContents.keys()]) {
+      if (path.startsWith('runtime/') && path.endsWith('.sha256')) {
+        artifactContents.delete(path);
+      }
+    }
+  }
 
   for (const [path, bytes] of artifactContents) {
     await writeFile(join(root, path), bytes);
@@ -1685,6 +1894,20 @@ async function createStrictRuntimeCandidateFixture(): Promise<StrictRuntimeCandi
     .sort((left, right) => left.path.localeCompare(right.path));
 
   return { root, runtimePath, contractSetSha256, artifacts };
+}
+
+/** Writes `bytes` at `path` and declares it in the inventory, as a producer would. */
+async function replaceStrictRuntimeArtifact(
+  fixture: StrictRuntimeCandidateFixture,
+  path: string,
+  bytes: Buffer,
+): Promise<StrictRuntimeCandidateFixture> {
+  await writeFile(join(fixture.root, path), bytes);
+  const artifacts = [
+    ...fixture.artifacts.filter((artifact) => artifact.path !== path),
+    { path, bytes: bytes.length, sha256: sha256(bytes) },
+  ].sort((left, right) => left.path.localeCompare(right.path));
+  return { ...fixture, artifacts };
 }
 
 async function writeStrictRuntimeCandidateManifest(
