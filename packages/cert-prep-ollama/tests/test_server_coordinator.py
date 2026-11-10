@@ -579,12 +579,15 @@ class _ProcessFleet:
         return self.answering and any(proc.is_running for proc in self.procs)
 
     def coordinator(
-        self, clock: FakeClock | None = None, host: str = "http://127.0.0.1:11434"
+        self,
+        clock: FakeClock | None = None,
+        host: str = "http://127.0.0.1:11434",
+        inventory_provider=None,
     ) -> OllamaServerCoordinator:
         timing = {} if clock is None else {"clock": clock.time, "sleep": clock.sleep}
         return OllamaServerCoordinator(
             host=host,
-            inventory_provider=_sample_inventory,
+            inventory_provider=inventory_provider or _sample_inventory,
             executable_resolver=lambda: Path("C:\\Ollama\\ollama.exe"),
             process_factory=self.spawn,
             api_probe=self.probe,
@@ -745,3 +748,360 @@ def test_an_ipv6_loopback_host_starts_a_local_server() -> None:
     assert coordinator.ensure_running() is True
     assert len(fleet.procs) == 1
     assert coordinator.ownership == "owned"
+
+
+_CUDA_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "ollama_0_40_13" / "cuda-dgpu-hip-hidden.log"
+).read_text(encoding="utf-8")
+_PARTIAL_OFFLOAD_LOG = (
+    'msg="starting llama-server"\n'
+    "llama_prepare_model_devices: using device CUDA0 "
+    "(NVIDIA GeForce RTX 4060 Laptop GPU) (0000:63:00.0) - 7000 MiB free\n"
+    "load_tensors: offloaded 32/33 layers to GPU\n"
+)
+_CPU_VERIFIED_LOG = (
+    'msg="starting llama-server"\n'
+    "load_backend: loaded CPU backend from "
+    "C:\\Ollama\\lib\\ollama\\ggml-cpu-zen4.dll\n"
+    "load_tensors: offloaded 0/34 layers to GPU\n"
+)
+_SCHEDULER_ONLY_LOG = (
+    'msg="selecting single GPU for llama-server model" library=CUDA name=CUDA0 '
+    'description="NVIDIA GeForce RTX 4060 Laptop GPU" integrated=false id=0 filter_id=0\n'
+    'msg="starting llama-server"\n'
+)
+_UNCORRECTABLE_MISMATCH_LOG = (
+    'msg="inference compute" id=0 filter_id=0 library=ROCm name=ROCm0 '
+    'description="AMD Radeon(TM) 880M Graphics" libdirs=ollama,rocm_v7_1\n'
+    'msg="starting llama-server"\n'
+    "llama_prepare_model_devices: using device ROCm0 (AMD Radeon(TM) 880M Graphics) "
+    "(0000:65:00.0) - 1000 MiB free\n"
+    "load_tensors: offloaded 34/34 layers to GPU\n"
+)
+
+
+def _cpu_inventory() -> MachineInventorySnapshot:
+    sample = _sample_inventory()
+    return MachineInventorySnapshot(
+        platform=sample.platform,
+        platform_version=sample.platform_version,
+        architecture=sample.architecture,
+        cpu=sample.cpu,
+        ram=sample.ram,
+        storage=sample.storage,
+        accelerators=(),
+    )
+
+
+def _unknown_gpu_inventory() -> MachineInventorySnapshot:
+    sample = _sample_inventory()
+    unknown = MachineAcceleratorSnapshot(
+        kind="gpu",
+        name="Unrecognized Graphics",
+        classification="unknown",
+    )
+    return MachineInventorySnapshot(
+        platform=sample.platform,
+        platform_version=sample.platform_version,
+        architecture=sample.architecture,
+        cpu=sample.cpu,
+        ram=sample.ram,
+        storage=sample.storage,
+        accelerators=(unknown,),
+    )
+
+
+def _assert_requested_matches_policy(status, coordinator: OllamaServerCoordinator) -> None:
+    policy = coordinator.policy
+    assert policy is not None
+    assert status.requested is not None
+    assert status.requested.target == policy.target
+    assert status.requested.backend == policy.backend
+    assert status.requested.adapter_name == policy.adapter_name
+
+
+def test_device_status_when_ollama_is_not_running() -> None:
+    coordinator = OllamaServerCoordinator(host="http://127.0.0.1:11434")
+
+    status = coordinator.device_status()
+
+    assert status.server == "not_running"
+    assert status.requested is None
+    assert status.verification == "not_observable"
+    assert status.observed is None
+    assert status.corrective_restarts == 0
+
+
+def test_device_status_when_ollama_is_not_installed() -> None:
+    coordinator = OllamaServerCoordinator(
+        host="http://127.0.0.1:11434",
+        executable_resolver=lambda: None,
+        api_probe=lambda _host: False,
+    )
+
+    assert coordinator.ensure_running() is False
+    status = coordinator.device_status()
+
+    assert status.server == "not_running"
+    assert status.requested is None
+    assert status.verification == "not_observable"
+    assert status.observed is None
+    assert status.corrective_restarts == 0
+
+
+def test_device_status_before_the_first_load_is_pending() -> None:
+    fleet = _ProcessFleet("")
+    coordinator = fleet.coordinator()
+    assert coordinator.ensure_running() is True
+
+    status = coordinator.device_status()
+
+    assert status.server == "owned"
+    assert status.verification == "pending"
+    assert status.observed is None
+    assert status.corrective_restarts == 0
+    _assert_requested_matches_policy(status, coordinator)
+    assert status.requested.target == "dedicated_gpu"
+    assert status.requested.backend == "cuda"
+    coordinator.note_api_answered()
+    assert coordinator.ownership == "owned"
+    assert coordinator.device_status().server == "owned"
+
+
+def test_device_status_with_missing_logs_stays_pending() -> None:
+    fleet = _ProcessFleet("")
+    coordinator = fleet.coordinator()
+    assert coordinator.ensure_running() is True
+    assert fleet.procs[0].wait_drained() is True
+
+    execution = coordinator.after_model_load()
+
+    assert execution is not None
+    assert execution.state == "unknown"
+    status = coordinator.device_status()
+    assert status.server == "owned"
+    assert status.verification == "pending"
+    assert status.observed is None
+    assert status.corrective_restarts == 0
+    _assert_requested_matches_policy(status, coordinator)
+
+
+def test_device_status_with_only_a_scheduler_choice_is_pending() -> None:
+    fleet = _ProcessFleet(_SCHEDULER_ONLY_LOG)
+    coordinator = fleet.coordinator()
+    assert coordinator.ensure_running() is True
+    assert fleet.procs[0].wait_drained() is True
+
+    execution = coordinator.after_model_load()
+
+    assert execution is not None
+    assert execution.state == "selected_unverified"
+    status = coordinator.device_status()
+    assert status.verification == "pending"
+    assert status.observed is None
+    assert status.corrective_restarts == 0
+    assert len(fleet.procs) == 1
+    _assert_requested_matches_policy(status, coordinator)
+
+
+def test_device_status_reports_a_verified_partial_offload() -> None:
+    fleet = _ProcessFleet(_PARTIAL_OFFLOAD_LOG)
+    coordinator = fleet.coordinator()
+    assert coordinator.ensure_running() is True
+    assert fleet.procs[0].wait_drained() is True
+
+    assert coordinator.after_model_load().state == "verified"
+    status = coordinator.device_status()
+
+    assert status.server == "owned"
+    assert status.verification == "verified"
+    assert status.corrective_restarts == 0
+    assert status.observed is not None
+    assert status.observed.backend == "cuda"
+    assert status.observed.adapter_name == "NVIDIA GeForce RTX 4060 Laptop GPU"
+    assert status.observed.offloaded_layers == 32
+    assert status.observed.total_layers == 33
+    _assert_requested_matches_policy(status, coordinator)
+
+
+def test_device_status_after_a_restart_is_pending_until_the_new_server_loads() -> None:
+    fleet = _ProcessFleet(_ROCM_MISMATCH_LOG, "")
+    coordinator = fleet.coordinator()
+    assert coordinator.ensure_running() is True
+    assert fleet.procs[0].wait_drained() is True
+
+    execution = coordinator.after_model_load()
+
+    assert execution is not None
+    assert execution.state == "mismatch"
+    assert execution.restarts == 0
+    assert len(fleet.procs) == 2
+    status = coordinator.device_status()
+    assert status.server == "owned"
+    assert status.verification == "pending"
+    assert status.observed is None
+    assert status.corrective_restarts == 1
+    _assert_requested_matches_policy(status, coordinator)
+    assert status.requested.backend == "cuda"
+
+
+def test_device_status_reports_the_second_mismatch_without_another_restart() -> None:
+    fleet = _ProcessFleet(_ROCM_MISMATCH_LOG, _ROCM_MISMATCH_LOG)
+    coordinator = fleet.coordinator()
+    assert coordinator.ensure_running() is True
+    assert fleet.procs[0].wait_drained() is True
+    assert coordinator.after_model_load().state == "mismatch"
+    assert fleet.procs[1].wait_drained() is True
+
+    second = coordinator.after_model_load()
+
+    assert second is not None
+    assert second.state == "mismatch"
+    assert len(fleet.procs) == 2
+    status = coordinator.device_status()
+    assert status.server == "owned"
+    assert status.verification == "mismatch"
+    assert status.corrective_restarts == 1
+    assert status.observed is not None
+    assert status.observed.backend == "rocm"
+    assert status.observed.adapter_name == "AMD Radeon(TM) 880M Graphics"
+    assert status.observed.offloaded_layers == 34
+    assert status.observed.total_layers == 34
+    _assert_requested_matches_policy(status, coordinator)
+
+
+def test_device_status_keeps_a_mismatch_when_no_correction_can_be_derived() -> None:
+    fleet = _ProcessFleet(_UNCORRECTABLE_MISMATCH_LOG)
+    coordinator = fleet.coordinator()
+    assert coordinator.ensure_running() is True
+    assert fleet.procs[0].wait_drained() is True
+
+    execution = coordinator.after_model_load()
+
+    assert execution is not None
+    assert execution.state == "mismatch"
+    assert len(fleet.procs) == 1
+    status = coordinator.device_status()
+    assert status.verification == "mismatch"
+    assert status.corrective_restarts == 0
+    assert status.observed is not None
+    assert status.observed.backend == "rocm"
+    assert status.observed.adapter_name == "AMD Radeon(TM) 880M Graphics"
+    _assert_requested_matches_policy(status, coordinator)
+    assert status.requested.target == "dedicated_gpu"
+    assert status.requested.backend == "cuda"
+
+
+def test_device_status_reports_verified_cpu_with_no_offloaded_layers() -> None:
+    fleet = _ProcessFleet(_CPU_VERIFIED_LOG)
+    coordinator = fleet.coordinator(inventory_provider=_cpu_inventory)
+    assert coordinator.ensure_running() is True
+    assert fleet.procs[0].wait_drained() is True
+
+    assert coordinator.after_model_load().state == "verified"
+    status = coordinator.device_status()
+
+    assert status.server == "owned"
+    assert status.verification == "verified"
+    assert status.corrective_restarts == 0
+    assert status.requested is not None
+    assert status.requested.target == "cpu"
+    assert status.requested.backend == "cpu"
+    assert status.observed is not None
+    assert status.observed.backend == "cpu"
+    assert status.observed.offloaded_layers == 0
+    assert status.observed.total_layers == 34
+
+
+def test_device_status_reports_an_unmanaged_server_from_its_log() -> None:
+    fleet = _ProcessFleet(_CUDA_FIXTURE)
+    coordinator = fleet.coordinator(inventory_provider=_unknown_gpu_inventory)
+    assert coordinator.ensure_running() is True
+    assert fleet.procs[0].wait_drained() is True
+
+    execution = coordinator.after_model_load()
+
+    assert execution is not None
+    assert execution.state == "unknown"
+    assert len(fleet.procs) == 1
+    status = coordinator.device_status()
+    assert status.server == "owned"
+    assert status.verification == "unknown"
+    assert status.corrective_restarts == 0
+    assert status.requested is not None
+    assert status.requested.target == "unmanaged"
+    assert status.requested.backend is None
+    assert status.observed is not None
+    assert status.observed.backend == "cuda"
+    assert status.observed.adapter_name == "NVIDIA GeForce RTX 4060 Laptop GPU"
+    assert status.observed.offloaded_layers == 34
+    assert status.observed.total_layers == 34
+
+
+def test_device_status_verified_after_the_corrective_restart() -> None:
+    fleet = _ProcessFleet(_ROCM_MISMATCH_LOG, _CUDA_VERIFIED_LOG)
+    coordinator = fleet.coordinator()
+    assert coordinator.ensure_running() is True
+    assert fleet.procs[0].wait_drained() is True
+    assert coordinator.after_model_load().state == "mismatch"
+    assert fleet.procs[1].wait_drained() is True
+
+    assert coordinator.after_model_load().state == "verified"
+    status = coordinator.device_status()
+
+    assert status.verification == "verified"
+    assert status.corrective_restarts == 1
+    assert status.observed is not None
+    assert status.observed.backend == "cuda"
+    assert status.observed.adapter_name == "NVIDIA GeForce RTX 4060 Laptop GPU"
+    assert status.observed.offloaded_layers == 34
+    assert status.observed.total_layers == 34
+    _assert_requested_matches_policy(status, coordinator)
+
+
+def test_note_api_answered_marks_a_tray_server_external_without_spawning() -> None:
+    spawned = False
+
+    def factory(*_args, **_kwargs):
+        nonlocal spawned
+        spawned = True
+        return FakeProcess()
+
+    coordinator = OllamaServerCoordinator(
+        host="http://127.0.0.1:11434",
+        process_factory=factory,
+        api_probe=lambda _host: True,
+    )
+    assert coordinator.ownership == "none"
+
+    coordinator.note_api_answered()
+
+    assert spawned is False
+    assert coordinator.ownership == "external"
+    status = coordinator.device_status()
+    assert status.server == "external"
+    assert status.requested is None
+    assert status.verification == "not_observable"
+    assert status.observed is None
+    assert status.corrective_restarts == 0
+
+
+def test_device_status_reports_a_non_local_host_as_external() -> None:
+    coordinator = OllamaServerCoordinator(
+        host="http://192.168.1.100:11434",
+        process_factory=lambda *_args, **_kwargs: FakeProcess(),
+        api_probe=lambda _host: True,
+    )
+
+    assert coordinator.ensure_running() is True
+    assert coordinator.ownership == "none"
+    status = coordinator.device_status()
+    assert status.server == "external"
+    assert status.requested is None
+    assert status.verification == "not_observable"
+    assert status.observed is None
+    assert status.corrective_restarts == 0
+
+    coordinator.note_api_answered()
+    assert coordinator.ownership == "external"
+    assert coordinator.device_status().server == "external"

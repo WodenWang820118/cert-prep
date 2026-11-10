@@ -11,6 +11,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final, Protocol, TypeVar, runtime_checkable
 
+from cert_prep_backend.ai_providers.domain.device import OllamaDeviceStatus
 from cert_prep_contracts.llm import (
     GenerationAttribution,
     LLMExecutionMode,
@@ -62,6 +63,7 @@ class ProviderHealth:
     modelfile_sha256: str | None = None
     profile_reason: str | None = None
     profile_warnings: tuple[str, ...] = ()
+    device: OllamaDeviceStatus | None = None
 
 
 class LLMProvider(Protocol):

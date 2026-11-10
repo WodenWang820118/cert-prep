@@ -103,7 +103,7 @@
 | 中文               | 程式名稱                                   | 意思                                                           |
 | ------------------ | ------------------------------------------ | -------------------------------------------------------------- |
 | 供應者             | `LLMProvider`                              | 使用者設定的語言模型：哪個供應者、哪個模型、目前能不能用       |
-| 供應者健康狀態     | `ProviderHealth`                           | 供應者與模型是否可用、為什麼不能用、用哪個設定檔與執行模式     |
+| 供應者健康狀態     | `ProviderHealth`                           | 供應者與模型是否可用、為什麼不能用、用哪個設定檔與執行模式；Ollama 時包含實際載入的裝置 |
 | 供應者能力         | `provider_capability`                      | 供應者除了回報健康之外能做的事；延遲建立的供應者在查詢時才建立 |
 | JSON 對話          | `JsonChatProvider`、`JsonChat`             | 以 JSON 模式和設定的模型對話；一個工作階段內模型只檢查一次     |
 | 結構化 JSON        | `StructuredJsonGenerationProvider`         | 依 JSON schema 產生一個候選結果，原樣回傳不修正                |
@@ -124,6 +124,13 @@
 | 裝置政策           | `OllamaDevicePolicy`                       | 依機器盤點決定的 Ollama 執行裝置目標、後端與環境變數           |
 | 伺服器協調者       | `OllamaServerCoordinator`                 | 管理 Cert Prep 啟動與擁有的 Ollama 伺服器生命週期、環境與重啟 |
 | 裝置執行狀態       | `DeviceExecution`                          | 模型載入時日誌解析驗證出的實際裝置、後端、層數與驗證狀態       |
+| Ollama 伺服器歸屬  | `OllamaServerOwnership`                    | 健康檢查看到誰在跑 Ollama：owned、external、not_running        |
+| 裝置目標           | `DeviceTarget`                             | 政策要求的執行目標：dedicated_gpu、integrated_gpu、cpu、unmanaged |
+| 裝置後端           | `DeviceBackend`                            | cuda、rocm、vulkan、cpu；日誌裡的 CUDA0 等標籤會正規化成這四個 |
+| 裝置驗證           | `DeviceVerification`                       | pending、verified、mismatch、unknown、not_observable           |
+| 要求的裝置         | `RequestedDevice`                          | 健康檢查回報的目標、後端與顯示卡名稱                           |
+| 觀察到的裝置       | `ObservedDevice`                           | 伺服器日誌裡的後端、顯示卡名稱與卸載層數                       |
+| Ollama 裝置狀態    | `OllamaDeviceStatus`                       | 一次 Ollama 健康檢查的伺服器歸屬、要求、驗證、觀察與矯正重啟次數 |
 
 ## 執行環境
 

@@ -6,6 +6,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from cert_prep_backend.ai_providers.domain.device import (
+    DeviceBackend,
+    DeviceTarget,
+    DeviceVerification,
+    OllamaServerOwnership,
+)
 from cert_prep_contracts.llm import (
     LLMExecutionMode,
     LLMProviderName,
@@ -70,6 +76,39 @@ class MachineInventoryRead(BaseModel):
     schema_version: int = 1
 
 
+class RequestedDeviceRead(BaseModel):
+    """Policy target reported with health. The child environment stays internal."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    target: DeviceTarget
+    backend: DeviceBackend | None = None
+    adapter_name: str | None = None
+
+
+class ObservedDeviceRead(BaseModel):
+    """Device the server log showed. ``observed_at`` and the English detail are omitted."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    backend: DeviceBackend | None = None
+    adapter_name: str | None = None
+    offloaded_layers: int | None = None
+    total_layers: int | None = None
+
+
+class OllamaDeviceRead(BaseModel):
+    """Device section of ``GET /llm/health``. Null when the provider is not Ollama."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    server: OllamaServerOwnership
+    requested: RequestedDeviceRead | None = None
+    verification: DeviceVerification
+    observed: ObservedDeviceRead | None = None
+    corrective_restarts: int
+
+
 class LLMHealthRead(BaseModel):
     provider: str
     model: str
@@ -87,6 +126,7 @@ class LLMHealthRead(BaseModel):
     modelfile_sha256: str | None = None
     profile_reason: str | None = None
     profile_warnings: list[str] = Field(default_factory=list)
+    device: OllamaDeviceRead | None = None
 
 
 class LLMProviderSelectionRead(BaseModel):

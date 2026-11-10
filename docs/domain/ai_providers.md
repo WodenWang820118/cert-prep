@@ -13,7 +13,7 @@
 | 中文               | 程式名稱                                   | 意思                                                           |
 | ------------------ | ------------------------------------------ | -------------------------------------------------------------- |
 | 供應者             | `LLMProvider`                              | 使用者設定的語言模型：哪個供應者、哪個模型、目前能不能用       |
-| 供應者健康狀態     | `ProviderHealth`                           | 供應者與模型是否可用、為什麼不能用、用哪個設定檔與執行模式     |
+| 供應者健康狀態     | `ProviderHealth`                           | 供應者與模型是否可用、為什麼不能用、用哪個設定檔與執行模式；Ollama 時包含實際載入的裝置 |
 | 供應者能力         | `provider_capability`                      | 供應者除了回報健康之外能做的事；延遲建立的供應者在查詢時才建立 |
 | JSON 對話          | `JsonChatProvider`、`JsonChat`             | 以 JSON 模式和設定的模型對話；一個工作階段內模型只檢查一次     |
 | 結構化 JSON        | `StructuredJsonGenerationProvider`         | 依 JSON schema 產生一個候選結果，原樣回傳不修正                |
@@ -31,6 +31,13 @@
 | 模型設定檔         | `OllamaModelProfile`                       | 一個 Ollama 模型與它的參數、需要的記憶體與磁碟空間             |
 | 設定檔選擇         | `OllamaProfileSelection`                   | 為這台機器選中的設定檔、備用設定檔與原因                       |
 | 機器盤點           | `MachineInventory`、`MachineInventoryRead` | CPU、記憶體、儲存空間與加速器；用來選設定檔與執行模式          |
+| Ollama 伺服器歸屬  | `OllamaServerOwnership`                    | 健康檢查看到誰在跑 Ollama：owned、external、not_running        |
+| 裝置目標           | `DeviceTarget`                             | 政策要求的執行目標：dedicated_gpu、integrated_gpu、cpu、unmanaged |
+| 裝置後端           | `DeviceBackend`                            | cuda、rocm、vulkan、cpu；日誌裡的 CUDA0 等標籤會正規化成這四個 |
+| 裝置驗證           | `DeviceVerification`                       | pending、verified、mismatch、unknown、not_observable           |
+| 要求的裝置         | `RequestedDevice`                          | 健康檢查回報的目標、後端與顯示卡名稱                           |
+| 觀察到的裝置       | `ObservedDevice`                           | 伺服器日誌裡的後端、顯示卡名稱與卸載層數                       |
+| Ollama 裝置狀態    | `OllamaDeviceStatus`                       | 一次 Ollama 健康檢查的伺服器歸屬、要求、驗證、觀察與矯正重啟次數 |
 
 ## 聚合與不變條件
 
@@ -77,6 +84,7 @@ classDiagram
 ```
 
 - 供應者一定能回報健康狀態；其他能力都是選用的，以 `provider_capability` 查詢。延遲建立的供應者只轉發能力，查詢時才建立真正的供應者。
+- Ollama 的健康狀態帶著實際載入的裝置：伺服器歸屬、要求的目標、驗證結果，以及日誌裡看得到的後端與顯示卡。不是 Ollama 時裝置是空的。單調時鐘與英文驗證說明留在 Ollama 套件，不進 API。
 - 偏好是假供應者時才選假供應者；自動與 Ollama 都選 Ollama。選中 Ollama 時，它需要安裝 Ollama 與模型。
 - JSON 對話的工作階段：開始前檢查一次模型；裡面任何失敗，包括讀回覆時的失敗，都當作模型呼叫失敗（「Ollama unavailable for configured model …」）；只有成功的工作階段記入產生歸屬。
 - 只有供應者是 Ollama、而且設定檔啟用時才選設定檔；只有在選設定檔時才盤點機器。盤點結果保留 5 分鐘，要求重新盤點時才再量一次。
@@ -86,7 +94,7 @@ classDiagram
 
 | 用例             | 程式名稱                  | 說明                                                   |
 | ---------------- | ------------------------- | ------------------------------------------------------ |
-| 檢查供應者       | `check_provider_health`   | 供應者與模型能不能用；Ollama 沒在執行時會先嘗試啟動它  |
+| 檢查供應者       | `check_provider_health`   | 供應者與模型能不能用；Ollama 沒在執行時會先嘗試啟動它。Ollama 回報實際載入的裝置；不是 Ollama 時裝置是空的 |
 | 查看供應者選擇   | `show_provider_selection` | 偏好選中的供應者，以及實際使用的供應者與模型           |
 | 列出模型設定檔   | `list_model_profiles`     | 可以選的 Ollama 模型設定檔                             |
 | 查看設定檔選擇   | `show_profile_selection`  | 為這台機器選中的設定檔；不適用時改用設定的模型         |
@@ -131,4 +139,4 @@ sequenceDiagram
 - 設定檔目錄、選設定檔與執行模式的規則：`packages/cert-prep-ollama`（`cert_prep_ollama.profiles`）；機器盤點：`cert_prep_ollama.inventory`。
 - HTTP：`/llm/health`、`/llm/provider-selection`、`/llm/profiles`、`/llm/profile-selection`（DTO 在 `ai_providers/api/schemas.py`）。
 - 沒有自己的資料表。
-- API 的 `LLMExecutionMode`、`LLMProviderName`、`LLMProviderPreference` 列舉值對應到概念集的 `ai-providers.*`；`RuntimeRequirementKind` 對應到 `runtime-provisioning.*`。
+- API 的 `LLMExecutionMode`、`LLMProviderName`、`LLMProviderPreference`、`OllamaServerOwnership`、`DeviceTarget`、`DeviceBackend`、`DeviceVerification` 列舉值對應到概念集的 `ai-providers.*`；`RuntimeRequirementKind` 對應到 `runtime-provisioning.*`。

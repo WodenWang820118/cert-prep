@@ -74,4 +74,5 @@ def test_llm_health_uses_fake_provider_without_network(client: TestClient, auth_
         "modelfile_sha256": None,
         "profile_reason": None,
         "profile_warnings": [],
+        "device": None,
     }
