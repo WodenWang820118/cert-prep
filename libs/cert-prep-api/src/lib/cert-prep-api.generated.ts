@@ -35,6 +35,11 @@ export interface Components {
     ChunkUpdate: { "text": string };
     ContentProfile: string;
     DeviceBackend: string;
+    DeviceChoiceRead: { "adapter_key"?: string | null; "name": string; "classification": string; "backend"?: Components['schemas']['DeviceBackend'] | null; "selectable": boolean };
+    DevicePreferenceMode: string;
+    DevicePreferenceRead: { "mode": Components['schemas']['DevicePreferenceMode']; "adapter_key"?: string | null; "adapter_name"?: string | null; "status": Components['schemas']['DevicePreferenceStatus']; "choices": Components['schemas']['DeviceChoiceRead'][] };
+    DevicePreferenceStatus: string;
+    DevicePreferenceUpdate: { "mode": Components['schemas']['DevicePreferenceMode']; "adapter_key"?: string | null };
     DeviceTarget: string;
     DeviceVerification: string;
     DocumentList: { "items": Components['schemas']['DocumentRead'][] };
@@ -159,6 +164,11 @@ export type ChunkRead = Components['schemas']['ChunkRead'];
 export type ChunkUpdate = Components['schemas']['ChunkUpdate'];
 export type ContentProfile = Components['schemas']['ContentProfile'];
 export type DeviceBackend = Components['schemas']['DeviceBackend'];
+export type DeviceChoiceRead = Components['schemas']['DeviceChoiceRead'];
+export type DevicePreferenceMode = Components['schemas']['DevicePreferenceMode'];
+export type DevicePreferenceRead = Components['schemas']['DevicePreferenceRead'];
+export type DevicePreferenceStatus = Components['schemas']['DevicePreferenceStatus'];
+export type DevicePreferenceUpdate = Components['schemas']['DevicePreferenceUpdate'];
 export type DeviceTarget = Components['schemas']['DeviceTarget'];
 export type DeviceVerification = Components['schemas']['DeviceVerification'];
 export type DocumentList = Components['schemas']['DocumentList'];
@@ -252,7 +262,7 @@ export type WrongAnswerSummaryRead = Components['schemas']['WrongAnswerSummaryRe
 export type capture_runtime_client__private__generated_models__RuntimeInstallationStatus = Components['schemas']['capture_runtime_client__private__generated_models__RuntimeInstallationStatus'];
 export type cert_prep_contracts__runtime__RuntimeInstallationStatus = Components['schemas']['cert_prep_contracts__runtime__RuntimeInstallationStatus'];
 
-export type CertPrepHttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST';
+export type CertPrepHttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT';
 
 export interface CertPrepRequestOptions {
   headers?: Readonly<Record<string, string>>;
@@ -315,6 +325,8 @@ export interface CertPrepGeneratedClient {
   llmProviderSelection(options?: CertPrepRequestOptions): Observable<Components['schemas']['LLMProviderSelectionRead']>;
   llmProfiles(options?: CertPrepRequestOptions): Observable<Components['schemas']['OllamaProfilesRead']>;
   llmProfileSelection(options?: CertPrepRequestOptions): Observable<Components['schemas']['OllamaProfileSelectionRead']>;
+  llmDevicePreference(options?: CertPrepRequestOptions): Observable<Components['schemas']['DevicePreferenceRead']>;
+  putLlmDevicePreference(body: Components['schemas']['DevicePreferenceUpdate'], options?: CertPrepRequestOptions): Observable<Components['schemas']['DevicePreferenceRead']>;
   startModelDownload(options?: CertPrepRequestOptions): Observable<Components['schemas']['ModelDownloadRead']>;
   getModelDownload(jobId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ModelDownloadRead']>;
   cancelModelDownload(jobId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ModelDownloadRead']>;
@@ -393,6 +405,8 @@ export interface CertPrepRequestFactory {
   llmProviderSelection(options?: CertPrepRequestOptions): CertPrepHttpRequest;
   llmProfiles(options?: CertPrepRequestOptions): CertPrepHttpRequest;
   llmProfileSelection(options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  llmDevicePreference(options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  putLlmDevicePreference(body: Components['schemas']['DevicePreferenceUpdate'], options?: CertPrepRequestOptions): CertPrepHttpRequest;
   startModelDownload(options?: CertPrepRequestOptions): CertPrepHttpRequest;
   getModelDownload(jobId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
   cancelModelDownload(jobId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
@@ -555,6 +569,12 @@ export function createCertPrepRequestFactory(): CertPrepRequestFactory {
     },
     llmProfileSelection: (options?: CertPrepRequestOptions) => {
       return { method: 'GET' as const, path: "/llm/profile-selection", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    },
+    llmDevicePreference: (options?: CertPrepRequestOptions) => {
+      return { method: 'GET' as const, path: "/llm/device-preference", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    },
+    putLlmDevicePreference: (body: Components['schemas']['DevicePreferenceUpdate'], options?: CertPrepRequestOptions) => {
+      return { method: 'PUT' as const, path: "/llm/device-preference", body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
     startModelDownload: (options?: CertPrepRequestOptions) => {
       return { method: 'POST' as const, path: "/llm/model-downloads", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
@@ -747,6 +767,10 @@ export function createCertPrepGeneratedClient(
       transport.request<Components['schemas']['OllamaProfilesRead']>(requests.llmProfiles(options)),
     llmProfileSelection: (options?: CertPrepRequestOptions) =>
       transport.request<Components['schemas']['OllamaProfileSelectionRead']>(requests.llmProfileSelection(options)),
+    llmDevicePreference: (options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['DevicePreferenceRead']>(requests.llmDevicePreference(options)),
+    putLlmDevicePreference: (body: Components['schemas']['DevicePreferenceUpdate'], options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['DevicePreferenceRead']>(requests.putLlmDevicePreference(body, options)),
     startModelDownload: (options?: CertPrepRequestOptions) =>
       transport.request<Components['schemas']['ModelDownloadRead']>(requests.startModelDownload(options)),
     getModelDownload: (jobId: string, options?: CertPrepRequestOptions) =>

@@ -902,3 +902,86 @@ def _create_v19_duplicate_operation_fixture(database_path: Path) -> None:
 def _columns(connection, table_name: str) -> dict[str, str | None]:
     rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
     return {row["name"]: row["dflt_value"] for row in rows}
+
+
+def test_migration_29_stores_one_device_preference_row(tmp_path: Path) -> None:
+    db = Database(Settings(data_dir=tmp_path, api_token="test-token"))
+    db.migrate()
+
+    with db.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM ollama_device_preference").fetchone()[0] == 0
+
+    with pytest.raises(sqlite3.IntegrityError):
+        with db.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO ollama_device_preference(id, mode, updated_at)
+                VALUES (1, 'gpu', '2026-11-11T00:00:00+00:00')
+                """
+            )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        with db.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO ollama_device_preference(id, mode, updated_at)
+                VALUES (2, 'auto', '2026-11-11T00:00:00+00:00')
+                """
+            )
+
+    with db.connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO ollama_device_preference(id, mode, updated_at)
+            VALUES (1, 'cpu', '2026-11-11T00:00:00+00:00')
+            """
+        )
+        stored = connection.execute(
+            "SELECT mode FROM ollama_device_preference WHERE id = 1"
+        ).fetchone()
+    assert stored["mode"] == "cpu"
+
+
+def test_migration_29_upgrades_a_version_28_database(tmp_path: Path) -> None:
+    settings = Settings(data_dir=tmp_path, api_token="test-token")
+    settings.database_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(settings.database_path) as connection:
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute(
+            """
+            CREATE TABLE schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at TEXT NOT NULL
+            )
+            """
+        )
+        for version, sql in MIGRATIONS:
+            if version > 28:
+                continue
+            connection.executescript(sql)
+            connection.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                (version, "2026-01-01T00:00:00+00:00"),
+            )
+        connection.execute(
+            """
+            INSERT INTO projects(id, name, description, created_at, updated_at)
+            VALUES ('project-kept', 'Kept', '', '2026-01-01', '2026-01-01')
+            """
+        )
+        connection.commit()
+
+    Database(settings).migrate()
+
+    with Database(settings).connect() as connection:
+        count = connection.execute("SELECT COUNT(*) FROM ollama_device_preference").fetchone()[0]
+        project = connection.execute(
+            "SELECT name FROM projects WHERE id = 'project-kept'"
+        ).fetchone()
+        versions = [
+            row[0]
+            for row in connection.execute("SELECT version FROM schema_migrations ORDER BY version")
+        ]
+    assert count == 0
+    assert project["name"] == "Kept"
+    assert versions == [version for version, _sql in MIGRATIONS]

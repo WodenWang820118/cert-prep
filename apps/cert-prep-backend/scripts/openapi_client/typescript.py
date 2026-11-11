@@ -4,7 +4,7 @@ import json
 from typing import Any
 
 
-HTTP_METHODS = {"delete", "get", "patch", "post"}
+HTTP_METHODS = {"delete", "get", "patch", "post", "put"}
 CLOSED_ENUM_SCHEMAS = frozenset(
     {
         "DocumentOperationPhase",
@@ -39,7 +39,7 @@ def render_typescript(openapi: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "export type CertPrepHttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST';",
+            "export type CertPrepHttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT';",
             "",
             "export interface CertPrepRequestOptions {",
             "  headers?: Readonly<Record<string, string>>;",

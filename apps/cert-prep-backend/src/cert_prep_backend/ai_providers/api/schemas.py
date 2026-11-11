@@ -12,6 +12,10 @@ from cert_prep_backend.ai_providers.domain.device import (
     DeviceVerification,
     OllamaServerOwnership,
 )
+from cert_prep_backend.ai_providers.domain.preference import (
+    DevicePreferenceMode,
+    DevicePreferenceStatus,
+)
 from cert_prep_contracts.llm import (
     LLMExecutionMode,
     LLMProviderName,
@@ -178,3 +182,34 @@ class OllamaProfileSelectionRead(BaseModel):
     modelfile_sha256: str | None = None
     effective_model: str
     base_model: str | None = None
+
+
+class DeviceChoiceRead(BaseModel):
+    """One adapter listed for the device choice. Unknown and duplicate keys are not selectable."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    adapter_key: str | None = None
+    name: str
+    classification: Literal["integrated", "dedicated", "software", "unknown"]
+    backend: DeviceBackend | None = None
+    selectable: bool
+
+
+class DevicePreferenceRead(BaseModel):
+    """The stored device choice and the adapters this machine currently lists."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    mode: DevicePreferenceMode
+    adapter_key: str | None = None
+    adapter_name: str | None = None
+    status: DevicePreferenceStatus
+    choices: list[DeviceChoiceRead]
+
+
+class DevicePreferenceUpdate(BaseModel):
+    """A new device choice. ``adapter_key`` is required only when mode is adapter."""
+
+    mode: DevicePreferenceMode
+    adapter_key: str | None = None

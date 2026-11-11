@@ -70,11 +70,20 @@ def document_operation_repository(db: Database) -> SqliteDocumentOperationReposi
     )
 
 
-def chunk_translator(db: Database, settings: Settings) -> ChunkTranslator:
-    """Supply AI Providers text translation to Source Library; one client per request."""
+def chunk_translator(
+    db: Database, settings: Settings, server: object | None = None
+) -> ChunkTranslator:
+    """Supply AI Providers text translation to Source Library; one client per request.
+
+    ``server`` is the owned Ollama coordinator. Translation then counts as in
+    flight and follows a CPU device choice. Callers that have no coordinator
+    keep the previous client.
+    """
 
     return DocumentChunkTranslator(
         db,
-        translator=lambda: OllamaTraditionalChineseTranslator(settings),
-        batch_translator=lambda: OllamaTraditionalChineseTranslator(settings, keep_alive="5m"),
+        translator=lambda: OllamaTraditionalChineseTranslator(settings, server=server),
+        batch_translator=lambda: OllamaTraditionalChineseTranslator(
+            settings, keep_alive="5m", server=server
+        ),
     )

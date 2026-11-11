@@ -151,6 +151,24 @@ def _schema(*, request_required: bool = True) -> dict:
                     },
                 }
             },
+            "/llm/device-preference": {
+                "get": {
+                    "operationId": "llm_device_preference_llm_device_preference_get",
+                    "responses": {"204": {"description": "No content"}},
+                },
+                "put": {
+                    "operationId": "put_llm_device_preference_llm_device_preference_put",
+                    "requestBody": {
+                        "required": request_required,
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/Payload"}
+                            }
+                        },
+                    },
+                    "responses": {"204": {"description": "No content"}},
+                },
+            },
         },
     }
 
@@ -241,6 +259,24 @@ def test_generated_client_preserves_required_request_body() -> None:
     output = render_typescript(_schema(request_required=True))
 
     assert "runExample(exampleId: string, body: Components['schemas']['Payload']" in output
+
+
+def test_generated_client_preserves_put_body_and_distinct_operation_names() -> None:
+    output = render_typescript(_schema())
+
+    assert "'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT'" in output
+    assert "llmDevicePreference(options?: CertPrepRequestOptions): Observable<void>" in output
+    assert (
+        "putLlmDevicePreference(body: Components['schemas']['Payload'], "
+        "options?: CertPrepRequestOptions): Observable<void>" in output
+    )
+    assert "method: 'PUT' as const, path: \"/llm/device-preference\", body," in output
+    assert "transport.request<void>(requests.putLlmDevicePreference(body, options))" in output
+    assert (
+        "putLlmDevicePreference(body?: Components['schemas']['Payload'], "
+        "options?: CertPrepRequestOptions): Observable<void>"
+        in render_typescript(_schema(request_required=False))
+    )
 
 
 def test_generated_client_requests_binary_responses_as_blobs() -> None:

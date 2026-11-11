@@ -42,6 +42,7 @@ def _mock_coordinator() -> OllamaServerCoordinator:
     coordinator.admission.return_value.__enter__ = MagicMock(return_value=None)
     coordinator.admission.return_value.__exit__ = MagicMock(return_value=None)
     coordinator.after_model_load.return_value = None
+    coordinator.cpu_request_override.return_value = None
     coordinator.ownership = "none"
     coordinator.device_status.return_value = DeviceStatus(
         server="not_running",

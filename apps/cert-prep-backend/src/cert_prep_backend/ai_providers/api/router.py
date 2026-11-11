@@ -3,17 +3,25 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, status
 
 from cert_prep_backend.ai_providers.api.schemas import (
+    DevicePreferenceRead,
+    DevicePreferenceUpdate,
     LLMHealthRead,
     LLMProviderSelectionRead,
     OllamaProfileSelectionRead,
     OllamaProfilesRead,
 )
 from cert_prep_backend.ai_providers.application import use_cases as ai_providers
-from cert_prep_backend.ai_providers.application.ports import MachineInventory
+from cert_prep_backend.ai_providers.application.ports import (
+    DevicePreferenceRepository,
+    MachineInventory,
+    OllamaDeviceServer,
+)
+from cert_prep_backend.ai_providers.domain.preference import DevicePreferenceRejected
 from cert_prep_backend.ai_providers.domain.provider import LLMProvider
+from cert_prep_backend.api.errors import api_error
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.dependencies import get_settings
 from cert_prep_contracts.llm_profiles import OllamaModelProfile, OllamaProfileSupportStatus
@@ -28,6 +36,14 @@ def get_llm_provider(request: Request) -> LLMProvider:
 
 def get_machine_inventory(request: Request) -> MachineInventory:
     return request.app.state.machine_inventory
+
+
+def get_device_preferences(request: Request) -> DevicePreferenceRepository:
+    return request.app.state.device_preference_repository
+
+
+def get_ollama_device_server(request: Request) -> OllamaDeviceServer:
+    return request.app.state.ollama_server
 
 
 @router.get("/health", response_model=LLMHealthRead)
@@ -54,6 +70,34 @@ def llm_profile_selection(
     machine: MachineInventory = Depends(get_machine_inventory),
 ):
     return _profile_selection_read(ai_providers.show_profile_selection(settings, machine))
+
+
+@router.get("/device-preference", response_model=DevicePreferenceRead)
+def llm_device_preference(
+    machine: MachineInventory = Depends(get_machine_inventory),
+    preferences: DevicePreferenceRepository = Depends(get_device_preferences),
+    server: OllamaDeviceServer = Depends(get_ollama_device_server),
+):
+    return ai_providers.show_device_preference(machine, preferences, server)
+
+
+@router.put("/device-preference", response_model=DevicePreferenceRead)
+def put_llm_device_preference(
+    body: DevicePreferenceUpdate,
+    machine: MachineInventory = Depends(get_machine_inventory),
+    preferences: DevicePreferenceRepository = Depends(get_device_preferences),
+    server: OllamaDeviceServer = Depends(get_ollama_device_server),
+):
+    try:
+        return ai_providers.choose_device_preference(
+            machine,
+            preferences,
+            server,
+            mode=body.mode,
+            adapter_key=body.adapter_key,
+        )
+    except DevicePreferenceRejected as exc:
+        raise api_error(status.HTTP_422_UNPROCESSABLE_CONTENT, exc.code, str(exc)) from exc
 
 
 def _profile_selection_read(report: ai_providers.ProfileSelectionReport) -> dict[str, Any]:

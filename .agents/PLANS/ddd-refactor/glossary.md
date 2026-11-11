@@ -131,6 +131,10 @@
 | 要求的裝置         | `RequestedDevice`                          | 健康檢查回報的目標、後端與顯示卡名稱                           |
 | 觀察到的裝置       | `ObservedDevice`                           | 伺服器日誌裡的後端、顯示卡名稱與卸載層數                       |
 | Ollama 裝置狀態    | `OllamaDeviceStatus`                       | 一次 Ollama 健康檢查的伺服器歸屬、要求、驗證、觀察與矯正重啟次數 |
+| 裝置偏好           | `DevicePreference`                         | 存下來的 Ollama 裝置選擇；沒有資料列就是自動                   |
+| 裝置偏好模式       | `DevicePreferenceMode`                     | auto、cpu、adapter                                             |
+| 裝置偏好狀態       | `DevicePreferenceStatus`                   | active、pending、external_server、adapter_missing、not_applicable |
+| 裝置偏好被拒       | `DevicePreferenceRejected`                 | 這台機器不能儲存這個選擇，例如顯示卡不在可選清單裡             |
 
 ## 執行環境
 

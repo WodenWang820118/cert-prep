@@ -16,14 +16,15 @@ def test_bootstrap_supplies_fresh_translator_for_each_operation(monkeypatch, bat
     monkeypatch.setattr(audio, name, operation)
     db = Mock()
     settings = Settings()
-    adapter = source_library_links.chunk_translator(db, settings)
+    server = Mock()
+    adapter = source_library_links.chunk_translator(db, settings, server=server)
     factory.assert_not_called()
     args = ('project', 'document') if batch else ('project', 'document', 'chunk')
 
     for _ in range(2):
         assert getattr(adapter, name)(*args) is operation.return_value
 
-    expected = {'keep_alive': '5m'} if batch else {}
+    expected = {'server': server, 'keep_alive': '5m'} if batch else {'server': server}
     assert factory.call_count == 2
     for call in factory.call_args_list:
         assert call.args == (settings,)

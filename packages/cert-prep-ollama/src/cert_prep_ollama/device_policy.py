@@ -167,6 +167,30 @@ class OllamaDevicePreference:
     pci_device_id: str | None = None
 
 
+USER_CHOSEN_CPU_EXECUTION_WARNING = (
+    "The user's device choice is CPU; Ollama requests run on the CPU."
+)
+
+AdapterClassification = Literal["integrated", "dedicated", "software", "unknown"]
+
+
+@dataclass(frozen=True, slots=True)
+class SelectableAdapter:
+    """One physical GPU the device-choice list may show.
+
+    ``pci_vendor_id`` and ``pci_device_id`` are copied into the stored row.
+    They are not part of the HTTP choice.
+    """
+
+    adapter_key: str | None
+    name: str
+    classification: AdapterClassification
+    backend: BackendKind | None
+    selectable: bool
+    pci_vendor_id: str | None = None
+    pci_device_id: str | None = None
+
+
 def _adapter_key_material(adapter: MachineAcceleratorSnapshot) -> str | None:
     """First identity that survives a reboot. The DXGI LUID changes every boot."""
 
@@ -419,6 +443,65 @@ def select_ollama_device_policy(
     return _select_auto_policy(inventory)
 
 
+def _listed_classification(
+    adapter: MachineAcceleratorSnapshot,
+) -> AdapterClassification:
+    if adapter.classification == "integrated":
+        return "integrated"
+    if adapter.classification == "dedicated":
+        return "dedicated"
+    if adapter.classification == "software":
+        return "software"
+    return "unknown"
+
+
+def _listed_backend(adapter: MachineAcceleratorSnapshot) -> BackendKind | None:
+    """Backend the policy would use for this adapter. Unknown adapters have none."""
+
+    if adapter.classification == "dedicated":
+        return _policy_for_dedicated(adapter).backend
+    if adapter.classification == "integrated":
+        return "vulkan"
+    return None
+
+
+def selectable_adapters(
+    inventory: MachineInventorySnapshot | None,
+) -> tuple[SelectableAdapter, ...]:
+    """Physical GPUs a learner may see, in inventory order.
+
+    Software adapters are omitted, as Auto ignores them. Non-Windows and a
+    missing inventory have no choices. An ``unknown`` adapter is listed and
+    not selectable. Adapters that share a key are listed and not selectable.
+    A missing stable key is not selectable either.
+    """
+
+    if inventory is None or inventory.platform.casefold() != "windows":
+        return ()
+    gpus = _gpu_accelerators(inventory)
+    keys = [adapter_key(adapter) for adapter in gpus]
+    counts: dict[str, int] = {}
+    for key in keys:
+        if key is not None:
+            counts[key] = counts.get(key, 0) + 1
+    listed: list[SelectableAdapter] = []
+    for adapter, key in zip(gpus, keys, strict=True):
+        listed.append(
+            SelectableAdapter(
+                adapter_key=key,
+                name=adapter.name,
+                classification=_listed_classification(adapter),
+                backend=_listed_backend(adapter),
+                selectable=(
+                    _selectable(adapter) and key is not None and counts.get(key, 0) == 1
+                ),
+                pci_vendor_id=adapter.pci_vendor_id,
+                pci_device_id=adapter.pci_device_id,
+            )
+        )
+    return tuple(listed)
+
+
 def _compute_cleared(env: Mapping[str, str]) -> tuple[str, ...]:
     cleared_list = list(_BASE_CLEARED_VARS)
     for var in _ALL_GPU_ENV_VARS:
@@ -568,10 +651,13 @@ __all__ = [
     "EnvironmentResolution",
     "OllamaDevicePolicy",
     "OllamaDevicePreference",
+    "SelectableAdapter",
+    "USER_CHOSEN_CPU_EXECUTION_WARNING",
     "adapter_key",
     "corrected_device_policy",
     "normalize_device_name",
     "ollama_child_environment",
     "parse_pci_bus",
+    "selectable_adapters",
     "select_ollama_device_policy",
 ]

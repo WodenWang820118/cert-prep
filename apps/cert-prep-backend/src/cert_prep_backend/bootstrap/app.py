@@ -67,6 +67,9 @@ from cert_prep_backend.capture_integration.infrastructure.structuring import (
 from cert_prep_backend.ai_providers.domain.provider import LLMProvider
 from cert_prep_backend.ai_providers.application.ports import MachineInventory
 from cert_prep_backend.ai_providers.infrastructure.machine_inventory import OllamaMachineInventory
+from cert_prep_backend.ai_providers.infrastructure.device_preference_repository import (
+    SqliteDevicePreferenceRepository,
+)
 from cert_prep_backend.ai_providers.infrastructure.ollama_server import (
     ollama_server_coordinator_from_settings,
 )
@@ -199,13 +202,20 @@ def create_app(
     app.state.document_repository = document_repository(app.state.database)
     app.state.document_operation_repository = document_operation_repository(app.state.database)
     app.state.source_file_store = LocalSourceFileStore(app_settings)
-    app.state.chunk_translator = chunk_translator(app.state.database, app_settings)
     source_library.recover_interrupted_work(
         app.state.document_operation_repository, app.state.document_repository
     )
     app.state.machine_inventory = OllamaMachineInventory(app_settings)
+    app.state.device_preference_repository = SqliteDevicePreferenceRepository(app.state.database)
     app.state.ollama_server = ollama_server_coordinator_from_settings(
-        app_settings, app.state.machine_inventory
+        app_settings,
+        app.state.machine_inventory,
+        preferences=app.state.device_preference_repository,
+    )
+    app.state.chunk_translator = chunk_translator(
+        app.state.database,
+        app_settings,
+        server=app.state.ollama_server,
     )
     app.state.llm_provider = llm_provider or lazy_provider_from_settings(
         app_settings, server=app.state.ollama_server
@@ -324,7 +334,7 @@ def create_app(
     app.add_middleware(
         CORSMiddleware,
         allow_origins=app_settings.allowed_origins,
-        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=[
             "Authorization",
             "Content-Type",

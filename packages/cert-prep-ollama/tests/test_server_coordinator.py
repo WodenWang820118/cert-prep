@@ -16,7 +16,13 @@ from cert_prep_contracts.hardware import (
     MachineRamSnapshot,
     MachineStorageSnapshot,
 )
-from cert_prep_ollama.device_policy import OllamaDevicePreference
+from cert_prep_ollama.device_policy import (
+    OllamaDevicePreference,
+    USER_CHOSEN_CPU_EXECUTION_WARNING,
+    adapter_key,
+)
+from cert_prep_ollama.profile_installer import OllamaProfileInstaller
+from cert_prep_ollama.profiles import DEFAULT_PROFILE_ID, profile_by_id
 from cert_prep_ollama.server_coordinator import OllamaServerCoordinator
 
 
@@ -419,6 +425,8 @@ def test_restart_waits_for_active_admission_and_blocks_new_ones() -> None:
 
     def run_restart():
         restart_started.set()
+        # As _verify_latest_load does: take the hold, then restart.
+        assert coordinator._hold_for_corrective_restart() is True
         coordinator._restart_server(active_policy)
         restart_finished.set()
 
@@ -1255,3 +1263,1091 @@ def test_corrected_policy_is_reused_only_for_the_same_preference() -> None:
     assert "OLLAMA_LLM_LIBRARY" not in procs[3].env
     assert coordinator.policy is not None
     assert coordinator.policy.target == "cpu"
+
+
+def _cpu_env(env: dict[str, str] | None) -> None:
+    assert env is not None
+    assert env["CUDA_VISIBLE_DEVICES"] == "-1"
+    assert env["HIP_VISIBLE_DEVICES"] == "-1"
+    assert env["GGML_VK_VISIBLE_DEVICES"] == "-1"
+    assert env["OLLAMA_VULKAN"] == "0"
+    assert env["OLLAMA_IGPU_ENABLE"] == "0"
+
+
+def _wait_until(predicate, timeout: float = 5.0) -> None:
+    """Wait until the preference thread has done its work. It is a daemon, so join does not end it."""
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        threading.Event().wait(0.01)
+    assert predicate()
+
+
+def _promptly(action, timeout: float = 5.0):
+    """Run ``action`` on another thread and require it to return within ``timeout``."""
+
+    done = threading.Event()
+    result: list[object] = []
+
+    def run() -> None:
+        try:
+            result.append(action())
+        except BaseException as exc:  # noqa: BLE001 - re-raised on the test thread
+            result.append(exc)
+        finally:
+            done.set()
+
+    threading.Thread(target=run, daemon=True).start()
+    assert done.wait(timeout=timeout), "the call waited instead of answering"
+    value = result[0]
+    if isinstance(value, BaseException):
+        raise value
+    return value
+
+
+def test_an_idle_owned_server_restarts_once_when_the_choice_changes() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    assert procs[0].env is not None
+    assert procs[0].env["CUDA_VISIBLE_DEVICES"] == _RTX_UUID
+
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    _wait_until(
+        lambda: len(procs) == 2 and coordinator.device_preference_application() == (False, False)
+    )
+
+    assert procs[0].poll() is not None
+    _cpu_env(procs[1].env)
+    assert coordinator._restarts == 0
+
+
+def test_a_choice_during_a_running_call_waits_and_skips_the_old_load() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    real_spawn = coordinator._process_factory
+
+    def spawn(*args, **kwargs):
+        proc = real_spawn(*args, **kwargs)
+        if len(procs) == 1:
+            proc.stdout = FakeStdout(_ROCM_MISMATCH_LOG.encode("utf-8"))
+        return proc
+
+    coordinator._process_factory = spawn
+    assert coordinator.ensure_running() is True
+    assert procs[0].wait_drained() is True
+
+    entered = threading.Event()
+    release = threading.Event()
+
+    def admitted() -> None:
+        with coordinator.admission():
+            entered.set()
+            assert release.wait(timeout=5.0)
+
+    call = threading.Thread(target=admitted)
+    call.start()
+    assert entered.wait(timeout=5.0)
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    assert coordinator.device_preference_application() == (True, False)
+    assert len(procs) == 1
+    assert procs[0].poll() is None
+
+    release.set()
+    call.join(timeout=5.0)
+    _wait_until(
+        lambda: len(procs) == 2 and coordinator.device_preference_application() == (False, False)
+    )
+    _cpu_env(procs[1].env)
+    assert coordinator._restarts == 0
+    # The load that was in flight used the previous server, so it is not verified.
+    coordinator.after_model_load()
+    assert len(procs) == 2
+    assert coordinator._restarts == 0
+
+
+def test_ensure_running_applies_a_deferred_choice_without_the_restart_deadline() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    assert coordinator.ensure_running() is True
+
+    entered = threading.Event()
+    release = threading.Event()
+
+    def admitted() -> None:
+        with coordinator.admission():
+            entered.set()
+            assert release.wait(timeout=5.0)
+
+    call = threading.Thread(target=admitted)
+    call.start()
+    assert entered.wait(timeout=5.0)
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    assert coordinator.ensure_running() is True
+    assert len(procs) == 1
+    assert procs[0].poll() is None
+
+    release.set()
+    call.join(timeout=5.0)
+    _wait_until(
+        lambda: len(procs) == 2 and coordinator.device_preference_application() == (False, False)
+    )
+    _cpu_env(procs[1].env)
+    assert coordinator.ensure_running() is True
+    assert len(procs) == 2
+
+
+def test_apply_does_not_reconfigure_an_external_server() -> None:
+    spawned = {"count": 0}
+
+    def factory(*_args, **_kwargs):
+        spawned["count"] += 1
+        raise AssertionError("an external server must not be spawned")
+
+    coordinator = OllamaServerCoordinator(
+        host="http://127.0.0.1:11434",
+        inventory_provider=_sample_inventory,
+        executable_resolver=lambda: Path("ollama"),
+        process_factory=factory,
+        api_probe=lambda _host: True,
+        platform_name="Windows",
+        preference_provider=lambda: OllamaDevicePreference(mode="cpu"),
+    )
+    assert coordinator.ensure_running() is True
+    assert coordinator.ownership == "external"
+    coordinator.apply_device_preference(OllamaDevicePreference(mode="cpu"))
+    assert spawned["count"] == 0
+    assert coordinator.device_preference_application() == (False, True)
+    assert coordinator.cpu_request_override() == USER_CHOSEN_CPU_EXECUTION_WARNING
+
+
+def test_apply_with_nothing_running_uses_the_choice_at_the_next_start() -> None:
+    coordinator, procs, _accepting = _owned_server(
+        lambda: OllamaDevicePreference(mode="cpu"),
+        clock=FakeClock(),
+    )
+    coordinator.apply_device_preference(OllamaDevicePreference(mode="cpu"))
+    assert procs == []
+    assert coordinator.device_preference_application() == (False, False)
+    assert coordinator.ensure_running() is True
+    assert len(procs) == 1
+    _cpu_env(procs[0].env)
+
+
+def test_a_new_choice_gets_its_own_corrective_restart() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    real_spawn = coordinator._process_factory
+    logs = {0: _ROCM_MISMATCH_LOG, 3: _ROCM_MISMATCH_LOG}
+
+    def spawn(*args, **kwargs):
+        proc = real_spawn(*args, **kwargs)
+        log = logs.get(len(procs) - 1)
+        if log is not None:
+            proc.stdout = FakeStdout(log.encode("utf-8"))
+        return proc
+
+    coordinator._process_factory = spawn
+    assert coordinator.ensure_running() is True
+    assert procs[0].wait_drained() is True
+    coordinator.after_model_load()
+    assert len(procs) == 2
+    assert coordinator._restarts == 1
+
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    # The new choice's server starts with its own corrective restart.
+    _wait_until(lambda: len(procs) == 3)
+    assert coordinator._restarts == 0
+    _cpu_env(procs[2].env)
+
+    current["preference"] = OllamaDevicePreference()
+    coordinator.apply_device_preference(current["preference"])
+    _wait_until(lambda: len(procs) == 4 and procs[3].poll() is None)
+    assert procs[3].env is not None
+    assert procs[3].env["CUDA_VISIBLE_DEVICES"] == _RTX_UUID
+    assert procs[3].wait_drained() is True
+    coordinator.after_model_load()
+    assert len(procs) == 5
+    assert coordinator._restarts == 1
+    coordinator.after_model_load()
+    assert len(procs) == 5
+    assert coordinator._restarts == 1
+
+
+def test_a_failed_call_applies_a_pending_switch_when_admission_ends() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    entered = threading.Event()
+    release = threading.Event()
+    failed = threading.Event()
+
+    def admitted() -> None:
+        try:
+            with coordinator.admission():
+                entered.set()
+                assert release.wait(timeout=5.0)
+                raise RuntimeError("model load failed")
+        except RuntimeError:
+            failed.set()
+
+    call = threading.Thread(target=admitted)
+    call.start()
+    assert entered.wait(timeout=5.0)
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    assert coordinator.device_preference_application() == (True, False)
+    assert len(procs) == 1
+    release.set()
+    call.join(timeout=5.0)
+    assert failed.is_set()
+    _wait_until(
+        lambda: len(procs) == 2 and coordinator.device_preference_application() == (False, False)
+    )
+    _cpu_env(procs[1].env)
+    assert procs[0].poll() is not None
+
+
+def _radeon_preference() -> OllamaDevicePreference:
+    radeon = next(
+        accelerator
+        for accelerator in _sample_inventory().accelerators
+        if accelerator.classification == "integrated"
+    )
+    return OllamaDevicePreference(
+        mode="adapter",
+        adapter_key=adapter_key(radeon),
+        adapter_name=radeon.name,
+        pci_vendor_id=radeon.pci_vendor_id,
+        pci_device_id=radeon.pci_device_id,
+    )
+
+
+def _igpu_env(env: dict[str, str] | None) -> None:
+    assert env is not None
+    assert env["OLLAMA_IGPU_ENABLE"] == "1"
+    assert env["CUDA_VISIBLE_DEVICES"] == "-1"
+
+
+def _hold_a_call(coordinator: OllamaServerCoordinator, *, long_running: bool = False):
+    """Start a call on its own thread that holds an admission until ``release`` is set."""
+
+    entered = threading.Event()
+    release = threading.Event()
+
+    def admitted() -> None:
+        with coordinator.admission(long_running=long_running):
+            entered.set()
+            assert release.wait(timeout=5.0)
+
+    call = threading.Thread(target=admitted)
+    call.start()
+    assert entered.wait(timeout=5.0)
+    return call, release
+
+
+def test_two_choices_during_a_call_switch_once_to_the_latest() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    call, release = _hold_a_call(coordinator)
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    current["preference"] = _radeon_preference()
+    coordinator.apply_device_preference(current["preference"])
+    assert len(procs) == 1
+    release.set()
+    call.join(timeout=5.0)
+    _wait_until(
+        lambda: len(procs) == 2 and coordinator.device_preference_application() == (False, False)
+    )
+    _igpu_env(procs[1].env)
+    assert [proc for proc in procs if proc.is_running] == [procs[1]]
+
+
+def test_a_choice_changed_back_during_a_call_restarts_nothing() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    call, release = _hold_a_call(coordinator)
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    current["preference"] = OllamaDevicePreference()
+    coordinator.apply_device_preference(current["preference"])
+    _wait_until(lambda: coordinator.device_preference_application() == (False, False))
+    release.set()
+    call.join(timeout=5.0)
+    assert not coordinator._switch_waiting
+    assert len(procs) == 1
+    assert procs[0].is_running
+
+
+def test_a_failed_start_stays_pending_until_ensure_running() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    real_spawn = coordinator._process_factory
+
+    def spawn(*args, **kwargs):
+        proc = real_spawn(*args, **kwargs)
+        proc._returncode = 0
+        return proc
+
+    coordinator._process_factory = spawn
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    _wait_until(
+        lambda: coordinator.device_preference_application()[0]
+        and coordinator.device_status().server == "not_running"
+        and not coordinator._restarting
+    )
+    spawned_after_failure = len(procs)
+    coordinator.after_model_load()
+    assert len(procs) == spawned_after_failure
+    assert coordinator.device_preference_application() == (True, False)
+    assert coordinator.device_status().server == "not_running"
+
+    coordinator._process_factory = real_spawn
+    assert coordinator.ensure_running() is True
+    assert coordinator.device_preference_application() == (False, False)
+    assert coordinator.device_status().server == "owned"
+    _cpu_env(procs[-1].env)
+
+
+def test_resending_a_choice_after_a_failed_switch_keeps_it_pending_until_start() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    accepting["value"] = False
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+
+    def generate() -> None:
+        with coordinator.admission():
+            pass
+
+    _wait_until(lambda: len(procs) == 2 and not procs[1].is_running)
+    _promptly(generate)
+    assert not any(proc.is_running for proc in procs)
+    assert coordinator.device_preference_application() == (True, False)
+
+    probed = threading.Event()
+    real_probe = coordinator._api_probe
+
+    def probe(host: str) -> bool:
+        answered = real_probe(host)
+        probed.set()
+        return answered
+
+    coordinator._api_probe = probe
+    coordinator.apply_device_preference(current["preference"])
+    # With no owned server, this probe follows the switch thread's status update.
+    assert probed.wait(timeout=5.0)
+    assert coordinator.device_preference_application() == (True, False)
+    assert len(procs) == 2
+
+    # A start that fails too does not make the choice look applied.
+    assert coordinator.ensure_running() is False
+    assert len(procs) == 3
+    assert not procs[2].is_running
+    probed.clear()
+    coordinator.apply_device_preference(current["preference"])
+    assert probed.wait(timeout=5.0)
+    assert coordinator.device_preference_application() == (True, False)
+    assert len(procs) == 3
+
+    accepting["value"] = True
+    assert coordinator.ensure_running() is True
+    assert len(procs) == 4
+    assert procs[3].is_running
+    _cpu_env(procs[3].env)
+    assert coordinator.device_preference_application() == (False, False)
+    coordinator.close()
+
+
+def test_a_failed_stop_holds_no_later_call_and_the_next_start_retries_it() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    stops = {"count": 0}
+    stuck = {"value": True}
+    stop_tried = threading.Event()
+
+    def terminate(pid: int) -> None:
+        stops["count"] += 1
+        stop_tried.set()
+        if stuck["value"]:
+            return
+        for proc in procs:
+            if proc.pid == pid:
+                proc._returncode = 0
+        accepting["value"] = True
+
+    coordinator._tree_terminator = terminate
+    procs[0].kill = lambda: None  # type: ignore[method-assign]
+
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    assert stop_tried.wait(timeout=5.0)
+    _wait_until(lambda: not coordinator._preference_switch_running)
+    assert not coordinator._restarting
+    assert coordinator.device_preference_application() == (True, False)
+    assert procs[0].poll() is None
+    assert len(procs) == 1
+    attempts = stops["count"]
+    assert attempts >= 1
+
+    # A later call is admitted at once, and neither it nor its verification retries the stop.
+    entered = threading.Event()
+
+    def admitted() -> None:
+        with coordinator.admission():
+            entered.set()
+
+    call = threading.Thread(target=admitted)
+    call.start()
+    assert entered.wait(timeout=5.0)
+    call.join(timeout=5.0)
+    coordinator.after_model_load()
+    # The old server still answers, so there is nothing to start.
+    assert coordinator.ensure_running() is True
+    assert stops["count"] == attempts
+    assert coordinator.device_preference_application() == (True, False)
+
+    # Once it stops answering, the start path stops it and starts the stored choice.
+    stuck["value"] = False
+    accepting["value"] = False
+    assert coordinator.ensure_running() is True
+    assert stops["count"] > attempts
+    assert procs[0].poll() is not None
+    assert len(procs) == 2
+    _cpu_env(procs[1].env)
+    assert coordinator.device_preference_application() == (False, False)
+    assert coordinator.device_status().server == "owned"
+
+
+def _hold_the_next_start(coordinator: OllamaServerCoordinator, procs: list[FakeProcess]):
+    """Block the next spawn until ``release`` is set. ``entered`` is set when it starts."""
+
+    entered = threading.Event()
+    release = threading.Event()
+    held = len(procs)
+    real_spawn = coordinator._process_factory
+
+    def spawn(*args, **kwargs):
+        if len(procs) == held:
+            entered.set()
+            assert release.wait(timeout=5.0)
+        return real_spawn(*args, **kwargs)
+
+    coordinator._process_factory = spawn
+    return entered, release
+
+
+def test_a_choice_stored_while_the_switch_starts_ends_on_the_latest_choice() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    entered, release = _hold_the_next_start(coordinator, procs)
+
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    assert entered.wait(timeout=5.0)
+    # The old server is stopped and the new one is held in its start. Reads and
+    # a new choice answer without waiting for it.
+    assert _promptly(coordinator.device_preference_application) == (True, False)
+    assert _promptly(coordinator.device_status).server == "not_running"
+    assert len(procs) == 1
+
+    current["preference"] = OllamaDevicePreference()
+    _promptly(lambda: coordinator.apply_device_preference(current["preference"]))
+    assert coordinator.device_preference_application() == (True, False)
+    release.set()
+    _wait_until(
+        lambda: len(procs) == 3 and coordinator.device_preference_application() == (False, False)
+    )
+    _cpu_env(procs[1].env)
+    assert procs[2].env is not None
+    assert procs[2].env["CUDA_VISIBLE_DEVICES"] == _RTX_UUID
+    assert [proc for proc in procs if proc.is_running] == [procs[2]]
+    assert coordinator.device_status().server == "owned"
+
+
+def test_the_same_choice_stored_again_during_a_switch_starts_once() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    entered, release = _hold_the_next_start(coordinator, procs)
+
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    assert entered.wait(timeout=5.0)
+    coordinator.apply_device_preference(current["preference"])
+    release.set()
+    _wait_until(
+        lambda: coordinator.device_preference_application() == (False, False)
+        and not coordinator._preference_switch_running
+    )
+    assert len(procs) == 2
+    _cpu_env(procs[1].env)
+    assert procs[1].is_running
+
+
+class _GatedProfileClient:
+    """Ollama client whose pull and create each wait for the test."""
+
+    def __init__(self) -> None:
+        self.models: list[str] = []
+        self.in_pull = threading.Event()
+        self.finish_pull = threading.Event()
+        self.in_create = threading.Event()
+        self.finish_create = threading.Event()
+
+    def list(self):
+        return {"models": [{"model": model} for model in self.models]}
+
+    def pull(self, _model: str, *, stream: bool):
+        self.in_pull.set()
+        assert self.finish_pull.wait(timeout=5.0)
+        yield {"status": "success"}
+
+    def create(self, **kwargs):
+        self.in_create.set()
+        assert self.finish_create.wait(timeout=5.0)
+        self.models.append(kwargs["model"])
+        yield {"status": "success"}
+
+
+def test_a_profile_pull_and_create_in_flight_are_not_interrupted_by_a_switch() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    client = _GatedProfileClient()
+    installer = OllamaProfileInstaller(
+        profile_by_id(DEFAULT_PROFILE_ID),
+        client=client,
+        server=coordinator,
+    )
+    results: list[str] = []
+
+    def install() -> None:
+        results.append(installer.install(lambda _progress: None).value)
+
+    worker = threading.Thread(target=install)
+    worker.start()
+    assert client.in_pull.wait(timeout=5.0)
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    assert coordinator.device_preference_application() == (True, False)
+
+    client.finish_pull.set()
+    assert client.in_create.wait(timeout=5.0)
+    # The switch did not slip in between the download and the create.
+    assert len(procs) == 1
+    assert procs[0].is_running
+    client.finish_create.set()
+    worker.join(timeout=5.0)
+    assert results == ["succeeded"]
+
+    _wait_until(
+        lambda: len(procs) == 2 and coordinator.device_preference_application() == (False, False)
+    )
+    assert procs[0].poll() is not None
+    _cpu_env(procs[1].env)
+
+
+def test_close_cancels_a_switch_that_has_not_started() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    entered = threading.Event()
+    release = threading.Event()
+
+    def admitted() -> None:
+        with coordinator.admission():
+            entered.set()
+            assert release.wait(timeout=5.0)
+
+    call = threading.Thread(target=admitted)
+    call.start()
+    assert entered.wait(timeout=5.0)
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    assert coordinator.device_preference_application() == (True, False)
+    switch_thread = coordinator._switch_thread
+    assert switch_thread is not None
+    coordinator.close()
+    release.set()
+    call.join(timeout=5.0)
+    switch_thread.join(timeout=5.0)
+    assert not switch_thread.is_alive()
+    assert len(procs) == 1
+    assert procs[0].poll() is not None
+    assert coordinator.device_preference_application() == (False, False)
+
+
+def test_a_choice_stored_during_a_failed_stop_is_applied_afterwards() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    in_stop = threading.Event()
+    finish_stop = threading.Event()
+    attempts = {"count": 0}
+
+    def terminate(pid: int) -> None:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            # The first stop fails: the old server does not exit.
+            in_stop.set()
+            assert finish_stop.wait(timeout=5.0)
+            return
+        for proc in procs:
+            if proc.pid == pid:
+                proc._returncode = 0
+
+    coordinator._tree_terminator = terminate
+    procs[0].kill = lambda: None  # type: ignore[method-assign]
+
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    assert in_stop.wait(timeout=5.0)
+    current["preference"] = _radeon_preference()
+    coordinator.apply_device_preference(current["preference"])
+    finish_stop.set()
+
+    _wait_until(
+        lambda: len(procs) == 2 and coordinator.device_preference_application() == (False, False)
+    )
+    assert attempts["count"] == 2
+    assert procs[0].poll() is not None
+    _igpu_env(procs[1].env)
+
+
+def test_resending_the_running_choice_while_idle_restarts_nothing() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    real_spawn = coordinator._process_factory
+
+    def spawn(*args, **kwargs):
+        proc = real_spawn(*args, **kwargs)
+        if len(procs) == 1:
+            proc.stdout = FakeStdout(_ROCM_MISMATCH_LOG.encode("utf-8"))
+        return proc
+
+    coordinator._process_factory = spawn
+    assert coordinator.ensure_running() is True
+    assert procs[0].wait_drained() is True
+    coordinator.after_model_load()
+    assert len(procs) == 2
+    assert coordinator._restarts == 1
+    corrected = coordinator.policy
+
+    coordinator.apply_device_preference(current["preference"])
+    assert coordinator.device_preference_application() == (False, False)
+    _wait_until(lambda: coordinator._handled_epoch == coordinator._requested_epoch)
+    assert coordinator.device_preference_application() == (False, False)
+    assert len(procs) == 2
+    assert procs[1].is_running
+    assert coordinator._restarts == 1
+    assert coordinator.policy is corrected
+    assert coordinator._policy_is_correction is True
+
+
+def test_a_waiting_switch_holds_new_calls_until_it_has_run() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    first, release_first = _hold_a_call(coordinator)
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    _wait_until(lambda: coordinator._switch_waiting)
+
+    servers_seen: list[int] = []
+    second_entered = threading.Event()
+
+    def second() -> None:
+        with coordinator.admission():
+            servers_seen.append(len(procs))
+            second_entered.set()
+
+    later = threading.Thread(target=second)
+    later.start()
+    release_first.set()
+    first.join(timeout=5.0)
+    assert second_entered.wait(timeout=5.0)
+    later.join(timeout=5.0)
+    # The call that arrived while the switch waited ran on the new server.
+    assert servers_seen == [2]
+    _cpu_env(procs[1].env)
+    assert procs[0].poll() is not None
+
+
+def test_a_long_download_does_not_hold_back_calls_while_a_switch_waits() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    download, finish_download = _hold_a_call(coordinator, long_running=True)
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    _wait_until(lambda: coordinator._switch_waiting)
+
+    servers_seen: list[int] = []
+
+    def generate() -> None:
+        with coordinator.admission():
+            servers_seen.append(len(procs))
+
+    _promptly(generate)
+    # Admitted during the download, on the old server, which still runs.
+    assert servers_seen == [1]
+    assert procs[0].is_running
+    assert coordinator.device_preference_application() == (True, False)
+
+    finish_download.set()
+    download.join(timeout=5.0)
+    _wait_until(
+        lambda: len(procs) == 2 and coordinator.device_preference_application() == (False, False)
+    )
+    assert procs[0].poll() is not None
+    _cpu_env(procs[1].env)
+
+
+def test_a_mismatch_during_a_download_defers_the_corrective_restart() -> None:
+    fleet = _ProcessFleet(_ROCM_MISMATCH_LOG, _CUDA_VERIFIED_LOG)
+    coordinator = fleet.coordinator(clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    assert fleet.procs[0].wait_drained() is True
+    download, finish_download = _hold_a_call(coordinator, long_running=True)
+
+    execution = coordinator.after_model_load()
+    assert execution is not None
+    assert execution.state == "mismatch"
+    # The server under the download is not stopped and nothing is held back.
+    assert len(fleet.procs) == 1
+    assert fleet.procs[0].is_running
+    assert coordinator._restarts == 0
+    assert not coordinator._restarting
+    assert coordinator.device_status().verification == "pending"
+
+    def generate() -> None:
+        with coordinator.admission():
+            pass
+
+    _promptly(generate)
+
+    finish_download.set()
+    download.join(timeout=5.0)
+    # The next model load with nothing LONG in flight takes the corrective restart.
+    coordinator.after_model_load()
+    assert len(fleet.procs) == 2
+    assert coordinator._restarts == 1
+    assert not fleet.procs[0].is_running
+
+
+def test_choices_and_status_answer_while_a_corrective_restart_waits() -> None:
+    fleet = _ProcessFleet(_ROCM_MISMATCH_LOG, _CUDA_VERIFIED_LOG)
+    coordinator = fleet.coordinator()
+    assert coordinator.ensure_running() is True
+    assert fleet.procs[0].wait_drained() is True
+    call, release = _hold_a_call(coordinator)
+    verification = threading.Thread(target=coordinator.after_model_load)
+    verification.start()
+    _wait_until(lambda: coordinator._restarting)
+
+    _promptly(lambda: coordinator.apply_device_preference(OllamaDevicePreference(mode="cpu")))
+    assert _promptly(coordinator.device_preference_application) == (True, False)
+    status = _promptly(coordinator.device_status)
+    assert status.verification == "pending"
+    assert status.corrective_restarts == 1
+
+    release.set()
+    call.join(timeout=5.0)
+    verification.join(timeout=5.0)
+    assert len(fleet.procs) == 2
+    # The stored choice is still Auto here, which the corrected server already runs.
+    _wait_until(lambda: coordinator.device_preference_application() == (False, False))
+    assert len(fleet.procs) == 2
+
+
+def test_choices_and_status_answer_while_ensure_running_starts_the_server() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    entered, release = _hold_the_next_start(coordinator, procs)
+    starter = threading.Thread(target=coordinator.ensure_running)
+    starter.start()
+    assert entered.wait(timeout=5.0)
+
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    _promptly(lambda: coordinator.apply_device_preference(current["preference"]))
+    assert _promptly(coordinator.device_preference_application) == (False, False)
+    assert _promptly(coordinator.device_status).server == "not_running"
+    _promptly(coordinator.note_api_answered)
+
+    release.set()
+    starter.join(timeout=5.0)
+    # That start had read Auto; the choice stored meanwhile is applied after it.
+    _wait_until(
+        lambda: len(procs) == 2 and coordinator.device_preference_application() == (False, False)
+    )
+    assert procs[0].poll() is not None
+    _cpu_env(procs[1].env)
+
+
+def test_a_failing_preference_read_in_the_switch_thread_leaves_calls_free() -> None:
+    state = {"preference": OllamaDevicePreference(), "fail": False}
+    failed = threading.Event()
+
+    def provider() -> OllamaDevicePreference:
+        if state["fail"]:
+            failed.set()
+            raise RuntimeError("database is locked")
+        return state["preference"]
+
+    coordinator, procs, _accepting = _owned_server(provider, clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    state["fail"] = True
+    coordinator.apply_device_preference(OllamaDevicePreference(mode="cpu"))
+    assert failed.wait(timeout=5.0)
+    _wait_until(lambda: coordinator._handled_epoch == coordinator._requested_epoch)
+
+    def generate() -> None:
+        with coordinator.admission():
+            pass
+
+    _promptly(generate)
+    assert not coordinator._restarting
+    assert not coordinator._switch_waiting
+    assert not coordinator._preference_switch_running
+    assert len(procs) == 1
+
+    # A later choice still works, and the thread is still alive.
+    state["fail"] = False
+    state["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(state["preference"])
+    _wait_until(
+        lambda: len(procs) == 2 and coordinator.device_preference_application() == (False, False)
+    )
+    _cpu_env(procs[1].env)
+
+
+def test_a_failing_newer_preference_read_keeps_the_running_choice_pending() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    failing = threading.Event()
+    failed = threading.Event()
+
+    def provider() -> OllamaDevicePreference:
+        if failing.is_set():
+            failed.set()
+            raise RuntimeError("database is locked")
+        return current["preference"]
+
+    coordinator, procs, _accepting = _owned_server(provider, clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    entered, release = _hold_the_next_start(coordinator, procs)
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    assert entered.wait(timeout=5.0)
+    current["preference"] = _radeon_preference()
+    coordinator.apply_device_preference(current["preference"])
+    failing.set()
+    release.set()
+    assert failed.wait(timeout=5.0)
+
+    def generate() -> None:
+        with coordinator.admission():
+            pass
+
+    _promptly(generate)
+    assert len(procs) == 2
+    assert [proc for proc in procs if proc.is_running] == [procs[1]]
+    _cpu_env(procs[1].env)
+    assert coordinator.device_preference_application() == (True, False)
+
+    failing.clear()
+    coordinator.apply_device_preference(current["preference"])
+    _wait_until(
+        lambda: len(procs) == 3 and coordinator.device_preference_application() == (False, False)
+    )
+    assert [proc for proc in procs if proc.is_running] == [procs[2]]
+    _igpu_env(procs[2].env)
+    coordinator.close()
+
+
+def test_a_failing_probe_during_a_switch_clears_the_hold() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    real_probe = coordinator._api_probe
+    armed = {"value": True}
+    raised = threading.Event()
+
+    def probe(host: str) -> bool:
+        if armed["value"] and threading.current_thread().name == "ollama-device-switch":
+            raised.set()
+            raise RuntimeError("probe failed")
+        return real_probe(host)
+
+    coordinator._api_probe = probe
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    assert raised.wait(timeout=5.0)
+    _wait_until(lambda: not coordinator._preference_switch_running)
+    assert not coordinator._restarting
+
+    def generate() -> None:
+        with coordinator.admission():
+            pass
+
+    _promptly(generate)
+
+    # A later choice still switches the server.
+    armed["value"] = False
+    current["preference"] = OllamaDevicePreference()
+    coordinator.apply_device_preference(current["preference"])
+    _wait_until(
+        lambda: len(procs) == 3 and coordinator.device_preference_application() == (False, False)
+    )
+    assert procs[2].env is not None
+    assert procs[2].env["CUDA_VISIBLE_DEVICES"] == _RTX_UUID
+    assert [proc for proc in procs if proc.is_running] == [procs[2]]
+
+
+def _close_on_a_thread(coordinator: OllamaServerCoordinator) -> threading.Event:
+    closed = threading.Event()
+
+    def close() -> None:
+        coordinator.close()
+        closed.set()
+
+    threading.Thread(target=close, daemon=True).start()
+    _wait_until(lambda: coordinator._closed)
+    return closed
+
+
+def test_close_during_the_stop_of_a_switch_leaves_no_server_and_no_thread() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    in_stop = threading.Event()
+    finish_stop = threading.Event()
+    real_terminate = coordinator._tree_terminator
+
+    def terminate(pid: int) -> None:
+        if threading.current_thread().name == "ollama-device-switch" and not in_stop.is_set():
+            in_stop.set()
+            assert finish_stop.wait(timeout=5.0)
+        real_terminate(pid)
+
+    coordinator._tree_terminator = terminate
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    assert in_stop.wait(timeout=5.0)
+    switch_thread = coordinator._switch_thread
+    assert switch_thread is not None
+
+    closed = _close_on_a_thread(coordinator)
+    finish_stop.set()
+    assert closed.wait(timeout=5.0)
+    assert not switch_thread.is_alive()
+    assert len(procs) == 1
+    assert not any(proc.is_running for proc in procs)
+    assert coordinator.ownership == "none"
+
+
+def test_close_while_a_switch_creates_its_child_stops_that_child() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    entered, release = _hold_the_next_start(coordinator, procs)
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    assert entered.wait(timeout=5.0)
+    switch_thread = coordinator._switch_thread
+    assert switch_thread is not None
+
+    closed = _close_on_a_thread(coordinator)
+    # The child is created only after close() has started.
+    release.set()
+    assert closed.wait(timeout=5.0)
+    assert not switch_thread.is_alive()
+    assert len(procs) == 2
+    assert not any(proc.is_running for proc in procs)
+    assert coordinator.ownership == "none"
+
+
+def test_close_during_the_readiness_wait_of_a_switch_stops_the_new_server() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    # The readiness deadline never passes here: only close() ends the wait.
+    coordinator._clock = lambda: 1000.0
+    coordinator._sleep = lambda _seconds: threading.Event().wait(0.005)
+    in_readiness = threading.Event()
+    real_probe = coordinator._api_probe
+
+    def probe(host: str) -> bool:
+        if threading.current_thread().name == "ollama-device-switch":
+            in_readiness.set()
+            return False
+        return real_probe(host)
+
+    coordinator._api_probe = probe
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    assert in_readiness.wait(timeout=5.0)
+    switch_thread = coordinator._switch_thread
+    assert switch_thread is not None
+
+    closed = _close_on_a_thread(coordinator)
+    assert closed.wait(timeout=5.0)
+    assert not switch_thread.is_alive()
+    assert len(procs) == 2
+    assert not any(proc.is_running for proc in procs)
+    assert coordinator.ownership == "none"
+
+
+def test_close_retries_a_failed_stop_of_the_switched_in_child() -> None:
+    current = {"preference": OllamaDevicePreference()}
+    coordinator, procs, _accepting = _owned_server(lambda: current["preference"], clock=FakeClock())
+    assert coordinator.ensure_running() is True
+    in_readiness = threading.Event()
+    finish_probe = threading.Event()
+    real_probe = coordinator._api_probe
+    real_terminate = coordinator._tree_terminator
+    attempts: list[threading.Thread] = []
+
+    def probe(host: str) -> bool:
+        if threading.current_thread().name == "ollama-device-switch":
+            in_readiness.set()
+            assert finish_probe.wait(timeout=5.0)
+            return False
+        return real_probe(host)
+
+    def terminate(pid: int) -> None:
+        if len(procs) == 2 and pid == procs[1].pid:
+            attempts.append(threading.current_thread())
+            if len(attempts) == 1:
+                return
+        real_terminate(pid)
+
+    coordinator._api_probe = probe
+    coordinator._tree_terminator = terminate
+    current["preference"] = OllamaDevicePreference(mode="cpu")
+    coordinator.apply_device_preference(current["preference"])
+    assert in_readiness.wait(timeout=5.0)
+    procs[1].kill = lambda: None  # type: ignore[method-assign]
+
+    closed = _close_on_a_thread(coordinator)
+    finish_probe.set()
+    assert closed.wait(timeout=5.0)
+    assert procs[1].poll() is not None
+    assert len(attempts) == 2
+    assert attempts[0].name == "ollama-device-switch"
+    assert attempts[1] is not attempts[0]
+    assert not any(proc.is_running for proc in procs)
