@@ -2,7 +2,7 @@
 
 All `path:line` citations are relative to `C:\software-dev\cert-prep` (`main` at 96d16fd). I read files only: I edited nothing and ran no builds, tests or nx.
 
-Slice 1 (the observed device on `GET /llm/health`), slice 2 (preference-aware policy in `cert-prep-ollama`), slice 3 (the stored choice and `GET /llm/device-preference`) and slice 4 (`PUT` and apply) are done. Slice 7 was removed: the product owner declined the coarse `/api/ps` signal on 2026-11-10. Slices 5–6 are unchanged.
+Slice 1 (the observed device on `GET /llm/health`), slice 2 (preference-aware policy in `cert-prep-ollama`), slice 3 (the stored choice and `GET /llm/device-preference`), slice 4 (`PUT` and apply), slice 5 (device status and external guidance on `/runtime`), and slice 6 (device chooser) are done. Slice 7 was removed: the product owner declined the coarse `/api/ps` signal on 2026-11-10.
 
 Four findings change the shape of the work:
 - **The observed device did not reach the API.** The coordinator recorded it, and no route or schema exposed it. Slice 1 returns it as the optional `LLMHealthRead.device`.
@@ -190,24 +190,24 @@ Model it on `tests/unit/test_gpu_inventory_contract.py:22-65`.
 
 **Where it appears.** The runtime manager page (`/runtime`), in a new "Device" section after the Reasoning model row (`apps/cert-prep/src/app/runtime/feature/runtime-manager/runtime-manager.page.html:83-106`). The view model is built in `model-health-view-model.service.ts` style.
 
-**Wording for the product owner to decide** (each a suggestion only):
-- Section title: 「運算裝置」
-- Options: 「自動（建議）」, 「只用 CPU（較慢）」, and for an adapter: name + 「獨立／內建顯示卡」
-- Verified: 「正在使用：{name}」
-- Mismatch: 「預定 {requested}，實際使用 {observed}」
-- Pending: 「載入模型後確認」
-- Switch waiting for a running generation: 「目前的產生完成後切換」
-- Adapter missing: 「找不到選擇的顯示卡，暫用自動選擇」
-- External meaning: 「Ollama 已在別處執行（例如系統匣），Cert Prep 不會更改它，也無法得知它用哪個裝置」
-- External action: 「若要由 Cert Prep 選擇裝置，請從系統匣結束 Ollama，再按「全部重新整理」」
-- Saved while external: 「已儲存；Cert Prep 自行啟動 Ollama 時套用」
-
-**Screen choices for the product owner to decide:**
-- **Language.** The runtime manager is English today (`runtime-manager.page.html:3`; `model-health-view-model.service.ts:40-70`). Newer copy is zh-TW constants (`apps/cert-prep/src/app/runtime/domain/runtime-update-copy.constants.ts:1-25`). There is no i18n framework, so new zh-TW copy makes the page mixed-language.
-- **Placement.** A new section, or inside the Ollama row.
-- **Control.** Radio group or select.
-- **Technical detail.** Whether to show CUDA, Vulkan or ROCm and layer counts.
-- **External guidance.** Persistent or dismissible; whether it also shows as a toolbar chip.
+**Decided wording and screen choices (slices 5 and 6):**
+- **Language**: zh-TW copy in `runtime/domain/device-copy.constants.ts`.
+- **Placement**: A new section titled 「運算裝置」 directly after the Reasoning model row, built as its own `runtime/ui` component (`RuntimeDeviceSectionComponent`) fed by `DeviceViewModelService`.
+- **Control**: Accessible native `<input type="radio">` inside a `<fieldset>` with a legend, disabled during in-flight saves.
+- **Options**: 「自動（建議）」; one per entry of `choices` (adapter name, classification 「獨立顯示卡」 / 「內建顯示卡」, backend e.g. CUDA / Vulkan in muted text); 「只用 CPU（較慢）」 last. Non-selectable entries are disabled with 「無法判斷這張顯示卡的類型，不能選擇」. No layer counts or technical noise.
+- **Status line**: Single line with `aria-live="polite"` under the radio group:
+  - verified: 「正在使用：{name}」 (for CPU: 「正在使用：CPU」)
+  - mismatch: 「預定 {requested}，實際使用 {observed}」
+  - verification pending or unknown: 「載入模型後確認」
+  - preference `pending`: 「目前的工作完成後切換」
+  - `adapter_missing`: 「找不到選擇的顯示卡，暫用自動選擇」
+  - `not_applicable`: 「這台電腦由 Ollama 自行決定運算裝置」 (radio group hidden)
+  - server not running: 「Ollama 尚未啟動；啟動時會套用這個選擇」
+- **External server**: Persistent, non-dismissible guidance note:
+  - 「Ollama 已在別處執行（例如系統匣），Cert Prep 不會更改它，也無法得知它用哪個裝置。」
+  - 「若要由 Cert Prep 選擇裝置，請從系統匣結束 Ollama，再按「Refresh all」。」
+  - Chooser remains usable; after save shows 「選擇會先儲存，Cert Prep 自行啟動 Ollama 時套用」.
+- **Errors**: `role="alert"` with 「無法儲存裝置選擇：{reason}」; 422 `unknown_device` shows 「這張顯示卡目前無法選擇，請重新整理後再試」 and reloads preference.
 
 ## 5. Slices (each runs `pnpm ci:local portable` before merge)
 
@@ -266,12 +266,12 @@ Model it on `tests/unit/test_gpu_inventory_contract.py:22-65`.
      - 422 cases
      - choice survives an app restart (new `create_app`)
 
-5. **Device status and external guidance on `/runtime`.** Screen change: needs product-owner review.
+5. **Device status and external guidance on `/runtime`.** Status: done in this change.
    - Depends on 1.
    - Changes: `runtime/domain/device-*.contracts.ts` plus copy constants, a view-model service, a `runtime/ui` component, the page html; extend `MockCertPrepApiOptions` (`mock-api.ts:78`).
    - Tests: vitest view-model spec per table row; component spec; mocked e2e for verified, mismatch and external guidance, alongside `mocked-journeys.spec.ts:562-572`.
 
-6. **Device chooser.** Screen change: needs product-owner review.
+6. **Device chooser.** Status: done in this change (together with slice 5).
    - Depends on 4 and 5.
    - Changes: `runtime-api-clients.service.ts`; a new `device-preference.store.ts`; the UI component.
    - Tests: store spec (PUT, then reload health and preference); e2e chooses CPU and asserts the PUT body and the CPU status.
@@ -316,6 +316,12 @@ Slices 1–4 can be merged on green checks. Slices 5–6 need the product owner'
 5. The new `ollama_device_preference` table under `ai_providers` is approved (an addition to D17).
 6. A device switch never cancels a running generation. It waits.
 7. Wording and layout of the two screen slices are decided at implementation time from the suggestions in section 4. The screens are still shown to the product owner.
+
+**Decisions by the product owner (2026-11-11: screen review)**
+1. **The runtime manager is organised in tabs** (分頁): 「執行環境」 (default) and 「運算裝置」. When there is no device data (e.g. fake provider), no tab bar is shown. When attention is needed on the device tab (preference status `pending` or `adapter_missing`, verification `mismatch`, or a save error), the 「運算裝置」 tab trigger shows an attention dot with an accessible text alternative (「需要注意」).
+2. **A stored adapter that is no longer on the machine is listed as an option** that cannot be chosen and is shown as the selected one (positioned after available adapters and before CPU): label = stored `adapter_name` (fallback: 「先前選擇的顯示卡」), disabled, selected, with note 「目前找不到這張顯示卡」. The status line stays 「找不到選擇的顯示卡，暫用自動選擇」. Matching an existing non-selectable choice does not duplicate it.
+3. The device section's own `h3` title becomes visually hidden (`sr-only`) to avoid duplication with the tab label, while preserving `aria-labelledby`.
+4. The wording and layout of the device section shown in the screenshots are approved as they are.
 
 ### Critical Files for Implementation
 - C:\software-dev\cert-prep\packages\cert-prep-ollama\src\cert_prep_ollama\server_coordinator.py

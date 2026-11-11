@@ -36,6 +36,7 @@ flowchart LR
   n_libs_ui_input_src["libs/ui/input/src<br/>layer:shared-ui"]
   n_libs_ui_progress_src["libs/ui/progress/src<br/>layer:shared-ui"]
   n_libs_ui_switch_src["libs/ui/switch/src<br/>layer:shared-ui"]
+  n_libs_ui_tabs_src["libs/ui/tabs/src<br/>layer:shared-ui"]
   n_libs_ui_textarea_src["libs/ui/textarea/src<br/>layer:shared-ui"]
   n_libs_ui_utils_src["libs/ui/utils/src<br/>layer:shared-ui"]
   n_root["root<br/>root"]
@@ -108,14 +109,18 @@ flowchart LR
   n_apps_cert_prep_src_app_runtime_data --> n_apps_cert_prep_src_app_core_data
   n_apps_cert_prep_src_app_runtime_data --> n_apps_cert_prep_src_app_core_domain
   n_apps_cert_prep_src_app_runtime_data --> n_apps_cert_prep_src_app_runtime_domain
+  n_apps_cert_prep_src_app_runtime_data --> n_libs_cert_prep_api_src
   n_apps_cert_prep_src_app_runtime_domain --> n_apps_cert_prep_src_app_core_domain
+  n_apps_cert_prep_src_app_runtime_domain --> n_libs_cert_prep_api_src
   n_apps_cert_prep_src_app_runtime_feature --> n_apps_cert_prep_src_app_core_data
   n_apps_cert_prep_src_app_runtime_feature --> n_apps_cert_prep_src_app_core_ui
   n_apps_cert_prep_src_app_runtime_feature --> n_apps_cert_prep_src_app_runtime_data
   n_apps_cert_prep_src_app_runtime_feature --> n_apps_cert_prep_src_app_runtime_domain
   n_apps_cert_prep_src_app_runtime_feature --> n_apps_cert_prep_src_app_runtime_ui
+  n_apps_cert_prep_src_app_runtime_feature --> n_libs_cert_prep_api_src
   n_apps_cert_prep_src_app_runtime_feature --> n_libs_ui_dialog_src
   n_apps_cert_prep_src_app_runtime_feature --> n_libs_ui_progress_src
+  n_apps_cert_prep_src_app_runtime_feature --> n_libs_ui_tabs_src
   n_apps_cert_prep_src_app_runtime_ui --> n_apps_cert_prep_src_app_runtime_domain
   n_apps_cert_prep_src_app_runtime_ui --> n_libs_ui_badge_src
   n_apps_cert_prep_src_app_source_library_data --> n_apps_cert_prep_src_app_core_data
@@ -141,6 +146,8 @@ flowchart LR
   n_libs_ui_input_src --> n_libs_ui_utils_src
   n_libs_ui_progress_src --> n_libs_ui_utils_src
   n_libs_ui_switch_src --> n_libs_ui_utils_src
+  n_libs_ui_tabs_src --> n_libs_ui_button_src
+  n_libs_ui_tabs_src --> n_libs_ui_utils_src
   n_libs_ui_textarea_src --> n_libs_ui_utils_src
   n_root --> n_apps_cert_prep_src_app_core_shell
 ```
