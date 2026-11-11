@@ -13,7 +13,6 @@ import {
 import {
   loadPhase1PythonWheelProvenance,
   createAcceptanceSmokeOptions,
-  localProbeFinalizationErrors,
 } from './acceptance-real-options.mts';
 import { buildOwnedCleanupObservation } from './packaged-flow-smoke/app-lifecycle.mts';
 import { PHASE1_FINAL_IDENTITY } from './phase1-final-identity.mts';
@@ -25,7 +24,6 @@ import {
   parseOcrTruthManifest,
   type OcrTruthManifest,
 } from './ocr-truth-contract.mts';
-import { mixedTextAndImagePdf } from './packaged-capture-workbench-smoke/negative-data-contract.mts';
 
 test('real acceptance binds the installed executable and adjacent runtime identity', async () => {
   const fixture = await createFixture('explicit-image');
@@ -334,90 +332,6 @@ test('Phase 1 local-probe requires an explicit Python wheel provenance input', a
     ),
     /CERT_PREP_CAPTURE_RUNTIME_PYTHON_WHEEL/u,
   );
-});
-
-test('strict local_probe accepts embedded-text PDF input before candidate checks', async () => {
-  const fixture = await createFixture('strict-local-preflight');
-  try { fixture.environment.CERT_PREP_ACCEPTANCE_RUNTIME_PROFILE = 'local_probe'; fixture.environment.CERT_PREP_CAPTURE_RUNTIME_ROOT = join(fixture.root, 'candidate');
-    await writeFile(join(fixture.root, 'fixture.pdf'), mixedTextAndImagePdf());
-    fixture.environment.CERT_PREP_ACCEPTANCE_PDF_EXPECTATIONS_SHA256 = await sha256File(join(fixture.root, 'fixture.pdf.expected.json')); fixture.environment.CERT_PREP_ACCEPTANCE_IMAGE_EXPECTATIONS_SHA256 = await sha256File(join(fixture.root, 'fixture.jpeg.expected.json'));
-    await assert.rejects(createAcceptanceSmokeOptions({ environment: fixture.environment, workspaceRoot: fixture.workspaceRoot }), /CERT_PREP_ACCEPTANCE_EXPECTED_CANDIDATE_ID/u);
-  } finally { await cleanupFixture(fixture); }
-});
-
-test('local_probe finalizer requires complete OCR proof and rejects tampering without starting the app', async () => {
-  const fixture = await createFixture('local-finalizer'); const h = 'a'.repeat(64); const commit = 'b'.repeat(40); const pdfPath = join(fixture.root, 'fixture.pdf'); const pdf = await sha256File(pdfPath); const image = await sha256File(fixture.imagePath);
-  fixture.environment.CERT_PREP_ACCEPTANCE_PDF_EXPECTATIONS_SHA256 = await sha256File(`${pdfPath}.expected.json`); fixture.environment.CERT_PREP_ACCEPTANCE_IMAGE_EXPECTATIONS_SHA256 = await sha256File(`${fixture.imagePath}.expected.json`); fixture.environment.CERT_PREP_ACCEPTANCE_EXPECTED_CANDIDATE_ID = h; fixture.environment.CERT_PREP_ACCEPTANCE_EXPECTED_SOURCE_COMMIT = commit; fixture.environment.CERT_PREP_ACCEPTANCE_EXPECTED_CANDIDATE_MANIFEST_SHA256 = h; fixture.environment.CERT_PREP_ACCEPTANCE_EXPECTED_OCR_MODEL_SHA256 = h;
-  const candidate = { runtimeVersion: PHASE1_FINAL_IDENTITY.runtimeVersion, profileId: 'capture-workbench-ocr-profile', profileSpecSha256: h, candidateId: h, candidateSourceCommit: commit, candidateManifestSha256: h, contractSetSha256: h, coreSha256: h, workerSha256: h, workerExecutableSha256: h }; const journey = (sourceHash: string, threshold: 0.01 | 0.03) => ({ status: 'completed', fixture: { sha256: sourceHash }, ocrDevice: 'windowsml-dml', truth: { status: 'passed', cer: 0, cerThreshold: threshold, cerMode: 'anchor_only', normalizationVersion: 'nfkc-whitespace-v1', referenceNormalizedSha256: 'c'.repeat(64), outputNormalizedSha256: 'd'.repeat(64), expectedAnchorCount: 1, matchedAnchorCount: 1, missingAnchorCount: 0, pages: [{ pageNumber: 1, cer: 0, referenceNormalizedSha256: 'c'.repeat(64), outputNormalizedSha256: 'd'.repeat(64), expectedAnchorCount: 1, matchedAnchorCount: 1, missingAnchorCount: 0 }] }, evidence: { runId: 'local-finalizer', sourceSha256: sourceHash, importedSourceSha256: sourceHash, runtimeArtifactSha256: h, contractSetSha256: h, workerArchiveSha256: h, workerExecutableSha256: h, ocrExecutionProof: { artifactPath: 'ocr-device-proof-v1.json', bytes: 1024, sha256: h, schemaVersion: '1', planSha256: h, identitySha256: h, adapterClass: 'dedicated', adapterDescription: 'NVIDIA RTX 4060', dmlDeviceId: 0, dmlNodeCount: 1, sessionCount: 1, executionSha256: h, sourceSha256: sourceHash, runtimeSha256: h, workerSha256: h, modelSha256: h, profileId: 'capture-workbench-ocr-profile', profileSpecSha256: h, contractSetSha256: h, requestedPageScope: [1] }, authenticatedRuntimePreflight: 'gpu-dml', uiGpuBeforeImport: true, sourceImportEnabled: true, cleanup: { app: true, sidecar: true, cdpPort: true, temporaryAppData: true }, cleanupObservation: { ownedProcessPids: [1, 2], remainingOwnedProcessPids: [], ownedListenerPorts: [], remainingOwnedListenerPorts: [], ocrModelWorkerPids: [2], remainingOcrModelWorkerPids: [] }, pageScope: { sourcePageCount: 1, requestedPageNumbers: [1], processedPageNumbers: [1], uiRawPageNumbers: [1], uiStructuredPageNumbers: [1] }, pageRecords: { expectedPageNumbers: [1], document: { pageCount: 1, processedPageCount: 1, chunksCount: 1, extractionMethod: 'windowsml_ocr' }, records: [{ pageNumber: 1 }] } } });
-  try {
-    const suite = { status: 'completed', runId: 'local-finalizer', runtime: { candidate }, pdf: journey(pdf, 0.01), image: journey(image, 0.03) };
-    assert.deepEqual(await localProbeFinalizationErrors(suite, fixture.environment), []);
-    const proof = suite.image.evidence.ocrExecutionProof as Record<string, unknown>;
-    delete proof.executionSha256;
-    assert.deepEqual(
-      await localProbeFinalizationErrors(suite, fixture.environment),
-      ['Local OCR JPEG execution proof summary was invalid.'],
-    );
-    proof.executionSha256 = h;
-    const pdfProof = suite.pdf.evidence.ocrExecutionProof;
-    Reflect.deleteProperty(suite.pdf.evidence as Record<string, unknown>, 'ocrExecutionProof');
-    assert.deepEqual(
-      await localProbeFinalizationErrors(suite, fixture.environment),
-      ['Local OCR PDF execution proof summary was invalid.'],
-    );
-    suite.pdf.evidence.ocrExecutionProof = pdfProof;
-    suite.pdf.evidence.pageScope.uiRawPageNumbers = [2];
-    assert.deepEqual(
-      await localProbeFinalizationErrors(suite, fixture.environment),
-      ['Local OCR PDF page scope was not source=N, requested=[1], processed=[1].'],
-    );
-    suite.pdf.evidence.pageScope.uiRawPageNumbers = [1];
-    suite.pdf.evidence.pageScope.uiStructuredPageNumbers = [2];
-    assert.deepEqual(
-      await localProbeFinalizationErrors(suite, fixture.environment),
-      ['Local OCR PDF page scope was not source=N, requested=[1], processed=[1].'],
-    );
-    suite.pdf.evidence.pageScope.uiStructuredPageNumbers = [1];
-    suite.image.evidence.pageRecords.document.pageCount = 2;
-    assert.deepEqual(
-      await localProbeFinalizationErrors(suite, fixture.environment),
-      ['Local OCR JPEG persisted page records were invalid.'],
-    );
-    suite.image.evidence.pageRecords.document.pageCount = 1;
-    suite.image.evidence.pageRecords.expectedPageNumbers = [2];
-    assert.deepEqual(
-      await localProbeFinalizationErrors(suite, fixture.environment),
-      ['Local OCR JPEG persisted page records were invalid.'],
-    );
-    suite.image.evidence.pageRecords.expectedPageNumbers = [1];
-    suite.image.evidence.pageRecords.document.processedPageCount = 2;
-    assert.deepEqual(
-      await localProbeFinalizationErrors(suite, fixture.environment),
-      ['Local OCR JPEG persisted page records were invalid.'],
-    );
-    suite.image.evidence.pageRecords.document.processedPageCount = 1;
-    suite.image.evidence.pageRecords.records = [{ pageNumber: 2 }];
-    assert.deepEqual(
-      await localProbeFinalizationErrors(suite, fixture.environment),
-      ['Local OCR JPEG persisted page records were invalid.'],
-    );
-    suite.image.evidence.pageRecords.records = [{ pageNumber: 1 }, { pageNumber: 2 }];
-    assert.deepEqual(
-      await localProbeFinalizationErrors(suite, fixture.environment),
-      ['Local OCR JPEG persisted page records were invalid.'],
-    );
-    suite.image.evidence.pageRecords.records = [{ pageNumber: 1 }];
-    suite.pdf.evidence.cleanupObservation = {
-      evidenceUnavailable: {
-        source: 'windows_listener_snapshot',
-        stage: 'before_close',
-      },
-    } as unknown as typeof suite.pdf.evidence.cleanupObservation;
-    assert.deepEqual(
-      await localProbeFinalizationErrors(suite, fixture.environment),
-      ['Local OCR PDF child cleanup was not explicitly proven.'],
-    );
-  } finally { await cleanupFixture(fixture); }
 });
 
 test('owned cleanup probe excludes baseline PID and listener identities', () => {

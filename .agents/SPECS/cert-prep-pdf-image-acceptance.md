@@ -35,8 +35,8 @@ and need the product owner's review before they are updated
 - `CERT_PREP_CAPTURE_RUNTIME_ROOT`: optional downloaded Capture Runtime release
   directory. When supplied, the installed core and manifest identity must match
   it byte for byte, and the OCR worker must match the downloaded catalog.
-- `CERT_PREP_CAPTURE_RUNTIME_PYTHON_WHEEL`: required for a `local_probe`
-  runtime profile. The gate re-hashes this wheel, checks its
+- `CERT_PREP_CAPTURE_RUNTIME_PYTHON_WHEEL`: required when validating against a
+  Phase 1 aggregate. The gate re-hashes this wheel, checks its
   `capture-runtime-client` version and embedded contract digest, and requires
   the generated `worker_sha256` and `pdf_page_numbers` fields before the
   journey starts. The wheel path and contents are never persisted.
