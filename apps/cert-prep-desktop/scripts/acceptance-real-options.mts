@@ -41,7 +41,6 @@ import {
   OCR_EXECUTION_PROOF_ARTIFACT,
   type OcrExecutionProofExpectation,
 } from './ocr-execution-proof.mts';
-import { validateRuntimeCandidateManifest, type ValidatedRuntimeCandidateManifest } from '../../../tools/capture-candidate-gate.mts';
 
 export interface AcceptanceFixture {
   readonly name: string;
@@ -62,7 +61,6 @@ export interface AcceptanceRuntimeProvenance {
   readonly workerSha256: string;
   readonly workerBytes: number;
   readonly workerExecutableSha256?: string;
-  readonly candidateId?: string; readonly candidateSourceCommit?: string; readonly contractSetSha256?: string; readonly profileId?: string; readonly profileSpecSha256?: string;
   readonly pythonWheel?: CaptureRuntimePythonWheelProvenance;
 }
 
@@ -98,9 +96,8 @@ interface CandidateRuntime {
     readonly fileName: string;
     readonly sha256: string;
     readonly bytes: number;
-    readonly executableSha256?: string; readonly content?: Uint8Array;
+    readonly executableSha256?: string;
   };
-  readonly localObservation?: ValidatedRuntimeCandidateManifest;
 }
 
 interface CaptureRuntimeMirror {
@@ -169,8 +166,7 @@ export async function createAcceptanceSmokeOptions(
   );
   const pdfBytes = await readFile(pdfPath);
   const actualPdfSha256 = await sha256File(pdfPath);
-  const runtimeProfile = environment['CERT_PREP_ACCEPTANCE_RUNTIME_PROFILE']?.trim();
-  const phase1Final = runtimeProfile === 'local_probe' ? undefined : await loadPhase1FinalCandidate(environment);
+  const phase1Final = await loadPhase1FinalCandidate(environment);
   assertRasterPdfFixture(pdfBytes);
   const pdfTruth = await loadOcrTruthManifest(
     'CERT_PREP_ACCEPTANCE_PDF_EXPECTATIONS',
@@ -272,17 +268,14 @@ export async function createAcceptanceSmokeOptions(
             : {}),
         }
       : undefined;
-    const acceptanceRuntimeIdentity = candidateRuntime?.localObservation
-      ? strictRuntimeIdentity(candidateRuntime.localObservation, installedArtifact)
-      : phase1Final
-        ? phase1RuntimeIdentity(phase1Final, installedArtifact)
-        : undefined;
+    const acceptanceRuntimeIdentity = phase1Final
+      ? phase1RuntimeIdentity(phase1Final, installedArtifact)
+      : undefined;
     const pdfOcrExecutionProofExpected = acceptanceRuntimeIdentity
       ? buildOcrExecutionProofExpectation({
           environment,
           sourceSha256: actualPdfSha256,
           identity: acceptanceRuntimeIdentity,
-          candidateRuntime,
         })
       : undefined;
     const imageOcrExecutionProofExpected =
@@ -291,7 +284,6 @@ export async function createAcceptanceSmokeOptions(
             environment,
             sourceSha256: actualImageSha256,
             identity: acceptanceRuntimeIdentity,
-            candidateRuntime,
           })
         : undefined;
     const pdfOutDir = join(packagedRunRoot, 'pdf-ocr-run');
@@ -415,9 +407,7 @@ async function loadPhase1FinalCandidate(
   environment: Readonly<NodeJS.ProcessEnv>,
 ): Promise<Phase1FinalEvidence | undefined> {
   const manifestPath = environment['CERT_PREP_CAPTURE_RUNTIME_PHASE1_MANIFEST']?.trim();
-  const profile = environment['CERT_PREP_ACCEPTANCE_RUNTIME_PROFILE']?.trim();
   const probeRequested =
-    profile === 'local_probe' ||
     Boolean(manifestPath) ||
     (environment['CERT_PREP_CAPTURE_RUNTIME_PROBE']?.trim() === '1' &&
       environment['CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION']?.trim() === PHASE1_FINAL_IDENTITY.runtimeVersion);
@@ -589,121 +579,14 @@ export function isCompletePersistedOcrExecutionProof(
   );
 }
 
-export async function localProbeFinalizationErrors(
-  sourceSuite: unknown,
+function requiredProofValue(
   environment: Readonly<NodeJS.ProcessEnv>,
-): Promise<string[]> {
-  const errors: string[] = [];
-  const suite = isRecord(sourceSuite) ? sourceSuite : undefined;
-  const pdfOnly = environment['CERT_PREP_ACCEPTANCE_PDF_ONLY']?.trim() === '1';
-  if (suite?.status !== 'completed') errors.push('Local OCR source suite did not complete.');
-  const runtime = suite && isRecord(suite.runtime) ? suite.runtime : undefined;
-  const candidate = runtime && isRecord(runtime.candidate) ? runtime.candidate : undefined;
-  const candidateFields: readonly [string, RegExp][] = [
-    ['candidateId', /^[0-9a-f]{64}$/u],
-    ['candidateSourceCommit', /^[0-9a-f]{40}$/u],
-    ['candidateManifestSha256', /^[0-9a-f]{64}$/u],
-    ['contractSetSha256', /^[0-9a-f]{64}$/u],
-    ['coreSha256', /^[0-9a-f]{64}$/u],
-    ['workerSha256', /^[0-9a-f]{64}$/u],
-    ['workerExecutableSha256', /^[0-9a-f]{64}$/u],
-    ['profileSpecSha256', /^[0-9a-f]{64}$/u],
-  ];
-  if (!candidate || candidate.runtimeVersion !== PHASE1_FINAL_IDENTITY.runtimeVersion || typeof candidate.profileId !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/u.test(candidate.profileId)) errors.push('Local OCR candidate identity was missing.');
-  for (const [field, pattern] of candidateFields) if (!candidate || typeof candidate[field] !== 'string' || !pattern.test(candidate[field])) errors.push(`Local OCR candidate ${field} was invalid.`);
-  for (const [field, envName] of [['candidateId', 'CERT_PREP_ACCEPTANCE_EXPECTED_CANDIDATE_ID'], ['candidateSourceCommit', 'CERT_PREP_ACCEPTANCE_EXPECTED_SOURCE_COMMIT'], ['candidateManifestSha256', 'CERT_PREP_ACCEPTANCE_EXPECTED_CANDIDATE_MANIFEST_SHA256']] as const) if (environment[envName]?.trim() && candidate?.[field] !== environment[envName]?.trim()) errors.push(`Local OCR candidate ${field} did not match the expected identity.`);
-  const runId = typeof suite?.runId === 'string' && suite.runId.trim() ? suite.runId : undefined;
-  const truthInputs = [
-    ['PDF', 'CERT_PREP_ACCEPTANCE_PDF_EXPECTATIONS', 'CERT_PREP_ACCEPTANCE_PDF_EXPECTATIONS_SHA256'] as const,
-    ...(!pdfOnly
-      ? ([['JPEG', 'CERT_PREP_ACCEPTANCE_IMAGE_EXPECTATIONS', 'CERT_PREP_ACCEPTANCE_IMAGE_EXPECTATIONS_SHA256']] as const)
-      : []),
-  ];
-  for (const [label, pathName, hashName] of truthInputs) {
-    const path = environment[pathName]?.trim(), expected = environment[hashName]?.trim();
-    if (!path || !expected || !/^[0-9a-f]{64}$/u.test(expected)) errors.push(`Local OCR ${label} truth SHA was missing or invalid.`);
-    else { const contents = await readFile(path).catch(() => undefined); if (!contents || createHash('sha256').update(contents).digest('hex') !== expected) errors.push(`Local OCR ${label} truth SHA did not match the manifest.`); }
-  }
-  const checkJourney = (value: unknown, label: 'PDF' | 'JPEG', sourceHash: string | undefined): void => {
-    const journey = isRecord(value) ? value : undefined, truth = journey && isRecord(journey.truth) ? journey.truth : undefined, evidence = journey && isRecord(journey.evidence) ? journey.evidence : undefined;
-    const cer = truth?.cer, threshold = truth?.cerThreshold, pages = Array.isArray(truth?.pages) ? truth.pages : [];
-    const hashFieldsValid = ['referenceNormalizedSha256', 'outputNormalizedSha256']
-      .every((field) => typeof truth?.[field] === 'string' && /^[0-9a-f]{64}$/u.test(truth[field] as string));
-    const semanticPagesValid = pages.length > 0 && pages.every((page) => {
-      if (!isRecord(page)) return false;
-      const expected = page.expectedAnchorCount, matched = page.matchedAnchorCount, missing = page.missingAnchorCount;
-      return typeof page.pageNumber === 'number' && Number.isSafeInteger(page.pageNumber) && page.pageNumber > 0 &&
-        typeof page.cer === 'number' && Number.isFinite(page.cer) && page.cer >= 0 && page.cer <= (typeof threshold === 'number' ? threshold : -1) &&
-        typeof expected === 'number' && Number.isSafeInteger(expected) && expected > 0 &&
-        typeof matched === 'number' && Number.isSafeInteger(matched) && matched === expected &&
-        typeof missing === 'number' && missing === 0 &&
-        typeof page.referenceNormalizedSha256 === 'string' && /^[0-9a-f]{64}$/u.test(page.referenceNormalizedSha256) &&
-        typeof page.outputNormalizedSha256 === 'string' && /^[0-9a-f]{64}$/u.test(page.outputNormalizedSha256);
-    });
-    if (journey?.status !== 'completed' || truth?.status !== 'passed' || typeof sourceHash !== 'string' || !/^[0-9a-f]{64}$/u.test(sourceHash) || evidence?.sourceSha256 !== sourceHash || evidence?.importedSourceSha256 !== sourceHash || typeof cer !== 'number' || !Number.isFinite(cer) || typeof threshold !== 'number' || !Number.isFinite(threshold) || cer < 0 || cer > threshold || (truth?.cerMode !== 'anchor_only' && truth?.cerMode !== 'full_reference') || truth?.normalizationVersion !== 'nfkc-whitespace-v1' || !hashFieldsValid || typeof truth?.expectedAnchorCount !== 'number' || typeof truth?.matchedAnchorCount !== 'number' || typeof truth?.missingAnchorCount !== 'number' || truth.expectedAnchorCount < 1 || truth.matchedAnchorCount !== truth.expectedAnchorCount || truth.missingAnchorCount !== 0 || !semanticPagesValid) errors.push(`Local OCR ${label} truth evidence was invalid.`);
-    for (const [field, evidenceField] of [['coreSha256', 'runtimeArtifactSha256'], ['contractSetSha256', 'contractSetSha256'], ['workerSha256', 'workerArchiveSha256'], ['workerExecutableSha256', 'workerExecutableSha256']] as const) if (candidate?.[field] !== evidence?.[evidenceField]) errors.push(`Local OCR ${label} evidence was not bound to the candidate.`);
-    const cleanup = evidence && isRecord(evidence.cleanup) ? evidence.cleanup : undefined;
-    const observation = evidence && isRecord(evidence.cleanupObservation) ? evidence.cleanupObservation : undefined;
-    const ownedPids = Array.isArray(observation?.ownedProcessPids) ? observation.ownedProcessPids : [];
-    const remainingPids = Array.isArray(observation?.remainingOwnedProcessPids) ? observation.remainingOwnedProcessPids : [];
-    const remainingPorts = Array.isArray(observation?.remainingOwnedListenerPorts) ? observation.remainingOwnedListenerPorts : [];
-    const remainingWorkers = Array.isArray(observation?.remainingOcrModelWorkerPids) ? observation.remainingOcrModelWorkerPids : [];
-    const observedArrays = ['ownedProcessPids', 'remainingOwnedProcessPids', 'ownedListenerPorts', 'remainingOwnedListenerPorts', 'ocrModelWorkerPids', 'remainingOcrModelWorkerPids']
-      .map((field) => observation?.[field])
-      .every((value) => Array.isArray(value) && value.every((pid) => typeof pid === 'number' && Number.isSafeInteger(pid) && pid > 0));
-    if (!cleanup || ['app', 'sidecar', 'cdpPort', 'temporaryAppData'].some((field) => cleanup[field] !== true) || !observedArrays || ownedPids.length === 0 || remainingPids.length !== 0 || remainingPorts.length !== 0 || remainingWorkers.length !== 0) errors.push(`Local OCR ${label} child cleanup was not explicitly proven.`);
-    if (evidence?.authenticatedRuntimePreflight !== 'gpu-dml' || evidence.uiGpuBeforeImport !== true || evidence.sourceImportEnabled !== true || (journey?.ocrDevice ?? evidence.ocrDevice) !== 'windowsml-dml') errors.push(`Local OCR ${label} did not prove persisted windowsml-dml execution.`);
-    if (label === 'JPEG' || label === 'PDF') {
-      const proof = evidence && isRecord(evidence.ocrExecutionProof) ? evidence.ocrExecutionProof : undefined;
-      if (!isCompletePersistedOcrExecutionProof(proof, sourceHash, evidence, candidate, environment)) errors.push(`Local OCR ${label} execution proof summary was invalid.`);
-    }
-    const scope = evidence && isRecord(evidence.pageScope) ? evidence.pageScope : undefined;
-    if (label === 'PDF' && (!scope || typeof scope.sourcePageCount !== 'number' || !Number.isSafeInteger(scope.sourcePageCount) || scope.sourcePageCount < 1 || JSON.stringify(scope.requestedPageNumbers) !== '[1]' || JSON.stringify(scope.processedPageNumbers) !== '[1]' || JSON.stringify(scope.uiRawPageNumbers) !== '[1]' || JSON.stringify(scope.uiStructuredPageNumbers) !== '[1]')) errors.push(`Local OCR ${label} page scope was not source=N, requested=[1], processed=[1].`);
-    const records = evidence && isRecord(evidence.pageRecords) ? evidence.pageRecords : undefined;
-    const document = records && isRecord(records.document) ? records.document : undefined;
-    const persistedRecords = records && Array.isArray(records.records) ? records.records : undefined;
-    const persistedPageNumbers = persistedRecords?.map((record) => isRecord(record) ? record.pageNumber : undefined);
-    const persistedPageScopeValid =
-      !!document &&
-      (label === 'PDF'
-        ? !!scope &&
-          typeof document.pageCount === 'number' &&
-          Number.isSafeInteger(document.pageCount) &&
-          document.pageCount >= 1 &&
-          document.pageCount === scope.sourcePageCount
-        : document.pageCount === 1) &&
-      document.processedPageCount === 1 &&
-      document.chunksCount === 1 &&
-      JSON.stringify(records?.expectedPageNumbers) === '[1]' &&
-      persistedPageNumbers?.length === 1 &&
-      persistedPageNumbers[0] === 1;
-    if (!records || !document || document.extractionMethod !== 'windowsml_ocr' || !persistedPageScopeValid) errors.push(`Local OCR ${label} persisted page records were invalid.`);
-    if (runId && evidence?.runId !== runId) errors.push(`Local OCR ${label} evidence run identity did not match.`);
-  };
-  checkJourney(suite?.pdf, 'PDF', isRecord(suite?.pdf) && isRecord(suite.pdf.fixture) && typeof suite.pdf.fixture.sha256 === 'string' ? suite.pdf.fixture.sha256 : undefined);
-  if (!pdfOnly) {
-    checkJourney(suite?.image, 'JPEG', isRecord(suite?.image) && isRecord(suite.image.fixture) && typeof suite.image.fixture.sha256 === 'string' ? suite.image.fixture.sha256 : undefined);
-  }
-  return errors;
-}
-
-function strictRuntimeIdentity(observation: ValidatedRuntimeCandidateManifest, installedArtifact: AcceptanceInstalledArtifactProvenance): AcceptanceRuntimeIdentityExpectation {
-  return {
-    runtimeArtifactSha256: observation.runtime.sha256,
-    contractSetSha256: observation.contractSetSha256,
-    workerArchiveSha256: observation.ocrArchive.sha256,
-    workerExecutableSha256: observation.ocrExecutable.sha256,
-    preflightMode: 'gpu-dml',
-    installedExecutableSha256: installedArtifact.executableSha256,
-    installedRuntimeManifestIdentitySha256: installedArtifact.runtimeManifestIdentitySha256,
-    installedRuntimeCoreSha256: installedArtifact.runtimeCoreSha256,
-    installedRuntimeCoreBytes: installedArtifact.runtimeCoreBytes,
-  };
-}
-
-function requiredLocalIdentity(environment: Readonly<NodeJS.ProcessEnv>, names: readonly string[]): string {
+  names: readonly string[],
+): string {
   const value = names.map((name) => environment[name]?.trim()).find(Boolean);
-  if (!value) throw new Error(`local_probe acceptance requires ${names[0]}.`);
+  if (!value) {
+    throw new Error(`GPU OCR execution proof requires ${names[0]}.`);
+  }
   return value;
 }
 
@@ -711,17 +594,20 @@ function buildOcrExecutionProofExpectation(input: {
   readonly environment: Readonly<NodeJS.ProcessEnv>;
   readonly sourceSha256: string;
   readonly identity: AcceptanceRuntimeIdentityExpectation;
-  readonly candidateRuntime?: CandidateRuntime;
 }): OcrExecutionProofExpectation {
   const modelSha256 = requiredProofSha(input.environment, [
     'CERT_PREP_ACCEPTANCE_EXPECTED_OCR_MODEL_SHA256',
     'CAPTURE_PDF_OCR_E2E_LOCAL_MODEL_SHA256',
   ]);
-  const profileSha256 = input.candidateRuntime?.localObservation?.profile.sha256 ??
-    requiredProofSha(input.environment, ['CERT_PREP_ACCEPTANCE_EXPECTED_OCR_PROFILE_SHA256']);
-  const profileId = input.candidateRuntime?.localObservation?.profile.id ??
-    requiredLocalIdentity(input.environment, ['CERT_PREP_ACCEPTANCE_EXPECTED_OCR_PROFILE_ID']);
-  const adapterDescription = input.environment['CERT_PREP_ACCEPTANCE_EXPECTED_OCR_ADAPTER']?.trim() || 'RTX 4060';
+  const profileSha256 = requiredProofSha(input.environment, [
+    'CERT_PREP_ACCEPTANCE_EXPECTED_OCR_PROFILE_SHA256',
+  ]);
+  const profileId = requiredProofValue(input.environment, [
+    'CERT_PREP_ACCEPTANCE_EXPECTED_OCR_PROFILE_ID',
+  ]);
+  const adapterDescription =
+    input.environment['CERT_PREP_ACCEPTANCE_EXPECTED_OCR_ADAPTER']?.trim() ||
+    'RTX 4060';
   return {
     sourceSha256: input.sourceSha256,
     runtimeSha256: input.identity.runtimeArtifactSha256,
@@ -741,59 +627,11 @@ function requiredProofSha(
 ): string {
   const value = names.map((name) => environment[name]?.trim()).find(Boolean);
   if (!value || !/^[a-f0-9]{64}$/u.test(value)) {
-    throw new Error(`GPU OCR execution proof requires ${names[0]} as a lowercase SHA-256 digest.`);
+    throw new Error(
+      `GPU OCR execution proof requires ${names[0]} as a lowercase SHA-256 digest.`,
+    );
   }
   return value;
-}
-
-async function loadStrictLocalRuntimeCandidate(
-  environment: Readonly<NodeJS.ProcessEnv>,
-  installedRuntime: RuntimeIdentity,
-): Promise<CandidateRuntime> {
-  const candidateRoot = requiredLocalIdentity(environment, ['CERT_PREP_CAPTURE_RUNTIME_ROOT']);
-  const candidateId = requiredLocalIdentity(environment, ['CERT_PREP_ACCEPTANCE_EXPECTED_CANDIDATE_ID', 'CERT_PREP_CAPTURE_RUNTIME_EXPECTED_CANDIDATE_ID', 'CERT_PREP_CAPTURE_RUNTIME_CANDIDATE_ID']);
-  const sourceCommit = requiredLocalIdentity(environment, ['CERT_PREP_ACCEPTANCE_EXPECTED_SOURCE_COMMIT', 'CERT_PREP_CAPTURE_RUNTIME_EXPECTED_SOURCE_COMMIT', 'CERT_PREP_CAPTURE_RUNTIME_SOURCE_COMMIT']);
-  const candidateManifestSha256 = requiredLocalIdentity(environment, ['CERT_PREP_ACCEPTANCE_EXPECTED_CANDIDATE_MANIFEST_SHA256', 'CERT_PREP_CAPTURE_RUNTIME_EXPECTED_CANDIDATE_MANIFEST_SHA256', 'CERT_PREP_CAPTURE_RUNTIME_CANDIDATE_MANIFEST_SHA256']);
-  const wheelPath = requiredLocalIdentity(environment, [CAPTURE_RUNTIME_PYTHON_WHEEL_ENV]);
-  const observation = await validateRuntimeCandidateManifest({
-    candidate: candidateRoot,
-    candidateId,
-    sourceCommit,
-    candidateManifestSha256,
-  });
-  if (installedRuntime.runtimeVersion !== observation.runtimeVersion || installedRuntime.fileName !== basename(observation.runtime.path) || installedRuntime.coreSha256 !== observation.runtime.sha256 || installedRuntime.coreBytes !== observation.runtime.bytes) {
-    throw new Error('The installed application Capture Runtime does not exactly match the strict local runtime candidate.');
-  }
-  const pythonWheel = await inspectCaptureRuntimePythonWheel(wheelPath, {
-    runtimeVersion: observation.runtimeVersion,
-    contractSetSha256: observation.contractSetSha256,
-  });
-  return {
-    root: join(resolve(candidateRoot), 'runtime'),
-    provenance: {
-      distributionProfile: 'local_nonpublishable',
-      source: `Capture Runtime strict local candidate ${observation.candidateId}`,
-      runtimeVersion: observation.runtimeVersion,
-      coreSha256: observation.runtime.sha256,
-      coreBytes: observation.runtime.bytes,
-      installedManifestSha256: installedRuntime.manifestSha256,
-      candidateManifestSha256: observation.candidateManifestSha256,
-      manifestIdentitySha256: installedRuntime.manifestIdentitySha256,
-      candidateId: observation.candidateId,
-      candidateSourceCommit: observation.sourceCommit,
-      contractSetSha256: observation.contractSetSha256,
-      profileId: observation.profile.id,
-      profileSpecSha256: observation.profile.sha256,
-      pythonWheel,
-    },
-    worker: {
-      fileName: basename(observation.ocrArchive.path),
-      sha256: observation.ocrArchive.sha256,
-      bytes: observation.ocrArchive.bytes,
-      executableSha256: observation.ocrExecutable.sha256, content: observation.ocrArchive.content,
-    },
-    localObservation: observation,
-  };
 }
 
 async function loadRuntimeCandidate(
@@ -802,19 +640,12 @@ async function loadRuntimeCandidate(
   phase1Final?: Phase1FinalEvidence,
 ): Promise<CandidateRuntime | undefined> {
   const runtimeProfile = environment['CERT_PREP_ACCEPTANCE_RUNTIME_PROFILE']?.trim();
-  if (
-    runtimeProfile &&
-    runtimeProfile !== 'downloaded_public' &&
-    runtimeProfile !== 'local_probe'
-  ) {
+  if (runtimeProfile && runtimeProfile !== 'downloaded_public') {
     throw new Error(
-      'CERT_PREP_ACCEPTANCE_RUNTIME_PROFILE must be downloaded_public or local_probe when supplied.',
+      'CERT_PREP_ACCEPTANCE_RUNTIME_PROFILE must be downloaded_public when supplied.',
     );
   }
-  if (runtimeProfile === 'local_probe') {
-    return loadStrictLocalRuntimeCandidate(environment, installedRuntime);
-  }
-  const localProbe = runtimeProfile === 'local_probe' || phase1Final !== undefined;
+  const localProbe = phase1Final !== undefined;
   const rootValue = environment['CERT_PREP_CAPTURE_RUNTIME_ROOT']?.trim();
   if (!rootValue) {
     if (localProbe) {
@@ -841,11 +672,6 @@ async function loadRuntimeCandidate(
   if (runtimeProfile === 'downloaded_public' && phase1Final) {
     throw new Error(
       'downloaded_public acceptance cannot consume a local-probe Phase 1 aggregate.',
-    );
-  }
-  if (localProbe && !phase1Final) {
-    throw new Error(
-      'local_probe acceptance requires CERT_PREP_CAPTURE_RUNTIME_PHASE1_MANIFEST.',
     );
   }
   const downloadedPublic = runtimeProfile === 'downloaded_public';
@@ -1073,7 +899,7 @@ async function startCaptureRuntimeMirror(
 ): Promise<CaptureRuntimeMirror> {
   const workerName = candidate.worker.fileName;
   const workerPath = join(candidate.root, workerName);
-  const worker = candidate.worker.content ?? await readFile(workerPath);
+  const worker = await readFile(workerPath);
   const workerSha256 = createHash('sha256').update(worker).digest('hex');
   if (
     workerSha256 !== candidate.worker.sha256 ||
@@ -1165,7 +991,6 @@ async function loadOcrTruthManifest(
       `${environmentName} must identify a readable expectation manifest: ${expectationPath}.`,
     );
   });
-  if (environment['CERT_PREP_ACCEPTANCE_RUNTIME_PROFILE'] === 'local_probe' && environment[`${environmentName}_SHA256`]?.trim() !== createHash('sha256').update(contents).digest('hex')) throw new Error(`${environmentName}_SHA256 must match the fixed local truth manifest.`);
   let parsed: unknown;
   try {
     parsed = JSON.parse(contents);

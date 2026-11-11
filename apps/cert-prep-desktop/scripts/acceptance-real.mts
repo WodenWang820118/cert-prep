@@ -17,10 +17,7 @@ import {
   type OcrPageRecordEvidence,
 } from './ocr-page-record-evidence.mts';
 import { PHASE1_FINAL_IDENTITY } from './phase1-final-identity.mts';
-import {
-  isCompletePersistedOcrExecutionProof,
-  localProbeFinalizationErrors,
-} from './acceptance-real-options.mts';
+import { isCompletePersistedOcrExecutionProof } from './acceptance-real-options.mts';
 
 const workspaceRoot = resolve(import.meta.dirname, '../..', '..');
 const recorded = process.argv.includes('--recorded');
@@ -101,11 +98,8 @@ const sourceSuite = existsSync(sourceSuitePath)
     })
   : undefined;
 const exitCode = result.status ?? 1;
-const localProbe = process.env.CERT_PREP_ACCEPTANCE_RUNTIME_PROFILE?.trim() === 'local_probe';
 const pdfOnly = process.env.CERT_PREP_ACCEPTANCE_PDF_ONLY?.trim() === '1';
-const sourceSuiteErrors = localProbe
-  ? await localProbeFinalizationErrors(sourceSuite, process.env)
-  : phase1SourceSuiteErrors(sourceSuite);
+const sourceSuiteErrors = phase1SourceSuiteErrors(sourceSuite);
 const imageCleanup = pdfOnly
   ? { app: true, sidecar: true, cdpPort: true, temporaryAppData: true }
   : sourceSuite?.image?.cleanup ?? {
@@ -210,9 +204,9 @@ function phase1SourceSuiteErrors(
     };
   } | undefined,
 ): string[] {
-  const strict =
-    process.env.CERT_PREP_ACCEPTANCE_RUNTIME_PROFILE?.trim() === 'local_probe' ||
-    Boolean(process.env.CERT_PREP_CAPTURE_RUNTIME_PHASE1_MANIFEST?.trim());
+  const strict = Boolean(
+    process.env.CERT_PREP_CAPTURE_RUNTIME_PHASE1_MANIFEST?.trim(),
+  );
   const pdfOnly = process.env.CERT_PREP_ACCEPTANCE_PDF_ONLY?.trim() === '1';
   if (!strict) return [];
   const errors: string[] = [];
