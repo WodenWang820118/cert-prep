@@ -74,9 +74,9 @@ test('captures the route-mocked practice journey for UI regression only', async 
   await mkdir(screenshotDirectory, { recursive: true });
 
   await createWorkspaceWithUploadedDocument(page, api);
-  expect(api.uploadedDocuments().map((document) => document.filename)).toContain(
-    api.document.filename,
-  );
+  expect(
+    api.uploadedDocuments().map((document) => document.filename),
+  ).toContain(api.document.filename);
   await page.screenshot({
     path: resolve(screenshotDirectory, '01-uploaded-pdf-ready.png'),
     fullPage: true,
@@ -88,12 +88,7 @@ test('captures the route-mocked practice journey for UI regression only', async 
     fullPage: true,
   });
 
-  await completePracticeQuestions(
-    page,
-    api,
-    [api.draft],
-    wrongChoiceForDraft,
-  );
+  await completePracticeQuestions(page, api, [api.draft], wrongChoiceForDraft);
   await expectWrongAnswerReview(page, api, [api.draft]);
   await page.screenshot({
     path: resolve(screenshotDirectory, '03-wrong-answer-review.png'),
@@ -184,18 +179,13 @@ test('keeps mixed PDF and image multipart filenames in upload order and the libr
 test('keeps a mixed PDF and audio queue interactive and refills the first free slot', async ({
   page,
 }) => {
-  const api = await installMockCertPrepApi(page, {
-  });
+  const api = await installMockCertPrepApi(page, {});
   await seedMockApiConfig(page, apiBaseUrl, devToken);
 
   const firstPdfFilename = 'queue-first.pdf';
   const secondPdfFilename = 'queue-second.pdf';
   const audioFilename = 'queue-listening.mp3';
-  for (const filename of [
-    firstPdfFilename,
-    secondPdfFilename,
-    audioFilename,
-  ]) {
+  for (const filename of [firstPdfFilename, secondPdfFilename, audioFilename]) {
     api.holdUpload(filename);
   }
 
@@ -234,10 +224,7 @@ test('keeps a mixed PDF and audio queue interactive and refills the first free s
     uploadList.locator(':scope > div').filter({ hasText: filename });
   await expect(page.getByText('3 files selected')).toBeVisible();
   await expect(uploadRow(audioFilename)).toContainText('Waiting to upload');
-  expect(api.startedUploads()).toEqual([
-    firstPdfFilename,
-    secondPdfFilename,
-  ]);
+  expect(api.startedUploads()).toEqual([firstPdfFilename, secondPdfFilename]);
 
   api.releaseUpload(firstPdfFilename);
 
@@ -250,11 +237,7 @@ test('keeps a mixed PDF and audio queue interactive and refills the first free s
   api.releaseUpload(audioFilename);
   api.releaseUpload(secondPdfFilename);
 
-  for (const filename of [
-    firstPdfFilename,
-    secondPdfFilename,
-    audioFilename,
-  ]) {
+  for (const filename of [firstPdfFilename, secondPdfFilename, audioFilename]) {
     await expect(uploadRow(filename)).toContainText('Uploaded');
     await expect(
       page
@@ -376,12 +359,7 @@ test('optionally crops selected images before preserving mixed upload order', as
         context.getImageData(0, bitmap.height - 1, 1, 1).data,
       );
       const bottomRight = Array.from(
-        context.getImageData(
-          bitmap.width - 1,
-          bitmap.height - 1,
-          1,
-          1,
-        ).data,
+        context.getImageData(bitmap.width - 1, bitmap.height - 1, 1, 1).data,
       );
       bitmap.close();
       return { bottomLeft, bottomRight, topLeft, topRight };
@@ -572,6 +550,332 @@ test('opens the runtime manager before project creation', async ({ page }) => {
   await expect(page.getByText('Select or create a project.')).toBeHidden();
 });
 
+test('runtime manager displays verified computing device and adapter option', async ({
+  page,
+}) => {
+  await installMockCertPrepApi(page, {
+    device: {
+      server: 'owned',
+      requested: {
+        target: 'dedicated_gpu',
+        backend: 'cuda',
+        adapter_name: 'NVIDIA GeForce RTX 4090',
+      },
+      verification: 'verified',
+      observed: {
+        backend: 'cuda',
+        adapter_name: 'NVIDIA GeForce RTX 4090',
+        offloaded_layers: 32,
+        total_layers: 32,
+      },
+      corrective_restarts: 0,
+    },
+    devicePreference: {
+      mode: 'adapter',
+      adapter_key: 'nv4090',
+      adapter_name: 'NVIDIA GeForce RTX 4090',
+      status: 'active',
+      choices: [
+        {
+          adapter_key: 'nv4090',
+          name: 'NVIDIA GeForce RTX 4090',
+          classification: 'dedicated',
+          backend: 'cuda',
+          selectable: true,
+        },
+      ],
+    },
+  });
+  await seedMockApiConfig(page, apiBaseUrl, devToken);
+  await page.goto('/runtime');
+
+  await page.getByRole('tab', { name: '運算裝置' }).click();
+
+  await expect(
+    page.getByText('正在使用：NVIDIA GeForce RTX 4090'),
+  ).toBeVisible();
+  await expect(page.getByText('獨立顯示卡')).toBeVisible();
+  await expect(page.getByText('CUDA')).toBeVisible();
+  const checkedRadio = page.locator('input[type="radio"]:checked');
+  await expect(checkedRadio).toHaveValue('nv4090');
+});
+
+test('runtime manager displays mismatch device status line', async ({
+  page,
+}) => {
+  await installMockCertPrepApi(page, {
+    device: {
+      server: 'owned',
+      requested: {
+        target: 'dedicated_gpu',
+        backend: 'cuda',
+        adapter_name: 'NVIDIA GeForce RTX 3060',
+      },
+      verification: 'mismatch',
+      observed: {
+        backend: 'cpu',
+        adapter_name: null,
+        offloaded_layers: 0,
+        total_layers: 32,
+      },
+      corrective_restarts: 1,
+    },
+    devicePreference: {
+      mode: 'adapter',
+      adapter_key: 'nv3060',
+      adapter_name: 'NVIDIA GeForce RTX 3060',
+      status: 'active',
+      choices: [
+        {
+          adapter_key: 'nv3060',
+          name: 'NVIDIA GeForce RTX 3060',
+          classification: 'dedicated',
+          backend: 'cuda',
+          selectable: true,
+        },
+      ],
+    },
+  });
+  await seedMockApiConfig(page, apiBaseUrl, devToken);
+  await page.goto('/runtime');
+
+  await page.getByRole('tab', { name: '運算裝置' }).click();
+
+  await expect(
+    page.getByText('預定 NVIDIA GeForce RTX 3060，實際使用 CPU'),
+  ).toBeVisible();
+});
+
+test('runtime manager displays external Ollama guidance note and status', async ({
+  page,
+}) => {
+  const api = await installMockCertPrepApi(page, {
+    device: {
+      server: 'external',
+      requested: null,
+      verification: 'not_observable',
+      observed: null,
+      corrective_restarts: 0,
+    },
+    devicePreference: {
+      mode: 'auto',
+      adapter_key: null,
+      adapter_name: null,
+      status: 'external_server',
+      choices: [],
+    },
+  });
+  await seedMockApiConfig(page, apiBaseUrl, devToken);
+  await page.goto('/runtime');
+
+  await page.getByRole('tab', { name: '運算裝置' }).click();
+
+  await expect(
+    page.getByText(
+      'Ollama 已在別處執行（例如系統匣），Cert Prep 不會更改它，也無法得知它用哪個裝置。',
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      '若要由 Cert Prep 選擇裝置，請從系統匣結束 Ollama，再按「Refresh all」。',
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText('選擇會先儲存，Cert Prep 自行啟動 Ollama 時套用'),
+  ).toBeVisible();
+  await page.locator('input[value="cpu"]').check();
+  await expect
+    .poll(() => api.devicePreferenceUpdates())
+    .toEqual([{ mode: 'cpu' }]);
+  await expect(page.locator('input[value="cpu"]')).toBeChecked();
+  await expect(page.getByRole('note')).toContainText('Ollama 已在別處執行');
+  await expect(
+    page.getByText('選擇會先儲存，Cert Prep 自行啟動 Ollama 時套用'),
+  ).toBeVisible();
+});
+
+test('choosing CPU follows a pending switch until it settles without manual refresh', async ({
+  page,
+}) => {
+  await page.clock.install();
+  const api = await installMockCertPrepApi(page, {
+    pendingDeviceSwitch: true,
+    device: {
+      server: 'owned',
+      requested: {
+        target: 'dedicated_gpu',
+        backend: 'cuda',
+        adapter_name: 'NVIDIA GeForce RTX 4090',
+      },
+      verification: 'verified',
+      observed: {
+        backend: 'cuda',
+        adapter_name: 'NVIDIA GeForce RTX 4090',
+        offloaded_layers: 32,
+        total_layers: 32,
+      },
+      corrective_restarts: 0,
+    },
+    devicePreference: {
+      mode: 'adapter',
+      adapter_key: 'nv4090',
+      adapter_name: 'NVIDIA GeForce RTX 4090',
+      status: 'active',
+      choices: [
+        {
+          adapter_key: 'nv4090',
+          name: 'NVIDIA GeForce RTX 4090',
+          classification: 'dedicated',
+          backend: 'cuda',
+          selectable: true,
+        },
+      ],
+    },
+  });
+  await seedMockApiConfig(page, apiBaseUrl, devToken);
+  await page.goto('/runtime');
+
+  await page.getByRole('tab', { name: '運算裝置' }).click();
+
+  await expect(
+    page.getByText('正在使用：NVIDIA GeForce RTX 4090'),
+  ).toBeVisible();
+
+  const marker = api.markRequestLog();
+  await page.locator('input[value="cpu"]').check();
+
+  await expect
+    .poll(() => api.devicePreferenceUpdates())
+    .toEqual([{ mode: 'cpu' }]);
+
+  await expect(page.getByText('目前的工作完成後切換')).toBeVisible();
+  await expect
+    .poll(() => api.requestLogSince(marker))
+    .toContain('GET /llm/device-preference');
+  api.settleDeviceSwitch();
+  // Advance only the polling clock; browser network and rendering still settle normally.
+  await page.clock.fastForward(5000);
+  await expect(page.getByText('正在使用：CPU')).toBeVisible();
+  await expect(page.getByText('目前的工作完成後切換')).toBeHidden();
+  await expect(page.locator('input[value="cpu"]')).toBeChecked();
+});
+
+test('one Refresh all replaces external server guidance with owned server status', async ({
+  page,
+}) => {
+  const api = await installMockCertPrepApi(page, {
+    device: {
+      server: 'external',
+      requested: null,
+      verification: 'not_observable',
+      observed: null,
+      corrective_restarts: 0,
+    },
+    devicePreference: {
+      mode: 'auto',
+      adapter_key: null,
+      adapter_name: null,
+      status: 'external_server',
+      choices: [],
+    },
+  });
+  await seedMockApiConfig(page, apiBaseUrl, devToken);
+  await page.goto('/runtime');
+  await page.getByRole('tab', { name: '運算裝置' }).click();
+  await expect(page.getByRole('note')).toContainText('Ollama 已在別處執行');
+  api.setDeviceState(
+    {
+      server: 'owned',
+      requested: { target: 'cpu', backend: 'cpu', adapter_name: null },
+      verification: 'verified',
+      observed: {
+        backend: 'cpu',
+        adapter_name: null,
+        offloaded_layers: 0,
+        total_layers: 16,
+      },
+      corrective_restarts: 0,
+    },
+    {
+      mode: 'cpu',
+      adapter_key: null,
+      adapter_name: null,
+      status: 'active',
+      choices: [],
+    },
+  );
+  const marker = api.markRequestLog();
+  await page.getByRole('button', { name: 'Refresh all' }).click();
+  await expect(page.getByText('正在使用：CPU')).toBeVisible();
+  await expect(page.getByRole('note')).toBeHidden();
+  expect(
+    api
+      .requestLogSince(marker)
+      .filter((request) => request === 'GET /llm/device-preference'),
+  ).toHaveLength(1);
+});
+
+test('runtime manager displays missing adapter as disabled selected option with note', async ({
+  page,
+}) => {
+  const api = await installMockCertPrepApi(page, {
+    device: {
+      server: 'owned',
+      requested: {
+        target: 'dedicated_gpu',
+        backend: 'cuda',
+        adapter_name: 'NVIDIA GeForce RTX 4090',
+      },
+      verification: 'verified',
+      observed: {
+        backend: 'cuda',
+        adapter_name: 'NVIDIA GeForce RTX 4090',
+        offloaded_layers: 32,
+        total_layers: 32,
+      },
+      corrective_restarts: 0,
+    },
+    devicePreference: {
+      mode: 'adapter',
+      adapter_key: 'missing-gpu-key',
+      adapter_name: 'NVIDIA GeForce RTX 3080',
+      status: 'adapter_missing',
+      choices: [
+        {
+          adapter_key: 'nv4090',
+          name: 'NVIDIA GeForce RTX 4090',
+          classification: 'dedicated',
+          backend: 'cuda',
+          selectable: true,
+        },
+      ],
+    },
+  });
+  await seedMockApiConfig(page, apiBaseUrl, devToken);
+  await page.goto('/runtime');
+
+  const tab = page.getByRole('tab', { name: '運算裝置' });
+  await expect(tab).toBeVisible();
+  await tab.click();
+
+  const missingRadio = page.locator('input[value="missing-gpu-key"]');
+  await expect(missingRadio).toBeVisible();
+  await expect(missingRadio).toBeChecked();
+  await expect(missingRadio).toBeDisabled();
+  await expect(page.getByText('NVIDIA GeForce RTX 3080')).toBeVisible();
+  await expect(page.getByText('目前找不到這張顯示卡')).toBeVisible();
+  await expect(
+    page.getByText('找不到選擇的顯示卡，暫用自動選擇'),
+  ).toBeVisible();
+
+  // Choosing another option works; after saving the missing option disappears
+  await page.locator('input[value="auto"]').check();
+  await expect
+    .poll(() => api.devicePreferenceUpdates())
+    .toEqual([{ mode: 'auto' }]);
+  await expect(missingRadio).toBeHidden();
+});
+
 function pngDimensions(bytes: Buffer): { width: number; height: number } {
   const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
   if (bytes.length < 24 || !bytes.subarray(0, 8).equals(pngSignature)) {
@@ -601,12 +905,7 @@ async function installUploadCapture(page: Page): Promise<void> {
     const append: {
       (this: FormData, name: string, value: string | Blob): void;
       (this: FormData, name: string, value: string): void;
-      (
-        this: FormData,
-        name: string,
-        blobValue: Blob,
-        filename?: string,
-      ): void;
+      (this: FormData, name: string, blobValue: Blob, filename?: string): void;
     } = function (
       this: FormData,
       name: string,
@@ -615,8 +914,7 @@ async function installUploadCapture(page: Page): Promise<void> {
     ): void {
       if (name === 'file' && value instanceof Blob) {
         const capture: CapturedUpload = {
-          filename:
-            filename ?? (value instanceof File ? value.name : 'blob'),
+          filename: filename ?? (value instanceof File ? value.name : 'blob'),
           contentType: value.type,
           bytes: [],
         };

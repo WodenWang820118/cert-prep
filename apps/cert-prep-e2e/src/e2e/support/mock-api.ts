@@ -1,9 +1,12 @@
 import type { Page, Route } from '@playwright/test';
 import type {
+  DevicePreferenceRead,
+  DevicePreferenceUpdate,
   DocumentRead,
   HealthResponse,
   LLMHealthRead,
   LLMProviderSelectionRead,
+  OllamaDeviceRead,
   PracticeAttemptCreate,
   PracticeAttemptRead,
   PracticeSessionCreate,
@@ -73,9 +76,19 @@ export interface MockCertPrepApi {
   ): readonly MockWrongAnswerExplanationRead[];
   wrongAnswers(projectId?: string): readonly WrongAnswerRead[];
   wrongAnswerSummary(projectId?: string): WrongAnswerSummaryRead;
+  devicePreferenceUpdates(): readonly DevicePreferenceUpdate[];
+  settleDeviceSwitch(): void;
+  setDeviceState(
+    device: OllamaDeviceRead,
+    preference: DevicePreferenceRead,
+  ): void;
 }
 
-export type MockCertPrepApiOptions = Record<string, never>;
+export interface MockCertPrepApiOptions {
+  readonly device?: OllamaDeviceRead | null;
+  readonly devicePreference?: DevicePreferenceRead | null;
+  readonly pendingDeviceSwitch?: boolean;
+}
 
 interface MockUploadHold {
   readonly promise: Promise<void>;
@@ -109,7 +122,10 @@ export async function installMockCertPrepApi(
   page: Page,
   options: MockCertPrepApiOptions = {},
 ): Promise<MockCertPrepApi> {
-  void options;
+  const devicePreferenceUpdates: DevicePreferenceUpdate[] = [];
+  let currentDevice: OllamaDeviceRead | null = options.device ?? null;
+  let currentDevicePreference: DevicePreferenceRead | null =
+    options.devicePreference !== undefined ? options.devicePreference : null;
   const project = {
     id: 'project-1',
     name: 'JLPT_N1',
@@ -399,8 +415,71 @@ export async function installMockCertPrepApi(
         model: 'qwen3.5:4b',
         available: true,
         detail: 'deterministic local fake provider',
+        ...(currentDevice !== null ? { device: currentDevice } : {}),
       } satisfies LLMHealthRead;
       await fulfillJson(route, 200, body);
+      return;
+    }
+
+    if (method === 'GET' && path === '/llm/device-preference') {
+      if (currentDevicePreference !== null) {
+        await fulfillJson(route, 200, currentDevicePreference);
+        return;
+      }
+      await fulfillJson(route, 404, { message: 'Not found' });
+      return;
+    }
+
+    if (method === 'PUT' && path === '/llm/device-preference') {
+      const postData = route.request().postDataJSON() as DevicePreferenceUpdate;
+      devicePreferenceUpdates.push(postData);
+      if (currentDevicePreference !== null) {
+        currentDevicePreference = {
+          ...currentDevicePreference,
+          mode: postData.mode,
+          adapter_key: postData.adapter_key ?? null,
+          adapter_name:
+            postData.mode === 'adapter'
+              ? (currentDevicePreference.choices.find(
+                  (choice) => choice.adapter_key === postData.adapter_key,
+                )?.name ?? null)
+              : null,
+          status:
+            currentDevicePreference.status === 'external_server'
+              ? 'external_server'
+              : options.pendingDeviceSwitch
+                ? 'pending'
+                : 'active',
+        };
+      }
+      if (postData.mode === 'cpu' && currentDevice?.server === 'owned') {
+        currentDevice = {
+          ...currentDevice,
+          server: 'owned',
+          requested: {
+            target: 'cpu',
+            backend: 'cpu',
+            adapter_name: null,
+          },
+          verification: 'verified',
+          observed: {
+            backend: 'cpu',
+            adapter_name: null,
+            offloaded_layers: 0,
+            total_layers: 16,
+          },
+        };
+      }
+      await fulfillJson(
+        route,
+        200,
+        currentDevicePreference ?? {
+          mode: postData.mode,
+          adapter_key: postData.adapter_key ?? null,
+          status: 'active',
+          choices: [],
+        },
+      );
       return;
     }
 
@@ -736,6 +815,19 @@ export async function installMockCertPrepApi(
       createWrongAnswerSummary(
         stateFor(projectStates, projectId, lastProjectState),
       ),
+    devicePreferenceUpdates: () => [...devicePreferenceUpdates],
+    settleDeviceSwitch: () => {
+      if (currentDevicePreference?.status === 'pending') {
+        currentDevicePreference = {
+          ...currentDevicePreference,
+          status: 'active',
+        };
+      }
+    },
+    setDeviceState: (device, preference) => {
+      currentDevice = device;
+      currentDevicePreference = preference;
+    },
   };
 }
 

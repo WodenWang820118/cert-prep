@@ -13,99 +13,134 @@
     }
   </header>
 
-  @if (viewModel().providerSelection; as selection) {
-  <section
-    class="provider-selection-summary"
-    aria-label="LLM provider selection"
-    aria-live="polite"
-  >
-    <div class="provider-selection-heading">
-      <div>
-        <p class="provider-selection-eyebrow">LLM provider policy</p>
-        <h3>{{ selection.preferenceLabel }} selection</h3>
+  @if (deviceViewModel(); as deviceVm) {
+  <hlm-tabs class="runtime-tabs" [tab]="selectedTab()" (tabActivated)="selectedTab.set($event)">
+    <div class="runtime-tabs-bar">
+      <hlm-tabs-list class="runtime-tabs-list" aria-label="Runtime manager sections">
+        <button [hlmTabsTrigger]="runtimeTabKey">
+          {{ copy.tabs.runtime }}
+        </button>
+        <button [hlmTabsTrigger]="deviceTabKey">
+          <span>{{ copy.tabs.device }}</span>
+          @if (selectedTab() !== deviceTabKey && deviceVm.needsAttention) {
+          <span class="runtime-tab-attention-dot" aria-hidden="true"></span>
+          <span class="sr-only">{{ copy.tabs.attention }}</span>
+          }
+        </button>
+      </hlm-tabs-list>
+    </div>
+
+    <div [hlmTabsContent]="runtimeTabKey">
+      <ng-container *ngTemplateOutlet="runtimeDetails" />
+    </div>
+
+    <div [hlmTabsContent]="deviceTabKey">
+      <div class="runtime-grid">
+        <app-runtime-device-section
+          [viewModel]="deviceVm"
+          (choose)="chooseDevice($event)"
+        />
       </div>
     </div>
-    <dl class="provider-selection-grid">
-      <div>
-        <dt>Selected</dt>
-        <dd>{{ selection.selectedLabel }}</dd>
-      </div>
-      <div>
-        <dt>Effective</dt>
-        <dd>{{ selection.effectiveLabel }}</dd>
-      </div>
-    </dl>
-    <p class="provider-selection-reason">{{ selection.selectionReason }}</p>
-  </section>
+  </hlm-tabs>
+  } @else {
+  <ng-container *ngTemplateOutlet="runtimeDetails" />
   }
 
-  <section class="runtime-grid" aria-label="Runtime details">
-    <app-runtime-status-row [section]="viewModel().python">
-      <ng-container actions>
-        @if (desktopRuntime.canInstallPythonRuntime()) {
-        <app-action-button label="Install runtime" icon="lucideDownload" variant="outline-warn" [disabled]="desktopRuntime.installStarting()" (pressed)="desktopRuntime.openInstallConsent()" />
-        } @if (desktopRuntime.installation()) {
-        <app-action-button label="Refresh runtime" icon="lucideRefreshCw" variant="outline" [disabled]="desktopRuntime.installStarting()" (pressed)="desktopRuntime.refreshInstallation()" />
-        }
-      </ng-container>
-      @if (desktopRuntime.installProgress(); as progress) {
-      <hlm-progress progress class="sm:col-span-2" [value]="progress" aria-label="Progress"><hlm-progress-indicator /></hlm-progress>
-      }
-    </app-runtime-status-row>
-
-    <app-runtime-status-row [section]="viewModel().ollama">
-      <ng-container actions>
-        @if (desktopRuntime.isBackendReady() && health.canInstallOllama()) {
-        <app-action-button label="Install Ollama" icon="lucideDownload" variant="outline-warn" [disabled]="health.runtimeInstallStarting()" (pressed)="health.openOllamaInstallConsent()" />
-        } @if (hasLlmRuntimeInstallation()) {
-        <app-action-button label="Refresh install" icon="lucideRefreshCw" variant="outline" [disabled]="health.runtimeInstallStarting()" (pressed)="health.refreshRuntimeInstallation()" />
-        } @if (hasLlmRuntimeInstallation() &&
-        health.canCancelRuntimeInstallation()) {
-        <app-action-button label="Cancel install" icon="lucideX" variant="outline-danger" [loading]="health.runtimeInstallCanceling()" (pressed)="health.cancelRuntimeInstallation()" />
-        }
-      </ng-container>
-      @if (hasLlmRuntimeInstallation()) { @if (health.runtimeInstall(); as
-      install) {
-      <div progress class="grid gap-2 sm:col-span-2" aria-live="polite">
-        <p class="m-0 text-sm text-muted-foreground">{{ install.message }}</p>
-        @if (health.runtimeInstallStreamError(); as streamError) {
-        <p class="m-0 text-sm text-red-500" role="status" aria-live="polite">
-          {{ streamError }}
-        </p>
-        }
-        @if (install.progress !== null) {
-        <hlm-progress [value]="install.progress" aria-label="Progress"><hlm-progress-indicator /></hlm-progress>
-        }
+  <ng-template #runtimeDetails>
+    @if (viewModel().providerSelection; as selection) {
+    <section
+      class="provider-selection-summary"
+      aria-label="LLM provider selection"
+      aria-live="polite"
+    >
+      <div class="provider-selection-heading">
+        <div>
+          <p class="provider-selection-eyebrow">LLM provider policy</p>
+          <h3>{{ selection.preferenceLabel }} selection</h3>
+        </div>
       </div>
-      } }
-    </app-runtime-status-row>
+      <dl class="provider-selection-grid">
+        <div>
+          <dt>Selected</dt>
+          <dd>{{ selection.selectedLabel }}</dd>
+        </div>
+        <div>
+          <dt>Effective</dt>
+          <dd>{{ selection.effectiveLabel }}</dd>
+        </div>
+      </dl>
+      <p class="provider-selection-reason">{{ selection.selectionReason }}</p>
+    </section>
+    }
 
-    <app-runtime-status-row [section]="viewModel().model">
-      <ng-container actions>
-        @if (desktopRuntime.isBackendReady() && health.canDownloadModel()) {
-        <app-action-button [label]="modelDownloadActionLabel()" icon="lucideDownload" variant="outline-warn" [disabled]="health.modelDownloadStarting()" (pressed)="health.openModelDownloadConsent()" />
-        } @if (health.modelDownload()) {
-        <app-action-button label="Refresh model" icon="lucideRefreshCw" variant="outline" [disabled]="health.modelDownloadStarting()" (pressed)="health.refreshModelDownload()" />
-        } @if (health.canCancelModelDownload()) {
-        <app-action-button label="Cancel model" icon="lucideX" variant="outline-danger" [loading]="health.modelDownloadCanceling()" (pressed)="health.cancelModelDownload()" />
+    <section class="runtime-grid" aria-label="Runtime details">
+      <app-runtime-status-row [section]="viewModel().python">
+        <ng-container actions>
+          @if (desktopRuntime.canInstallPythonRuntime()) {
+          <app-action-button label="Install runtime" icon="lucideDownload" variant="outline-warn" [disabled]="desktopRuntime.installStarting()" (pressed)="desktopRuntime.openInstallConsent()" />
+          } @if (desktopRuntime.installation()) {
+          <app-action-button label="Refresh runtime" icon="lucideRefreshCw" variant="outline" [disabled]="desktopRuntime.installStarting()" (pressed)="desktopRuntime.refreshInstallation()" />
+          }
+        </ng-container>
+        @if (desktopRuntime.installProgress(); as progress) {
+        <hlm-progress progress class="sm:col-span-2" [value]="progress" aria-label="Progress"><hlm-progress-indicator /></hlm-progress>
         }
-      </ng-container>
-      @if (health.modelDownload(); as download) {
-      <div progress class="grid gap-2 sm:col-span-2" aria-live="polite">
-        <p class="m-0 text-sm text-muted-foreground">{{ download.message }}</p>
-        @if (health.modelDownloadStreamError(); as streamError) {
-        <p class="m-0 text-sm text-red-500" role="status" aria-live="polite">
-          {{ streamError }}
-        </p>
-        }
-        @if (download.progress !== null) {
-        <hlm-progress [value]="download.progress" aria-label="Progress"><hlm-progress-indicator /></hlm-progress>
-        }
-      </div>
-      }
-    </app-runtime-status-row>
+      </app-runtime-status-row>
 
-  </section>
+      <app-runtime-status-row [section]="viewModel().ollama">
+        <ng-container actions>
+          @if (desktopRuntime.isBackendReady() && health.canInstallOllama()) {
+          <app-action-button label="Install Ollama" icon="lucideDownload" variant="outline-warn" [disabled]="health.runtimeInstallStarting()" (pressed)="health.openOllamaInstallConsent()" />
+          } @if (hasLlmRuntimeInstallation()) {
+          <app-action-button label="Refresh install" icon="lucideRefreshCw" variant="outline" [disabled]="health.runtimeInstallStarting()" (pressed)="health.refreshRuntimeInstallation()" />
+          } @if (hasLlmRuntimeInstallation() &&
+          health.canCancelRuntimeInstallation()) {
+          <app-action-button label="Cancel install" icon="lucideX" variant="outline-danger" [loading]="health.runtimeInstallCanceling()" (pressed)="health.cancelRuntimeInstallation()" />
+          }
+        </ng-container>
+        @if (hasLlmRuntimeInstallation()) { @if (health.runtimeInstall(); as
+        install) {
+        <div progress class="grid gap-2 sm:col-span-2" aria-live="polite">
+          <p class="m-0 text-sm text-muted-foreground">{{ install.message }}</p>
+          @if (health.runtimeInstallStreamError(); as streamError) {
+          <p class="m-0 text-sm text-red-500" role="status" aria-live="polite">
+            {{ streamError }}
+          </p>
+          }
+          @if (install.progress !== null) {
+          <hlm-progress [value]="install.progress" aria-label="Progress"><hlm-progress-indicator /></hlm-progress>
+          }
+        </div>
+        } }
+      </app-runtime-status-row>
+
+      <app-runtime-status-row [section]="viewModel().model">
+        <ng-container actions>
+          @if (desktopRuntime.isBackendReady() && health.canDownloadModel()) {
+          <app-action-button [label]="modelDownloadActionLabel()" icon="lucideDownload" variant="outline-warn" [disabled]="health.modelDownloadStarting()" (pressed)="health.openModelDownloadConsent()" />
+          } @if (health.modelDownload()) {
+          <app-action-button label="Refresh model" icon="lucideRefreshCw" variant="outline" [disabled]="health.modelDownloadStarting()" (pressed)="health.refreshModelDownload()" />
+          } @if (health.canCancelModelDownload()) {
+          <app-action-button label="Cancel model" icon="lucideX" variant="outline-danger" [loading]="health.modelDownloadCanceling()" (pressed)="health.cancelModelDownload()" />
+          }
+        </ng-container>
+        @if (health.modelDownload(); as download) {
+        <div progress class="grid gap-2 sm:col-span-2" aria-live="polite">
+          <p class="m-0 text-sm text-muted-foreground">{{ download.message }}</p>
+          @if (health.modelDownloadStreamError(); as streamError) {
+          <p class="m-0 text-sm text-red-500" role="status" aria-live="polite">
+            {{ streamError }}
+          </p>
+          }
+          @if (download.progress !== null) {
+          <hlm-progress [value]="download.progress" aria-label="Progress"><hlm-progress-indicator /></hlm-progress>
+          }
+        </div>
+        }
+      </app-runtime-status-row>
+    </section>
+  </ng-template>
 
   <footer class="runtime-modal-footer">
     @if (modal) {

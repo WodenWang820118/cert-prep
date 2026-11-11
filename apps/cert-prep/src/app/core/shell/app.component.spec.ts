@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { provideRouter, Router } from '@angular/router';
 import { App } from './app.component';
 import { appRoutes } from './app-routes.constants';
@@ -47,6 +47,7 @@ describe('App', () => {
     );
     expect(compiled.querySelector('h1')?.textContent).toContain('Cert Prep');
     expect(compiled.textContent).toContain('Create project');
+    expect(apiClient.llmDevicePreference).not.toHaveBeenCalled();
     expect(
       Array.from(
         studyNav?.querySelectorAll<HTMLElement>('[role="group"]') ?? [],
@@ -77,7 +78,9 @@ describe('App', () => {
       .waitFor(() => {
         fixture.detectChanges();
         expect(compiled.textContent).not.toContain('Python 3.13.5');
-        expect(compiled.textContent).not.toContain('Reasoning model: reasoner:7b');
+        expect(compiled.textContent).not.toContain(
+          'Reasoning model: reasoner:7b',
+        );
         expect(
           compiled.querySelector('[aria-label="Runtime status"]'),
         ).toBeNull();
@@ -86,9 +89,9 @@ describe('App', () => {
         expect(
           compiled.querySelector('.workbench-main')?.textContent,
         ).not.toContain('Wrong Answers');
-        expect(linkByText(compiled, 'Build')?.getAttribute('aria-current')).toBe(
-          'page',
-        );
+        expect(
+          linkByText(compiled, 'Build')?.getAttribute('aria-current'),
+        ).toBe('page');
       })
       .then(() => {
         router.navigateByUrl('/full-exam');
@@ -216,6 +219,8 @@ describe('App', () => {
       fixture.detectChanges();
       expect(router.url).toBe('/runtime');
       expect(compiled.textContent).toContain('Manage runtime');
+      expect(apiClient.llmDevicePreference).toHaveBeenCalledTimes(1);
+      expect(compiled.querySelector('app-runtime-device-section')).toBeNull();
       expect(compiled.textContent).toContain('Python backend');
       expect(
         compiled.querySelector('[aria-label="Close runtime manager"]'),
@@ -275,32 +280,35 @@ describe('App', () => {
     manageRuntimeButton?.click();
     fixture.detectChanges();
     TestBed.tick();
-    return vi.waitFor(() => {
-      const dialog = compiled.querySelector<HTMLElement>('[role="dialog"]');
-      expect(dialog).not.toBeNull();
-      expect(dialog?.getAttribute('aria-modal')).toBe('true');
-      expect(dialog?.getAttribute('aria-labelledby')).toBe(
-        'runtime-manager-modal-title',
-      );
-      expect(compiled.querySelector('#runtime-manager-modal-title')?.textContent)
-        .toContain('Manage runtime');
-      expect(router.url).toBe(initialUrl);
-      expect(document.activeElement).toBe(
-        dialog?.querySelector('[aria-label="Close runtime manager"]'),
-      );
-      expect(
-        dialog
-          ?.querySelector('.runtime-manager-backdrop')
-          ?.getAttribute('tabindex'),
-      ).toBe('-1');
-    }).then(() => {
-      const dialog = compiled.querySelector<HTMLElement>('[role="dialog"]');
-      dialog?.dispatchEvent(
-        new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }),
-      );
-      fixture.detectChanges();
-      expect(compiled.querySelector('[role="dialog"]')).toBeNull();
-    });
+    return vi
+      .waitFor(() => {
+        const dialog = compiled.querySelector<HTMLElement>('[role="dialog"]');
+        expect(dialog).not.toBeNull();
+        expect(dialog?.getAttribute('aria-modal')).toBe('true');
+        expect(dialog?.getAttribute('aria-labelledby')).toBe(
+          'runtime-manager-modal-title',
+        );
+        expect(
+          compiled.querySelector('#runtime-manager-modal-title')?.textContent,
+        ).toContain('Manage runtime');
+        expect(router.url).toBe(initialUrl);
+        expect(document.activeElement).toBe(
+          dialog?.querySelector('[aria-label="Close runtime manager"]'),
+        );
+        expect(
+          dialog
+            ?.querySelector('.runtime-manager-backdrop')
+            ?.getAttribute('tabindex'),
+        ).toBe('-1');
+      })
+      .then(() => {
+        const dialog = compiled.querySelector<HTMLElement>('[role="dialog"]');
+        dialog?.dispatchEvent(
+          new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }),
+        );
+        fixture.detectChanges();
+        expect(compiled.querySelector('[role="dialog"]')).toBeNull();
+      });
   });
 });
 
@@ -312,18 +320,26 @@ function linkByText(root: ParentNode, text: string): HTMLAnchorElement | null {
   );
 }
 
-function buttonByLabel(root: ParentNode, label: string): HTMLButtonElement | null {
-  return root.querySelector<HTMLButtonElement>(
-    `button[aria-label="${label}"]`,
-  );
+function buttonByLabel(
+  root: ParentNode,
+  label: string,
+): HTMLButtonElement | null {
+  return root.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
 }
 
 function createApiClient() {
   return {
-    health: vi.fn().mockReturnValue(of({
-      ...backendHealth(),
-    })),
+    health: vi.fn().mockReturnValue(
+      of({
+        ...backendHealth(),
+      }),
+    ),
     llmHealth: vi.fn().mockReturnValue(of(availableLlmHealth())),
+    llmDevicePreference: vi
+      .fn()
+      .mockReturnValue(
+        throwError(() => new Error('Device preference unavailable')),
+      ),
     runtimeRequirements: vi.fn().mockReturnValue(of({ items: [] })),
     startRuntimeInstallation: vi.fn(),
     getRuntimeInstallation: vi.fn(),
@@ -331,9 +347,13 @@ function createApiClient() {
     listDocuments: vi.fn().mockReturnValue(of({ items: [appDocument] })),
     getDocument: vi.fn().mockReturnValue(of(appDocument)),
     listDocumentChunks: vi.fn().mockReturnValue(of({ items: [] })),
-    listQuestionDrafts: vi.fn().mockReturnValue(of({ items: [editableAppQuestion] })),
+    listQuestionDrafts: vi
+      .fn()
+      .mockReturnValue(of({ items: [editableAppQuestion] })),
     listWrongAnswers: vi.fn().mockReturnValue(of({ items: [] })),
-    summarizeWrongAnswers: vi.fn().mockReturnValue(of(emptyWrongAnswerSummary())),
+    summarizeWrongAnswers: vi
+      .fn()
+      .mockReturnValue(of(emptyWrongAnswerSummary())),
   };
 }
 

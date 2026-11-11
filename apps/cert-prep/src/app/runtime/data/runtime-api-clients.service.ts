@@ -1,4 +1,9 @@
 import { inject, Injectable } from '@angular/core';
+import type { Observable } from 'rxjs';
+import type {
+  DevicePreferenceRead,
+  DevicePreferenceUpdate,
+} from '@cert-prep/api';
 import { CERT_PREP_API } from '../../core/data';
 import {
   isModelDownloadEventTerminal,
@@ -19,6 +24,16 @@ import type {
 export class RuntimeApiClientsService {
   private readonly api = inject(CERT_PREP_API);
   private readonly sse = inject(CertPrepSseClient);
+
+  devicePreference(): Observable<DevicePreferenceRead> {
+    return this.api.llmDevicePreference();
+  }
+
+  chooseDevicePreference(
+    body: DevicePreferenceUpdate,
+  ): Observable<DevicePreferenceRead> {
+    return this.api.putLlmDevicePreference(body);
+  }
 
   modelDownloadClient(): ModelDownloadApiClient {
     return {
