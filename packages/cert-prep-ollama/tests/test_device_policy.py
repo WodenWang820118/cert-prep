@@ -23,6 +23,7 @@ from cert_prep_ollama.device_policy import (
     normalize_device_name,
     ollama_child_environment,
     parse_pci_bus,
+    selectable_adapters,
     select_ollama_device_policy,
 )
 from cert_prep_ollama.profiles import select_ollama_execution_policy
@@ -1213,4 +1214,66 @@ def test_correction_keeps_adapter_missing_on_the_auto_fallback() -> None:
     assert corrected.environment["OLLAMA_LLM_LIBRARY"] == "cuda_v13"
     assert corrected.environment["HIP_VISIBLE_DEVICES"] == "-1"
     assert corrected.environment["GGML_VK_VISIBLE_DEVICES"] == "-1"
+
+
+def test_selectable_adapters_lists_dedicated_and_integrated_and_skips_software() -> None:
+    inventory, adapters = _machine("nvidia_igpu")
+    listed = selectable_adapters(inventory)
+    assert [item.name for item in listed] == [adapters["igpu"].name, adapters["dgpu"].name]
+    dedicated = listed[1]
+    integrated = listed[0]
+    assert dedicated.selectable is True
+    assert dedicated.classification == "dedicated"
+    assert dedicated.backend == "cuda"
+    assert dedicated.adapter_key == adapter_key(adapters["dgpu"])
+    assert integrated.selectable is True
+    assert integrated.classification == "integrated"
+    assert integrated.backend == "vulkan"
+    assert integrated.adapter_key == adapter_key(adapters["igpu"])
+
+
+def test_selectable_adapters_on_an_igpu_only_machine() -> None:
+    inventory, adapters = _machine("igpu")
+    listed = selectable_adapters(inventory)
+    assert len(listed) == 1
+    assert listed[0].name == adapters["igpu"].name
+    assert listed[0].selectable is True
+    assert listed[0].classification == "integrated"
+    assert listed[0].backend == "vulkan"
+
+
+def test_selectable_adapters_lists_an_unknown_adapter_as_not_selectable() -> None:
+    inventory, adapters = _machine("unknown")
+    listed = selectable_adapters(inventory)
+    assert len(listed) == 1
+    assert listed[0].name == adapters["self"].name
+    assert listed[0].selectable is False
+    assert listed[0].classification == "unknown"
+    assert listed[0].backend is None
+    assert listed[0].adapter_key == adapter_key(adapters["self"])
+
+
+def test_selectable_adapters_marks_a_duplicate_key_not_selectable() -> None:
+    first = _rtx(pnp_device_id=_PNP)
+    second = _gpu(
+        "NVIDIA GeForce RTX 4060 Laptop GPU Copy",
+        classification="dedicated",
+        vendor="nvidia",
+        pci_vendor_id="10de",
+        pci_device_id="28a0",
+        device_id="GPU-bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        pnp_device_id=_PNP,
+    )
+    listed = selectable_adapters(_make_inventory([first, second]))
+    assert len(listed) == 2
+    assert listed[0].adapter_key == listed[1].adapter_key
+    assert listed[0].adapter_key is not None
+    assert all(item.selectable is False for item in listed)
+    assert all(item.backend == "cuda" for item in listed)
+
+
+def test_selectable_adapters_is_empty_off_windows_and_without_inventory() -> None:
+    linux, _adapters = _machine("linux")
+    assert selectable_adapters(linux) == ()
+    assert selectable_adapters(None) == ()
 

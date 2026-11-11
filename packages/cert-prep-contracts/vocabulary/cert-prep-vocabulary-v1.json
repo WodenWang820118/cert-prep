@@ -756,6 +756,62 @@
       "codeName": "DeviceVerification.NOT_OBSERVABLE",
       "enum": { "enumId": "DeviceVerification", "value": "not_observable" },
       "retired": false
+    },
+    {
+      "id": "ai-providers.device-preference-mode.auto",
+      "label": "自動",
+      "codeName": "DevicePreferenceMode.AUTO",
+      "enum": { "enumId": "DevicePreferenceMode", "value": "auto" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.device-preference-mode.cpu",
+      "label": "只用 CPU",
+      "codeName": "DevicePreferenceMode.CPU",
+      "enum": { "enumId": "DevicePreferenceMode", "value": "cpu" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.device-preference-mode.adapter",
+      "label": "指定顯示卡",
+      "codeName": "DevicePreferenceMode.ADAPTER",
+      "enum": { "enumId": "DevicePreferenceMode", "value": "adapter" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.device-preference-status.active",
+      "label": "已套用",
+      "codeName": "DevicePreferenceStatus.ACTIVE",
+      "enum": { "enumId": "DevicePreferenceStatus", "value": "active" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.device-preference-status.pending",
+      "label": "等待切換",
+      "codeName": "DevicePreferenceStatus.PENDING",
+      "enum": { "enumId": "DevicePreferenceStatus", "value": "pending" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.device-preference-status.external-server",
+      "label": "外部伺服器",
+      "codeName": "DevicePreferenceStatus.EXTERNAL_SERVER",
+      "enum": { "enumId": "DevicePreferenceStatus", "value": "external_server" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.device-preference-status.adapter-missing",
+      "label": "找不到顯示卡",
+      "codeName": "DevicePreferenceStatus.ADAPTER_MISSING",
+      "enum": { "enumId": "DevicePreferenceStatus", "value": "adapter_missing" },
+      "retired": false
+    },
+    {
+      "id": "ai-providers.device-preference-status.not-applicable",
+      "label": "不適用",
+      "codeName": "DevicePreferenceStatus.NOT_APPLICABLE",
+      "enum": { "enumId": "DevicePreferenceStatus", "value": "not_applicable" },
+      "retired": false
     }
   ]
 }

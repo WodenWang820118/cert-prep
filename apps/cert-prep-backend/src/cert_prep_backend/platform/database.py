@@ -736,6 +736,20 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
             CHECK(last_event_sequence >= 0);
         """,
     ),
+    (
+        29,
+        """
+        CREATE TABLE ollama_device_preference (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            mode TEXT NOT NULL CHECK (mode IN ('auto', 'cpu', 'adapter')),
+            adapter_key TEXT,
+            adapter_name TEXT,
+            pci_vendor_id TEXT,
+            pci_device_id TEXT,
+            updated_at TEXT NOT NULL
+        );
+        """,
+    ),
 )
 
 

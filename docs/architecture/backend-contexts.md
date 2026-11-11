@@ -16,6 +16,7 @@ flowchart LR
   n_cert_prep_backend_projects["cert_prep_backend.projects<br/>Study Projects"]
   n_cert_prep_backend_runtime_provisioning["cert_prep_backend.runtime_provisioning<br/>Runtime Provisioning"]
   n_cert_prep_backend_source_library["cert_prep_backend.source_library<br/>Source Library"]
+  n_cert_prep_backend_ai_providers --> n_cert_prep_backend_api
   n_cert_prep_backend_ai_providers --> n_cert_prep_backend_platform
   n_cert_prep_backend_api --> n_cert_prep_backend_platform
   n_cert_prep_backend_authoring --> n_cert_prep_backend_ai_providers

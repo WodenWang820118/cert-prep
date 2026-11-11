@@ -26,6 +26,15 @@ readiness after a validated CaptureDocument has been persisted.
   not Ollama has no device. An external server, including a non-local host, is
   not observable. The monotonic clock and the English verification sentence
   stay inside the Ollama package.
+- `GET /llm/device-preference` and `PUT /llm/device-preference` store `auto`,
+  `cpu`, or one currently selectable adapter. No row means Auto. Unknown
+  adapters and adapters that share a key are listed and not selectable. A
+  missing adapter keeps the stored choice, falls back to Auto, and reports
+  `adapter_missing`. An external server is not reconfigured (`external_server`);
+  a CPU choice still sends `num_gpu=0` on each generation and translation
+  request. `PUT` does not wait for a restart: it answers `pending`, and the
+  owned server switches in the background once no generation, model download,
+  profile install or translation is using it.
 - Generated questions remain editable and require source evidence before they
   become playable.
 - Parsed blocks are completed independently: grounded completions are persisted

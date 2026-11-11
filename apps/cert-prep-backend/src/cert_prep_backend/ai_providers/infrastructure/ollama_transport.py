@@ -153,10 +153,23 @@ class OllamaProvider:
             **self._health_metadata_fields(),
         )
 
+    def _execution_for_call(self) -> LLMExecutionPolicy:
+        """Creation-time policy, unless the stored device choice forces CPU.
+
+        Machines with no GPU keep the policy chosen when the provider was created.
+        """
+
+        if self._server is not None:
+            warning = self._server.cpu_request_override()
+            if warning:
+                return LLMExecutionPolicy(mode=LLMExecutionMode.CPU, warning=warning)
+        return self.execution_policy
+
     def _health_metadata_fields(self) -> dict[str, object]:
+        execution = self._execution_for_call()
         fields: dict[str, object] = {
-            "execution_mode": self.execution_policy.mode,
-            "execution_warning": self.execution_policy.warning,
+            "execution_mode": execution.mode,
+            "execution_warning": execution.warning,
             "device": self._device_for_health(),
         }
         selection = self.profile_selection
@@ -184,7 +197,7 @@ class OllamaProvider:
             "num_ctx": num_ctx,
             "num_predict": num_predict,
         }
-        if self.execution_policy.mode == LLMExecutionMode.CPU:
+        if self._execution_for_call().mode == LLMExecutionMode.CPU:
             options["num_gpu"] = 0
         return options
 
@@ -244,8 +257,20 @@ class OllamaProvider:
         )
 
     def pull_model(self, progress) -> None:
-        """Pull the configured Ollama model after explicit user confirmation."""
+        """Pull the configured Ollama model after explicit user confirmation.
 
+        The pull counts as LONG work on the owned server: a device switch and a
+        corrective restart wait for it instead of stopping the server
+        mid-download, and generation calls are not held back meanwhile.
+        """
+
+        if self._server is None:
+            self._stream_model_pull(progress)
+            return
+        with self._server.admission(long_running=True):
+            self._stream_model_pull(progress)
+
+    def _stream_model_pull(self, progress) -> None:
         for update in self._client.pull(self.model, stream=True):
             progress(pull_progress(update))
 

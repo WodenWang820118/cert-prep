@@ -2,12 +2,12 @@
 
 All `path:line` citations are relative to `C:\software-dev\cert-prep` (`main` at 96d16fd). I read files only: I edited nothing and ran no builds, tests or nx.
 
-Slice 1 (the observed device on `GET /llm/health`) and slice 2 (preference-aware policy in `cert-prep-ollama`) are done. Slice 7 was removed: the product owner declined the coarse `/api/ps` signal on 2026-11-10. Slices 3–6 are unchanged.
+Slice 1 (the observed device on `GET /llm/health`), slice 2 (preference-aware policy in `cert-prep-ollama`), slice 3 (the stored choice and `GET /llm/device-preference`) and slice 4 (`PUT` and apply) are done. Slice 7 was removed: the product owner declined the coarse `/api/ps` signal on 2026-11-10. Slices 5–6 are unchanged.
 
 Four findings change the shape of the work:
 - **The observed device did not reach the API.** The coordinator recorded it, and no route or schema exposed it. Slice 1 returns it as the optional `LLMHealthRead.device`.
 - **External Ollama was often missed.** If an outside server was already running when Cert Prep started, ownership stayed `"none"`. Slice 1 calls `note_api_answered()` after a successful `list()`, which marks that server external. `device_status()` also reports a non-local host as external while `ensure_running` still leaves ownership `"none"`.
-- **There is no user-settings store.** Settings come only from environment variables, so the device choice needs a new SQLite table (migration 29).
+- **The device choice is stored in SQLite.** Settings are still environment-only. Migration 29 adds the single-row table `ollama_device_preference`. No row means Auto.
 - **The dead-code gate limits how small the slices can be.** It flags any method that only tests call, so each slice must also wire its new code into production use.
 
 ## 1. Today's shape
@@ -50,7 +50,7 @@ Line numbers in this section, and the `device_policy.py` / `server_coordinator.p
 
 **What the API exposes now**
 - `GET /llm/health` (`ai_providers/api/router.py`) returns `LLMHealthRead`, built from `ProviderHealth`. It still reports `execution_mode` and `execution_warning`, and for Ollama also the optional `device` object from section 3. A provider that is not Ollama, including the fake provider, leaves `device` null.
-- `execution_mode` is still fixed when the provider is created (`cert_prep_ollama/profiles.py`). CPU mode still sends `num_gpu=0` with every request. Slice 1 does not change generation or model loading.
+- The no-GPU `execution_mode` is still fixed when the provider is created (`cert_prep_ollama/profiles.py`). A stored CPU choice overlays that per call: `execution_mode=cpu`, a warning that names the user's choice, and `num_gpu=0`. Slice 1 does not change generation or model loading.
 
 **External Ollama**
 - `health()` still calls `ensure_running` only when `list()` fails. Generation never calls `ensure_running`.
@@ -60,7 +60,7 @@ Line numbers in this section, and the `device_policy.py` / `server_coordinator.p
 
 **Wiring and settings**
 - One coordinator is built per app (`bootstrap/app.py:206-212`; `ai_providers/infrastructure/ollama_server.py:10-19`). The desktop host passes no GPU variables (`apps/cert-prep-desktop/src-tauri/src/backend_process.rs:136-147`).
-- Settings are environment-only (`platform/config.py:21-22`). Persistent data is SQLite with append-only migrations (`platform/database.py:14-17`); the last migration is 28 (`:732`).
+- Settings are environment-only (`platform/config.py:21-22`). Persistent data is SQLite with append-only migrations (`platform/database.py:14-17`). The last migration before this change was 28; migration 29 is the device-preference row.
 - The generated TypeScript client must match OpenAPI byte for byte (`tests/unit/test_openapi_client_generator.py:257-262`; target at `apps/cert-prep-backend/project.json:63-72`).
 - Enums defined in a context's `domain` must map to vocabulary concepts (`tests/unit/test_ubiquitous_language.py:85-105`, decision D12 at `.agents/PLANS/ddd-refactor/decisions.md:28`). Domain classes must be in the glossary (`test_ubiquitous_language.py:56-70`). Use cases must match `docs/domain/ai_providers.md` (`tests/unit/test_use_cases.py:10`).
 
@@ -94,17 +94,24 @@ Line numbers in this section, and the `device_policy.py` / `server_coordinator.p
 - With an iGPU chosen on a mixed machine, Vulkan may still pick the dGPU. The existing single correction then pins `GGML_VK_VISIBLE_DEVICES` (`device_policy.py:388-395`).
 - Choices offered: GPUs with classification `dedicated` or `integrated` only. Adapters classified `unknown` are listed but cannot be chosen (decision 3, 2026-11-10). Slice 2 enforces that in the policy; the list itself is slice 3.
 
-**When it takes effect.** Add `OllamaServerCoordinator.apply_device_preference()`:
-- Clear `_policy`, `_restarts` and `_device_execution`; each new choice gets its own one corrective restart.
-- If we own the server and it is idle (`_admissions_paused_when_idle`, `server_coordinator.py:195-208` before slice 2): stop it and start it with the new policy now. A lazy start is not enough. `generate_structured_json` and `_json_chat` (`ollama_transport.py:191-244`) do not call `ensure_running`. The old citation `:248-257` is `pull_model`, which also does not start the server.
-- If a generation is running: set a pending flag. Never interrupt the call and never reuse the 30 s deadline. The switch happens at the next idle `after_model_load` (skipping verification of the old load) or the next `ensure_running`.
+**When it takes effect.** Add `OllamaServerCoordinator.apply_device_preference(preference)`:
+- Each new choice gets its own corrective restart: when a server starts with a choice other than the previous one, `_restarts` and the last execution are reset. Re-sending the choice the server already runs changes nothing, so a corrected policy and its restart count are kept.
+- `apply_device_preference(preference)` does no I/O and takes neither `_verify_lock` nor `_lock`. Under a small status lock it records the request and wakes the coordinator's switch thread; `PUT` then answers `pending` when the owned server runs another choice or a switch is under way. Probing, reading the stored choice and the inventory, and claiming the switch happen on the switch thread. A lazy start is not enough: `generate_structured_json` and `_json_chat` do not call `ensure_running`.
+- `device_status()` and `device_preference_application()` read an immutable snapshot under that status lock, which is a leaf (nothing else is taken while it is held) and is never held across I/O, a probe, a process start or stop, or an inventory or database read. Every state change republishes it. Health and `GET /llm/device-preference` therefore answer during a switch, a corrective restart, and a long `ensure_running` start. While a switch waits or runs, `device.requested` still shows the running server's policy.
+- In flight is every use of the owned server, in two classes, each a count with a condition and never a held lock. SHORT: generation and translation. LONG: `pull_model` and the profile installer's pull and create (`admission(long_running=True)`). A switch never interrupts either. While a switch waits and no LONG work runs, new calls of both classes wait, so the in-flight SHORT calls drain and back-to-back calls cannot starve the switch. While LONG work runs, new calls are not held, so a download does not freeze generation; the hold starts when the last LONG holder leaves. A call made inside another call on the same thread is never held back.
+- The switch thread takes the switch at the first moment both counts are zero, also when the last call failed: releasing the last admission wakes it, so no caller has to remember. It claims `_restarting` in the same critical section as the idle check (`_verify_lock` → `_lock` → `_admission_cond`), stops the old server and starts the latest stored choice without holding `_verify_lock`; only the create-and-adopt of the child is under `_lock`. Only that thread releases the hold it took, before anything in its cleanup that can fail. One switch runs at a time. When choices arrive during a switch, the new server is checked against the stored choice once it is ready; if the choice changed it is replaced once more, otherwise not. It never reuses the 30 s corrective deadline, and a load that finished while a switch was waiting or running is not verified.
+- The corrective restart keeps its 30 s wait for SHORT work. It never stops the server under LONG work: if a download runs when the mismatch is found, the restart is deferred, verification stays `pending`, and the next model load decides again. The check and its hold are one critical section, so it never freezes new calls for 30 s because of a download.
+- A failed start leaves status `pending`, `device.server` `not_running`, and is not retried by the thread or on model loads. The next start (`ensure_running`, for example from health when `list()` fails) or the next choice starts the latest choice. A failed stop leaves the old server serving, and later calls are not held back; `ensure_running` retries the stop only once that server stops answering. A choice stored while the stop was failing is not lost: the thread takes it next. An unexpected error in the switch thread is logged, clears every hold, and does not end the thread. A failed read of the stored choice after the new server is up keeps that server and is not reported as a failed switch.
+- `close()` cancels a switch that has not started. It signals the switch thread, which checks the close between its steps and after creating a child, and stops what it started; `close()` joins it with a bound sized for two process stops (not the 30 s readiness wait), then stops any process the coordinator still references, so no `ollama serve` is left when the interpreter exits right after. `ensure_running`'s readiness wait and the corrective restart's waits also stop on close.
+- On Windows the desktop host starts the backend with the launcher crate's `OwnedSidecarProcess` (`capture-sidecar-launcher` =0.9.0; checked in that crate's source), which puts it in a Job object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and no breakaway; the backend spawns `ollama serve` without `CREATE_BREAKAWAY_FROM_JOB`, so the server is also killed when the host closes that job. The coordinator does not rely on it: a backend run without the desktop host has no job.
 - External server: save only. Not running: applies at the next start.
 - The coordinator reads `preference_provider()` (a constructor argument; slice 3 wires it from the store in `ollama_server.py`) on every owned start, including a corrective restart. Slice 2 does that read inside `_owned_policy`.
 
-**CPU in the existing health fields.** When the owned policy target is `cpu`, the provider asks the coordinator per call:
-- `execution_mode=cpu`, with a warning that names the user's choice.
-- `num_gpu=0` in requests (`_chat_options`, `ollama_transport.py:187-188`).
+**CPU in the existing health fields.** The inventory policy (no GPU → CPU, with the original warning) stays fixed at provider creation. A stored choice whose policy target is CPU overlays that per call, including when Ollama is external:
+- `execution_mode=cpu`, with the warning `The user's device choice is CPU; Ollama requests run on the CPU.`
+- `num_gpu=0` in requests (`_chat_options`).
 - The existing "CPU" label then appears with no new UI (`apps/cert-prep/src/app/runtime/data/model-health-view-model.service.ts:60-64`).
+- Non-Windows stays unmanaged (`not_applicable`), so a CPU choice there does not overlay the creation-time mode.
 
 **API.**
 - `GET /llm/device-preference` returns:
@@ -112,7 +119,7 @@ Line numbers in this section, and the `device_policy.py` / `server_coordinator.p
   - `adapter_key | null`
   - `adapter_name | null`
   - `status`: `active | pending | external_server | adapter_missing | not_applicable`
-  - `choices`: a list of `{adapter_key, name, classification, backend}`
+  - `choices`: a list of `{adapter_key, name, classification, backend, selectable}`. `selectable` is additive: decision 3 lists unknown adapters but they cannot be chosen, and a duplicate key is not selectable either. Software adapters are omitted.
 - `PUT /llm/device-preference` takes `{mode, adapter_key?}`.
 - Validation returns 422 when:
   - `mode=adapter` has no key, or a key that is not among the current choices (code `unknown_device`);
@@ -144,7 +151,8 @@ Add `LLMHealthRead.device: OllamaDeviceRead | null` (optional, so the change is 
 | CPU (override or no GPU) | owned | cpu/cpu | verified | cpu, 0/N layers | 0 |
 | Unmanaged (unknown class, non-Windows) | owned | unmanaged | unknown | from logs (new) | 0 |
 | External (tray app or non-local host) | external | null | not_observable | null | 0 |
-| Right after a preference change (slice 4, not slice 1) | owned | new policy | pending | null | 0 |
+| Waiting for or during a preference switch (slice 4) | owned or not_running | running server's policy | as before | as before | as before |
+| Right after the switched server starts (slice 4) | owned | new policy | pending | null | 0 |
 
 `corrected_device_policy` keeps the same `target`, `backend` and `adapter_name`. It changes the child environment, PCI bus and reason. After a corrective restart the API `requested` object therefore does not show a different name. The restart is `corrective_restarts: 1` with `verification: pending` until the new server loads, then `mismatch` if the second load still disagrees. There is no CPU fallback on that second mismatch.
 
@@ -228,24 +236,33 @@ Model it on `tests/unit/test_gpu_inventory_contract.py:22-65`.
      - key stable across LUID changes and loss of the nvidia-smi row; identical adapters ambiguous
      - each start reads the preference; a corrected policy is reused only within one preference
 
-3. **Store and `GET /llm/device-preference`.** No screen change.
+3. **Store and `GET /llm/device-preference`.** Status: done in this change (together with slice 4). No screen change.
    - Depends on 1 and 2.
    - Changes:
      - `platform/database.py` (migration 29)
-     - new repository with `load` only
+     - new repository with `load` and `save` (slice 4 is the same change)
      - `ollama_server.py` and `bootstrap/app.py` wiring
      - `selectable_adapters`
      - use case `show_device_preference`, router and schemas
      - D17 note, docs, client
    - Tests: migration test (`tests/integration/test_database_migrations.py`), GET with no row → Auto, choice list from fixture inventories.
 
-4. **`PUT` and apply.** No screen change, but a CPU choice made through the API alone changes the existing CPU label; that path is not reachable from the UI.
+4. **`PUT` and apply.** Status: done in this change (together with slice 3). No screen change, but a CPU choice made through the API alone changes the existing CPU label; that path is not reachable from the UI.
    - Depends on 3.
-   - Changes: repository `save`; `choose_device_preference`; router; `apply_device_preference` with the pending switch; dynamic CPU `execution_mode` and `num_gpu`.
+   - Changes: repository `save`; `choose_device_preference` (cached inventory, one refresh only for an unknown key, read back after save); router; `apply_device_preference` and the asynchronous switch thread; `admission()` around pulls, profile pull and create, and translation; dynamic CPU `execution_mode` and `num_gpu` for generation and translation.
    - Tests:
      - idle switch restarts once with the new environment
-     - a switch during a running call waits, then applies after it
-     - external server saved but not applied
+     - a switch during a running call waits, then applies after it, also when the call fails
+     - fairness: a waiting switch holds new SHORT calls until it ran; a LONG download does not hold them
+     - a mismatch during a download defers the corrective restart to a later load
+     - `PUT`, health and status answer during a corrective restart's wait and during `ensure_running`'s start
+     - errors in the switch thread (preference read, probe) clear every hold; a later `PUT` still works
+     - re-sending the running choice restarts nothing; a choice stored during a failed stop is applied afterwards
+     - a model pull, a profile pull and create, and a translation in flight are not interrupted
+     - `PUT` returns `pending` while the restart is held; health and `GET` answer meanwhile; two quick `PUT`s end on the last one
+     - failed start stays `pending` with `not_running` until the next start; failed stop holds no later call
+     - `close()` cancels a waiting switch, and during the stop, the child creation or the readiness wait of a switch leaves no process and no thread
+     - external server saved but not applied; CPU sends `num_gpu=0` for generation and translation
      - 422 cases
      - choice survives an app restart (new `create_app`)
 
@@ -262,13 +279,31 @@ Model it on `tests/unit/test_gpu_inventory_contract.py:22-65`.
 
 Slice 7 (coarse `/api/ps` GPU/CPU signal for an external server) was declined on 2026-11-10 and is not part of this plan.
 
+## Corrections against the code (slices 3 and 4)
+
+Checked against the code while implementing. These are the decisions the code now follows:
+
+- Slice 3's repository is load and save together. Slice 4 is in the same change.
+- `choices` include `selectable`. Unknown adapters are listed with `selectable: false`. Duplicate keys are both listed and not selectable. Software adapters are omitted. Classification `None` is listed as `unknown` and is not selectable.
+- A missing or no-longer selectable adapter keeps stored `mode=adapter` (and the key, name, and PCI ids). The effective policy is Auto. HTTP status is `adapter_missing`. "Auto with status adapter_missing" means that fallback, not rewriting the stored mode.
+- Status priority: `not_applicable`, then `adapter_missing`, then `pending`, then `external_server`, else `active`. Not running, with a valid Windows choice, is `active` until the next start; the exception is a switch that stopped the old server and could not start the replacement, which stays `pending` (also for a choice sent meanwhile) until `ensure_running` starts a server. A newer choice that cannot be read once the replacement is up also stays `pending`. After an idle restart the preference status is `active` while device verification is still `pending`.
+- `PUT` returns the same body as `GET` (200). `mode=adapter` with no key, or a key that is not a currently selectable choice, is 422 `unknown_device`. `auto` or `cpu` with a key is 422 `validation_error`. A whitespace-only key counts as no key. A mode that is not one of the three is the existing pydantic 422 `validation_error`.
+- `PUT` on a machine that owns no process probes once. If the API already answers, ownership becomes `external` and nothing is spawned, including when health has not run yet. A non-local host is `external_server` even while ownership is still `"none"`.
+- The switch runs on the coordinator's own thread when the last admission is released (success or failure), not from `after_model_load`. `ensure_running` only applies a pending choice by starting a server that is not running. Neither uses the 30 s deadline. The pending flag is cleared only once a server for the stored choice is ready, and never for a choice stored after that server read it.
+- `PUT` on a machine that owns no running server answers from the snapshot (`active`); the switch thread then probes once, and an answering API is marked external (`external_server`). Before round 3 the `PUT` itself probed.
+- `GET` uses the cached inventory. `PUT` refreshes once only when the requested key is not in the cached list. The cache cannot tell a degraded refresh (a probe timed out) from a good one: the snapshot only carries free-text `warnings`, which also report RAM and disk problems. So a refresh from `PUT` can still replace a good cache with a degraded one; left as a note.
+- `DevicePreferenceUpdate` ignores extra fields, like the other request models of this API (`ProjectCreate`, `PracticeSessionCreate`, `QuestionDraftCreate`). Only the Capture host models forbid extras.
+- Saving an adapter copies the current name and PCI ids from the matched choice. `auto` and `cpu` store those fields as null.
+- `PUT` of `cpu` on non-Windows is stored and reported `not_applicable`. It is not rejected, and it does not overlay `execution_mode`.
+
 Slices 1–4 can be merged on green checks. Slices 5–6 need the product owner's review of the screen. The wording and layout of those two screens are chosen at implementation time from the suggestions in section 4; the screens are still shown to the product owner.
 
 ## 6. Risks and open questions
 
 **Risks**
 - **Wasted model load on mixed machines.** Choosing the iGPU on a mixed machine costs one load before the correction pins Vulkan.
-- **A deferred switch may wait a long time** when streaming workers stay busy. It still applies at the next idle health check.
+- **A deferred switch may wait a long time** when streaming workers, a model download or a batch translation keep the server busy. It applies the moment the last of them ends.
+- **`ensure_running` still holds `_lock` for its start and readiness wait** (up to 30 s from health, up to the install timeout from the profile installer). Status reads, `PUT` and `admission()` no longer need it; a second `ensure_running` and the switch thread's claim still wait for it, and `note_api_answered` skips instead of waiting.
 - **A new Ollama version can change its log format.** Status then shows `unknown`, which stays honest.
 - **The existing 30 s corrective-restart deadline** can still cut off a running call (`server_coordinator.py:430-435`). The override does not reuse it. Fixing it is out of scope.
 - **The dead-code gate forbids test-only methods,** so slices 3 and 4 cannot shrink further.

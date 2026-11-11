@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -119,79 +120,92 @@ class OllamaProfileInstaller:
                 )
             )
 
-        progress(
-            RuntimeInstallProgress(
-                f"Pulling base model {self.profile.base_model}.",
-                phase="model_download",
-                cancellable=True,
+        # Admission covers the download and the create. The server was prepared
+        # first so ensure_running can restart before this count is held.
+        with self._while_using_server():
+            progress(
+                RuntimeInstallProgress(
+                    f"Pulling base model {self.profile.base_model}.",
+                    phase="model_download",
+                    cancellable=True,
+                )
             )
-        )
-        for update in self._client.pull(self.profile.base_model, stream=True):
-            record_install_progress(
-                pull_progress(update),
-                phase="model_download",
-                cancellable=True,
-            )
+            for update in self._client.pull(self.profile.base_model, stream=True):
+                record_install_progress(
+                    pull_progress(update),
+                    phase="model_download",
+                    cancellable=True,
+                )
 
-        progress(
-            RuntimeInstallProgress(
-                "Committing Ollama profile model.",
-                completed=last_completed,
-                total=last_total,
-                phase="committing",
-                cancellable=False,
+            progress(
+                RuntimeInstallProgress(
+                    "Committing Ollama profile model.",
+                    completed=last_completed,
+                    total=last_total,
+                    phase="committing",
+                    cancellable=False,
+                )
             )
-        )
-        progress(
-            RuntimeInstallProgress(
-                f"Creating profile model {self.model}.",
-                completed=last_completed,
-                total=last_total,
-                phase="committing",
-                cancellable=False,
+            progress(
+                RuntimeInstallProgress(
+                    f"Creating profile model {self.model}.",
+                    completed=last_completed,
+                    total=last_total,
+                    phase="committing",
+                    cancellable=False,
+                )
             )
-        )
-        create = getattr(self._client, "create", None)
-        if not callable(create):
-            raise ProviderUnavailableError("Ollama client does not support model creation.")
-        for update in create(
-            model=self.model,
-            from_=self.profile.base_model,
-            system=self.profile.system_prompt,
-            parameters=parameters_from_profile(self.profile),
-            stream=True,
-        ):
-            record_install_progress(
-                _create_progress(update),
-                phase="committing",
-                cancellable=False,
-            )
+            create = getattr(self._client, "create", None)
+            if not callable(create):
+                raise ProviderUnavailableError("Ollama client does not support model creation.")
+            for update in create(
+                model=self.model,
+                from_=self.profile.base_model,
+                system=self.profile.system_prompt,
+                parameters=parameters_from_profile(self.profile),
+                stream=True,
+            ):
+                record_install_progress(
+                    _create_progress(update),
+                    phase="committing",
+                    cancellable=False,
+                )
 
-        progress(
-            RuntimeInstallProgress(
-                "Verifying Ollama profile registration.",
-                completed=last_completed,
-                total=last_total,
-                phase="committing",
-                cancellable=False,
+            progress(
+                RuntimeInstallProgress(
+                    "Verifying Ollama profile registration.",
+                    completed=last_completed,
+                    total=last_total,
+                    phase="committing",
+                    cancellable=False,
+                )
             )
-        )
-        model_names = self._installed_model_names()
-        if self.model not in model_names:
-            raise ProviderUnavailableError(
-                f"Ollama profile model was not registered: {self.model}",
-                code="model_missing",
+            model_names = self._installed_model_names()
+            if self.model not in model_names:
+                raise ProviderUnavailableError(
+                    f"Ollama profile model was not registered: {self.model}",
+                    code="model_missing",
+                )
+            progress(
+                RuntimeInstallProgress(
+                    "Ollama profile registration verified.",
+                    completed=last_completed,
+                    total=last_total,
+                    phase="committing",
+                    cancellable=False,
+                )
             )
-        progress(
-            RuntimeInstallProgress(
-                "Ollama profile registration verified.",
-                completed=last_completed,
-                total=last_total,
-                phase="committing",
-                cancellable=False,
-            )
-        )
-        return RuntimeInstallationStatus.SUCCEEDED
+            return RuntimeInstallationStatus.SUCCEEDED
+
+    @contextmanager
+    def _while_using_server(self) -> Iterator[None]:
+        """Count a pull or create as LONG work in flight. No owned server means no admission."""
+
+        if self._server is None:
+            yield
+            return
+        with self._server.admission(long_running=True):
+            yield
 
     def _installed_model_names(self) -> set[str]:
         self._prepare_server()
