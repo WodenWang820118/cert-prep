@@ -336,7 +336,6 @@ export interface CertPrepGeneratedClient {
   getRuntimeInstallation(jobId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['RuntimeInstallationRead']>;
   cancelRuntimeInstallation(jobId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['RuntimeInstallationRead']>;
   captureRuntimeReady(options?: CertPrepRequestOptions): Observable<Components['schemas']['RuntimeReady']>;
-  captureRuntimeProvenance(options?: CertPrepRequestOptions): Observable<Record<string, unknown>>;
   captureRuntimeRequirements(options?: CertPrepRequestOptions): Observable<Components['schemas']['RuntimeRequirements']>;
   startCaptureRuntimeInstallation(body: Components['schemas']['StartRuntimeInstallationRequest'], options?: CertPrepRequestOptions): Observable<Components['schemas']['RuntimeInstallation']>;
   captureRuntimeInstallations(options?: CertPrepRequestOptions): Observable<Components['schemas']['RuntimeInstallations']>;
@@ -416,7 +415,6 @@ export interface CertPrepRequestFactory {
   getRuntimeInstallation(jobId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
   cancelRuntimeInstallation(jobId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
   captureRuntimeReady(options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  captureRuntimeProvenance(options?: CertPrepRequestOptions): CertPrepHttpRequest;
   captureRuntimeRequirements(options?: CertPrepRequestOptions): CertPrepHttpRequest;
   startCaptureRuntimeInstallation(body: Components['schemas']['StartRuntimeInstallationRequest'], options?: CertPrepRequestOptions): CertPrepHttpRequest;
   captureRuntimeInstallations(options?: CertPrepRequestOptions): CertPrepHttpRequest;
@@ -603,9 +601,6 @@ export function createCertPrepRequestFactory(): CertPrepRequestFactory {
     captureRuntimeReady: (options?: CertPrepRequestOptions) => {
       return { method: 'GET' as const, path: "/capture-runtime/ready", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    captureRuntimeProvenance: (options?: CertPrepRequestOptions) => {
-      return { method: 'GET' as const, path: "/capture-runtime/provenance", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
-    },
     captureRuntimeRequirements: (options?: CertPrepRequestOptions) => {
       return { method: 'GET' as const, path: "/capture-runtime/requirements", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
@@ -789,8 +784,6 @@ export function createCertPrepGeneratedClient(
       transport.request<Components['schemas']['RuntimeInstallationRead']>(requests.cancelRuntimeInstallation(jobId, options)),
     captureRuntimeReady: (options?: CertPrepRequestOptions) =>
       transport.request<Components['schemas']['RuntimeReady']>(requests.captureRuntimeReady(options)),
-    captureRuntimeProvenance: (options?: CertPrepRequestOptions) =>
-      transport.request<Record<string, unknown>>(requests.captureRuntimeProvenance(options)),
     captureRuntimeRequirements: (options?: CertPrepRequestOptions) =>
       transport.request<Components['schemas']['RuntimeRequirements']>(requests.captureRuntimeRequirements(options)),
     startCaptureRuntimeInstallation: (body: Components['schemas']['StartRuntimeInstallationRequest'], options?: CertPrepRequestOptions) =>

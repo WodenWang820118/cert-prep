@@ -19,7 +19,6 @@ export const CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS = Object.freeze([
   'apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/runtime_policy.py',
   'apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/mapping.py',
   'apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/client.py',
-  'apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/runtime_provenance.py',
   'apps/cert-prep-desktop/src-tauri/src/constants.rs',
   'apps/cert-prep-desktop/src-tauri/Cargo.toml',
   'apps/cert-prep-desktop/src-tauri/Cargo.lock',

@@ -1,5 +1,3 @@
-import { isCaptureRuntimePythonWheelFileName } from '../capture-runtime-python-wheel.mts';
-import { PHASE1_FINAL_IDENTITY } from '../phase1-final-identity.mts';
 import { setTimeout as delay } from 'node:timers/promises';
 import { randomUUID } from 'node:crypto';
 import type { Locator } from 'playwright';
@@ -16,12 +14,7 @@ import {
   waitText,
 } from './runner-context.mts';
 import { captureProjectApiAfterRestart } from './generation-readiness.mts';
-import type {
-  AcceptanceRuntimeIdentityExpectation,
-  InstalledRuntimeTupleAttestation,
-  OcrPreflightMetrics,
-  SmokeRunState,
-} from './types.mts';
+import type { SmokeRunState } from './types.mts';
 import { isRecord } from './text-utils.mts';
 
 export async function installPythonRuntimeIfNeeded(
@@ -165,7 +158,6 @@ export async function ensureCaptureRuntimeReady(
       'Capture Runtime start changed the backend connection before the project API reference was captured.',
     );
   }
-  await assertAcceptanceOcrPreflight(run);
   await page
     .locator('capture-workbench input[type="file"]')
     .waitFor({ state: 'attached', timeout: 30_000 });
@@ -177,295 +169,6 @@ export async function ensureCaptureRuntimeReady(
     60_000,
     'Build workspace restored after Capture Runtime start',
   );
-}
-
-/**
- * Capture the authenticated runtime decision and the visible UI gate before
- * a source input can be imported. The backend endpoint is the authority for
- * contract/worker identity; the DOM check proves the host surfaced the same
- * GPU decision before the picker/upload boundary.
- */
-export async function assertAcceptanceOcrPreflight(
-  run: SmokeRunState,
-): Promise<OcrPreflightMetrics | undefined> {
-  const expected = run.options.acceptanceRuntimeIdentity;
-  if (!expected) return undefined;
-  const projectApi = run.projectApi;
-  if (!projectApi) {
-    throw new Error('Acceptance OCR preflight requires a captured project API.');
-  }
-  const response = await activePage(run).request.get(
-    `${projectApi.apiBaseUrl}/capture-runtime/ready`,
-    {
-      headers: { Authorization: projectApi.authorization },
-      timeout: 30_000,
-    },
-  );
-  const payload = await response.json().catch(() => null);
-  if (!response.ok()) {
-    throw new Error(
-      `Authenticated Capture Runtime preflight returned HTTP ${response.status()}.`,
-    );
-  }
-  const metrics = parseAcceptanceOcrPreflight(payload, expected);
-  const attestationResponse = await activePage(run).request.get(
-    `${projectApi.apiBaseUrl}/capture-runtime/provenance`,
-    {
-      headers: { Authorization: projectApi.authorization },
-      timeout: 30_000,
-    },
-  );
-  const attestationPayload = await attestationResponse.json().catch(() => null);
-  if (!attestationResponse.ok()) {
-    throw new Error(
-      `Authenticated installed-app runtime attestation returned HTTP ${attestationResponse.status()}.`,
-    );
-  }
-  const runtimeAttestation = parseInstalledRuntimeTupleAttestation(
-    attestationPayload,
-    expected,
-  );
-  const page = activePage(run);
-  const status = page.getByTestId('ocr-compute-status');
-  const uiGpuBeforeImport =
-    expected.preflightMode === 'gpu-dml' &&
-    (await status.isVisible().catch(() => false)) &&
-    /directml/i.test((await status.textContent().catch(() => '')) ?? '');
-  const sourceInput = page.locator('capture-workbench input[type="file"]').first();
-  const sourceImportEnabled = await sourceInput.isEnabled().catch(() => false);
-  if (!uiGpuBeforeImport || !sourceImportEnabled) {
-    throw new Error(
-      'Cert Prep UI did not expose authenticated GPU OCR readiness before source import.',
-    );
-  }
-  const observed: OcrPreflightMetrics = {
-    ...metrics,
-    ui_gpu_before_import: uiGpuBeforeImport,
-    source_import_enabled: sourceImportEnabled,
-  };
-  run.metrics.ocr_preflight = observed;
-  run.metrics.runtime_attestation = runtimeAttestation;
-  run.metrics.observations.push(
-    `Authenticated OCR preflight=${observed.mode}; UI GPU before import=${String(observed.ui_gpu_before_import)}.`,
-  );
-  return observed;
-}
-
-/**
- * Validate the hash-only tuple emitted by the running packaged backend. The
- * expected installed fields are supplied by the acceptance harness after it
- * re-hashed the executable and adjacent resources from the exact app under
- * test; build directories and old manifests cannot satisfy this comparison.
- */
-export function parseInstalledRuntimeTupleAttestation(
-  payload: unknown,
-  expected: AcceptanceRuntimeIdentityExpectation,
-): InstalledRuntimeTupleAttestation {
-  if (!isRecord(payload) || payload.schema_version !== 1) {
-    throw new Error('Installed-app runtime attestation schema was invalid.');
-  }
-  const candidate = payload.candidate;
-  const observed = payload.observed;
-  if (!isRecord(candidate) || !isRecord(observed)) {
-    throw new Error('Installed-app runtime attestation omitted candidate or observed fields.');
-  }
-  const candidateFields = {
-    runtime_version: requiredString(candidate.runtime_version, 'candidate.runtime_version'),
-    runtime_core_sha256: requiredSha256(
-      candidate.runtime_core_sha256,
-      'candidate.runtime_core_sha256',
-    ),
-    runtime_core_bytes: requiredPositiveInteger(
-      candidate.runtime_core_bytes,
-      'candidate.runtime_core_bytes',
-    ),
-    runtime_manifest_identity_sha256: requiredSha256(
-      candidate.runtime_manifest_identity_sha256,
-      'candidate.runtime_manifest_identity_sha256',
-    ),
-    worker_archive_sha256: requiredSha256(
-      candidate.worker_archive_sha256,
-      'candidate.worker_archive_sha256',
-    ),
-    worker_archive_bytes: requiredPositiveInteger(
-      candidate.worker_archive_bytes,
-      'candidate.worker_archive_bytes',
-    ),
-    worker_executable_sha256: requiredSha256(
-      candidate.worker_executable_sha256,
-      'candidate.worker_executable_sha256',
-    ),
-    contract_set_sha256: requiredSha256(
-      candidate.contract_set_sha256,
-      'candidate.contract_set_sha256',
-    ),
-  };
-  if (
-    candidateFields.runtime_core_sha256 !== expected.runtimeArtifactSha256 ||
-    candidateFields.worker_archive_sha256 !== expected.workerArchiveSha256 ||
-    candidateFields.worker_executable_sha256 !== expected.workerExecutableSha256 ||
-    candidateFields.contract_set_sha256 !== expected.contractSetSha256 ||
-    (expected.installedRuntimeCoreSha256 !== undefined &&
-      candidateFields.runtime_core_sha256 !== expected.installedRuntimeCoreSha256) ||
-    (expected.installedRuntimeCoreBytes !== undefined &&
-      candidateFields.runtime_core_bytes !== expected.installedRuntimeCoreBytes) ||
-    (expected.installedRuntimeManifestIdentitySha256 !== undefined &&
-      candidateFields.runtime_manifest_identity_sha256 !==
-        expected.installedRuntimeManifestIdentitySha256)
-  ) {
-    throw new Error(
-      'Installed-app runtime attestation candidate tuple did not match the exact Phase 1 and installed identities.',
-    );
-  }
-
-  const wheel = candidate.python_wheel;
-  if (!isRecord(wheel)) {
-    throw new Error('Installed-app runtime attestation omitted Python wheel provenance.');
-  }
-  const generatedModels = wheel.generated_models;
-  if (
-    typeof wheel.file_name !== 'string' ||
-    !isCaptureRuntimePythonWheelFileName(wheel.file_name, PHASE1_FINAL_IDENTITY.runtimeVersion) ||
-    !isRecord(generatedModels) ||
-    generatedModels.worker_sha256 !== true ||
-    generatedModels.pdf_page_numbers !== true ||
-    wheel.package_name !== 'capture-runtime-client' ||
-    wheel.package_version !== PHASE1_FINAL_IDENTITY.runtimeVersion ||
-    requiredSha256(wheel.sha256, 'candidate.python_wheel.sha256') === '' ||
-    requiredPositiveInteger(wheel.bytes, 'candidate.python_wheel.bytes') !== wheel.bytes ||
-    requiredSha256(wheel.contract_set_sha256, 'candidate.python_wheel.contract_set_sha256') !==
-      expected.contractSetSha256
-  ) {
-    throw new Error('Installed-app runtime attestation Python wheel identity was invalid.');
-  }
-
-  if (
-    observed.ready !== true ||
-    observed.runtime_version !== candidateFields.runtime_version ||
-    observed.api_version !== '2.0' ||
-    observed.capture_document_schema_version !== '2' ||
-    observed.mode !== expected.preflightMode ||
-    observed.contract_set_sha256 !== candidateFields.contract_set_sha256 ||
-    observed.worker_executable_sha256 !== candidateFields.worker_executable_sha256
-  ) {
-    throw new Error('Installed-app runtime attestation live handshake did not match its candidate tuple.');
-  }
-
-  return {
-    schema_version: 1,
-    candidate: {
-      ...candidateFields,
-      python_wheel: {
-        file_name: wheel.file_name,
-        sha256: requiredSha256(wheel.sha256, 'candidate.python_wheel.sha256'),
-        bytes: requiredPositiveInteger(wheel.bytes, 'candidate.python_wheel.bytes'),
-        package_name: 'capture-runtime-client',
-        package_version: PHASE1_FINAL_IDENTITY.runtimeVersion,
-        contract_set_sha256: requiredSha256(
-          wheel.contract_set_sha256,
-          'candidate.python_wheel.contract_set_sha256',
-        ),
-        generated_models: { worker_sha256: true, pdf_page_numbers: true },
-      },
-    },
-    observed: {
-      ready: true,
-      runtime_version: observed.runtime_version,
-      api_version: '2.0',
-      capture_document_schema_version: '2',
-      contract_set_sha256: candidateFields.contract_set_sha256,
-      worker_executable_sha256: candidateFields.worker_executable_sha256,
-      mode: expected.preflightMode,
-    },
-  };
-}
-
-function requiredString(value: unknown, label: string): string {
-  if (typeof value !== 'string' || !value.trim()) {
-    throw new Error(`Installed-app runtime attestation ${label} was invalid.`);
-  }
-  return value.trim();
-}
-
-function requiredSha256(value: unknown, label: string): string {
-  const digest = requiredString(value, label).toLowerCase();
-  if (!/^[a-f0-9]{64}$/u.test(digest)) {
-    throw new Error(`Installed-app runtime attestation ${label} was invalid.`);
-  }
-  return digest;
-}
-
-function requiredPositiveInteger(value: unknown, label: string): number {
-  if (
-    typeof value !== 'number' ||
-    !Number.isSafeInteger(value) ||
-    value <= 0
-  ) {
-    throw new Error(`Installed-app runtime attestation ${label} was invalid.`);
-  }
-  return value;
-}
-
-export function parseAcceptanceOcrPreflight(
-  payload: unknown,
-  expected: AcceptanceRuntimeIdentityExpectation,
-): OcrPreflightMetrics {
-  if (!isRecord(payload) || payload.ready !== true) {
-    throw new Error('Authenticated Capture Runtime readiness payload was invalid.');
-  }
-  const compute = payload.ocrCompute ?? payload.ocr_compute;
-  if (!isRecord(compute)) {
-    throw new Error('Authenticated Capture Runtime readiness omitted OCR compute preflight.');
-  }
-  const mode = compute.mode;
-  if (mode !== 'gpu-dml' && mode !== 'cpu-fallback') {
-    throw new Error('Authenticated Capture Runtime OCR preflight mode was invalid.');
-  }
-  const contractSha256 =
-    typeof compute.contractSha256 === 'string'
-      ? compute.contractSha256
-      : typeof compute.contract_sha256 === 'string'
-        ? compute.contract_sha256
-        : '';
-  const workerSha256 =
-    typeof compute.workerSha256 === 'string'
-      ? compute.workerSha256
-      : typeof compute.worker_sha256 === 'string'
-        ? compute.worker_sha256
-        : null;
-  if (!/^[a-f0-9]{64}$/u.test(contractSha256)) {
-    throw new Error('Authenticated Capture Runtime OCR contract SHA was invalid.');
-  }
-  if (workerSha256 !== null && !/^[a-f0-9]{64}$/u.test(workerSha256)) {
-    throw new Error('Authenticated Capture Runtime OCR worker SHA was invalid.');
-  }
-  if (mode !== expected.preflightMode) {
-    if (mode === 'cpu-fallback') {
-      throw new Error(
-        'Authenticated Capture Runtime selected CPU fallback; GPU/DML acceptance is unavailable.',
-      );
-    }
-    throw new Error(
-      `Authenticated Capture Runtime OCR preflight expected ${expected.preflightMode} but received ${mode}.`,
-    );
-  }
-  if (contractSha256 !== expected.contractSetSha256) {
-    throw new Error(
-      'Authenticated Capture Runtime OCR contract SHA does not match the Phase 1 candidate.',
-    );
-  }
-  if (workerSha256 !== expected.workerExecutableSha256) {
-    throw new Error(
-      'Authenticated Capture Runtime OCR worker SHA does not match the Phase 1 candidate.',
-    );
-  }
-  return {
-    mode,
-    contract_sha256: contractSha256,
-    worker_sha256: workerSha256,
-    ui_gpu_before_import: false,
-    source_import_enabled: false,
-  };
 }
 
 // A fresh install downloads the OCR worker from the GitHub release, which can
@@ -490,7 +193,9 @@ export async function ensureCaptureRuntimeRequirement(
     `${projectApi.apiBaseUrl}/capture-runtime/requirements`,
     { headers, timeout: 30_000 },
   );
-  const requirementsPayload = await requirementsResponse.json().catch(() => null);
+  const requirementsPayload = await requirementsResponse
+    .json()
+    .catch(() => null);
   if (!requirementsResponse.ok()) {
     throw new Error(
       `Capture Runtime requirement query returned HTTP ${requirementsResponse.status()}.`,
@@ -518,7 +223,9 @@ export async function ensureCaptureRuntimeRequirement(
       timeout: 30_000,
     },
   );
-  const installationPayload = await installationResponse.json().catch(() => null);
+  const installationPayload = await installationResponse
+    .json()
+    .catch(() => null);
   if (!installationResponse.ok()) {
     throw new Error(
       `Capture Runtime ${requirementId} installation start returned HTTP ${installationResponse.status()}.`,
@@ -590,7 +297,6 @@ function installationErrorMessage(payload: unknown): string | null {
   if (!isRecord(payload) || !isRecord(payload.error)) return null;
   return stringField(payload.error, 'message');
 }
-
 
 async function isVisible(locator: Locator, timeout: number): Promise<boolean> {
   try {

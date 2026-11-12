@@ -2,8 +2,6 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { OcrTruthManifest } from '../ocr-truth-contract.mts';
-import type { AcceptanceRuntimeIdentityExpectation } from '../packaged-flow-smoke/types.mts';
-import type { OcrExecutionProofExpectation } from '../ocr-execution-proof.mts';
 
 export interface PackagedImageUploadSmokeOptions {
   readonly workspaceRoot: string;
@@ -20,13 +18,10 @@ export interface PackagedImageUploadSmokeOptions {
   readonly ocrTruth?: OcrTruthManifest;
   readonly languageHint?: string;
   readonly llmProvider?: string;
-  readonly acceptanceRuntimeIdentity?: AcceptanceRuntimeIdentityExpectation;
-  readonly ocrExecutionProofExpected?: OcrExecutionProofExpectation;
 }
 
 const DEFAULT_TARGET_TRIPLE = 'x86_64-pc-windows-msvc';
-const DEFAULT_OUT_ROOT =
-  'tmp/cert-prep-desktop/packaged-image-upload-smoke';
+const DEFAULT_OUT_ROOT = 'tmp/cert-prep-desktop/packaged-image-upload-smoke';
 const DEFAULT_CDP_PORT = 9492;
 const DEFAULT_TIMEOUT_MS = 300_000;
 

@@ -314,8 +314,14 @@ export async function captureDocumentOcrEvidence(
     const actualPages = new Map<number, string[]>();
     for (const chunk of chunks) {
       const pageNumber = valueNumber(chunk, 'page_number');
-      if (pageNumber === null || !Number.isInteger(pageNumber) || pageNumber < 1) {
-        throw new Error('PDF OCR chunks did not expose valid page_number values.');
+      if (
+        pageNumber === null ||
+        !Number.isInteger(pageNumber) ||
+        pageNumber < 1
+      ) {
+        throw new Error(
+          'PDF OCR chunks did not expose valid page_number values.',
+        );
       }
       if (
         chunk.extraction_method !== undefined &&
@@ -348,9 +354,8 @@ export async function captureDocumentOcrEvidence(
         (page) => page.pageNumber,
       ),
       appDataEmptyAtLaunch:
-        run.metrics.acceptance_isolation_at_launch?.app_data_dir_empty_at_launch ===
-        true,
-      runtimeAttestation: run.metrics.runtime_attestation,
+        run.metrics.acceptance_isolation_at_launch
+          ?.app_data_dir_empty_at_launch === true,
     });
     run.metrics.ocr_page_records = pageRecords;
     writeFileSync(
@@ -365,15 +370,22 @@ export async function captureDocumentOcrEvidence(
         .map(([pageNumber, texts]) => ({ pageNumber, text: texts.join('\n') })),
     );
     run.metrics.ocr_truth = evaluatedTruth;
-    run.metrics.ocr_semantic_evidence = serializePrivacySafeOcrSemanticEvidence({
-      truth: run.options.acceptanceFixture.truth,
-      evaluation: evaluatedTruth,
-      actualPages: [...actualPages.entries()]
-        .sort(([left], [right]) => left - right)
-        .map(([pageNumber, texts]) => ({ pageNumber, text: texts.join('\n') })),
-    });
+    run.metrics.ocr_semantic_evidence = serializePrivacySafeOcrSemanticEvidence(
+      {
+        truth: run.options.acceptanceFixture.truth,
+        evaluation: evaluatedTruth,
+        actualPages: [...actualPages.entries()]
+          .sort(([left], [right]) => left - right)
+          .map(([pageNumber, texts]) => ({
+            pageNumber,
+            text: texts.join('\n'),
+          })),
+      },
+    );
     if (run.options.acceptancePdfPageScope === 'page-1') {
-      const pageNumbers = [...actualPages.keys()].sort((left, right) => left - right);
+      const pageNumbers = [...actualPages.keys()].sort(
+        (left, right) => left - right,
+      );
       const sourcePageCount = assertPdfPageOneScope(payload, pageNumbers);
       run.metrics.observations.push(
         `PDF acceptance page scope verified: source=${sourcePageCount}, requested=[1], processed=[1].`,
@@ -382,7 +394,6 @@ export async function captureDocumentOcrEvidence(
   }
   const device = stringField(payload.ocr_device).trim() || 'unknown';
   (run.metrics as SmokeMetrics & { ocr_device?: string }).ocr_device = device;
-  if (run.options.acceptanceRuntimeIdentity && device !== 'windowsml-dml') throw new Error(`Local OCR acceptance requires persisted windowsml-dml device, found ${device}.`);
   const fallback = stringField(payload.ocr_fallback_reason).trim();
   run.metrics.observations.push(
     fallback
@@ -406,12 +417,14 @@ export function assertPdfPageOneScope(
     persistedPageNumbers[0] !== 1
   ) {
     throw new Error(
-      `PDF page-one scope was not preserved through the durable document: ${JSON.stringify({
-        pageCount,
-        processedPageCount: valueNumber(payload, 'processed_page_count'),
-        chunksCount: valueNumber(payload, 'chunks_count'),
-        pageNumbers: persistedPageNumbers,
-      })}`,
+      `PDF page-one scope was not preserved through the durable document: ${JSON.stringify(
+        {
+          pageCount,
+          processedPageCount: valueNumber(payload, 'processed_page_count'),
+          chunksCount: valueNumber(payload, 'chunks_count'),
+          pageNumbers: persistedPageNumbers,
+        },
+      )}`,
     );
   }
   return pageCount;
@@ -428,11 +441,11 @@ export function recordDocumentOcrCompletionEvidence(
     expected_pages:
       run.options.acceptancePdfPageScope === 'page-1'
         ? 1
-        : run.metrics.ocr_completion?.expected_pages ?? 46,
+        : (run.metrics.ocr_completion?.expected_pages ?? 46),
     expected_chunks:
       run.options.acceptancePdfPageScope === 'page-1'
         ? 1
-        : run.metrics.ocr_completion?.expected_chunks ?? 46,
+        : (run.metrics.ocr_completion?.expected_chunks ?? 46),
   };
 }
 

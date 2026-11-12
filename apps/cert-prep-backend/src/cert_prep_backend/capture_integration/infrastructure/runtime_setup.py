@@ -13,12 +13,8 @@ from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeError,
     CaptureRuntimeProtocolError,
 )
-from cert_prep_backend.capture_integration.infrastructure.runtime_provenance import (
-    capture_runtime_attestation,
-)
 
 _INCOMPATIBLE_SETUP = "Capture Runtime returned an incompatible setup response."
-_PROVENANCE_UNAVAILABLE = "Installed Capture Runtime provenance is unavailable."
 
 
 class ClientCaptureRuntimeSetup:
@@ -29,22 +25,6 @@ class ClientCaptureRuntimeSetup:
 
     def handshake(self) -> object:
         return _call(self._client.handshake)
-
-    def provenance(self) -> object:
-        try:
-            return capture_runtime_attestation(self._client)
-        except (
-            CaptureRuntimeCompatibilityError,
-            CaptureRuntimeError,
-            CaptureRuntimeProtocolError,
-        ) as error:
-            _reject_runtime_error(error)
-        except RuntimeError as error:
-            raise CaptureRuntimeSetupRejected(
-                status_code=503,
-                code="capture_runtime_provenance_unavailable",
-                message=_PROVENANCE_UNAVAILABLE,
-            ) from error
 
     def requirements(self) -> object:
         return _call(self._client.get_requirements)

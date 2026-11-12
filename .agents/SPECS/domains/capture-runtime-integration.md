@@ -64,9 +64,7 @@ carries `no_compatible_gpu` or `dml_provider_unavailable`, a required notice and
 `ocr_cpu_fallback`. A missing or inconsistent preflight is an incompatible
 runtime. Cert never probes hardware, ranks adapters or changes the selected
 plan. A DirectML failure after a GPU plan was selected fails the capture; the
-host never retries on CPU. When `CERT_PREP_CAPTURE_RUNTIME_CONTRACT_SHA256` or
-`CERT_PREP_CAPTURE_RUNTIME_WORKER_SHA256` is set (acceptance candidates), the
-preflight must match them.
+host never retries on CPU.
 
 ## Single production path
 
@@ -87,7 +85,7 @@ preflight must match them.
 - The browser holds only the Cert Prep API token. The runtime URL and
   process-scoped token stay in Tauri and the backend.
 - Runtime requirements and engine installations are proxied through
-  authenticated `/capture-runtime/*` routes (`ready`, `provenance`,
+  authenticated `/capture-runtime/*` routes (`ready`,
   `requirements`, `installations`); an installation needs `consent: true` and a
   UUID `X-Idempotency-Key`.
 

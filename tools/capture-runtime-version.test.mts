@@ -47,7 +47,10 @@ const CONTRACT_FIXTURE = JSON.stringify({
       schema: {
         properties: {
           apiVersion: { const: '2.0' },
-          runtimeVersion: { type: 'string', pattern: '^[0-9]+\\.[0-9]+\\.[0-9]+$' },
+          runtimeVersion: {
+            type: 'string',
+            pattern: '^[0-9]+\\.[0-9]+\\.[0-9]+$',
+          },
           schemaVersion: { const: '3' },
         },
       },
@@ -58,7 +61,10 @@ const CONTRACT_FIXTURE = JSON.stringify({
         properties: {
           apiVersion: { const: '2.0' },
           contractSetVersion: { const: '2' },
-          runtimeVersion: { type: 'string', pattern: '^[0-9]+\\.[0-9]+\\.[0-9]+$' },
+          runtimeVersion: {
+            type: 'string',
+            pattern: '^[0-9]+\\.[0-9]+\\.[0-9]+$',
+          },
           schemaVersion: { const: '1' },
         },
       },
@@ -70,7 +76,10 @@ const CONTRACT_FIXTURE = JSON.stringify({
           apiVersion: { const: '2.0' },
           captureDocumentSchemaVersion: { const: '2' },
           contractSetVersion: { const: '2' },
-          runtimeVersion: { type: 'string', pattern: '^[0-9]+\\.[0-9]+\\.[0-9]+$' },
+          runtimeVersion: {
+            type: 'string',
+            pattern: '^[0-9]+\\.[0-9]+\\.[0-9]+$',
+          },
         },
       },
     },
@@ -103,13 +112,11 @@ function validEntries(): CaptureRuntimeConsumerInventoryEntry[] {
           ? '2.0'
           : field.kind === 'documentSchemaVersion'
             ? '2'
-            : field.kind === 'runtimeProvenanceIdentity'
-              ? `runtime=${CAPTURE_RUNTIME_VERSION};wheel=${CAPTURE_RUNTIME_VERSION}`
-              : field.kind === 'runtimeReadyIdentity'
-                ? 'api=2.0;document=2;contractSet=2'
-                : field.kind === 'preflightIdentity'
-                  ? 'api=2.0;contractSet=2'
-                  : 'structural',
+            : field.kind === 'runtimeReadyIdentity'
+              ? 'api=2.0;document=2;contractSet=2'
+              : field.kind === 'preflightIdentity'
+                ? 'api=2.0;contractSet=2'
+                : 'structural',
   }));
 }
 
@@ -357,7 +364,9 @@ test('the inventory rejects stale and mixed runtime owners', () => {
 
   assert.equal(report.status, 'blocked');
   assert.ok(report.errors.some((error) => error.includes('0.4.1')));
-  assert.ok(report.errors.some((error) => error.includes(CAPTURE_RUNTIME_VERSION)));
+  assert.ok(
+    report.errors.some((error) => error.includes(CAPTURE_RUNTIME_VERSION)),
+  );
 });
 
 test('the inventory rejects a missing projection schema and a corrupted contract digest', () => {
@@ -413,7 +422,10 @@ test('a producer contract without a version needs the version from its package',
 
 test('a producer contract that pins another version in a schema is mixed', () => {
   const fixture = JSON.parse(CONTRACT_FIXTURE) as {
-    schemas: { name: string; schema: { properties: Record<string, unknown> } }[];
+    schemas: {
+      name: string;
+      schema: { properties: Record<string, unknown> };
+    }[];
   };
   const preflight = fixture.schemas.find(
     (schema) => schema.name === 'OcrComputePreflightV2',
@@ -495,14 +507,17 @@ test('a canonical snapshot reads the same inventory and survives workspace mutat
       snapshot.files.length,
       CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS.length,
     );
-    assert.equal(CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS.length, 26);
-    assert.equal(CAPTURE_RUNTIME_CONSUMER_INVENTORY_FIELDS.length, 29);
+    assert.equal(CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS.length, 25);
+    assert.equal(CAPTURE_RUNTIME_CONSUMER_INVENTORY_FIELDS.length, 28);
     assert.equal(repeatedSnapshot.aggregateSha256, snapshot.aggregateSha256);
     assert.deepEqual(repeatedSnapshot.files, snapshot.files);
     assert.deepEqual(snapshotInput.entries, diskInput.entries);
     assert.deepEqual(snapshotInput.sourceErrors, diskInput.sourceErrors);
     assert.equal(snapshotReport.status, 'ready');
-    assert.equal(snapshotReport.expectedRuntimeVersion, CAPTURE_RUNTIME_VERSION);
+    assert.equal(
+      snapshotReport.expectedRuntimeVersion,
+      CAPTURE_RUNTIME_VERSION,
+    );
     assert.deepEqual(snapshotReport.errors, []);
 
     rewriteRuntimeVersion(workspaceRoot, '99.0.0');
@@ -899,7 +914,10 @@ test('the lock reader rejects duplicate sections and ignores unrelated blocks', 
 
 test('consumer checks require exact Cargo pins in published and candidate modes', () => {
   withInventoryWorkspace((workspaceRoot) => {
-    const cargo = join(workspaceRoot, 'apps/cert-prep-desktop/src-tauri/Cargo.toml');
+    const cargo = join(
+      workspaceRoot,
+      'apps/cert-prep-desktop/src-tauri/Cargo.toml',
+    );
     const original = readFileSync(cargo, 'utf8');
     const setRequirement = (requirement: string) =>
       writeFileSync(
@@ -910,10 +928,16 @@ test('consumer checks require exact Cargo pins in published and candidate modes'
         ),
       );
     setRequirement(`=${CAPTURE_RUNTIME_VERSION}`);
-    assert.doesNotThrow(() => assertCaptureRuntimeConsumerVersions(workspaceRoot));
-    const exact = readCaptureRuntimeConsumerInventory(workspaceRoot, contractSource());
+    assert.doesNotThrow(() =>
+      assertCaptureRuntimeConsumerVersions(workspaceRoot),
+    );
+    const exact = readCaptureRuntimeConsumerInventory(
+      workspaceRoot,
+      contractSource(),
+    );
     assert.equal(
-      exact.entries.find((entry) => entry.key === 'cert.desktop.cargoToml')?.value,
+      exact.entries.find((entry) => entry.key === 'cert.desktop.cargoToml')
+        ?.value,
       CAPTURE_RUNTIME_VERSION,
     );
     assert.equal(inspectCaptureRuntimeConsumerInventory(exact).status, 'ready');
@@ -940,13 +964,15 @@ test('consumer checks require exact Cargo pins in published and candidate modes'
       process.env.CAPTURE_CANDIDATE_INSTALL = '1';
       try {
         assert.throws(
-          () => assertCaptureRuntimeConsumerVersions(workspaceRoot, {
-            contractSource: contractSource(),
-          }),
+          () =>
+            assertCaptureRuntimeConsumerVersions(workspaceRoot, {
+              contractSource: contractSource(),
+            }),
           /Cargo\.toml/,
         );
       } finally {
-        if (previous === undefined) delete process.env.CAPTURE_CANDIDATE_INSTALL;
+        if (previous === undefined)
+          delete process.env.CAPTURE_CANDIDATE_INSTALL;
         else process.env.CAPTURE_CANDIDATE_INSTALL = previous;
       }
     }

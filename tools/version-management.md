@@ -3,7 +3,7 @@
 Capture adoption and the Cert product release are independent version domains.
 
 - `tools/capture-runtime-version.json` owns the adopted Capture release. Existing TypeScript tooling imports its facade, Rust embeds it during compilation, and Python packaging/CI read the same source. Installed Python code uses the packaged SDK's constant; package and contract checks still compare actual artifacts with adoption intent.
-- `apps/cert-prep-desktop/src-tauri/tauri.conf.json` owns Cert's product alpha release. QA reads it. Python packaging reads its own native pyproject mirror. Protocol/schema versions, document schema hashes, historical Phase 1 identity and third-party dependencies have separate ownership.
+- `apps/cert-prep-desktop/src-tauri/tauri.conf.json` owns Cert's product alpha release. QA reads it. Python packaging reads its own native pyproject mirror. Protocol/schema versions, document schema hashes and third-party dependencies have separate ownership.
 
 Use the existing desktop Nx project, without manually replacing version text:
 

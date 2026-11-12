@@ -15,11 +15,10 @@ use capture_sidecar_launcher::{
 };
 
 use crate::{
-    capture_launch_policy::acceptance_ocr_execution_evidence_environment,
     capture_manifest::{
         load_capture_runtime_manifest, validate_capture_manifest_contract, verify_capture_runtime,
     },
-    constants::{CAPTURE_RUNTIME_MANIFEST, CAPTURE_RUNTIME_VERSION},
+    constants::CAPTURE_RUNTIME_MANIFEST,
     process_owner::{owned_runtime_process, RuntimeProcessOwner},
     runtime_slots::{bundle_identity, CAPTURE_RUNTIME_SLOT},
 };
@@ -33,17 +32,6 @@ const CERT_MAX_IMAGE_PIXELS: &str = "50000000";
 const ACCEPTANCE_ISOLATION_ENV: &str = "CERT_PREP_ACCEPTANCE_ISOLATION";
 const ACCEPTANCE_WORKER_MIRROR_URL_ENV: &str =
     "CERT_PREP_CAPTURE_RUNTIME_WORKER_MIRROR_URL";
-const ACCEPTANCE_LOCAL_MODEL_ROOT_ENV: &str =
-    "CERT_PREP_CAPTURE_RUNTIME_LOCAL_MODEL_ROOT";
-const CAPTURE_RUNTIME_PROBE_ENV: &str = "CERT_PREP_CAPTURE_RUNTIME_PROBE";
-const CAPTURE_RUNTIME_PROBE_VERSION_ENV: &str =
-    "CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION";
-const OCR_EXECUTION_EVIDENCE_OPT_IN_ENV: &str =
-    "CAPTURE_OCR_EXECUTION_EVIDENCE_OPT_IN";
-const OCR_EXECUTION_EVIDENCE_ROOT_ENV: &str =
-    "CAPTURE_OCR_EXECUTION_EVIDENCE_ROOT";
-const OCR_EXECUTION_RUNTIME_SHA256_ENV: &str =
-    "CAPTURE_OCR_EXECUTION_RUNTIME_SHA256";
 const CAPTURE_CHILD_ENV_ALLOWLIST: &[&str] = &[
     "SystemRoot",
     "WINDIR",
@@ -277,24 +265,6 @@ impl CaptureLaunchPolicy {
                 environment.push(("CAPTURE_SMOKE_WORKER_MIRROR_URL", url));
             }
         }
-        if local_model_probe_enabled() {
-            if let Ok(root) = std::env::var(ACCEPTANCE_LOCAL_MODEL_ROOT_ENV) {
-                if !root.trim().is_empty() {
-                    environment.push((
-                        "CAPTURE_PDF_OCR_E2E_LOCAL_MODEL_OPT_IN",
-                        "1".into(),
-                    ));
-                    environment.push(("CAPTURE_PDF_OCR_E2E_LOCAL_MODEL_ROOT", root));
-                }
-            }
-        }
-        if acceptance_worker_mirror_enabled() {
-            environment.extend(acceptance_ocr_execution_evidence_environment(
-                std::env::var(OCR_EXECUTION_EVIDENCE_OPT_IN_ENV).ok().as_deref(),
-                std::env::var(OCR_EXECUTION_EVIDENCE_ROOT_ENV).ok().as_deref(),
-                std::env::var(OCR_EXECUTION_RUNTIME_SHA256_ENV).ok().as_deref(),
-            ));
-        }
         environment
     }
 }
@@ -303,15 +273,6 @@ fn acceptance_worker_mirror_enabled() -> bool {
     std::env::var(ACCEPTANCE_ISOLATION_ENV)
         .ok()
         .is_some_and(|value| value.trim() == "1")
-}
-
-fn local_model_probe_enabled() -> bool {
-    std::env::var(CAPTURE_RUNTIME_PROBE_ENV)
-        .ok()
-        .is_some_and(|value| value.trim() == "1")
-        && std::env::var(CAPTURE_RUNTIME_PROBE_VERSION_ENV)
-            .ok()
-            .is_some_and(|value| value.trim() == CAPTURE_RUNTIME_VERSION)
 }
 
 fn capture_ready_timeout() -> Duration {

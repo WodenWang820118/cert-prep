@@ -39,10 +39,7 @@ import {
 } from './capture-runtime-version-check.mts';
 import {
   assertCaptureRuntimeIdentity,
-  parseCaptureRuntimeProbe,
-  type CaptureRuntimeIdentityMode,
   type CaptureRuntimeIdentityReport,
-  type CaptureRuntimeProbeIdentity,
 } from './capture-runtime-identity.mts';
 
 const CONSUMER_REPOSITORY = 'WodenWang820118/cert-prep';
@@ -59,8 +56,6 @@ export type CaptureCandidateGateArguments = {
   readonly workflowRunId: number;
   readonly output: string;
   readonly skipChecks: boolean;
-  readonly identityMode: CaptureRuntimeIdentityMode;
-  readonly probeManifest?: string;
 };
 
 export type CaptureCandidateGateResult = {
@@ -78,8 +73,6 @@ export type CaptureCandidateGateResult = {
   }[];
   readonly startedAt: string;
   readonly completedAt: string;
-  readonly identityMode?: CaptureRuntimeIdentityMode;
-  readonly softChecks?: CaptureRuntimeIdentityReport['softChecks'];
 };
 
 function required(values: Map<string, string>, name: string): string {
@@ -100,6 +93,19 @@ export function parseArguments(
       skipChecks = true;
       continue;
     }
+    if (
+      ![
+        '--candidate',
+        '--candidate-id',
+        '--candidate-manifest-sha256',
+        '--source-commit',
+        '--release-version',
+        '--workflow-run-id',
+        '--output',
+      ].includes(name ?? '')
+    ) {
+      throw new Error(`Unknown argument: ${name ?? ''}.`);
+    }
     const value = args[index + 1];
     if (!name?.startsWith('--') || !value || values.has(name)) {
       throw new Error('Arguments must be unique --name value pairs.');
@@ -114,8 +120,6 @@ export function parseArguments(
   );
   const sourceCommit = required(values, '--source-commit');
   const workflowRunId = Number(required(values, '--workflow-run-id'));
-  const identityMode = values.get('--identity-mode') ?? 'release';
-  const probeManifest = values.get('--probe-manifest');
   if (!SHA256_PATTERN.test(candidateId))
     throw new Error('Candidate ID must be a lowercase SHA-256 digest.');
   if (!SHA256_PATTERN.test(candidateManifestSha256))
@@ -126,12 +130,6 @@ export function parseArguments(
     throw new Error('Source commit must be a full lowercase Git SHA.');
   if (!Number.isSafeInteger(workflowRunId) || workflowRunId < 1)
     throw new Error('Workflow run ID must be a positive integer.');
-  if (identityMode !== 'release' && identityMode !== 'local-probe')
-    throw new Error('Identity mode must be release or local-probe.');
-  if (identityMode === 'local-probe' && !probeManifest)
-    throw new Error('Local-probe identity mode requires --probe-manifest.');
-  if (identityMode === 'release' && probeManifest)
-    throw new Error('--probe-manifest is only valid in local-probe mode.');
   return {
     candidate: resolve(required(values, '--candidate')),
     candidateId,
@@ -141,8 +139,6 @@ export function parseArguments(
     workflowRunId,
     output: resolve(required(values, '--output')),
     skipChecks,
-    identityMode,
-    ...(probeManifest ? { probeManifest: resolve(probeManifest) } : {}),
   };
 }
 
@@ -154,9 +150,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function parseJsonBytes(bytes: Uint8Array, label: string): Record<string, unknown> {
-  try { return JSON.parse(Buffer.from(bytes).toString('utf8')) as Record<string, unknown>; }
-  catch (error) { throw new Error(`${label} is not valid JSON.`, { cause: error }); }
+function parseJsonBytes(
+  bytes: Uint8Array,
+  label: string,
+): Record<string, unknown> {
+  try {
+    return JSON.parse(Buffer.from(bytes).toString('utf8')) as Record<
+      string,
+      unknown
+    >;
+  } catch (error) {
+    throw new Error(`${label} is not valid JSON.`, { cause: error });
+  }
 }
 
 async function requireRegularFile(path: string, label: string): Promise<void> {
@@ -176,7 +181,12 @@ async function assertInstalledCandidatePackages(
     // pnpm links a transitive dependency next to its dependent inside the
     // virtual store, so resolve the UI package's real directory first.
     const workbenchRealPath = await realpath(
-      join(workspaceRoot, 'node_modules', '@gx-capture', 'capture-workbench-ui'),
+      join(
+        workspaceRoot,
+        'node_modules',
+        '@gx-capture',
+        'capture-workbench-ui',
+      ),
     ).catch(() => undefined);
     const manifestCandidates = [
       join(workspaceRoot, 'node_modules', ...packageSegments, 'package.json'),
@@ -236,11 +246,9 @@ export async function assertCandidateConsumerVersionContract(input: {
 
 export async function assertConsumerVersionContract(
   expectedVersion: string,
-  identityMode: CaptureRuntimeIdentityMode = 'release',
   contractSource?: CaptureRuntimeContractSource,
   workspaceRoot = resolve(import.meta.dirname, '..'),
 ): Promise<void> {
-  if (identityMode === 'local-probe') return;
   const packageJson = JSON.parse(
     await readFile(join(workspaceRoot, 'package.json'), 'utf8'),
   ) as { dependencies?: Record<string, unknown> };
@@ -291,12 +299,6 @@ async function readJsonRecord(
   return raw as Record<string, unknown>;
 }
 
-async function loadProbeManifest(
-  path: string,
-): Promise<CaptureRuntimeProbeIdentity> {
-  return parseCaptureRuntimeProbe(await readJsonRecord(path, 'Probe manifest'));
-}
-
 function containedWithin(root: string, path: string): boolean {
   const descendant = relative(root, path);
   return (
@@ -307,8 +309,7 @@ function containedWithin(root: string, path: string): boolean {
 
 async function assertPackagedArtifactBoundary(
   root: string,
-  identityMode: CaptureRuntimeIdentityMode,
-): Promise<{ readonly hasDirectUrlMetadata: boolean }> {
+): Promise<void> {
   const rootDetails = await lstat(root);
   if (!rootDetails.isDirectory() || rootDetails.isSymbolicLink()) {
     throw new Error('Candidate must be an extracted package directory.');
@@ -369,10 +370,9 @@ async function assertPackagedArtifactBoundary(
     }
     await visit(directory);
   }
-  if (identityMode === 'release' && hasDirectUrlMetadata) {
+  if (hasDirectUrlMetadata) {
     throw new Error('Release candidate contains local direct_url metadata.');
   }
-  return { hasDirectUrlMetadata };
 }
 
 const COMBINED_CANDIDATE_ARTIFACT_DIRECTORIES = [
@@ -483,7 +483,9 @@ function assertCanonicalCandidateArtifactPath(path: string): void {
     path.endsWith('/') ||
     path.split('/').some((part) => !part || part === '.' || part === '..') ||
     !COMBINED_CANDIDATE_ARTIFACT_DIRECTORIES.includes(
-      path.split('/')[0] as (typeof COMBINED_CANDIDATE_ARTIFACT_DIRECTORIES)[number],
+      path.split(
+        '/',
+      )[0] as (typeof COMBINED_CANDIDATE_ARTIFACT_DIRECTORIES)[number],
     )
   ) {
     throw new Error(`Candidate artifact path is not canonical: ${path}.`);
@@ -498,7 +500,9 @@ async function assertCandidateRootShape(root: string): Promise<void> {
   const seen = new Set<string>();
   for (const entry of entries) {
     if (seen.has(entry.name)) {
-      throw new Error(`Candidate root contains duplicate entry: ${entry.name}.`);
+      throw new Error(
+        `Candidate root contains duplicate entry: ${entry.name}.`,
+      );
     }
     seen.add(entry.name);
     const path = join(root, entry.name);
@@ -512,7 +516,9 @@ async function assertCandidateRootShape(root: string): Promise<void> {
       continue;
     }
     if (!COMBINED_CANDIDATE_CONTROL_FILES.has(entry.name)) {
-      throw new Error(`Candidate root contains an unexpected entry: ${entry.name}.`);
+      throw new Error(
+        `Candidate root contains an unexpected entry: ${entry.name}.`,
+      );
     }
     if (!details.isFile() || details.isSymbolicLink()) {
       throw new Error(
@@ -574,11 +580,18 @@ async function readCandidateArtifact(
   const path = join(root, expected.path);
   const before = await lstat(path).catch(() => undefined);
   if (!before?.isFile() || before.isSymbolicLink()) {
-    throw new Error(`Candidate artifact is missing or not a regular file: ${expected.path}.`);
+    throw new Error(
+      `Candidate artifact is missing or not a regular file: ${expected.path}.`,
+    );
   }
   const actualPath = await realpath(path);
-  if (!containedWithin(realRoot, actualPath) || !sameFilesystemPath(path, actualPath)) {
-    throw new Error(`Candidate artifact is a link or escaped its root: ${expected.path}.`);
+  if (
+    !containedWithin(realRoot, actualPath) ||
+    !sameFilesystemPath(path, actualPath)
+  ) {
+    throw new Error(
+      `Candidate artifact is a link or escaped its root: ${expected.path}.`,
+    );
   }
   const bytes = await readFile(path);
   const after = await lstat(path);
@@ -589,7 +602,9 @@ async function readCandidateArtifact(
     bytes.length !== expected.bytes ||
     digest !== expected.sha256
   ) {
-    throw new Error(`Candidate artifact changed or mismatched: ${expected.path}.`);
+    throw new Error(
+      `Candidate artifact changed or mismatched: ${expected.path}.`,
+    );
   }
   return { path: expected.path, bytes: bytes.length, sha256: digest };
 }
@@ -601,7 +616,11 @@ function manifestArtifact(
   if (!isRecord(value)) {
     throw new Error(`Candidate manifest artifact ${index} is invalid.`);
   }
-  exactRecordKeys(value, ['path', 'bytes', 'sha256'], `Candidate manifest artifact ${index}`);
+  exactRecordKeys(
+    value,
+    ['path', 'bytes', 'sha256'],
+    `Candidate manifest artifact ${index}`,
+  );
   if (
     typeof value.path !== 'string' ||
     typeof value.bytes !== 'number' ||
@@ -619,11 +638,19 @@ function manifestArtifact(
 function ledgerArtifact(
   value: unknown,
   index: number,
-): { readonly registry: string; readonly name: string; readonly sha256: string } {
+): {
+  readonly registry: string;
+  readonly name: string;
+  readonly sha256: string;
+} {
   if (!isRecord(value)) {
     throw new Error(`Candidate release ledger artifact ${index} is invalid.`);
   }
-  exactRecordKeys(value, ['name', 'registry', 'sha256'], `Candidate release ledger artifact ${index}`);
+  exactRecordKeys(
+    value,
+    ['name', 'registry', 'sha256'],
+    `Candidate release ledger artifact ${index}`,
+  );
   if (
     typeof value.registry !== 'string' ||
     typeof value.name !== 'string' ||
@@ -653,12 +680,14 @@ async function verifyCombinedCandidateRoot(
   }
   const { root, realRoot } = await canonicalCandidateRoot(input.candidate);
   await assertCandidateRootShape(root);
-  await assertPackagedArtifactBoundary(root, 'release');
+  await assertPackagedArtifactBoundary(root);
   const manifestPath = join(root, 'candidate-manifest.json');
   const manifestBytes = await readFile(manifestPath);
   const manifestSha256 = sha256(manifestBytes);
   if (manifestSha256 !== input.candidateManifestSha256) {
-    throw new Error('Candidate manifest hash does not match the expected hash.');
+    throw new Error(
+      'Candidate manifest hash does not match the expected hash.',
+    );
   }
   const manifest = parseJsonBytes(manifestBytes, 'Candidate manifest');
   exactRecordKeys(
@@ -697,7 +726,9 @@ async function verifyCombinedCandidateRoot(
     typeof manifest.contractSetSha256 !== 'string' ||
     manifest.contractSetSha256 !== input.contractSetSha256 ||
     !isRecord(manifest.toolchains) ||
-    Object.values(manifest.toolchains).some((value) => typeof value !== 'string') ||
+    Object.values(manifest.toolchains).some(
+      (value) => typeof value !== 'string',
+    ) ||
     !Array.isArray(manifest.artifacts)
   ) {
     throw new Error('Candidate manifest identity is invalid.');
@@ -719,7 +750,10 @@ async function verifyCombinedCandidateRoot(
   ) {
     throw new Error('Candidate manifest artifact inventory is not canonical.');
   }
-  const actualPaths = await collectCombinedCandidateArtifactPaths(root, realRoot);
+  const actualPaths = await collectCombinedCandidateArtifactPaths(
+    root,
+    realRoot,
+  );
   if (
     actualPaths.length !== declaredPaths.length ||
     actualPaths.some((path, index) => path !== declaredPaths[index])
@@ -841,7 +875,9 @@ async function verifyCombinedCandidateRoot(
     throw new Error('Candidate Python artifact inventory is incomplete.');
   }
   const cratePath = `crate/capture-sidecar-launcher-${input.releaseVersion}.crate`;
-  const crateArtifacts = artifacts.filter((artifact) => artifact.path === cratePath);
+  const crateArtifacts = artifacts.filter(
+    (artifact) => artifact.path === cratePath,
+  );
   if (crateArtifacts.length !== 1) {
     throw new Error('Candidate Cargo artifact inventory is incomplete.');
   }
@@ -868,8 +904,11 @@ async function verifyCombinedCandidateRoot(
     readonly registry: string;
     readonly name: string;
     readonly sha256: string;
-  }): string => `${artifact.registry}\u0000${artifact.name}\u0000${artifact.sha256}`;
-  const expectedLedgerKeys = new Set(expectedLedgerArtifacts.map(ledgerArtifactKey));
+  }): string =>
+    `${artifact.registry}\u0000${artifact.name}\u0000${artifact.sha256}`;
+  const expectedLedgerKeys = new Set(
+    expectedLedgerArtifacts.map(ledgerArtifactKey),
+  );
   const declaredLedgerKeys = declaredLedgerArtifacts.map(ledgerArtifactKey);
   if (
     declaredLedgerArtifacts.length !== expectedLedgerArtifacts.length ||
@@ -877,14 +916,20 @@ async function verifyCombinedCandidateRoot(
     new Set(declaredLedgerKeys).size !== declaredLedgerKeys.length ||
     declaredLedgerKeys.some((key) => !expectedLedgerKeys.has(key))
   ) {
-    throw new Error('Candidate release ledger artifact inventory is incomplete.');
+    throw new Error(
+      'Candidate release ledger artifact inventory is incomplete.',
+    );
   }
   for (const artifact of expectedRegistryArtifacts) {
     const name = basename(artifact.path);
     const checksumPath = `checksums/${name}.sha256`;
-    const checksumArtifact = artifacts.find((entry) => entry.path === checksumPath);
+    const checksumArtifact = artifacts.find(
+      (entry) => entry.path === checksumPath,
+    );
     if (!checksumArtifact) {
-      throw new Error(`Candidate checksum inventory is missing: ${checksumPath}.`);
+      throw new Error(
+        `Candidate checksum inventory is missing: ${checksumPath}.`,
+      );
     }
     const checksumText = (
       await readFile(join(root, checksumPath), 'utf8')
@@ -1078,7 +1123,6 @@ async function loadCandidateWorker(
   candidateRoot: string,
   expectedRuntimeVersion: string,
   required: boolean,
-  strictRuntimeVersion: boolean,
 ): Promise<
   | {
       readonly fileName: string;
@@ -1109,7 +1153,7 @@ async function loadCandidateWorker(
   }
   if (
     typeof catalog.runtimeVersion !== 'string' ||
-    (strictRuntimeVersion && catalog.runtimeVersion !== expectedRuntimeVersion)
+    catalog.runtimeVersion !== expectedRuntimeVersion
   ) {
     throw new Error('Candidate engine catalog runtimeVersion is invalid.');
   }
@@ -1174,32 +1218,14 @@ export async function verifyCandidate(
     | 'candidateManifestSha256'
     | 'sourceCommit'
     | 'releaseVersion'
-  > &
-    Partial<
-      Pick<CaptureCandidateGateArguments, 'identityMode' | 'probeManifest'>
-    >,
+  >,
 ): Promise<{
   readonly releaseMode: 'core-only' | 'model-enabled';
   readonly runtimeVersion: string;
   readonly identity: CaptureRuntimeIdentityReport;
   readonly contractSource: CaptureRuntimeContractSource;
 }> {
-  const identityMode = input.identityMode ?? 'release';
-  if (identityMode === 'local-probe' && !input.probeManifest) {
-    throw new Error('Local-probe identity mode requires --probe-manifest.');
-  }
-  const probe = input.probeManifest
-    ? await loadProbeManifest(input.probeManifest)
-    : undefined;
-  if (probe && probe.sourceCommit !== input.sourceCommit) {
-    throw new Error(
-      'Producer probe source commit does not match the candidate input.',
-    );
-  }
-  const boundary = await assertPackagedArtifactBoundary(
-    input.candidate,
-    identityMode,
-  );
+  await assertPackagedArtifactBoundary(input.candidate);
   const manifestPath = join(input.candidate, 'candidate-manifest.json');
   const manifestBytes = await readFile(manifestPath);
   if (sha256(manifestBytes) !== input.candidateManifestSha256) {
@@ -1214,8 +1240,7 @@ export async function verifyCandidate(
   if (
     manifest.candidateId !== input.candidateId ||
     manifest.sourceCommit !== input.sourceCommit ||
-    (identityMode === 'release' &&
-      manifest.releaseVersion !== input.releaseVersion)
+    manifest.releaseVersion !== input.releaseVersion
   ) {
     throw new Error(
       'Candidate manifest identity does not match the dispatch input.',
@@ -1241,7 +1266,7 @@ export async function verifyCandidate(
   }
   const runtimeManifest = validateCaptureRuntimeReleaseManifest(
     runtimeManifestRaw,
-    (identityMode === 'release' ? input.releaseVersion : runtimeVersion) as typeof CAPTURE_RUNTIME_VERSION,
+    input.releaseVersion as typeof CAPTURE_RUNTIME_VERSION,
   );
   for (const name of CAPTURE_RUNTIME_RELEASE_ASSETS) {
     await requireRegularFile(join(runtime, name), `Candidate runtime ${name}`);
@@ -1294,13 +1319,10 @@ export async function verifyCandidate(
   }
 
   const packageNames = await readdir(join(input.candidate, 'package'));
-  const packagePattern =
-    identityMode === 'release'
-      ? new RegExp(
-          `^gx-capture-capture-workbench-ui-${input.releaseVersion.replaceAll('.', '\\.')}(?:-[^/]+)?\\.tgz$`,
-          'u',
-        )
-      : /^gx-capture-capture-workbench-ui-\d+\.\d+\.\d+(?:-[^/]+)?\.tgz$/u;
+  const packagePattern = new RegExp(
+    `^gx-capture-capture-workbench-ui-${input.releaseVersion.replaceAll('.', '\\.')}(?:-[^/]+)?\\.tgz$`,
+    'u',
+  );
   if (
     packageNames.some((name) => !name.endsWith('.tgz')) ||
     !packageNames.some((name) => packagePattern.test(name))
@@ -1313,12 +1335,9 @@ export async function verifyCandidate(
   const worker = await loadCandidateWorker(
     input.candidate,
     runtimeVersion,
-    identityMode === 'local-probe' || manifest.releaseMode === 'model-enabled',
-    identityMode === 'release',
+    manifest.releaseMode === 'model-enabled',
   );
   const identity = assertCaptureRuntimeIdentity({
-    mode: identityMode,
-    probe,
     observed: {
       runtimeVersion,
       apiVersion: runtimeManifest.apiVersion,
@@ -1335,21 +1354,7 @@ export async function verifyCandidate(
     releaseMode: manifest.releaseMode,
     runtimeVersion,
     contractSource: contract.contractSource,
-    identity: {
-      ...identity,
-      softChecks: [
-        ...identity.softChecks,
-        ...(identityMode === 'local-probe'
-          ? [
-              {
-                name: 'local-direct-url-metadata',
-                status: 'recorded' as const,
-                observed: boundary.hasDirectUrlMetadata ? 'present' : 'absent',
-              },
-            ]
-          : []),
-      ],
-    },
+    identity,
   };
 }
 
@@ -1424,7 +1429,6 @@ export async function runCandidateGate(
   const candidate = await verifyCandidate(input);
   await assertConsumerVersionContract(
     candidate.runtimeVersion,
-    input.identityMode,
     candidate.contractSource,
     workspaceRoot,
   );
@@ -1433,10 +1437,7 @@ export async function runCandidateGate(
     { name: 'candidate-runtime-assets', status: 'passed' },
     { name: 'candidate-workbench-package', status: 'passed' },
     {
-      name:
-        input.identityMode === 'local-probe'
-          ? 'consumer-version-lock-recorded-only'
-          : 'consumer-version-lock',
+      name: 'consumer-version-lock',
       status: 'passed',
     },
   ];
@@ -1467,12 +1468,6 @@ export async function runCandidateGate(
     startedAt,
     completedAt,
     checks,
-    ...(input.identityMode === 'local-probe'
-      ? {
-          identityMode: input.identityMode,
-          softChecks: candidate.identity.softChecks,
-        }
-      : {}),
   });
   if (dependencies.writeResult) {
     await dependencies.writeResult(input.output, result);
@@ -1491,8 +1486,6 @@ export function createResult(input: {
     readonly name: string;
     readonly status: 'passed';
   }[];
-  readonly identityMode?: CaptureRuntimeIdentityMode;
-  readonly softChecks?: CaptureRuntimeIdentityReport['softChecks'];
 }): CaptureCandidateGateResult {
   return {
     schemaVersion: '1',
@@ -1506,12 +1499,6 @@ export function createResult(input: {
     checks: input.checks,
     startedAt: input.startedAt,
     completedAt: input.completedAt,
-    ...(input.identityMode
-      ? {
-          identityMode: input.identityMode,
-          ...(input.softChecks ? { softChecks: input.softChecks } : {}),
-        }
-      : {}),
   };
 }
 

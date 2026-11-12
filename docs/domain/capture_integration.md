@@ -158,7 +158,6 @@ stateDiagram-v2
 | 推進擷取事件序號      | `note_capture_event`          | 串流收到一筆事件就記下序號                        |
 | 等待擷取串流          | `hold_capture_stream`         | 等 runtime 身份、結束狀態或可檢閱，一次一輪       |
 | 查看 runtime 就緒     | `view_runtime_ready`          | 只做 handshake                                    |
-| 查看 runtime 來源證明 | `view_runtime_provenance`     | 讀安裝包與一次即時 handshake                      |
 | 列出 runtime 需求     | `list_runtime_requirements`   | 列出 runtime 回報的安裝需求                       |
 | 開始 runtime 安裝     | `start_runtime_installation`  | 同意與冪等鍵由 router 先檢查，然後開始安裝        |
 | 列出 runtime 安裝     | `list_runtime_installations`  | 列出安裝作業                                      |

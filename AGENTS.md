@@ -47,6 +47,6 @@
 # Testing
 
 - Pull requests do not run CI on GitHub; before merging, run `pnpm ci:local` and paste its summary into the PR description. Full GitHub CI (`ci.yml`) runs weekly and on dispatch in two parallel jobs: platform-neutral lint and tests once on Linux; packaging, the Capture Runtime install, and the Tauri host on Windows. `release-alpha.yml` reruns them on the exact release source and adds the built-binary stack check; `validate_only` stops before anything is reserved or published.
-- `package-qa-test` and `phase1-evidence-test` list their test files explicitly: add every new `apps/cert-prep-desktop/scripts/**/*.test.mts` to one of them, or it never runs.
+- `package-qa-test` explicitly lists hermetic `apps/cert-prep-desktop/scripts/**/*.test.mts` tests: add new tests there so they run. The built-binary `desktop-startup-probe-built.test.mts` check runs separately in the release workflow.
 - The real OCR acceptance (a scanned JPEG and PDF on the packaged app) is `cert-prep-desktop:acceptance-real`; its spec header lists the journey and inputs.
 - Tests must not leave temporary files. Node test targets load `apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts` with `--import`, which gives each process a private temp root removed on exit; pytest uses `tmp_path_retention_policy = "failed"` (passed tests' dirs are removed; only failed ones from the last 3 sessions stay). Never use `"none"`: it disables pytest's session lock, so concurrent pytest runs delete each other's temp dirs.

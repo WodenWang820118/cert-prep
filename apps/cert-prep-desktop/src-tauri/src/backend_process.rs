@@ -171,8 +171,6 @@ fn backend_launch_env(
         ]);
         if acceptance_isolation_enabled() {
             for name in [
-                "CERT_PREP_CAPTURE_RUNTIME_CONTRACT_SHA256",
-                "CERT_PREP_CAPTURE_RUNTIME_WORKER_SHA256",
                 "CAPTURE_ACCEPTANCE_PDF_PAGE_SCOPE",
             ] {
                 if let Some(value) = trimmed_env_var(name) {
@@ -450,11 +448,9 @@ mod tests {
     }
 
     #[test]
-    fn backend_launch_env_forwards_phase1_acceptance_contract_and_scope() {
+    fn backend_launch_env_forwards_pdf_only_page_scope() {
         let _env = lock_env();
         std::env::set_var("CERT_PREP_ACCEPTANCE_ISOLATION", "1");
-        std::env::set_var("CERT_PREP_CAPTURE_RUNTIME_CONTRACT_SHA256", "a".repeat(64));
-        std::env::set_var("CERT_PREP_CAPTURE_RUNTIME_WORKER_SHA256", "b".repeat(64));
         std::env::set_var("CAPTURE_ACCEPTANCE_PDF_PAGE_SCOPE", "page-1");
 
         let env = backend_launch_env(
@@ -465,21 +461,11 @@ mod tests {
         );
 
         assert_eq!(
-            env_value(&env, "CERT_PREP_CAPTURE_RUNTIME_CONTRACT_SHA256"),
-            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-        );
-        assert_eq!(
-            env_value(&env, "CERT_PREP_CAPTURE_RUNTIME_WORKER_SHA256"),
-            Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-        );
-        assert_eq!(
             env_value(&env, "CAPTURE_ACCEPTANCE_PDF_PAGE_SCOPE"),
             Some("page-1"),
         );
 
         std::env::remove_var("CERT_PREP_ACCEPTANCE_ISOLATION");
-        std::env::remove_var("CERT_PREP_CAPTURE_RUNTIME_CONTRACT_SHA256");
-        std::env::remove_var("CERT_PREP_CAPTURE_RUNTIME_WORKER_SHA256");
         std::env::remove_var("CAPTURE_ACCEPTANCE_PDF_PAGE_SCOPE");
     }
 
@@ -516,8 +502,6 @@ mod tests {
             "CERT_PREP_CAPTURE_RUNTIME_VERSION",
             "CERT_PREP_CAPTURE_RUNTIME_API_VERSION",
             "CERT_PREP_CAPTURE_DOCUMENT_SCHEMA_VERSION",
-            "CERT_PREP_CAPTURE_RUNTIME_CONTRACT_SHA256",
-            "CERT_PREP_CAPTURE_RUNTIME_WORKER_SHA256",
             "CAPTURE_ACCEPTANCE_PDF_PAGE_SCOPE",
         ] {
             assert_eq!(env_value(&env, name), None, "{name} must be absent");

@@ -767,7 +767,6 @@ def test_public_use_cases_are_the_review_lifecycle_names() -> None:
         "view_partial_capture",
         "view_raw_capture",
         "view_runtime_installation",
-        "view_runtime_provenance",
         "view_runtime_ready",
     ]
 

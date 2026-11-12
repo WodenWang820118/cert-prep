@@ -65,24 +65,6 @@ def capture_runtime_ready(
         _raise_setup_rejected(error)
 
 
-@router.get("/provenance")
-def capture_runtime_provenance(
-    setup: CaptureRuntimeSetup = Depends(get_capture_runtime_setup),
-) -> dict[str, object]:
-    """Return candidate-bound build metadata and a live runtime handshake.
-
-    This endpoint is intentionally authenticated by the router dependency and
-    exposes hashes/counts only.  The backend build embeds the Python wheel and
-    staged native tuple; the live handshake proves the running sidecar reports
-    the same OCR contract and worker executable before source import.
-    """
-
-    try:
-        return capture_reviews.view_runtime_provenance(setup)
-    except CaptureRuntimeSetupRejected as error:
-        _raise_setup_rejected(error)
-
-
 @router.get("/requirements", response_model=RuntimeRequirements)
 def capture_runtime_requirements(
     setup: CaptureRuntimeSetup = Depends(get_capture_runtime_setup),

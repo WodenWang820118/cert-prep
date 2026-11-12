@@ -1,4 +1,3 @@
-import { isCaptureRuntimePythonWheelFileName } from '../apps/cert-prep-desktop/scripts/capture-runtime-python-wheel.mts';
 import assert from 'node:assert/strict';
 import {
   cpSync,
@@ -466,30 +465,6 @@ test('rollback attempts every prior owner and reports failed restorations', () =
       CAPTURE_RUNTIME_VERSION,
     );
   }));
-
-test('wheel filenames compare against the explicit current or historical scope', () => {
-  assert.equal(
-    isCaptureRuntimePythonWheelFileName(
-      'capture_runtime_client-9.8.7-py3-none-any.whl',
-      '9.8.7',
-    ),
-    true,
-  );
-  assert.equal(
-    isCaptureRuntimePythonWheelFileName(
-      'capture_runtime_client-9x8x7-py3-none-any.whl',
-      '9.8.7',
-    ),
-    false,
-  );
-  assert.equal(
-    isCaptureRuntimePythonWheelFileName(
-      'capture_runtime_client-0.4.4-py3-none-any.whl',
-      '9.8.7',
-    ),
-    false,
-  );
-});
 
 test('installed SDK verification follows the UI dependency and ignores an obsolete unrelated root alias', () =>
   fixture((root) => {

@@ -34,18 +34,16 @@ import {
 const candidateId = 'a'.repeat(64);
 const manifestSha256 = 'b'.repeat(64);
 const commit = 'c'.repeat(40);
-const LOCAL_PROBE_VERSION = CAPTURE_RUNTIME_VERSION;
 
 test('release identity accepts a candidate without the runtime checksum sidecar', async () => {
   const fixture = await createCandidateFixture({
-    candidateVersion: LOCAL_PROBE_VERSION,
+    candidateVersion: CAPTURE_RUNTIME_VERSION,
   });
   try {
     await rm(join(fixture.root, 'runtime', `${CAPTURE_RUNTIME_FILE}.sha256`));
     const result = await verifyCandidate({
       ...fixture.input,
-      identityMode: 'release',
-      releaseVersion: LOCAL_PROBE_VERSION,
+      releaseVersion: CAPTURE_RUNTIME_VERSION,
     });
     assert.equal(result.identity.mode, 'release');
   } finally {
@@ -55,7 +53,7 @@ test('release identity accepts a candidate without the runtime checksum sidecar'
 
 test('release identity rejects a runtime checksum sidecar that disagrees with the manifest', async () => {
   const fixture = await createCandidateFixture({
-    candidateVersion: LOCAL_PROBE_VERSION,
+    candidateVersion: CAPTURE_RUNTIME_VERSION,
   });
   try {
     await writeFile(
@@ -65,8 +63,7 @@ test('release identity rejects a runtime checksum sidecar that disagrees with th
     await assert.rejects(
       verifyCandidate({
         ...fixture.input,
-        identityMode: 'release',
-        releaseVersion: LOCAL_PROBE_VERSION,
+        releaseVersion: CAPTURE_RUNTIME_VERSION,
       }),
       /checksum sidecar does not match its manifest/u,
     );
@@ -78,20 +75,24 @@ test('release identity rejects a runtime checksum sidecar that disagrees with th
 test('release identity rejects runtime executable bytes that differ from the manifest', async () => {
   for (const checksumSidecar of [true, false]) {
     const fixture = await createCandidateFixture({
-      candidateVersion: LOCAL_PROBE_VERSION,
+      candidateVersion: CAPTURE_RUNTIME_VERSION,
     });
     try {
       if (!checksumSidecar) {
-        await rm(join(fixture.root, 'runtime', `${CAPTURE_RUNTIME_FILE}.sha256`));
+        await rm(
+          join(fixture.root, 'runtime', `${CAPTURE_RUNTIME_FILE}.sha256`),
+        );
       }
       const original = await readFile(fixture.corePath);
       // Same length so the digest, not the byte count, has to catch it.
-      await writeFile(fixture.corePath, Buffer.from(original.map((byte) => byte ^ 1)));
+      await writeFile(
+        fixture.corePath,
+        Buffer.from(original.map((byte) => byte ^ 1)),
+      );
       await assert.rejects(
         verifyCandidate({
           ...fixture.input,
-          identityMode: 'release',
-          releaseVersion: LOCAL_PROBE_VERSION,
+          releaseVersion: CAPTURE_RUNTIME_VERSION,
         }),
         /executable digest does not match its manifest/u,
         `checksumSidecar=${checksumSidecar}`,
@@ -125,6 +126,29 @@ test('candidate gate parses the producer dispatch contract', () => {
   assert.equal(parsed.releaseVersion, CAPTURE_RUNTIME_VERSION);
 });
 
+test('candidate gate rejects an argument it does not know', () => {
+  const dispatch = [
+    '--candidate',
+    'candidate',
+    '--candidate-id',
+    candidateId,
+    '--candidate-manifest-sha256',
+    manifestSha256,
+    '--source-commit',
+    commit,
+    '--release-version',
+    CAPTURE_RUNTIME_VERSION,
+    '--workflow-run-id',
+    '42',
+    '--output',
+    'result.json',
+  ];
+  assert.throws(
+    () => parseArguments([...dispatch, '--identity-mode', 'local-probe']),
+    /Unknown argument: --identity-mode\./u,
+  );
+});
+
 test('candidate gate emits the canonical independent result envelope', () => {
   const result = createResult({
     consumerCommit: commit,
@@ -150,152 +174,13 @@ test('candidate gate emits the canonical independent result envelope', () => {
   });
 });
 
-test('local-probe identity accepts package semver drift and direct_url metadata', async () => {
-  const fixture = await createCandidateFixture({
-    candidateVersion: '0.4.1',
-    packageMetadata: { direct_url: 'file:///temporary/local-wheel.whl' },
-  });
-  try {
-    const catalog = JSON.parse(
-      await readFile(fixture.catalogPath, 'utf8'),
-    ) as Record<string, unknown>;
-    catalog.runtimeVersion = LOCAL_PROBE_VERSION;
-    await writeFile(fixture.catalogPath, JSON.stringify(catalog));
-    const result = await verifyCandidate({
-      ...fixture.input,
-      identityMode: 'local-probe',
-      probeManifest: fixture.probePath,
-      releaseVersion: LOCAL_PROBE_VERSION,
-    });
-    assert.equal(result.identity.mode, 'local-probe');
-    assert.equal(
-      result.identity.softChecks.find(
-        (check) => check.name === 'capture-runtime-version',
-      )?.observed,
-      '0.4.1',
-    );
-    assert.equal(
-      result.identity.softChecks.find(
-        (check) => check.name === 'local-direct-url-metadata',
-      )?.observed,
-      'present',
-    );
-    assert.deepEqual(
-      result.identity.hardChecks.map((check) => check.name),
-      [
-        'capture-runtime-api-2.0',
-        'capture-ocr-projection-schema-3',
-        'capture-contract-set-sha256',
-        'capture-runtime-core-sha256',
-        'capture-ocr-worker-sha256',
-      ],
-    );
-  } finally {
-    await rm(fixture.root, { recursive: true, force: true });
-  }
-});
-
-test('local-probe identity rejects mixed runtime, worker, contract, or source-tree inputs', async () => {
-  const cases: readonly {
-    readonly name: string;
-    readonly mutate: (fixture: CandidateFixture) => Promise<void>;
-    readonly error: RegExp;
-  }[] = [
-    {
-      name: 'runtime core',
-      mutate: async (fixture) => {
-        await writeFile(fixture.corePath, 'different runtime core');
-      },
-      error: /does not match its manifest/u,
-    },
-    {
-      name: 'OCR worker',
-      mutate: async (fixture) => {
-        await writeFile(fixture.workerPath, 'different OCR worker');
-        const workerBytes = await readFile(fixture.workerPath);
-        await writeFile(
-          fixture.catalogPath,
-          JSON.stringify({
-            runtimeVersion: fixture.candidateVersion,
-            requirements: [
-              {
-                requirementId: 'windowsml-ocr',
-                artifacts: [
-                  {
-                    fileName: basename(fixture.workerPath),
-                    bytes: workerBytes.length,
-                    sha256: sha256(workerBytes),
-                  },
-                ],
-              },
-            ],
-          }),
-        );
-      },
-      error: /does not match the producer probe/u,
-    },
-    {
-      name: 'contract set',
-      mutate: async (fixture) => {
-        const changedContract = JSON.parse(
-          await readFile(fixture.contractPath, 'utf8'),
-        ) as { operations: unknown[] };
-        changedContract.operations.push({
-          method: 'GET',
-          path: '/v2/captures/{capture_id}/result',
-          responseSchema: 'CaptureDocument',
-        });
-        const changedContractJson = JSON.stringify(changedContract);
-        const contractBytes = Buffer.from(changedContractJson);
-        await writeFile(fixture.contractPath, contractBytes);
-        await writeFile(fixture.contractDigestPath, sha256(contractBytes));
-        const manifest = JSON.parse(
-          await readFile(fixture.manifestPath, 'utf8'),
-        ) as Record<string, unknown>;
-        manifest.contractSetSha256 = sha256(contractBytes);
-        await writeFile(fixture.manifestPath, JSON.stringify(manifest));
-        fixture.input.candidateManifestSha256 = sha256(
-          Buffer.from(JSON.stringify(manifest)),
-        );
-      },
-      error: /does not match the producer probe/u,
-    },
-    {
-      name: 'source tree',
-      mutate: async (fixture) => {
-        await writeFile(join(fixture.root, 'package', 'package.json'), '{}');
-      },
-      error: /link or non-file|only packaged Workbench archives/u,
-    },
-  ];
-  for (const testCase of cases) {
-    const fixture = await createCandidateFixture({ candidateVersion: '0.4.1' });
-    try {
-      await testCase.mutate(fixture);
-      await assert.rejects(
-        verifyCandidate({
-          ...fixture.input,
-          identityMode: 'local-probe',
-          probeManifest: fixture.probePath,
-          releaseVersion: LOCAL_PROBE_VERSION,
-        }),
-        testCase.error,
-        testCase.name,
-      );
-    } finally {
-      await rm(fixture.root, { recursive: true, force: true });
-    }
-  }
-});
-
 test('release identity remains strict when candidate metadata drifts', async () => {
   const fixture = await createCandidateFixture({ candidateVersion: '0.4.1' });
   try {
     await assert.rejects(
       verifyCandidate({
         ...fixture.input,
-        identityMode: 'release',
-        releaseVersion: LOCAL_PROBE_VERSION,
+        releaseVersion: CAPTURE_RUNTIME_VERSION,
       }),
       /Candidate manifest identity does not match/u,
     );
@@ -306,15 +191,14 @@ test('release identity remains strict when candidate metadata drifts', async () 
 
 test('release identity rejects local direct_url metadata', async () => {
   const fixture = await createCandidateFixture({
-    candidateVersion: LOCAL_PROBE_VERSION,
+    candidateVersion: CAPTURE_RUNTIME_VERSION,
     packageMetadata: { direct_url: 'file:///temporary/local-wheel.whl' },
   });
   try {
     await assert.rejects(
       verifyCandidate({
         ...fixture.input,
-        identityMode: 'release',
-        releaseVersion: LOCAL_PROBE_VERSION,
+        releaseVersion: CAPTURE_RUNTIME_VERSION,
       }),
       /local direct_url metadata/u,
     );
@@ -325,13 +209,12 @@ test('release identity rejects local direct_url metadata', async () => {
 
 test('release identity accepts an exact model-enabled candidate', async () => {
   const fixture = await createCandidateFixture({
-    candidateVersion: LOCAL_PROBE_VERSION,
+    candidateVersion: CAPTURE_RUNTIME_VERSION,
   });
   try {
     const result = await verifyCandidate({
       ...fixture.input,
-      identityMode: 'release',
-      releaseVersion: LOCAL_PROBE_VERSION,
+      releaseVersion: CAPTURE_RUNTIME_VERSION,
     });
     assert.equal(result.releaseMode, 'model-enabled');
     assert.equal(result.identity.mode, 'release');
@@ -439,10 +322,7 @@ test('candidate artifact receipt rejects a consistently substituted runtime sche
       }),
       /pinned canonical schema/u,
     );
-    assert.notEqual(
-      substitutedSchemaSha256,
-      CAPTURE_DOCUMENT_SCHEMA_SHA256,
-    );
+    assert.notEqual(substitutedSchemaSha256, CAPTURE_DOCUMENT_SCHEMA_SHA256);
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
   }
@@ -476,7 +356,10 @@ test('candidate artifact receipt rejects stale same-version bytes, size, and has
   const fixture = await createCombinedCandidateFixture();
   try {
     const receipt = await verifyCandidateArtifactReceipt(fixture.input);
-    await writeFile(fixture.artifactPath, Buffer.from('same version but changed'));
+    await writeFile(
+      fixture.artifactPath,
+      Buffer.from('same version but changed'),
+    );
     await assert.rejects(
       reverifyCandidateArtifactReceipt(receipt),
       /changed or mismatched/u,
@@ -535,7 +418,9 @@ test('candidate artifact receipt rejects incomplete, extra, duplicate, and alias
     {
       name: 'traversal artifact',
       mutate: (manifest: Record<string, unknown>) => {
-        const artifacts = [...(manifest.artifacts as Array<Record<string, unknown>>)];
+        const artifacts = [
+          ...(manifest.artifacts as Array<Record<string, unknown>>),
+        ];
         artifacts[0] = { ...artifacts[0], path: '../escape.bin' };
         manifest.artifacts = artifacts.sort((left, right) =>
           String(left.path).localeCompare(String(right.path)),
@@ -587,14 +472,12 @@ test('candidate artifact receipt rejects a filesystem extra and link', async () 
       /link or non-file|regular file/u,
     );
   } catch (error) {
-    if (
-      !(
-        error &&
-        typeof error === 'object' &&
-        'code' in error &&
-        (error.code === 'EPERM' || error.code === 'EACCES')
-      )
-    ) {
+    if (!(
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      (error.code === 'EPERM' || error.code === 'EACCES')
+    )) {
       throw error;
     }
   } finally {
@@ -623,16 +506,14 @@ test('candidate artifact receipt rejects a filesystem extra and link', async () 
       /symbolic-link or junction ancestor/u,
     );
   } catch (error) {
-    if (
-      !(
-        error &&
-        typeof error === 'object' &&
-        'code' in error &&
-        (error.code === 'EPERM' ||
-          error.code === 'EACCES' ||
-          error.code === 'ENOTSUP')
-      )
-    ) {
+    if (!(
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      (error.code === 'EPERM' ||
+        error.code === 'EACCES' ||
+        error.code === 'ENOTSUP')
+    )) {
       throw error;
     }
   } finally {
@@ -729,7 +610,10 @@ async function createConsistentConsumerWorkspace(): Promise<string> {
     content.replaceAll("'0.4.1'", `'${CAPTURE_RUNTIME_VERSION}'`),
   );
   await replace('apps/cert-prep-backend/pyproject.toml', (content) =>
-    content.replaceAll('capture-runtime-client==0.4.1', `capture-runtime-client==${CAPTURE_RUNTIME_VERSION}`),
+    content.replaceAll(
+      'capture-runtime-client==0.4.1',
+      `capture-runtime-client==${CAPTURE_RUNTIME_VERSION}`,
+    ),
   );
   await replace('apps/cert-prep-backend/uv.lock', (content) =>
     content.replace(
@@ -737,8 +621,9 @@ async function createConsistentConsumerWorkspace(): Promise<string> {
       `$1${CAPTURE_RUNTIME_VERSION}$2`,
     ),
   );
-  await replace('apps/cert-prep-desktop/src-tauri/src/constants.rs', (content) =>
-    content.replaceAll('"0.4.1"', `"${CAPTURE_RUNTIME_VERSION}"`),
+  await replace(
+    'apps/cert-prep-desktop/src-tauri/src/constants.rs',
+    (content) => content.replaceAll('"0.4.1"', `"${CAPTURE_RUNTIME_VERSION}"`),
   );
   await replace('apps/cert-prep-desktop/src-tauri/Cargo.toml', (content) =>
     content.replace(
@@ -753,27 +638,42 @@ async function createConsistentConsumerWorkspace(): Promise<string> {
     ),
   );
   await replace('apps/cert-prep-desktop/project.json', (content) =>
-    content.replaceAll('capture-runtime/0.4.1', `capture-runtime/${CAPTURE_RUNTIME_VERSION}`),
+    content.replaceAll(
+      'capture-runtime/0.4.1',
+      `capture-runtime/${CAPTURE_RUNTIME_VERSION}`,
+    ),
   );
-  await mkdir(join(workspaceRoot, 'node_modules/@gx-capture/capture-workbench-ui'), {
-    recursive: true,
-  });
-  await mkdir(join(workspaceRoot, 'node_modules/@gx-capture/capture-runtime-client'), {
-    recursive: true,
-  });
+  await mkdir(
+    join(workspaceRoot, 'node_modules/@gx-capture/capture-workbench-ui'),
+    {
+      recursive: true,
+    },
+  );
+  await mkdir(
+    join(workspaceRoot, 'node_modules/@gx-capture/capture-runtime-client'),
+    {
+      recursive: true,
+    },
+  );
   await writeFile(
     join(
       workspaceRoot,
       'node_modules/@gx-capture/capture-workbench-ui/package.json',
     ),
-    JSON.stringify({ name: '@gx-capture/capture-workbench-ui', version: CAPTURE_RUNTIME_VERSION }),
+    JSON.stringify({
+      name: '@gx-capture/capture-workbench-ui',
+      version: CAPTURE_RUNTIME_VERSION,
+    }),
   );
   await writeFile(
     join(
       workspaceRoot,
       'node_modules/@gx-capture/capture-runtime-client/package.json',
     ),
-    JSON.stringify({ name: '@gx-capture/capture-runtime-client', version: CAPTURE_RUNTIME_VERSION }),
+    JSON.stringify({
+      name: '@gx-capture/capture-runtime-client',
+      version: CAPTURE_RUNTIME_VERSION,
+    }),
   );
   return workspaceRoot;
 }
@@ -795,12 +695,13 @@ async function rewriteCandidateContract(
 }
 
 test('file candidate binds verified contract bytes and reaches complete inventory', async () => {
-  const fixture = await createCandidateFixture({ candidateVersion: CAPTURE_RUNTIME_VERSION });
+  const fixture = await createCandidateFixture({
+    candidateVersion: CAPTURE_RUNTIME_VERSION,
+  });
   const workspaceRoot = await createConsistentConsumerWorkspace();
   try {
     const verified = await verifyCandidate({
       ...fixture.input,
-      identityMode: 'release',
       releaseVersion: CAPTURE_RUNTIME_VERSION,
     });
     const before = Buffer.from(verified.contractSource.bytes);
@@ -817,7 +718,9 @@ test('file candidate binds verified contract bytes and reaches complete inventor
 });
 
 test('file dependency cannot bypass the verified consumer contract source', async () => {
-  const fixture = await createCandidateFixture({ candidateVersion: CAPTURE_RUNTIME_VERSION });
+  const fixture = await createCandidateFixture({
+    candidateVersion: CAPTURE_RUNTIME_VERSION,
+  });
   const workspaceRoot = await createConsistentConsumerWorkspace();
   try {
     const packagePath = join(workspaceRoot, 'package.json');
@@ -828,7 +731,11 @@ test('file dependency cannot bypass the verified consumer contract source', asyn
       'file:../candidate';
     await writeFile(packagePath, JSON.stringify(packageManifest));
     await assert.rejects(
-      assertConsumerVersionContract(CAPTURE_RUNTIME_VERSION, 'release', undefined, workspaceRoot),
+      assertConsumerVersionContract(
+        CAPTURE_RUNTIME_VERSION,
+        undefined,
+        workspaceRoot,
+      ),
       /Verified candidate consumer contract source is required/u,
     );
   } finally {
@@ -846,7 +753,6 @@ test('a newer candidate cannot use the published consumer pins as a bypass', asy
       runCandidateGate(
         {
           ...fixture.input,
-          identityMode: 'release',
           releaseVersion: '99.0.0',
           output: join(fixture.root, 'result.json'),
           workflowRunId: 2,
@@ -882,7 +788,6 @@ test('the exact published pin non-file path passes without a candidate contract'
     const result = await runCandidateGate(
       {
         ...fixture.input,
-        identityMode: 'release',
         releaseVersion: CAPTURE_RUNTIME_VERSION,
         output: join(fixture.root, 'legacy-result.json'),
         workflowRunId: 5,
@@ -910,7 +815,9 @@ test('the exact published pin non-file path passes without a candidate contract'
 });
 
 test('a consistent phase2 non-file candidate reaches Nx and result output only after inventory', async () => {
-  const fixture = await createCandidateFixture({ candidateVersion: CAPTURE_RUNTIME_VERSION });
+  const fixture = await createCandidateFixture({
+    candidateVersion: CAPTURE_RUNTIME_VERSION,
+  });
   const workspaceRoot = await createConsistentConsumerWorkspace();
   const nxTargets: string[] = [];
   let outputWritten = false;
@@ -918,7 +825,6 @@ test('a consistent phase2 non-file candidate reaches Nx and result output only a
     const result = await runCandidateGate(
       {
         ...fixture.input,
-        identityMode: 'release',
         releaseVersion: CAPTURE_RUNTIME_VERSION,
         output: join(workspaceRoot, 'result.json'),
         workflowRunId: 3,
@@ -947,7 +853,9 @@ test('a consistent phase2 non-file candidate reaches Nx and result output only a
 });
 
 test('contract source and manifest failures stop before Nx and result output', async () => {
-  const fixture = await createCandidateFixture({ candidateVersion: CAPTURE_RUNTIME_VERSION });
+  const fixture = await createCandidateFixture({
+    candidateVersion: CAPTURE_RUNTIME_VERSION,
+  });
   const workspaceRoot = await createConsistentConsumerWorkspace();
   let nxCalled = false;
   let outputWritten = false;
@@ -957,7 +865,6 @@ test('contract source and manifest failures stop before Nx and result output', a
       runCandidateGate(
         {
           ...fixture.input,
-          identityMode: 'release',
           releaseVersion: CAPTURE_RUNTIME_VERSION,
           output: join(workspaceRoot, 'result.json'),
           workflowRunId: 1,
@@ -985,7 +892,9 @@ test('contract source and manifest failures stop before Nx and result output', a
 });
 
 test('contract bytes, sidecar digest, and manifest digest are all required', async () => {
-  const fixture = await createCandidateFixture({ candidateVersion: CAPTURE_RUNTIME_VERSION });
+  const fixture = await createCandidateFixture({
+    candidateVersion: CAPTURE_RUNTIME_VERSION,
+  });
   try {
     const validContract = JSON.parse(
       await readFile(fixture.contractPath, 'utf8'),
@@ -994,7 +903,6 @@ test('contract bytes, sidecar digest, and manifest digest are all required', asy
     await assert.rejects(
       verifyCandidate({
         ...fixture.input,
-        identityMode: 'release',
         releaseVersion: CAPTURE_RUNTIME_VERSION,
       }),
       /Candidate contract-set SHA-256 file does not match its bytes/u,
@@ -1011,7 +919,6 @@ test('contract bytes, sidecar digest, and manifest digest are all required', asy
     await assert.rejects(
       verifyCandidate({
         ...fixture.input,
-        identityMode: 'release',
         releaseVersion: CAPTURE_RUNTIME_VERSION,
       }),
       /Candidate manifest contract-set SHA-256 does not match/u,
@@ -1024,13 +931,14 @@ test('contract bytes, sidecar digest, and manifest digest are all required', asy
       await readFile(fixture.manifestPath, 'utf8'),
     ) as Record<string, unknown>;
     malformedManifest.contractSetSha256 = sha256(malformedBytes);
-    const malformedManifestBytes = Buffer.from(JSON.stringify(malformedManifest));
+    const malformedManifestBytes = Buffer.from(
+      JSON.stringify(malformedManifest),
+    );
     await writeFile(fixture.manifestPath, malformedManifestBytes);
     fixture.input.candidateManifestSha256 = sha256(malformedManifestBytes);
     await assert.rejects(
       verifyCandidate({
         ...fixture.input,
-        identityMode: 'release',
         releaseVersion: CAPTURE_RUNTIME_VERSION,
       }),
       /Candidate contract set is not valid JSON/u,
@@ -1041,7 +949,9 @@ test('contract bytes, sidecar digest, and manifest digest are all required', asy
 });
 
 test('wrong contract identity is rejected by complete inventory after byte binding', async () => {
-  const fixture = await createCandidateFixture({ candidateVersion: CAPTURE_RUNTIME_VERSION });
+  const fixture = await createCandidateFixture({
+    candidateVersion: CAPTURE_RUNTIME_VERSION,
+  });
   const workspaceRoot = await createConsistentConsumerWorkspace();
   let nxCalled = false;
   let outputWritten = false;
@@ -1095,7 +1005,6 @@ test('wrong contract identity is rejected by complete inventory after byte bindi
       runCandidateGate(
         {
           ...fixture.input,
-          identityMode: 'release',
           releaseVersion: CAPTURE_RUNTIME_VERSION,
           output: join(workspaceRoot, 'result.json'),
           workflowRunId: 4,
@@ -1123,12 +1032,17 @@ test('wrong contract identity is rejected by complete inventory after byte bindi
 });
 
 test('wrong projection schema identity is rejected from candidate contract bytes', async () => {
-  const fixture = await createCandidateFixture({ candidateVersion: CAPTURE_RUNTIME_VERSION });
+  const fixture = await createCandidateFixture({
+    candidateVersion: CAPTURE_RUNTIME_VERSION,
+  });
   try {
     const contract = JSON.parse(
       await readFile(fixture.contractPath, 'utf8'),
     ) as {
-      schemas: { name: string; schema: { properties: { schemaVersion: { const: string } } } }[];
+      schemas: {
+        name: string;
+        schema: { properties: { schemaVersion: { const: string } } };
+      }[];
     };
     const projection = contract.schemas.find(
       (schema) => schema.name === 'CaptureOcrProjectionV3',
@@ -1139,7 +1053,6 @@ test('wrong projection schema identity is rejected from candidate contract bytes
     await assert.rejects(
       verifyCandidate({
         ...fixture.input,
-        identityMode: 'release',
         releaseVersion: CAPTURE_RUNTIME_VERSION,
       }),
       /Candidate CaptureOcrProjectionV3 schema version must be 3/u,
@@ -1150,7 +1063,9 @@ test('wrong projection schema identity is rejected from candidate contract bytes
 });
 
 test('missing consumer inventory owner fails closed before mutation', async () => {
-  const fixture = await createCandidateFixture({ candidateVersion: CAPTURE_RUNTIME_VERSION });
+  const fixture = await createCandidateFixture({
+    candidateVersion: CAPTURE_RUNTIME_VERSION,
+  });
   const workspaceRoot = await createConsistentConsumerWorkspace();
   try {
     const packagePath = join(workspaceRoot, 'package.json');
@@ -1161,7 +1076,6 @@ test('missing consumer inventory owner fails closed before mutation', async () =
     await writeFile(packagePath, JSON.stringify(packageManifest));
     const verified = await verifyCandidate({
       ...fixture.input,
-      identityMode: 'release',
       releaseVersion: CAPTURE_RUNTIME_VERSION,
     });
     await assert.rejects(
@@ -1181,7 +1095,6 @@ test('missing consumer inventory owner fails closed before mutation', async () =
 interface CandidateFixture {
   readonly root: string;
   readonly candidateVersion: string;
-  readonly probePath: string;
   readonly manifestPath: string;
   readonly corePath: string;
   readonly workerPath: string;
@@ -1287,7 +1200,10 @@ async function createCandidateFixture(input: {
           schema: {
             properties: {
               apiVersion: { const: '2.0' },
-              runtimeVersion: { type: 'string', pattern: '^[0-9]+\\.[0-9]+\\.[0-9]+$' },
+              runtimeVersion: {
+                type: 'string',
+                pattern: '^[0-9]+\\.[0-9]+\\.[0-9]+$',
+              },
               schemaVersion: { const: '3' },
             },
           },
@@ -1298,7 +1214,10 @@ async function createCandidateFixture(input: {
             properties: {
               apiVersion: { const: '2.0' },
               contractSetVersion: { const: '2' },
-              runtimeVersion: { type: 'string', pattern: '^[0-9]+\\.[0-9]+\\.[0-9]+$' },
+              runtimeVersion: {
+                type: 'string',
+                pattern: '^[0-9]+\\.[0-9]+\\.[0-9]+$',
+              },
               schemaVersion: { const: '1' },
             },
           },
@@ -1310,7 +1229,10 @@ async function createCandidateFixture(input: {
               apiVersion: { const: '2.0' },
               captureDocumentSchemaVersion: { const: '2' },
               contractSetVersion: { const: '2' },
-              runtimeVersion: { type: 'string', pattern: '^[0-9]+\\.[0-9]+\\.[0-9]+$' },
+              runtimeVersion: {
+                type: 'string',
+                pattern: '^[0-9]+\\.[0-9]+\\.[0-9]+$',
+              },
             },
           },
         },
@@ -1346,34 +1268,9 @@ async function createCandidateFixture(input: {
   };
   const manifestBytes = Buffer.from(JSON.stringify(manifest));
   await writeFile(manifestPath, manifestBytes);
-  const probePath = join(root, 'probe.json');
-  await writeFile(
-    probePath,
-    JSON.stringify({
-      manifestKind: 'capture-phase1-probe',
-      runtimeVersion: LOCAL_PROBE_VERSION,
-      apiVersion: '2.0',
-      ocrProjectionSchemaVersion: '3',
-      contractSetSha256,
-      sourceCommit,
-      artifacts: [
-        {
-          id: CAPTURE_RUNTIME_FILE,
-          bytes: coreBytes.length,
-          sha256: sha256(coreBytes),
-        },
-        {
-          id: workerName,
-          bytes: workerBytes.length,
-          sha256: sha256(workerBytes),
-        },
-      ],
-    }),
-  );
   return {
     root,
     candidateVersion: input.candidateVersion,
-    probePath,
     manifestPath,
     corePath,
     workerPath,
@@ -1414,7 +1311,10 @@ interface CombinedCandidateFixture {
 
 async function createCombinedCandidateFixture(): Promise<CombinedCandidateFixture> {
   const root = await mkdtemp(
-    join(process.env.TEMP ?? process.env.TMP ?? '.', 'cert-combined-candidate-'),
+    join(
+      process.env.TEMP ?? process.env.TMP ?? '.',
+      'cert-combined-candidate-',
+    ),
   );
   for (const directory of [
     'runtime',
@@ -1458,12 +1358,30 @@ async function createCombinedCandidateFixture(): Promise<CombinedCandidateFixtur
         }),
       ),
     ],
-    [`package/gx-capture-capture-runtime-client-${CAPTURE_RUNTIME_VERSION}.tgz`, Buffer.from('runtime client archive')],
-    [`package/gx-capture-capture-workbench-ui-${CAPTURE_RUNTIME_VERSION}.tgz`, Buffer.from('workbench archive')],
-    [`python/capture_runtime_client-${CAPTURE_RUNTIME_VERSION}-py3-none-any.whl`, Buffer.from('python wheel')],
-    [`python/capture_runtime_client-${CAPTURE_RUNTIME_VERSION}.tar.gz`, Buffer.from('python source')],
-    [`crate/capture-sidecar-launcher-${CAPTURE_RUNTIME_VERSION}.crate`, Buffer.from('launcher crate')],
-    [`desktop/Capture.Workbench_${CAPTURE_RUNTIME_VERSION}_x64-setup.exe`, Buffer.from('desktop installer')],
+    [
+      `package/gx-capture-capture-runtime-client-${CAPTURE_RUNTIME_VERSION}.tgz`,
+      Buffer.from('runtime client archive'),
+    ],
+    [
+      `package/gx-capture-capture-workbench-ui-${CAPTURE_RUNTIME_VERSION}.tgz`,
+      Buffer.from('workbench archive'),
+    ],
+    [
+      `python/capture_runtime_client-${CAPTURE_RUNTIME_VERSION}-py3-none-any.whl`,
+      Buffer.from('python wheel'),
+    ],
+    [
+      `python/capture_runtime_client-${CAPTURE_RUNTIME_VERSION}.tar.gz`,
+      Buffer.from('python source'),
+    ],
+    [
+      `crate/capture-sidecar-launcher-${CAPTURE_RUNTIME_VERSION}.crate`,
+      Buffer.from('launcher crate'),
+    ],
+    [
+      `desktop/Capture.Workbench_${CAPTURE_RUNTIME_VERSION}_x64-setup.exe`,
+      Buffer.from('desktop installer'),
+    ],
     ['contracts/contract-set.json', contractBytes],
     ['contracts/contract-set.sha256', Buffer.from(contractSetSha256)],
     ['contracts/contract-snapshot.json', Buffer.from('{"schemaVersion":"1"}')],
@@ -1471,24 +1389,36 @@ async function createCombinedCandidateFixture(): Promise<CombinedCandidateFixtur
   for (const [path, bytes] of artifactContents) {
     await writeFile(join(root, path), bytes);
   }
-  const packageEntries = artifactContents.filter(([path]) => path.startsWith('package/'));
-  const pythonEntries = artifactContents.filter(([path]) => path.startsWith('python/'));
-  const crateEntries = artifactContents.filter(([path]) => path.startsWith('crate/'));
-  const checksumEntries = [...packageEntries, ...pythonEntries, ...crateEntries].map(
-    ([path, bytes]) => {
-      const name = basename(path);
-      return [
-        `checksums/${name}.sha256`,
-        Buffer.from(`${sha256(bytes)}  ${name}\n`),
-      ] as [string, Buffer];
-    },
+  const packageEntries = artifactContents.filter(([path]) =>
+    path.startsWith('package/'),
   );
+  const pythonEntries = artifactContents.filter(([path]) =>
+    path.startsWith('python/'),
+  );
+  const crateEntries = artifactContents.filter(([path]) =>
+    path.startsWith('crate/'),
+  );
+  const checksumEntries = [
+    ...packageEntries,
+    ...pythonEntries,
+    ...crateEntries,
+  ].map(([path, bytes]) => {
+    const name = basename(path);
+    return [
+      `checksums/${name}.sha256`,
+      Buffer.from(`${sha256(bytes)}  ${name}\n`),
+    ] as [string, Buffer];
+  });
   for (const [path, bytes] of checksumEntries) {
     await writeFile(join(root, path), bytes);
   }
   const allArtifactContents = [...artifactContents, ...checksumEntries];
   const artifacts = allArtifactContents
-    .map(([path, bytes]) => ({ path, bytes: bytes.length, sha256: sha256(bytes) }))
+    .map(([path, bytes]) => ({
+      path,
+      bytes: bytes.length,
+      sha256: sha256(bytes),
+    }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const baseManifest = {
     schemaVersion: '1',
@@ -1541,10 +1471,7 @@ async function createCombinedCandidateFixture(): Promise<CombinedCandidateFixtur
     ],
     status: 'candidate-verified',
   };
-  await writeFile(
-    join(root, 'release-ledger.json'),
-    JSON.stringify(ledger),
-  );
+  await writeFile(join(root, 'release-ledger.json'), JSON.stringify(ledger));
   return {
     root,
     manifestPath,
