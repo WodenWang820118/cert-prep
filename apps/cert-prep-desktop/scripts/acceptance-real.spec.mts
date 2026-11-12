@@ -29,7 +29,6 @@ import {
 } from './packaged-image-upload-smoke/runner.mts';
 import { runPackagedFlowSmoke } from './packaged-flow-smoke/runner.mts';
 import { acceptancePrivacyMasks } from './packaged-flow-smoke/runner-context.mts';
-import type { Phase1FinalEvidence } from './phase1-final-identity.mts';
 
 const VISUAL_BASELINE_NAMES = new Set([
   'runtime-python-missing',
@@ -47,7 +46,6 @@ test('real Cert Prep packaged PDF and JPEG acceptance journeys pass', async () =
     fixtures,
     installedArtifact,
     runtimeProvenance,
-    phase1Final,
     captureRuntimeMirror,
     appDataDirectories,
   } =
@@ -74,11 +72,6 @@ test('real Cert Prep packaged PDF and JPEG acceptance journeys pass', async () =
         expect(imageEvidence.document.status).toBe('ready');
         expect(imageEvidence.document.chunks_count).toBeGreaterThan(0);
         expect(imageEvidence.ocrTruth?.status).toBe('passed');
-        if (phase1Final) {
-          expect(imageEvidence.acceptanceEvidence).toMatchObject(
-            phase1JourneyExpectation(phase1Final, fixtures.image.sha256),
-          );
-        }
       } catch (error) {
         imageFailure = error instanceof Error ? error.message : String(error);
         if (error instanceof PackagedImageUploadSmokeError) {
@@ -135,25 +128,6 @@ test('real Cert Prep packaged PDF and JPEG acceptance journeys pass', async () =
         expect(pdfMetrics.restart?.verified).toBe(true);
       }
       expect(pdfMetrics.ocr_truth?.status).toBe('passed');
-      if (phase1Final) {
-        expect(pdfMetrics.ocr_preflight).toMatchObject({
-          mode: 'gpu-dml',
-          contract_sha256: phase1Final.identity.contractSetSha256,
-          worker_sha256: phase1Final.identity.ocrWorkerExecutableSha256,
-          ui_gpu_before_import: true,
-          source_import_enabled: true,
-        });
-        expect(pdfMetrics.ocr_completion).toMatchObject({
-          pages_processed: 1,
-          total_pages: 46,
-          chunks: 1,
-          expected_pages: 1,
-          expected_chunks: 1,
-        });
-        expect(pdfMetrics.acceptance_evidence).toMatchObject(
-          phase1JourneyExpectation(phase1Final, fixtures.pdf.sha256, true),
-        );
-      }
     } catch (error) {
       pdfFailure = error instanceof Error ? error.message : String(error);
       throw error;
@@ -199,7 +173,6 @@ test('real Cert Prep packaged PDF and JPEG acceptance journeys pass', async () =
             },
             status: pdfMetrics?.status ?? 'failed',
             truth: pdfMetrics?.ocr_semantic_evidence,
-            evidence: pdfMetrics?.acceptance_evidence,
             errors:
               pdfMetrics?.errors ??
               [pdfFailure ?? (imageFailure ? 'PDF journey did not run.' : failure ?? 'PDF journey did not run.')],
@@ -219,15 +192,11 @@ test('real Cert Prep packaged PDF and JPEG acceptance journeys pass', async () =
                     imageEvidence?.cleanupVerified === true || imageFailureCleanupVerified,
                   cleanup: imageEvidence?.cleanup ?? imageFailureCleanup,
                   error: imageFailure,
-                  evidence: imageEvidence?.acceptanceEvidence,
                 },
               }),
           runtime: {
             installed: installedArtifact,
             candidate: runtimeProvenance,
-            phase1Final: phase1Final
-              ? phase1AggregateSummary(phase1Final)
-              : undefined,
           },
           cleanupErrors: cleanupFailures,
         }),
@@ -238,53 +207,3 @@ test('real Cert Prep packaged PDF and JPEG acceptance journeys pass', async () =
     );
   }
 });
-
-function phase1JourneyExpectation(
-  phase1Final: Phase1FinalEvidence,
-  sourceSha256: string,
-  pdf = false,
-): Record<string, unknown> {
-  return {
-    sourceSha256,
-    importedSourceSha256: sourceSha256,
-    runtimeArtifactSha256: phase1Final.identity.runtimeArtifactSha256,
-    contractSetSha256: phase1Final.identity.contractSetSha256,
-    workerArchiveSha256: phase1Final.identity.ocrWorkerArchiveSha256,
-    workerExecutableSha256: phase1Final.identity.ocrWorkerExecutableSha256,
-    authenticatedRuntimePreflight: 'gpu-dml',
-    uiGpuBeforeImport: true,
-    sourceImportEnabled: true,
-    expectedAnchorCount: 1,
-    matchedAnchorCount: 1,
-    ...(pdf
-      ? {
-          pageScope: {
-            sourcePageCount: 46,
-            requestedPageNumbers: [1],
-            processedPageNumbers: [1],
-            uiRawPageNumbers: [1],
-            uiStructuredPageNumbers: [1],
-          },
-        }
-      : {}),
-  };
-}
-
-function phase1AggregateSummary(
-  phase1Final: Phase1FinalEvidence,
-): Record<string, unknown> {
-  return {
-    manifestSha256: phase1Final.manifestSha256,
-    sourceHead: phase1Final.sourceHead,
-    identity: phase1Final.identity,
-    jpeg: {
-      runId: phase1Final.jpeg.runId,
-      acceptanceManifestSha256: phase1Final.jpeg.acceptanceManifestSha256,
-    },
-    pdfPage1: {
-      runId: phase1Final.pdfPage1.runId,
-      acceptanceManifestSha256: phase1Final.pdfPage1.acceptanceManifestSha256,
-      pageScope: phase1Final.pdfPage1.pageScope,
-    },
-  };
-}

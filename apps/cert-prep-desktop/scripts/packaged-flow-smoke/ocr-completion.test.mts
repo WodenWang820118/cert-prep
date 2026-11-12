@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import {
-  assertOcrPageRecordEvidenceIntegrity,
-  buildOcrPageRecordEvidence,
-} from '../ocr-page-record-evidence.mts';
+import { buildOcrPageRecordEvidence } from '../ocr-page-record-evidence.mts';
 import {
   assertPdfPageOneScope,
   recordDocumentOcrCompletionEvidence,
@@ -78,13 +75,44 @@ test('OCR page-record evidence is private-safe and independently re-hashable', (
     expectedPageNumbers: [1],
     appDataEmptyAtLaunch: true,
   });
-
-  assertOcrPageRecordEvidenceIntegrity(evidence);
   assert.equal(evidence.records.length, 1);
   assert.equal(evidence.records[0]?.rawTextPresent, true);
   assert.doesNotMatch(JSON.stringify(evidence), /private OCR text/u);
   assert.match(evidence.pageRecordsSha256, /^[a-f0-9]{64}$/u);
-  assert.match(evidence.records[0]?.recordIdentitySha256 ?? '', /^[a-f0-9]{64}$/u);
+  assert.match(
+    evidence.records[0]?.recordIdentitySha256 ?? '',
+    /^[a-f0-9]{64}$/u,
+  );
+
+  // The digests follow the record identity: the same input gives the same
+  // digests, and another chunk id or source revision gives other digests. The
+  // text itself is never hashed into the evidence.
+  const build = (chunk: Record<string, unknown>) =>
+    buildOcrPageRecordEvidence({
+      runId: 'acceptance-run-1',
+      expectedDocumentId: 'document-1',
+      expectedProjectId: 'project-1',
+      document: ocrDocumentRecord(),
+      chunks: [chunk],
+      expectedPageNumbers: [1],
+      appDataEmptyAtLaunch: true,
+    });
+  const repeated = build(ocrChunkRecord());
+  assert.equal(repeated.pageRecordsSha256, evidence.pageRecordsSha256);
+  assert.equal(
+    repeated.records[0]?.recordIdentitySha256,
+    evidence.records[0]?.recordIdentitySha256,
+  );
+  const otherChunk = build({ ...ocrChunkRecord(), id: 'chunk-2' });
+  assert.notEqual(
+    otherChunk.records[0]?.recordIdentitySha256,
+    evidence.records[0]?.recordIdentitySha256,
+  );
+  assert.notEqual(otherChunk.pageRecordsSha256, evidence.pageRecordsSha256);
+  const otherRevision = build({ ...ocrChunkRecord(), source_revision: 2 });
+  assert.notEqual(otherRevision.pageRecordsSha256, evidence.pageRecordsSha256);
+  const otherText = build({ ...ocrChunkRecord(), raw_text: 'other OCR text' });
+  assert.equal(otherText.pageRecordsSha256, evidence.pageRecordsSha256);
 });
 
 test('OCR page-record evidence rejects embedded or cross-document records', () => {

@@ -28,7 +28,6 @@ import {
   createAcceptanceAppDataDirectory,
   removeAcceptanceAppDataDirectory,
 } from '../acceptance-app-data.mts';
-import { CAPTURE_RUNTIME_VERSION } from '../../../../tools/capture-runtime-version.mts';
 import { selectCertPrepResidue } from '../process-lifecycle/processes.mts';
 import type { ProcessRecord } from '../process-lifecycle/processes.mts';
 import type { SmokeRunState } from './types.mts';
@@ -99,10 +98,14 @@ test('concurrent cleanup timeout callers reuse one actual cleanup', async () => 
 });
 
 test('listener snapshot failure still closes the exact child and preserves the baseline', async () => {
-  const baseline = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1_000)'], {
-    stdio: 'ignore',
-    windowsHide: true,
-  });
+  const baseline = spawn(
+    process.execPath,
+    ['-e', 'setInterval(() => {}, 1_000)'],
+    {
+      stdio: 'ignore',
+      windowsHide: true,
+    },
+  );
   const app = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1_000)'], {
     stdio: 'ignore',
     windowsHide: true,
@@ -428,6 +431,9 @@ test('isolated acceptance strips inherited runtime overrides without mutation', 
     Ollama_Models: 'C:\\untrusted-models',
     WebView2_Additional_Browser_Arguments: '--untrusted',
     WEBVIEW2_USER_DATA_FOLDER: 'C:\\untrusted-webview',
+    CAPTURE_OCR_EXECUTION_EVIDENCE_OPT_IN: '1',
+    Capture_Ocr_Execution_Evidence_Root: 'C:\\untrusted',
+    CAPTURE_OCR_EXECUTION_RUNTIME_SHA256: 'f'.repeat(64),
   };
   const originalEntries = Object.entries(inherited);
 
@@ -439,7 +445,12 @@ test('isolated acceptance strips inherited runtime overrides without mutation', 
   assert.equal(normalizedSanitized.safe_parent_value, 'preserved');
   assert.equal(normalizedSanitized.omitted_value, undefined);
   assert.equal(normalizedSanitized.no_proxy, undefined);
-  for (const prefix of ['cert_prep_', 'ollama_', 'webview2_']) {
+  for (const prefix of [
+    'cert_prep_',
+    'ollama_',
+    'webview2_',
+    'capture_ocr_execution_',
+  ]) {
     assert.equal(
       Object.keys(normalizedSanitized).some((name) => name.startsWith(prefix)),
       false,
@@ -497,80 +508,6 @@ test('ordinary smoke preserves unrelated environment and pins the fixed model', 
     normalized.cert_prep_package_smoke_llm_fallback_models,
     undefined,
   );
-});
-
-test('isolated acceptance forwards only the explicit local probe marker', () => {
-  const environment = buildAppLaunchEnvironment(
-    launchEnvironmentRun(true),
-    {
-      CERT_PREP_CAPTURE_RUNTIME_PROBE: ' 1 ',
-      CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION: ` ${CAPTURE_RUNTIME_VERSION} `,
-      CERT_PREP_CAPTURE_RUNTIME_LOCAL_MODEL_ROOT:
-        ' C:\\qa\\capture-runtime-models ',
-      CERT_PREP_BACKEND_URL: 'http://127.0.0.1:9999',
-      cert_prep_untrusted_override: 'must-not-pass',
-    },
-  );
-
-  const normalized = normalizedEnvironment(environment);
-  assert.equal(normalized.cert_prep_capture_runtime_probe, '1');
-  assert.equal(
-    normalized.cert_prep_capture_runtime_expected_version,
-    CAPTURE_RUNTIME_VERSION,
-  );
-  assert.equal(
-    normalized.cert_prep_capture_runtime_local_model_root,
-    'C:\\qa\\capture-runtime-models',
-  );
-  assert.equal(normalized.cert_prep_backend_url, undefined);
-  assert.equal(normalized.cert_prep_untrusted_override, undefined);
-});
-
-test('Phase 1 acceptance identity forces the pinned local probe marker', () => {
-  const run = launchEnvironmentRun(true);
-  run.options.acceptanceRuntimeIdentity = {
-    runtimeArtifactSha256: 'a'.repeat(64),
-    contractSetSha256: 'b'.repeat(64),
-    workerArchiveSha256: 'c'.repeat(64),
-    workerExecutableSha256: 'd'.repeat(64),
-    preflightMode: 'gpu-dml',
-  };
-
-  const environment = buildAppLaunchEnvironment(run, {});
-  const normalized = normalizedEnvironment(environment);
-
-  assert.equal(normalized.cert_prep_capture_runtime_probe, '1');
-  assert.equal(
-    normalized.cert_prep_capture_runtime_expected_version,
-    CAPTURE_RUNTIME_VERSION,
-  );
-});
-
-test('Phase 1 JPEG acceptance forwards only the exact OCR execution proof opt-in', () => {
-  const run = launchEnvironmentRun(true);
-  run.options.ocrExecutionEvidenceRoot = 'C:\\qa\\proof-root';
-  run.options.ocrExecutionProofExpected = {
-    sourceSha256: '1'.repeat(64),
-    runtimeSha256: '2'.repeat(64),
-    workerExecutableSha256: '3'.repeat(64),
-    modelSha256: '4'.repeat(64),
-    profileId: 'capture-workbench-ocr-profile',
-    profileSpecSha256: '5'.repeat(64),
-    contractSetSha256: '6'.repeat(64),
-    expectedAdapterClass: 'dedicated',
-    expectedAdapterDescriptionIncludes: 'RTX 4060',
-  };
-
-  const normalized = normalizedEnvironment(
-    buildAppLaunchEnvironment(run, {
-      CAPTURE_OCR_EXECUTION_EVIDENCE_OPT_IN: '1',
-      CAPTURE_OCR_EXECUTION_EVIDENCE_ROOT: 'C:\\untrusted',
-      CAPTURE_OCR_EXECUTION_RUNTIME_SHA256: 'f'.repeat(64),
-    }),
-  );
-  assert.equal(normalized.capture_ocr_execution_evidence_opt_in, '1');
-  assert.equal(normalized.capture_ocr_execution_evidence_root, 'C:\\qa\\proof-root');
-  assert.equal(normalized.capture_ocr_execution_runtime_sha256, '2'.repeat(64));
 });
 
 test('acceptance launch requires an explicit isolated app-data directory', () => {

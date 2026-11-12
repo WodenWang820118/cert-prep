@@ -13,10 +13,8 @@ from cert_prep_backend.capture_integration.application.review_envelope import (
 )
 
 try:
-    # The SDK publishes this generated contract through the public Python SDK.
-    # Keep the fallback below only while the repository's published pin is
-    # still 0.4.1; it is replaced by the generated model automatically when
-    # the candidate SDK is installed for local-probe verification.
+    # Prefer the public SDK DTO, then the generated contracts model; use the
+    # host-owned shape below when neither SDK export is available.
     from capture_runtime_client import OcrComputePreflightV2
 except ImportError:
     try:

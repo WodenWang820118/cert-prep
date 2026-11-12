@@ -1,7 +1,5 @@
 import { createHash } from 'node:crypto';
 
-import type { InstalledRuntimeTupleAttestation } from './packaged-flow-smoke/types.mts';
-
 export const OCR_PAGE_RECORD_EVIDENCE_SCHEMA_VERSION = 1 as const;
 export const OCR_PROJECTION_SOURCE = 'capture-runtime-ocr-projection' as const;
 export const OCR_EXTRACTION_METHOD = 'windowsml_ocr' as const;
@@ -49,7 +47,6 @@ export interface OcrPageRecordEvidence {
     readonly uploadDocumentIdSha256: string;
     readonly uploadProjectIdSha256: string;
   };
-  readonly runtimeAttestationSha256: string | null;
   readonly expectedPageNumbers: readonly number[];
   readonly document: OcrDocumentRecordIdentity;
   readonly documentRecordSha256: string;
@@ -65,7 +62,6 @@ export interface BuildOcrPageRecordEvidenceInput {
   readonly chunks: readonly Record<string, unknown>[];
   readonly expectedPageNumbers: readonly number[];
   readonly appDataEmptyAtLaunch: boolean;
-  readonly runtimeAttestation?: InstalledRuntimeTupleAttestation;
 }
 
 /**
@@ -190,123 +186,12 @@ export function buildOcrPageRecordEvidence(
     expectedExtractionMethod: OCR_EXTRACTION_METHOD,
     forbiddenExtractionMethods: OCR_FORBIDDEN_EXTRACTION_METHODS,
     freshness,
-    runtimeAttestationSha256: input.runtimeAttestation
-      ? sha256CanonicalJson(input.runtimeAttestation)
-      : null,
     expectedPageNumbers,
     document: documentRecord,
     documentRecordSha256: sha256CanonicalJson(documentRecord),
     records,
     pageRecordsSha256: sha256CanonicalJson(records),
   };
-}
-
-/** Re-hash all identity fields from a persisted evidence artifact. */
-export function assertOcrPageRecordEvidenceIntegrity(
-  evidence: OcrPageRecordEvidence,
-): void {
-  if (
-    evidence.schemaVersion !== OCR_PAGE_RECORD_EVIDENCE_SCHEMA_VERSION ||
-    evidence.identityScope !== 'fresh-installed-app-run' ||
-    evidence.canonicalization !== OCR_IDENTITY_CANONICALIZATION ||
-    evidence.projectionSource !== OCR_PROJECTION_SOURCE ||
-    evidence.expectedExtractionMethod !== OCR_EXTRACTION_METHOD ||
-    JSON.stringify(evidence.forbiddenExtractionMethods) !==
-      JSON.stringify(OCR_FORBIDDEN_EXTRACTION_METHODS)
-  ) {
-    throw new Error('OCR page-record evidence contract fields were invalid.');
-  }
-  if (
-    evidence.freshness.uploadResponseMatchedDocument !== true ||
-    typeof evidence.freshness.appDataEmptyAtLaunch !== 'boolean' ||
-    evidence.freshness.uploadDocumentIdSha256 !==
-      evidence.document.documentIdSha256 ||
-    evidence.freshness.uploadProjectIdSha256 !==
-      evidence.document.projectIdSha256
-  ) {
-    throw new Error('OCR page-record evidence freshness identity was invalid.');
-  }
-  if (
-    !isSha256Value(evidence.document.documentIdSha256) ||
-    !isSha256Value(evidence.document.projectIdSha256) ||
-    !isSha256Value(evidence.document.sourceSha256) ||
-    evidence.document.pageCount < 1 ||
-    !Number.isSafeInteger(evidence.document.pageCount) ||
-    evidence.document.processedPageCount < 1 ||
-    !Number.isSafeInteger(evidence.document.processedPageCount) ||
-    evidence.document.chunksCount < 1 ||
-    !Number.isSafeInteger(evidence.document.chunksCount) ||
-    evidence.document.hasText !== true ||
-    evidence.document.status !== 'ready' ||
-    evidence.document.extractionMethod !== OCR_EXTRACTION_METHOD ||
-    evidence.document.sourceKind !== 'document' ||
-    evidence.records.length === 0 ||
-    evidence.records.length !== evidence.document.chunksCount ||
-    (evidence.runtimeAttestationSha256 !== null &&
-      !isSha256Value(evidence.runtimeAttestationSha256))
-  ) {
-    throw new Error('OCR page-record evidence document scope was invalid.');
-  }
-  if (
-    evidence.documentRecordSha256 !== sha256CanonicalJson(evidence.document)
-  ) {
-    throw new Error(
-      'OCR page-record evidence document identity hash was invalid.',
-    );
-  }
-  if (evidence.pageRecordsSha256 !== sha256CanonicalJson(evidence.records)) {
-    throw new Error('OCR page-record evidence records hash was invalid.');
-  }
-  const recordIds = new Set<string>();
-  for (const record of evidence.records) {
-    if (recordIds.has(record.recordIdSha256)) {
-      throw new Error('OCR page-record evidence record IDs were duplicated.');
-    }
-    if (
-      record.projectionSource !== OCR_PROJECTION_SOURCE ||
-      record.documentIdSha256 !== evidence.document.documentIdSha256 ||
-      !isSha256Value(record.documentIdSha256) ||
-      !isSha256Value(record.recordIdSha256) ||
-      record.pageNumber < 1 ||
-      !Number.isSafeInteger(record.pageNumber) ||
-      record.chunkIndex < 0 ||
-      !Number.isSafeInteger(record.chunkIndex) ||
-      record.sourceRevision < 1 ||
-      !Number.isSafeInteger(record.sourceRevision) ||
-      record.locatorKind !== 'page' ||
-      record.extractionMethod !== OCR_EXTRACTION_METHOD ||
-      record.rawTextPresent !== true
-    ) {
-      throw new Error('OCR page-record evidence record metadata was invalid.');
-    }
-    recordIds.add(record.recordIdSha256);
-    const identity = {
-      projectionSource: record.projectionSource,
-      documentIdSha256: record.documentIdSha256,
-      recordIdSha256: record.recordIdSha256,
-      pageNumber: record.pageNumber,
-      chunkIndex: record.chunkIndex,
-      sourceRevision: record.sourceRevision,
-      locatorKind: record.locatorKind,
-      extractionMethod: record.extractionMethod,
-      rawTextPresent: record.rawTextPresent,
-    };
-    if (record.recordIdentitySha256 !== sha256CanonicalJson(identity)) {
-      throw new Error(
-        'OCR page-record evidence record identity hash was invalid.',
-      );
-    }
-  }
-  if (
-    !sameNumberList(
-      uniquePageNumbers(evidence.records),
-      evidence.expectedPageNumbers,
-    )
-  ) {
-    throw new Error(
-      'OCR page-record evidence expected page numbers were invalid.',
-    );
-  }
 }
 
 export function sha256CanonicalJson(value: unknown): string {
@@ -463,8 +348,4 @@ function requireNonNegativeInteger(value: unknown, field: string): number {
 
 function sha256Text(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex');
-}
-
-function isSha256Value(value: unknown): value is string {
-  return typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value);
 }

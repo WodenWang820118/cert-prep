@@ -21,7 +21,6 @@ import {
 import { createProject } from '../packaged-flow-smoke/flow-steps.mts';
 import { unavailableGenerationReadinessSnapshot } from '../packaged-flow-smoke/generation-readiness.mts';
 import { createSmokeRunState } from '../packaged-flow-smoke/run-state.mts';
-import { buildPhase1AcceptanceEvidence } from '../phase1-acceptance-evidence.mts';
 import {
   activePage,
   clickButtonText,
@@ -43,18 +42,9 @@ import {
   type OcrTruthEvaluation,
 } from '../ocr-truth-contract.mts';
 import {
-  createOcrExecutionEvidenceRoot,
-  readAndValidateOcrExecutionProof,
-  type OcrExecutionProofSummary,
-} from '../ocr-execution-proof.mts';
-import {
   serializePrivacySafeOcrSemanticEvidence,
   type PrivacySafeOcrSemanticEvidence,
 } from '../ocr-semantic-evidence.mts';
-import {
-  buildOcrPageRecordEvidence,
-  type OcrPageRecordEvidence,
-} from '../ocr-page-record-evidence.mts';
 import type {
   SmokeMetrics,
   SmokeOptions,
@@ -95,9 +85,6 @@ export interface PackagedImageUploadSmokeEvidence {
   readonly document: PackagedImageDocumentEvidence;
   readonly ocrTruth?: OcrTruthEvaluation;
   readonly ocrSemanticEvidence?: PrivacySafeOcrSemanticEvidence;
-  readonly ocrExecutionProof?: OcrExecutionProofSummary;
-  readonly pageRecords?: OcrPageRecordEvidence;
-  readonly acceptanceEvidence?: Record<string, unknown>;
   readonly screenshots: readonly string[];
 }
 
@@ -170,12 +157,6 @@ export async function runPackagedImageUploadSmoke(
   const fixtureSha256 = createHash('sha256').update(imageBytes).digest('hex');
   const run = createRunState(options, imagePath);
   prepareRunDirectories(run);
-  if (options.acceptanceRuntimeIdentity && !options.ocrExecutionProofExpected) {
-    throw new Error('Phase 1 image acceptance requires exact OCR execution proof identity.');
-  }
-  if (options.ocrExecutionProofExpected) {
-    run.options.ocrExecutionEvidenceRoot = await createOcrExecutionEvidenceRoot(options.outDir);
-  }
   run.processBaseline = processSnapshot();
 
   const removeShutdownCleanup = installProcessShutdownCleanup({
@@ -191,8 +172,6 @@ export async function runPackagedImageUploadSmoke(
   let document: PackagedImageDocumentEvidence | null = null;
   let ocrTruth: OcrTruthEvaluation | undefined;
   let ocrSemanticEvidence: PrivacySafeOcrSemanticEvidence | undefined;
-  let ocrExecutionProof: OcrExecutionProofSummary | undefined;
-  let pageRecords: OcrPageRecordEvidence | undefined;
   let primaryError: unknown = null;
   let cleanupError: unknown = null;
   let launchAttempted = false;
@@ -218,7 +197,6 @@ export async function runPackagedImageUploadSmoke(
     );
     document = imageResult.document;
     ocrTruth = imageResult.ocrTruth;
-    pageRecords = imageResult.pageRecords;
     if (ocrTruth && options.ocrTruth && imageResult.actualPages) {
       ocrSemanticEvidence = serializePrivacySafeOcrSemanticEvidence({
         truth: options.ocrTruth,
@@ -226,12 +204,6 @@ export async function runPackagedImageUploadSmoke(
         actualPages: imageResult.actualPages,
       });
       run.metrics.ocr_semantic_evidence = ocrSemanticEvidence;
-    }
-    if (options.ocrExecutionProofExpected) {
-      ocrExecutionProof = await readAndValidateOcrExecutionProof(
-        run.options.ocrExecutionEvidenceRoot ?? '',
-        options.ocrExecutionProofExpected,
-      );
     }
     run.metrics.status = 'completed';
   } catch (error) {
@@ -284,12 +256,7 @@ export async function runPackagedImageUploadSmoke(
       primaryError !== null && cleanupError !== null
         ? 'Packaged image upload and cleanup both failed.'
         : errorMessage(cause);
-    writeFailureEvidence(
-      run,
-      cause,
-      observedCleanup,
-      cleanupVerified,
-    );
+    writeFailureEvidence(run, cause, observedCleanup, cleanupVerified);
     throw new PackagedImageUploadSmokeError(
       message,
       observedCleanup,
@@ -305,44 +272,10 @@ export async function runPackagedImageUploadSmoke(
     temporaryAppData: true,
   };
   if (document === null) {
-    throw new Error('Packaged image upload document evidence was unexpectedly absent.');
+    throw new Error(
+      'Packaged image upload document evidence was unexpectedly absent.',
+    );
   }
-
-  const acceptanceEvidence = options.acceptanceRuntimeIdentity
-    ? buildPhase1AcceptanceEvidence({
-        identity: options.acceptanceRuntimeIdentity,
-        fixture: {
-          name: fixtureName,
-          sha256: fixtureSha256,
-          truth: options.ocrTruth ?? (() => {
-            throw new Error('Phase 1 image acceptance requires an OCR truth manifest.');
-          })(),
-        },
-        preflight: run.metrics.ocr_preflight ?? (() => {
-          throw new Error('Phase 1 image acceptance missed the OCR preflight.');
-        })(),
-        runtimeAttestation: run.metrics.runtime_attestation,
-        pageRecords: pageRecords ?? (() => {
-          throw new Error('Phase 1 image acceptance missed page-record evidence.');
-        })(),
-        ocrTruth: ocrTruth ?? (() => {
-          throw new Error('Phase 1 image acceptance missed OCR truth evaluation.');
-        })(),
-        ocrSemanticEvidence: ocrSemanticEvidence ?? (() => {
-          throw new Error('Phase 1 image acceptance missed privacy-safe OCR semantic evidence.');
-        })(),
-        ocrExecutionProof: ocrExecutionProof ?? (() => {
-          throw new Error('Phase 1 image acceptance missed the OCR execution proof.');
-        })(),
-        cleanup: {
-          app: cleanup.app,
-          sidecar: cleanup.sidecar,
-          cdpPort: cleanup.cdpPort,
-          temporaryAppData: cleanup.temporaryAppData,
-        },
-        cleanupObservation: run.metrics.final_close?.ownedCleanupObservation,
-      })
-    : undefined;
 
   const evidence: PackagedImageUploadSmokeEvidence = {
     status: 'completed',
@@ -361,9 +294,6 @@ export async function runPackagedImageUploadSmoke(
     document,
     ...(ocrTruth ? { ocrTruth } : {}),
     ...(ocrSemanticEvidence ? { ocrSemanticEvidence } : {}),
-    ...(ocrExecutionProof ? { ocrExecutionProof } : {}),
-    ...(pageRecords ? { pageRecords } : {}),
-    ...(acceptanceEvidence ? { acceptanceEvidence: { ...acceptanceEvidence, ocrDevice: document.ocr_device } } : {}),
     screenshots: run.metrics.screenshots,
   };
   writeFileSync(
@@ -392,7 +322,6 @@ async function uploadAndVerifyImage(
   readonly document: PackagedImageDocumentEvidence;
   readonly textAnchors?: ImageTextAnchorEvidence;
   readonly ocrTruth?: OcrTruthEvaluation;
-  readonly pageRecords?: OcrPageRecordEvidence;
   readonly actualPages?: readonly OcrActualPage[];
 }> {
   const page = activePage(run);
@@ -427,13 +356,15 @@ async function uploadAndVerifyImage(
         readUploadedDocument,
         {
           timeoutMs,
-          expectation: { filename: basename(imagePath), sha256: sha256File(imagePath) },
+          expectation: {
+            filename: basename(imagePath),
+            sha256: sha256File(imagePath),
+          },
         },
       )
-    : await waitForExpectedTerminalImageDocument(
-        readUploadedDocument,
-        { timeoutMs },
-      );
+    : await waitForExpectedTerminalImageDocument(readUploadedDocument, {
+        timeoutMs,
+      });
   if (
     document.id !== uploadedDocument.documentId ||
     document.project_id !== uploadedDocument.projectId
@@ -442,33 +373,11 @@ async function uploadAndVerifyImage(
       'Packaged image terminal evidence did not match the captured upload document.',
     );
   }
-  if (run.options.acceptanceRuntimeIdentity && document.ocr_device !== 'windowsml-dml') throw new Error(`Local OCR acceptance requires persisted windowsml-dml device, found ${document.ocr_device}.`);
   let textAnchors: ImageTextAnchorEvidence | undefined;
   let truthEvaluation: OcrTruthEvaluation | undefined;
   let actualPages: readonly OcrActualPage[] | undefined;
-  let pageRecords: OcrPageRecordEvidence | undefined;
   if (expectedTextIncludes?.length) {
     const chunks = await readDocumentChunks(run, uploadedDocument);
-    if (run.options.acceptanceRuntimeIdentity) {
-      pageRecords = buildOcrPageRecordEvidence({
-        runId: process.env.E2E_ACCEPTANCE_RUN_ID ?? 'unknown',
-        expectedDocumentId: uploadedDocument.documentId,
-        expectedProjectId: uploadedDocument.projectId,
-        document: document as unknown as Record<string, unknown>,
-        chunks,
-        expectedPageNumbers: ocrTruth?.pages.map((page) => page.pageNumber) ?? [1],
-        appDataEmptyAtLaunch:
-          run.metrics.acceptance_isolation_at_launch?.app_data_dir_empty_at_launch ===
-          true,
-        runtimeAttestation: run.metrics.runtime_attestation,
-      });
-      run.metrics.ocr_page_records = pageRecords;
-      writeFileSync(
-        join(run.options.outDir, 'ocr-page-record-evidence.json'),
-        `${JSON.stringify(pageRecords, null, 2)}\n`,
-        'utf8',
-      );
-    }
     textAnchors = inspectExpectedTextAnchors(chunks, expectedTextIncludes);
     if (textAnchors.missing.length > 0) {
       throw new Error(
@@ -479,7 +388,12 @@ async function uploadAndVerifyImage(
       actualPages = actualOcrPages(chunks);
       truthEvaluation = evaluateOcrTruth(ocrTruth, actualPages);
     }
-    await waitText(run, /ready/i, 30_000, 'one-page image OCR terminal state visible');
+    await waitText(
+      run,
+      /ready/i,
+      30_000,
+      'one-page image OCR terminal state visible',
+    );
     await screenshot(run, 'ocr-image-terminal');
   } else {
     await waitText(
@@ -498,7 +412,6 @@ async function uploadAndVerifyImage(
     document,
     textAnchors,
     ocrTruth: truthEvaluation,
-    pageRecords,
     actualPages,
   };
 }
@@ -508,13 +421,19 @@ async function waitForExpectedOcrImageDocumentWithOneRetry(
   readDocument: () => Promise<unknown>,
   options: {
     readonly timeoutMs: number;
-    readonly expectation: { readonly filename: string; readonly sha256: string };
+    readonly expectation: {
+      readonly filename: string;
+      readonly sha256: string;
+    };
   },
 ): Promise<PackagedImageDocumentEvidence> {
   try {
     return await waitForExpectedOcrImageDocument(readDocument, options);
   } catch (error) {
-    if (!(error instanceof Error) || !/ended as ocr_failed\./u.test(error.message)) {
+    if (
+      !(error instanceof Error) ||
+      !/ended as ocr_failed\./u.test(error.message)
+    ) {
       throw error;
     }
 
@@ -584,8 +503,6 @@ function createRunState(
     acceptanceIsolation: true,
     captureRuntimeWorkerMirrorUrl: options.captureRuntimeWorkerMirrorUrl,
     acceptanceArtifactRoot: options.acceptanceArtifactRoot,
-    acceptanceRuntimeIdentity: options.acceptanceRuntimeIdentity,
-    ocrExecutionProofExpected: options.ocrExecutionProofExpected,
     candidateDistributionProfile: 'local_nonpublishable',
     waitForStreamingComplete: false,
     streamingCompleteTimeoutMs: options.timeoutMs,
@@ -640,14 +557,18 @@ async function readDocumentChunks(
     },
   );
   if (!response.ok()) {
-    throw new Error(`Packaged image chunks request returned HTTP ${response.status()}.`);
+    throw new Error(
+      `Packaged image chunks request returned HTTP ${response.status()}.`,
+    );
   }
   const payload: unknown = await response.json().catch(() => null);
   if (!isRecord(payload) || !Array.isArray(payload.items)) {
-    throw new Error('Packaged image chunks response was not a valid item list.');
+    throw new Error(
+      'Packaged image chunks response was not a valid item list.',
+    );
   }
-  return payload.items.filter(
-    (item): item is Record<string, unknown> => isRecord(item),
+  return payload.items.filter((item): item is Record<string, unknown> =>
+    isRecord(item),
   );
 }
 
@@ -667,7 +588,8 @@ function inspectExpectedTextAnchors(
   const missing: string[] = [];
   for (const anchor of expectedTextIncludes) {
     const normalizedAnchor = normalizeOcrText(anchor);
-    if (normalizedAnchor && normalizedText.includes(normalizedAnchor)) matched.push(anchor);
+    if (normalizedAnchor && normalizedText.includes(normalizedAnchor))
+      matched.push(anchor);
     else missing.push(anchor);
   }
   return { matched, missing };
@@ -679,7 +601,11 @@ function actualOcrPages(
   const pages = new Map<number, string[]>();
   for (const chunk of chunks) {
     const pageNumber = chunk.page_number;
-    if (typeof pageNumber !== 'number' || !Number.isInteger(pageNumber) || pageNumber < 1) {
+    if (
+      typeof pageNumber !== 'number' ||
+      !Number.isInteger(pageNumber) ||
+      pageNumber < 1
+    ) {
       throw new Error('OCR result chunks did not expose a valid page_number.');
     }
     const text =
@@ -700,11 +626,17 @@ function actualOcrPages(
     .map(([pageNumber, texts]) => ({ pageNumber, text: texts.join('\n') }));
 }
 
-function removeTemporaryAppData(options: PackagedImageUploadSmokeOptions): void {
+function removeTemporaryAppData(
+  options: PackagedImageUploadSmokeOptions,
+): void {
   const outDir = resolve(options.outDir);
   const appDataDir = resolve(options.appDataDir);
   const relativeAppData = relative(outDir, appDataDir);
-  if (relativeAppData && !relativeAppData.startsWith('..') && !isAbsolute(relativeAppData)) {
+  if (
+    relativeAppData &&
+    !relativeAppData.startsWith('..') &&
+    !isAbsolute(relativeAppData)
+  ) {
     rmSync(appDataDir, { recursive: true, force: true });
   } else {
     removeAcceptanceAppDataDirectory(options.workspaceRoot, appDataDir);

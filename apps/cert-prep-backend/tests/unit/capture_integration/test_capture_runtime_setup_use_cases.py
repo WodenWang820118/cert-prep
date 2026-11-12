@@ -18,7 +18,6 @@ from cert_prep_backend.capture_integration.infrastructure.runtime_setup import (
 )
 
 KEY = UUID("867232ea-8e28-4fed-a79e-9fcaa4d25899")
-PROVENANCE_UNAVAILABLE = "Installed Capture Runtime provenance is unavailable."
 
 
 class FakeSetup:
@@ -28,10 +27,6 @@ class FakeSetup:
 
     def handshake(self) -> object:
         self.calls.append(("handshake",))
-        return self._value()
-
-    def provenance(self) -> object:
-        self.calls.append(("provenance",))
         return self._value()
 
     def requirements(self) -> object:
@@ -64,7 +59,6 @@ def test_runtime_setup_use_cases_return_the_port_result() -> None:
     setup = FakeSetup()
 
     assert use_cases.view_runtime_ready(setup) == "body"
-    assert use_cases.view_runtime_provenance(setup) == "body"
     assert use_cases.list_runtime_requirements(setup) == "body"
     started = use_cases.start_runtime_installation(
         setup, requirement_id="windowsml-ocr", idempotency_key=KEY
@@ -75,7 +69,6 @@ def test_runtime_setup_use_cases_return_the_port_result() -> None:
     assert use_cases.cancel_runtime_installation(setup, installation_id="job") == "body"
     assert setup.calls == [
         ("handshake",),
-        ("provenance",),
         ("requirements",),
         ("start_installation", "windowsml-ocr", KEY),
         ("installations",),
@@ -132,7 +125,7 @@ def _rejected(error: BaseException, method: str) -> CaptureRuntimeSetupRejected:
     return caught.value
 
 
-def test_setup_adapter_translates_runtime_and_provenance_errors() -> None:
+def test_setup_adapter_translates_runtime_errors() -> None:
     # Compatibility and protocol errors subclass CaptureRuntimeError, so the old
     # router copied their status, code, message, and details. It did not use the
     # 502 names for them.
@@ -170,16 +163,6 @@ def test_setup_adapter_translates_runtime_and_provenance_errors() -> None:
         ClientCaptureRuntimeSetup(client).installation("job")
     assert caught.value.code == "conflict"
     assert client.calls == [("get_installation", "job")]
-
-    missing = _Client(RuntimeError("boom"))
-    with pytest.raises(CaptureRuntimeSetupRejected) as caught:
-        ClientCaptureRuntimeSetup(missing).provenance()
-    assert caught.value.status_code == 503
-    assert caught.value.code == "capture_runtime_provenance_unavailable"
-    assert caught.value.setup_message == PROVENANCE_UNAVAILABLE
-    assert caught.value.details is None
-    assert isinstance(caught.value.__cause__, RuntimeError)
-    assert not isinstance(caught.value.__cause__, CaptureRuntimeError)
 
     with pytest.raises(ValueError, match="bad"):
         ClientCaptureRuntimeSetup(_Client(ValueError("bad"))).handshake()

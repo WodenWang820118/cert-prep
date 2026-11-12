@@ -215,11 +215,10 @@ jobs:
             --with "capture-runtime-client==$captureVersion" `
             -- python -c "import capture_runtime_client; assert capture_runtime_client.CAPTURE_RUNTIME_VERSION == '$captureVersion'"
 
-      - name: Test Capture candidate gate and OCR evidence tooling
+      - name: Test Capture candidate gates
         run: >-
           pnpm nx run-many -p cert-prep-desktop
           -t capture-candidate-gate-test capture-candidate-install-binding-test
-          phase1-evidence-test
 
       - name: Test Tauri host
         run: pnpm nx run cert-prep-desktop:cargo-test

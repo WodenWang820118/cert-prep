@@ -76,12 +76,7 @@ const steps: readonly Step[] = [
   {
     job: 'portable-quality',
     name: 'Type-check projects',
-    nx: [
-      'run-many',
-      '-t',
-      'typecheck',
-      '--parallel=3',
-    ],
+    nx: ['run-many', '-t', 'typecheck', '--parallel=3'],
   },
   {
     job: 'portable-quality',
@@ -242,7 +237,7 @@ const steps: readonly Step[] = [
   },
   {
     job: 'windows-quality',
-    name: 'Test Capture candidate gate and OCR evidence tooling',
+    name: 'Test Capture candidate gates',
     nx: [
       'run-many',
       '-p',
@@ -250,7 +245,6 @@ const steps: readonly Step[] = [
       '-t',
       'capture-candidate-gate-test',
       'capture-candidate-install-binding-test',
-      'phase1-evidence-test',
     ],
   },
   {

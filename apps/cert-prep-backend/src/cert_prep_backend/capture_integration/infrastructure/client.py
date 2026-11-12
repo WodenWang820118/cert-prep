@@ -10,8 +10,6 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 import hashlib
-import os
-import re
 from threading import Lock
 from typing import BinaryIO
 from uuid import UUID
@@ -46,7 +44,6 @@ from capture_runtime_client.codec import decode_model as _decode_model
 from cert_prep_backend.capture_integration.infrastructure.host_models import RuntimeReady
 
 
-_SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 _TERMINAL_INSTALLATION_STATUSES = frozenset(
     {"completed", "failed", "cancelled", "manual_action_required"}
 )
@@ -82,25 +79,13 @@ class CaptureRuntimeClient:
             timeout_seconds=timeout_seconds,
             client=client,
         )
-        sdk_options: dict[str, object] = {}
-        expected_contract = os.environ.get(
-            "CERT_PREP_CAPTURE_RUNTIME_CONTRACT_SHA256", ""
-        ).strip()
-        if expected_contract:
-            if not _SHA256_PATTERN.fullmatch(expected_contract):
-                raise CaptureRuntimeCompatibilityError(
-                    "CERT_PREP_CAPTURE_RUNTIME_CONTRACT_SHA256 must be a lowercase SHA-256 digest."
-                )
-            sdk_options["allowed_contract_set_sha256"] = [expected_contract]
         self._sdk = SdkCaptureRuntimeClient(
             transport=transport,
             timeout_seconds=timeout_seconds,
-            **sdk_options,
         )
         # The candidate discovery guard is instance-scoped and rejects
-        # overlapping negotiations. FastAPI serves the readiness and
-        # provenance endpoints concurrently during the UI preflight, so keep
-        # the SDK's discovery state machine single-flight at the host boundary.
+        # overlapping negotiations. Keep the SDK's discovery state machine
+        # single-flight when concurrent host requests negotiate readiness.
         self._discovery_lock = Lock()
 
     def __repr__(self) -> str:
@@ -233,7 +218,7 @@ class CaptureRuntimeClient:
         but its convenience upload method predates ``pdfPageNumbers``. Keep
         discovery, authentication, retries, and response decoding in that SDK;
         this narrow compatibility path only supplies the optional request
-        member needed by the Phase 1 page-one acceptance journey.
+        member used by PDF-only acceptance.
         """
 
         request = getattr(self._sdk, "_request", None)

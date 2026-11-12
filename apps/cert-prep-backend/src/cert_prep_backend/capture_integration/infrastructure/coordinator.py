@@ -471,20 +471,6 @@ class CertPrepCaptureCoordinator:
         reason = _status_value(getattr(preflight, "reason_code", None))
         notice_required = getattr(preflight, "user_notice_required", None)
         notice_code = _status_value(getattr(preflight, "notice_code", None))
-        expected_contract = os.environ.get(
-            "CERT_PREP_CAPTURE_RUNTIME_CONTRACT_SHA256", ""
-        ).strip()
-        expected_worker = os.environ.get(
-            "CERT_PREP_CAPTURE_RUNTIME_WORKER_SHA256", ""
-        ).strip()
-        if expected_contract and getattr(preflight, "contract_sha256", None) != expected_contract:
-            raise CaptureRuntimeCompatibilityError(
-                "Capture Runtime OCR preflight contract identity does not match the acceptance candidate."
-            )
-        if expected_worker and getattr(preflight, "worker_sha256", None) != expected_worker:
-            raise CaptureRuntimeCompatibilityError(
-                "Capture Runtime OCR preflight worker identity does not match the acceptance candidate."
-            )
         if mode == "gpu-dml":
             if reason is not None or notice_required is not False or notice_code is not None:
                 raise CaptureRuntimeCompatibilityError(
@@ -886,7 +872,7 @@ def _status_value(value: object) -> str | None:
 def _acceptance_pdf_page_numbers(
     source_kind: CaptureSourceKind,
 ) -> tuple[int, ...] | None:
-    """Translate the isolated Phase 1 acceptance switch into a bounded scope."""
+    """Translate the PDF-only acceptance switch into a bounded scope."""
 
     scope = os.environ.get("CAPTURE_ACCEPTANCE_PDF_PAGE_SCOPE", "").strip()
     if not scope or source_kind is not CaptureSourceKind.PDF:

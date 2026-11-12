@@ -90,7 +90,6 @@ __all__ = [
     "view_partial_capture",
     "view_raw_capture",
     "view_runtime_installation",
-    "view_runtime_provenance",
     "view_runtime_ready",
 ]
 
@@ -1126,12 +1125,6 @@ def view_runtime_ready(setup: CaptureRuntimeSetup) -> object:
     """Return the runtime handshake. The response model stays on the router."""
 
     return setup.handshake()
-
-
-def view_runtime_provenance(setup: CaptureRuntimeSetup) -> object:
-    """Return packaged provenance plus one live handshake."""
-
-    return setup.provenance()
 
 
 def list_runtime_requirements(setup: CaptureRuntimeSetup) -> object:

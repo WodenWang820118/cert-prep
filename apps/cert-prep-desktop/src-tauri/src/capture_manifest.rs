@@ -49,25 +49,12 @@ pub(crate) fn validate_capture_manifest_contract(
 
 fn capture_manifest_expectations() -> ManifestExpectations {
     ManifestExpectations {
-        runtime_version: capture_runtime_expected_version(),
+        runtime_version: CAPTURE_RUNTIME_VERSION.into(),
         api_version: CAPTURE_RUNTIME_API_VERSION.into(),
         capture_document_schema_version: CAPTURE_DOCUMENT_SCHEMA_VERSION.into(),
         file_name: CAPTURE_RUNTIME_BINARY.into(),
         schema_file_name: CAPTURE_DOCUMENT_SCHEMA_FILE.into(),
     }
-}
-
-fn capture_runtime_expected_version() -> String {
-    if std::env::var("CERT_PREP_CAPTURE_RUNTIME_PROBE")
-        .ok()
-        .is_some_and(|value| value.trim() == "1")
-        && std::env::var("CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION")
-            .ok()
-            .is_some_and(|value| value.trim() == CAPTURE_RUNTIME_VERSION)
-    {
-        return CAPTURE_RUNTIME_VERSION.into();
-    }
-    CAPTURE_RUNTIME_VERSION.into()
 }
 
 fn verify_capture_schema(path: &Path) -> Result<(), String> {

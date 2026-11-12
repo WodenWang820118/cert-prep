@@ -13,9 +13,7 @@ import {
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import {
-  validateCaptureArtifactBytes,
-} from './capture-runtime-contract.mts';
+import { validateCaptureArtifactBytes } from './capture-runtime-contract.mts';
 import {
   ALPHA_VERSION,
   CAPTURE_DOCUMENT_SCHEMA_FILE,
@@ -38,9 +36,6 @@ const CAPTURE_RUNTIME_ARTIFACT_PATH_ENV =
   'CERT_PREP_CAPTURE_RUNTIME_ARTIFACT_PATH';
 const CAPTURE_DOCUMENT_SCHEMA_PATH_ENV =
   'CERT_PREP_CAPTURE_DOCUMENT_SCHEMA_PATH';
-const CAPTURE_RUNTIME_PROBE_ENV = 'CERT_PREP_CAPTURE_RUNTIME_PROBE';
-const CAPTURE_RUNTIME_PROBE_VERSION_ENV =
-  'CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION';
 const ALPHA_RELEASE_TAG = `cert-prep-v${ALPHA_VERSION}`;
 
 type RuntimeResourceMode = 'dev' | 'release';
@@ -245,9 +240,11 @@ function resolveCaptureRuntimeInputs({
   | 'captureDocumentSchemaPath'
 >): CaptureRuntimeInputs {
   const explicitManifest =
-    captureRuntimeManifestPath ?? process.env[CAPTURE_RUNTIME_MANIFEST_PATH_ENV];
+    captureRuntimeManifestPath ??
+    process.env[CAPTURE_RUNTIME_MANIFEST_PATH_ENV];
   const explicitArtifact =
-    captureRuntimeArtifactPath ?? process.env[CAPTURE_RUNTIME_ARTIFACT_PATH_ENV];
+    captureRuntimeArtifactPath ??
+    process.env[CAPTURE_RUNTIME_ARTIFACT_PATH_ENV];
   const explicitSchema =
     captureDocumentSchemaPath ?? process.env[CAPTURE_DOCUMENT_SCHEMA_PATH_ENV];
   if (explicitManifest || explicitArtifact || explicitSchema) {
@@ -296,7 +293,7 @@ async function loadAndVerifyCaptureRuntime(
   const manifest = JSON.parse(
     readFileSync(manifestPath, 'utf8'),
   ) as Partial<CaptureRuntimeManifest>;
-  const expectedRuntimeVersion = captureRuntimeExpectedVersion();
+  const expectedRuntimeVersion = CAPTURE_RUNTIME_VERSION;
   const exactFields: ReadonlyArray<readonly [string, unknown, string]> = [
     [
       'manifestVersion',
@@ -369,16 +366,6 @@ async function loadAndVerifyCaptureRuntime(
   return manifest as CaptureRuntimeManifest;
 }
 
-function captureRuntimeExpectedVersion(): string {
-  const probeEnabled = process.env[CAPTURE_RUNTIME_PROBE_ENV]?.trim();
-  if (probeEnabled === '1') {
-    const candidateVersion =
-      process.env[CAPTURE_RUNTIME_PROBE_VERSION_ENV]?.trim();
-    if (candidateVersion === CAPTURE_RUNTIME_VERSION) return candidateVersion;
-  }
-  return CAPTURE_RUNTIME_VERSION;
-}
-
 function validateCaptureDocumentSchema(schemaPath: string): void {
   let schema: Record<string, unknown>;
   try {
@@ -437,7 +424,9 @@ async function loadAndVerifyManifest(
     typeof manifest.artifact.sha256 !== 'string' ||
     typeof manifest.artifact.bytes !== 'number'
   ) {
-    throw new Error(`Invalid ${expectedKind} runtime manifest: ${manifestPath}`);
+    throw new Error(
+      `Invalid ${expectedKind} runtime manifest: ${manifestPath}`,
+    );
   }
   if (manifest.version !== ALPHA_VERSION) {
     throw new Error(
@@ -468,7 +457,9 @@ async function loadAndVerifyManifest(
       `${expectedKind} artifact size mismatch: expected ${manifest.artifact.bytes}, found ${actualBytes}.`,
     );
   }
-  if ((await sha256File(artifactPath)) !== manifest.artifact.sha256.toLowerCase()) {
+  if (
+    (await sha256File(artifactPath)) !== manifest.artifact.sha256.toLowerCase()
+  ) {
     throw new Error(`${expectedKind} artifact checksum mismatch.`);
   }
   return manifest as RuntimeManifest;

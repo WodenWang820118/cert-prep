@@ -10,12 +10,8 @@ import {
   acceptanceAppDataRoot,
   removeAcceptanceAppDataDirectory,
 } from './acceptance-app-data.mts';
-import {
-  loadPhase1PythonWheelProvenance,
-  createAcceptanceSmokeOptions,
-} from './acceptance-real-options.mts';
+import { createAcceptanceSmokeOptions } from './acceptance-real-options.mts';
 import { buildOwnedCleanupObservation } from './packaged-flow-smoke/app-lifecycle.mts';
-import { PHASE1_FINAL_IDENTITY } from './phase1-final-identity.mts';
 import {
   evaluateOcrTruth,
   normalizeOcrText,
@@ -168,7 +164,8 @@ test('OCR truth rejects an empty reference with a typed invalid error', () => {
   };
 
   assert.throws(
-    () => evaluateOcrTruth(manifest, [{ pageNumber: 1, text: 'arbitrary output' }]),
+    () =>
+      evaluateOcrTruth(manifest, [{ pageNumber: 1, text: 'arbitrary output' }]),
     (error: unknown) =>
       error instanceof OcrTruthInvalidError && error.code === 'empty_reference',
   );
@@ -180,7 +177,9 @@ test('OCR truth rejects an empty reference with a typed invalid error', () => {
           sourceFileName: 'empty.jpeg',
           kind: 'image',
           cerThreshold: 0.03,
-          pages: [{ pageNumber: 1, text: '\u2003', criticalAnchors: ['anchor'] }],
+          pages: [
+            { pageNumber: 1, text: '\u2003', criticalAnchors: ['anchor'] },
+          ],
         },
         'empty.jpeg',
         'image',
@@ -241,7 +240,9 @@ test('downloaded runtime provenance is bound to installed core and catalog worke
     const installedResourceRoot = join(fixture.root, 'installed', 'resources');
     await writeFile(
       join(candidateRoot, 'capture-runtime-manifest.json'),
-      await readFile(join(installedResourceRoot, 'capture-runtime-manifest.json')),
+      await readFile(
+        join(installedResourceRoot, 'capture-runtime-manifest.json'),
+      ),
     );
     await writeFile(
       join(candidateRoot, 'capture-runtime-test.exe'),
@@ -270,7 +271,8 @@ test('downloaded runtime provenance is bound to installed core and catalog worke
       }),
     );
     fixture.environment.CERT_PREP_CAPTURE_RUNTIME_ROOT = candidateRoot;
-    fixture.environment.CERT_PREP_ACCEPTANCE_RUNTIME_PROFILE = 'downloaded_public';
+    fixture.environment.CERT_PREP_ACCEPTANCE_RUNTIME_PROFILE =
+      'downloaded_public';
 
     const result = await createAcceptanceSmokeOptions({
       environment: fixture.environment,
@@ -309,36 +311,58 @@ test('invalid provider fails before allocating acceptance app-data', async () =>
       }),
       /must be explicitly set to fake/u,
     );
-    assert.equal(existsSync(acceptanceAppDataRoot(fixture.workspaceRoot)), false);
+    assert.equal(
+      existsSync(acceptanceAppDataRoot(fixture.workspaceRoot)),
+      false,
+    );
   } finally {
     await cleanupFixture(fixture);
   }
 });
 
-test('Phase 1 local-probe requires an explicit Python wheel provenance input', async () => {
-  await assert.rejects(
-    loadPhase1PythonWheelProvenance(
-      {},
-      {
-        identity: {
-          runtimeVersion: PHASE1_FINAL_IDENTITY.runtimeVersion,
-          runtimeArtifactSha256: PHASE1_FINAL_IDENTITY.runtimeArtifactSha256,
-          ocrWorkerArchiveSha256: PHASE1_FINAL_IDENTITY.ocrWorkerArchiveSha256,
-          ocrWorkerExecutableSha256:
-            PHASE1_FINAL_IDENTITY.ocrWorkerExecutableSha256,
-          contractSetSha256: PHASE1_FINAL_IDENTITY.contractSetSha256,
-        },
-      },
-    ),
-    /CERT_PREP_CAPTURE_RUNTIME_PYTHON_WHEEL/u,
-  );
-});
-
 test('owned cleanup probe excludes baseline PID and listener identities', () => {
-  const record = (pid: number, parentPid: number, name: string, commandLine = '') => ({ pid, parentPid, name, executablePath: `C:\\scoped\\${name}`, commandLine, creationDate: `20260802010${pid}.000000+000`, workingSetBytes: 1 });
-  const before = [record(10, 1, 'cert-prep-desktop.exe'), record(11, 10, 'cert-prep-backend.exe'), record(12, 11, 'capture-engine-ocr.exe', 'capture-engine-ocr.exe'), record(20, 1, 'cert-prep-backend.exe')];
-  const listeners = [{ pid: 11, address: '127.0.0.1', port: 8123 }, { pid: 12, address: '127.0.0.1', port: 9311 }, { pid: 20, address: '127.0.0.1', port: 9999 }];
-  assert.deepEqual(buildOwnedCleanupObservation(before, listeners, [before[3]], [listeners[2]], 10), { ownedProcessPids: [10, 11, 12], remainingOwnedProcessPids: [], ownedListenerPorts: [8123, 9311], remainingOwnedListenerPorts: [], ocrModelWorkerPids: [12], remainingOcrModelWorkerPids: [] });
+  const record = (
+    pid: number,
+    parentPid: number,
+    name: string,
+    commandLine = '',
+  ) => ({
+    pid,
+    parentPid,
+    name,
+    executablePath: `C:\\scoped\\${name}`,
+    commandLine,
+    creationDate: `20260802010${pid}.000000+000`,
+    workingSetBytes: 1,
+  });
+  const before = [
+    record(10, 1, 'cert-prep-desktop.exe'),
+    record(11, 10, 'cert-prep-backend.exe'),
+    record(12, 11, 'capture-engine-ocr.exe', 'capture-engine-ocr.exe'),
+    record(20, 1, 'cert-prep-backend.exe'),
+  ];
+  const listeners = [
+    { pid: 11, address: '127.0.0.1', port: 8123 },
+    { pid: 12, address: '127.0.0.1', port: 9311 },
+    { pid: 20, address: '127.0.0.1', port: 9999 },
+  ];
+  assert.deepEqual(
+    buildOwnedCleanupObservation(
+      before,
+      listeners,
+      [before[3]],
+      [listeners[2]],
+      10,
+    ),
+    {
+      ownedProcessPids: [10, 11, 12],
+      remainingOwnedProcessPids: [],
+      ownedListenerPorts: [8123, 9311],
+      remainingOwnedListenerPorts: [],
+      ocrModelWorkerPids: [12],
+      remainingOcrModelWorkerPids: [],
+    },
+  );
 });
 
 test('partial app-data allocation failure cleans the lease already created', async () => {
@@ -389,10 +413,7 @@ async function createFixture(runId: string): Promise<Fixture> {
   await mkdir(resourceRoot, { recursive: true });
   await mkdir(workspaceRoot, { recursive: true });
   await writeFile(exePath, 'installed-exe');
-  await writeFile(
-    pdfPath,
-    '%PDF-1.7\n/Type /XObject /Subtype /Image\n%%EOF\n',
-  );
+  await writeFile(pdfPath, '%PDF-1.7\n/Type /XObject /Subtype /Image\n%%EOF\n');
   await writeFile(
     `${pdfPath}.expected.json`,
     JSON.stringify({

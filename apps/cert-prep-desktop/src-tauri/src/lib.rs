@@ -2,7 +2,6 @@ mod archives;
 mod backend;
 mod backend_process;
 mod capture_manifest;
-mod capture_launch_policy;
 mod capture_runtime;
 mod commands;
 mod constants;

@@ -70,7 +70,6 @@ export const CAPTURE_RUNTIME_CONSUMER_INVENTORY_FIELDS = [
   { key: 'cert.backend.runtimePolicy', kind: 'structural' },
   { key: 'cert.backend.mapping', kind: 'structural' },
   { key: 'cert.backend.client', kind: 'structural' },
-  { key: 'cert.backend.runtimeProvenance', kind: 'runtimeProvenanceIdentity' },
   { key: 'cert.desktop.constants.runtime', kind: 'runtimeVersion' },
   { key: 'cert.desktop.constants.api', kind: 'apiVersion' },
   {
@@ -175,8 +174,7 @@ function captureRuntimeVersionsFromLock(
     }
     if (/^\S[^:]*:(?:\s.*)?$/u.test(line)) {
       const sectionName = line.match(/^(packages|snapshots):$/u)?.[1] as
-        | LockSection
-        | undefined;
+        LockSection | undefined;
       if (sectionName) {
         const sectionLines: string[] = [];
         document[sectionName].push(sectionLines);
@@ -427,34 +425,6 @@ function generatedIdentity(
   );
 }
 
-function runtimeProvenanceIdentity(
-  content: string,
-  sourceLabel: string,
-  sourceErrors: string[],
-  adoptedVersion: string | undefined,
-): string | undefined {
-  if (/from capture_runtime_client import CAPTURE_RUNTIME_VERSION/u.test(content) &&
-      /value\.get\("runtime_version"\) != CAPTURE_RUNTIME_VERSION/u.test(content) &&
-      /wheel\.get\(\s*"package_version"\s*\)\s*!=\s*CAPTURE_RUNTIME_VERSION/u.test(content)) {
-    return adoptedVersion ? `runtime=${adoptedVersion};wheel=${adoptedVersion}` : undefined;
-  }
-  const runtime = captureSingle(
-    content,
-    /value\.get\("runtime_version"\) != "([^"]+)"/u,
-    `${sourceLabel}:runtime_version`,
-    sourceErrors,
-  );
-  const wheel = captureSingle(
-    content,
-    /wheel\.get\(\s*"package_version"\s*\)\s*!=\s*"([^"]+)"/u,
-    `${sourceLabel}:python_wheel.package_version`,
-    sourceErrors,
-  );
-  return runtime !== undefined && wheel !== undefined
-    ? `runtime=${runtime};wheel=${wheel}`
-    : undefined;
-}
-
 export function readCaptureRuntimeConsumerInventory(
   workspaceRoot: string,
   contract: CaptureRuntimeContractSource,
@@ -514,29 +484,50 @@ function readCaptureRuntimeConsumerInventoryFromSource(
   );
   let adoptedVersion: string | undefined;
   try {
-    adoptedVersion = readCaptureVersion(readSource(sourceReader, 'tools/capture-runtime-version.json'));
+    adoptedVersion = readCaptureVersion(
+      readSource(sourceReader, 'tools/capture-runtime-version.json'),
+    );
   } catch (error) {
     sourceErrors.push(String(error));
   }
-  if (!versionSource.includes("import captureVersion from './capture-runtime-version.json'") ||
-      !/CAPTURE_RUNTIME_VERSION:\s*string\s*=\s*captureVersion\.runtimeVersion;/u.test(versionSource) ||
-      !versionSource.includes('CAPTURE_SIDECAR_LAUNCHER_VERSION = CAPTURE_RUNTIME_VERSION;')) {
-    sourceErrors.push('Capture TypeScript facade must read the shared adoption source.');
+  if (
+    !versionSource.includes(
+      "import captureVersion from './capture-runtime-version.json'",
+    ) ||
+    !/CAPTURE_RUNTIME_VERSION:\s*string\s*=\s*captureVersion\.runtimeVersion;/u.test(
+      versionSource,
+    ) ||
+    !versionSource.includes(
+      'CAPTURE_SIDECAR_LAUNCHER_VERSION = CAPTURE_RUNTIME_VERSION;',
+    )
+  ) {
+    sourceErrors.push(
+      'Capture TypeScript facade must read the shared adoption source.',
+    );
   }
-  const rustBuild = readSource(sourceReader, 'apps/cert-prep-desktop/src-tauri/build.rs');
-  const rustConstants = readSource(sourceReader, 'apps/cert-prep-desktop/src-tauri/src/constants.rs');
-  const rustShared = rustBuild.includes('../../../tools/capture-runtime-version.json') &&
+  const rustBuild = readSource(
+    sourceReader,
+    'apps/cert-prep-desktop/src-tauri/build.rs',
+  );
+  const rustConstants = readSource(
+    sourceReader,
+    'apps/cert-prep-desktop/src-tauri/src/constants.rs',
+  );
+  const rustShared =
+    rustBuild.includes('../../../tools/capture-runtime-version.json') &&
     /pin\["runtimeVersion"\]\s*\.as_str\(\)/u.test(rustBuild) &&
-    rustBuild.includes('cargo:rustc-env=CERT_PREP_CAPTURE_RUNTIME_VERSION={version}') &&
-    rustConstants.includes('CAPTURE_RUNTIME_VERSION: &str = env!("CERT_PREP_CAPTURE_RUNTIME_VERSION")');
+    rustBuild.includes(
+      'cargo:rustc-env=CERT_PREP_CAPTURE_RUNTIME_VERSION={version}',
+    ) &&
+    rustConstants.includes(
+      'CAPTURE_RUNTIME_VERSION: &str = env!("CERT_PREP_CAPTURE_RUNTIME_VERSION")',
+    );
   const backendPolicy =
     'apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/runtime_policy.py';
   const backendMapping =
     'apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/mapping.py';
   const backendClient =
     'apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/client.py';
-  const runtimeProvenance =
-    'apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/runtime_provenance.py';
   const desktopConstants = 'apps/cert-prep-desktop/src-tauri/src/constants.rs';
   const desktopCargo = 'apps/cert-prep-desktop/src-tauri/Cargo.toml';
   const desktopCargoLock = 'apps/cert-prep-desktop/src-tauri/Cargo.lock';
@@ -584,10 +575,6 @@ function readCaptureRuntimeConsumerInventoryFromSource(
     captureRuntimeVersionsFromLock(pnpmLock, packageClient, sourceErrors),
     `pnpm-lock.yaml:${packageClient}`,
     sourceErrors,
-  );
-  const runtimeProvenanceContent = readSource(
-    sourceReader,
-    runtimeProvenance as (typeof CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS)[number],
   );
   const desktopLaunchContent = readSource(
     sourceReader,
@@ -684,27 +671,19 @@ function readCaptureRuntimeConsumerInventoryFromSource(
         'SdkCaptureRuntimeClient',
       ),
       field(
-        'cert.backend.runtimeProvenance',
-        'capture_runtime_attestation/_validate_candidate',
-        runtimeProvenanceIdentity(
-          runtimeProvenanceContent,
-          `${runtimeProvenance}:_validate_candidate`,
-          sourceErrors,
-          adoptedVersion,
-        ),
-      ),
-      field(
         'cert.desktop.constants.runtime',
         `${desktopConstants}:CAPTURE_RUNTIME_VERSION`,
-        rustShared ? adoptedVersion : captureSingle(
-          readSource(
-            sourceReader,
-            desktopConstants as (typeof CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS)[number],
-          ),
-          /CAPTURE_RUNTIME_VERSION: &str = "([^"]+)"/u,
-          `${desktopConstants}:CAPTURE_RUNTIME_VERSION`,
-          sourceErrors,
-        ),
+        rustShared
+          ? adoptedVersion
+          : captureSingle(
+              readSource(
+                sourceReader,
+                desktopConstants as (typeof CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS)[number],
+              ),
+              /CAPTURE_RUNTIME_VERSION: &str = "([^"]+)"/u,
+              `${desktopConstants}:CAPTURE_RUNTIME_VERSION`,
+              sourceErrors,
+            ),
       ),
       field(
         'cert.desktop.constants.api',
@@ -765,9 +744,9 @@ function readCaptureRuntimeConsumerInventoryFromSource(
       present(
         sourceReader,
         desktopManifest,
-        /capture_manifest_expectations[\s\S]*capture_runtime_expected_version/u,
+        /capture_manifest_expectations[\s\S]*runtime_version:\s*CAPTURE_RUNTIME_VERSION\.into\(\)/u,
         'cert.desktop.captureManifest',
-        'capture_manifest_expectations/capture_runtime_expected_version',
+        'capture_manifest_expectations/CAPTURE_RUNTIME_VERSION',
       ),
       present(
         sourceReader,
@@ -1079,7 +1058,9 @@ export function inspectCaptureRuntimeConsumerInventory(
     ],
   ];
   if (parsedContract.runtimeVersion === undefined) {
-    errors.push('producer contract-set is missing its runtime version identity.');
+    errors.push(
+      'producer contract-set is missing its runtime version identity.',
+    );
   }
   for (const [label, actual, expected] of runtimeIdentityChecks) {
     // A contract set that does not pin the version in a schema has nothing to mix.
@@ -1126,34 +1107,29 @@ export function inspectCaptureRuntimeConsumerInventory(
           ? CAPTURE_RUNTIME_API_VERSION_FLOOR
           : definition.kind === 'documentSchemaVersion'
             ? CAPTURE_DOCUMENT_SCHEMA_VERSION_FLOOR
-            : definition.kind === 'runtimeProvenanceIdentity'
-              ? parsedContract.runtimeVersion === undefined
-                ? undefined
-                : `runtime=${parsedContract.runtimeVersion};wheel=${parsedContract.runtimeVersion}`
-              : definition.kind === 'runtimeReadyIdentity'
+            : definition.kind === 'runtimeReadyIdentity'
+              ? identityTuple(
+                  {
+                    runtimeVersion: undefined,
+                    apiVersion: CAPTURE_RUNTIME_API_VERSION_FLOOR,
+                    documentSchemaVersion:
+                      CAPTURE_DOCUMENT_SCHEMA_VERSION_FLOOR,
+                    contractSetVersion: CAPTURE_RUNTIME_CONTRACT_SET_VERSION,
+                  },
+                  true,
+                )
+              : definition.kind === 'preflightIdentity'
                 ? identityTuple(
                     {
-                      runtimeVersion: undefined,
+                      // The producer pins runtimeVersion in the producer preflight
+                      // schema; the generated view must mirror the contract.
+                      runtimeVersion: parsedContract.preflightRuntimeVersion,
                       apiVersion: CAPTURE_RUNTIME_API_VERSION_FLOOR,
-                      documentSchemaVersion:
-                        CAPTURE_DOCUMENT_SCHEMA_VERSION_FLOOR,
                       contractSetVersion: CAPTURE_RUNTIME_CONTRACT_SET_VERSION,
                     },
                     true,
                   )
-                : definition.kind === 'preflightIdentity'
-                  ? identityTuple(
-                      {
-                        // The producer pins runtimeVersion in the producer preflight
-                        // schema; the generated view must mirror the contract.
-                        runtimeVersion: parsedContract.preflightRuntimeVersion,
-                        apiVersion: CAPTURE_RUNTIME_API_VERSION_FLOOR,
-                        contractSetVersion:
-                          CAPTURE_RUNTIME_CONTRACT_SET_VERSION,
-                      },
-                      true,
-                    )
-                  : 'structural';
+                : 'structural';
     if (expected === undefined) {
       errors.push(
         `${entry.source} cannot be validated because producer runtime identity is missing.`,
@@ -1302,8 +1278,14 @@ export function assertCaptureRuntimeConsumerVersions(
     assertCandidateInstallVersions(workspaceRoot);
     return;
   }
-  if (readCaptureVersion(read(workspaceRoot, 'tools/capture-runtime-version.json')) !== CAPTURE_RUNTIME_VERSION) {
-    throw new Error('Capture adoption source changed; restart the version command.');
+  if (
+    readCaptureVersion(
+      read(workspaceRoot, 'tools/capture-runtime-version.json'),
+    ) !== CAPTURE_RUNTIME_VERSION
+  ) {
+    throw new Error(
+      'Capture adoption source changed; restart the version command.',
+    );
   }
   const packageManifest = JSON.parse(read(workspaceRoot, 'package.json')) as {
     dependencies?: Record<string, unknown>;

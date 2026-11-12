@@ -32,10 +32,12 @@ import {
   snapshotWindowsProcesses,
   terminateProcessTreeByPid,
 } from '../process-lifecycle/processes.mts';
-import { snapshotWindowsListeningPorts, type ListeningPortRecord } from '../packaged-capture-workbench-smoke/runtime-process-evidence.mts';
+import {
+  snapshotWindowsListeningPorts,
+  type ListeningPortRecord,
+} from '../packaged-capture-workbench-smoke/runtime-process-evidence.mts';
 import { packagedAppDataDir } from './runtime-sync.mts';
-import { PHASE1_FINAL_IDENTITY } from '../phase1-final-identity.mts';
-import { CAPTURE_RUNTIME_VERSION, DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
+import { DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
 import {
   activePage,
   bodyText,
@@ -106,6 +108,8 @@ export interface ForcedCrashSummary {
 }
 
 const ACCEPTANCE_ENV_PREFIXES = ['cert_prep_', 'ollama_', 'webview2_'] as const;
+// The Capture runtime's own OCR evidence switches must not leak in from the
+// caller's shell: they would make the sidecar write into a foreign directory.
 const ACCEPTANCE_REMOVED_ENV_NAMES = new Set([
   'no_proxy',
   'capture_ocr_execution_evidence_opt_in',
@@ -118,11 +122,6 @@ const RETIRED_MODEL_ENV_NAMES = new Set([
   'cert_prep_package_smoke_llm_model',
   'cert_prep_package_smoke_llm_fallback_models',
 ]);
-const CAPTURE_RUNTIME_PROBE_ENV = 'CERT_PREP_CAPTURE_RUNTIME_PROBE';
-const CAPTURE_RUNTIME_PROBE_VERSION_ENV =
-  'CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION';
-const CAPTURE_RUNTIME_LOCAL_MODEL_ROOT_ENV =
-  'CERT_PREP_CAPTURE_RUNTIME_LOCAL_MODEL_ROOT';
 const ACCEPTANCE_LOOPBACK_NO_PROXY = 'localhost,127.0.0.1,::1';
 
 export function createCleanupWithTimeoutController<T extends object>({
@@ -222,7 +221,8 @@ export async function closeAppAndCheckResidue(
     );
   }
   let ownedBeforeCloseListeners: ListeningPortRecord[] = [];
-  let listenerEvidenceUnavailable: OwnedCleanupEvidenceUnavailable | null = null;
+  let listenerEvidenceUnavailable: OwnedCleanupEvidenceUnavailable | null =
+    null;
   try {
     ownedBeforeCloseListeners = snapshotListeners();
   } catch (error) {
@@ -275,10 +275,16 @@ export async function closeAppAndCheckResidue(
     ? []
     : snapshotListeners();
   let residue = selectCertPrepResidue(afterClose, pid);
-  let capturedOwnedResidue = selectCapturedProcessResidue(ownedBeforeClose, afterClose);
+  let capturedOwnedResidue = selectCapturedProcessResidue(
+    ownedBeforeClose,
+    afterClose,
+  );
   if (residue.length > 0 || capturedOwnedResidue.length > 0) {
     forced = true;
-    for (const record of uniqueProcessRecords([...capturedOwnedResidue, ...residue])) {
+    for (const record of uniqueProcessRecords([
+      ...capturedOwnedResidue,
+      ...residue,
+    ])) {
       terminateProcessTree(record.pid);
     }
     await delay(1_000);
@@ -287,10 +293,16 @@ export async function closeAppAndCheckResidue(
       ? []
       : snapshotListeners();
     residue = selectCertPrepResidue(afterClose, pid);
-    capturedOwnedResidue = selectCapturedProcessResidue(ownedBeforeClose, afterClose);
+    capturedOwnedResidue = selectCapturedProcessResidue(
+      ownedBeforeClose,
+      afterClose,
+    );
   }
 
-  const publicResidue = uniqueProcessRecords([...capturedOwnedResidue, ...residue]).map(publicProcessRecord);
+  const publicResidue = uniqueProcessRecords([
+    ...capturedOwnedResidue,
+    ...residue,
+  ]).map(publicProcessRecord);
   const summary: CloseSummary = {
     label,
     app_pid: pid,
@@ -336,15 +348,47 @@ export async function closeAppAndCheckResidue(
   return summary;
 }
 
-export function buildOwnedCleanupObservation(beforeProcesses: readonly ProcessRecord[], beforeListeners: readonly ListeningPortRecord[], afterProcesses: readonly ProcessRecord[], afterListeners: readonly ListeningPortRecord[], appPid: number): OwnedCleanupProof {
+export function buildOwnedCleanupObservation(
+  beforeProcesses: readonly ProcessRecord[],
+  beforeListeners: readonly ListeningPortRecord[],
+  afterProcesses: readonly ProcessRecord[],
+  afterListeners: readonly ListeningPortRecord[],
+  appPid: number,
+): OwnedCleanupProof {
   const owned = collectProcessTree(beforeProcesses, appPid);
-  const remaining = owned.filter((record) => afterProcesses.some((current) => record.pid === current.pid && record.name.toLowerCase() === current.name.toLowerCase() && (!record.creationDate || !current.creationDate || record.creationDate === current.creationDate)));
-  const pids = (records: readonly ProcessRecord[]) => [...new Set(records.map((record) => record.pid))].sort((a, b) => a - b);
-  const ownedPids = pids(owned), remainingPids = pids(remaining);
+  const remaining = owned.filter((record) =>
+    afterProcesses.some(
+      (current) =>
+        record.pid === current.pid &&
+        record.name.toLowerCase() === current.name.toLowerCase() &&
+        (!record.creationDate ||
+          !current.creationDate ||
+          record.creationDate === current.creationDate),
+    ),
+  );
+  const pids = (records: readonly ProcessRecord[]) =>
+    [...new Set(records.map((record) => record.pid))].sort((a, b) => a - b);
+  const ownedPids = pids(owned),
+    remainingPids = pids(remaining);
   const remainingSet = new Set(remainingPids);
-  const ports = (listeners: readonly ListeningPortRecord[], selected: ReadonlySet<number>) =>
-    [...new Set(listeners.filter((listener) => selected.has(listener.pid)).map((listener) => listener.port))].sort((a, b) => a - b);
-  const workers = pids(owned.filter((record) => /capture-engine-ocr|paddle|onnx|ocr[_ -]?worker/i.test(`${record.name} ${record.commandLine}`)));
+  const ports = (
+    listeners: readonly ListeningPortRecord[],
+    selected: ReadonlySet<number>,
+  ) =>
+    [
+      ...new Set(
+        listeners
+          .filter((listener) => selected.has(listener.pid))
+          .map((listener) => listener.port),
+      ),
+    ].sort((a, b) => a - b);
+  const workers = pids(
+    owned.filter((record) =>
+      /capture-engine-ocr|paddle|onnx|ocr[_ -]?worker/i.test(
+        `${record.name} ${record.commandLine}`,
+      ),
+    ),
+  );
   return {
     ownedProcessPids: ownedPids,
     remainingOwnedProcessPids: remainingPids,
@@ -432,7 +476,9 @@ export async function restartAndVerifyPersistence(
       'persisted wrong-answer review',
     );
     await screenshot(run, 'restart-persistence-review');
-    reviewPersisted = /Wrong Answers|1 recorded|Selected:/i.test(await bodyText(run));
+    reviewPersisted = /Wrong Answers|1 recorded|Selected:/i.test(
+      await bodyText(run),
+    );
     await ensureCaptureRuntimeReady(run);
     const captureWorkbenchLink = activePage(run).getByRole('link', {
       name: 'Capture Workbench',
@@ -455,7 +501,9 @@ export async function restartAndVerifyPersistence(
   run.metrics.restart.verified = projectPersisted && reviewPersisted;
 }
 
-async function waitForPersistedCaptureDocument(run: SmokeRunState): Promise<void> {
+async function waitForPersistedCaptureDocument(
+  run: SmokeRunState,
+): Promise<void> {
   const projectApi = run.projectApi;
   const document = run.uploadedDocument;
   if (!projectApi || !document) {
@@ -474,9 +522,11 @@ async function waitForPersistedCaptureDocument(run: SmokeRunState): Promise<void
     if (response.ok) {
       const payload: unknown = await response.json();
       if (isRecord(payload)) {
-        const status = typeof payload.status === 'string' ? payload.status : null;
+        const status =
+          typeof payload.status === 'string' ? payload.status : null;
         const hasText = payload.has_text === true;
-        const chunks = typeof payload.chunks_count === 'number' ? payload.chunks_count : 0;
+        const chunks =
+          typeof payload.chunks_count === 'number' ? payload.chunks_count : 0;
         if (status === 'ready' && hasText && chunks > 0) return;
         lastDetail = `status=${status ?? 'unknown'}, has_text=${String(hasText)}, chunks=${chunks}`;
       }
@@ -485,7 +535,9 @@ async function waitForPersistedCaptureDocument(run: SmokeRunState): Promise<void
     }
     await delay(500);
   }
-  throw new Error(`Timed out waiting for persisted Capture Workbench document: ${lastDetail}`);
+  throw new Error(
+    `Timed out waiting for persisted Capture Workbench document: ${lastDetail}`,
+  );
 }
 
 export async function forceCrashAndReconnect(
@@ -736,7 +788,6 @@ export function buildAppLaunchEnvironment(
   );
   const appDataDir = launchAppDataDir(run);
   const isolatedOllamaEnvironment = buildIsolatedOllamaLaunchEnvironment(run);
-  const ocrExecutionEnvironment = buildOcrExecutionEnvironment(run);
   return {
     ...guardedBaseEnvironment,
     ...(acceptanceIsolation
@@ -744,19 +795,6 @@ export function buildAppLaunchEnvironment(
           NO_PROXY: ACCEPTANCE_LOOPBACK_NO_PROXY,
           WEBVIEW2_USER_DATA_FOLDER: join(appDataDir, 'webview2'),
           CERT_PREP_ACCEPTANCE_ISOLATION: '1',
-          ...captureRuntimeProbeEnvironment(
-            inherited,
-            run.options.acceptanceRuntimeIdentity !== undefined,
-          ),
-          ...(run.options.acceptanceRuntimeIdentity
-            ? {
-                CERT_PREP_CAPTURE_RUNTIME_CONTRACT_SHA256:
-                  run.options.acceptanceRuntimeIdentity.contractSetSha256,
-                CERT_PREP_CAPTURE_RUNTIME_WORKER_SHA256:
-                  run.options.acceptanceRuntimeIdentity.workerExecutableSha256,
-              }
-            : {}),
-          ...ocrExecutionEnvironment,
           ...(run.options.acceptancePdfPageScope === 'page-1'
             ? { CAPTURE_ACCEPTANCE_PDF_PAGE_SCOPE: 'page-1' }
             : {}),
@@ -787,44 +825,6 @@ export function buildAppLaunchEnvironment(
           CERT_PREP_STREAMING_DRAFT_WORKERS: String(
             run.options.streamingDraftWorkers,
           ),
-        }
-      : {}),
-  };
-}
-
-function buildOcrExecutionEnvironment(run: SmokeRunState): NodeJS.ProcessEnv {
-  const expected = run.options.ocrExecutionProofExpected;
-  if (!expected) return {};
-  const root = run.options.ocrExecutionEvidenceRoot?.trim();
-  if (!root) {
-    throw new Error('OCR execution proof acceptance requires a run-scoped evidence root.');
-  }
-  return {
-    CAPTURE_OCR_EXECUTION_EVIDENCE_OPT_IN: '1',
-    CAPTURE_OCR_EXECUTION_EVIDENCE_ROOT: root,
-    CAPTURE_OCR_EXECUTION_RUNTIME_SHA256: expected.runtimeSha256,
-  };
-}
-
-function captureRuntimeProbeEnvironment(
-  inherited: Readonly<NodeJS.ProcessEnv>,
-  force = false,
-): NodeJS.ProcessEnv {
-  const expectedVersion = force ? PHASE1_FINAL_IDENTITY.runtimeVersion : CAPTURE_RUNTIME_VERSION;
-  if (
-    !force &&
-    (inherited[CAPTURE_RUNTIME_PROBE_ENV]?.trim() !== '1' ||
-      inherited[CAPTURE_RUNTIME_PROBE_VERSION_ENV]?.trim() !== expectedVersion)
-  ) {
-    return {};
-  }
-  return {
-    [CAPTURE_RUNTIME_PROBE_ENV]: '1',
-    [CAPTURE_RUNTIME_PROBE_VERSION_ENV]: expectedVersion,
-    ...(inherited[CAPTURE_RUNTIME_LOCAL_MODEL_ROOT_ENV]?.trim()
-      ? {
-          [CAPTURE_RUNTIME_LOCAL_MODEL_ROOT_ENV]:
-            inherited[CAPTURE_RUNTIME_LOCAL_MODEL_ROOT_ENV].trim(),
         }
       : {}),
   };
@@ -924,7 +924,9 @@ export function prepareRunDirectories(
   const workspaceRoot = resolve(run.options.workspaceRoot);
   const runRoot = resolve(
     workspaceRoot,
-    run.options.acceptanceArtifactRoot ? 'output/playwright' : 'tmp/cert-prep-desktop',
+    run.options.acceptanceArtifactRoot
+      ? 'output/playwright'
+      : 'tmp/cert-prep-desktop',
   );
   const outDir = resolve(run.options.outDir);
   const appDataDir = resolve(requiredAcceptanceAppDataDir(run));
@@ -1070,10 +1072,7 @@ function commitStagingDirectory(stagingOutDir: string, outDir: string): void {
 }
 
 function isPermissionError(error: unknown): boolean {
-  return (
-    isRecord(error) &&
-    (error.code === 'EPERM' || error.code === 'EACCES')
-  );
+  return isRecord(error) && (error.code === 'EPERM' || error.code === 'EACCES');
 }
 
 function launchAppDataDir(run: SmokeRunState): string {
