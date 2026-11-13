@@ -206,7 +206,7 @@ describe('PracticePanelComponent', () => {
     fixture.componentRef.setInput('sessionMode', 'random_draw');
     fixture.detectChanges();
 
-    expect(metricValue(fixture.nativeElement, 'Draw Size')).toBe('1');
+    expect(metricValue(fixture.nativeElement, 'Draw size')).toBe('1');
     expect(fixture.nativeElement.textContent).toContain('Question 1 of 1');
   });
 

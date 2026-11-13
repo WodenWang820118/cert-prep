@@ -1,9 +1,11 @@
 <section class="wrong-answer-dashboard" aria-labelledby="dashboard-heading">
   <header class="dashboard-header">
     <div>
-      <p class="dashboard-eyebrow">Project weakness analysis</p>
       <h2 id="dashboard-heading">Dashboard</h2>
-      <p>{{ projects.selectedProject()?.name ?? 'Select a project' }}</p>
+      <p>
+        Project weakness analysis —
+        {{ projects.selectedProject()?.name ?? 'Select a project' }}
+      </p>
     </div>
 
     <button
@@ -36,7 +38,7 @@
       <article class="dashboard-panel weak-area-panel">
         <header>
           <div>
-            <h3>Weak Areas By Source</h3>
+            <h3>Weak areas by source</h3>
             <p>
               Current and cleared mistakes grouped by source document and page.
             </p>
@@ -89,7 +91,7 @@
       <article class="dashboard-panel repeated-panel">
         <header>
           <div>
-            <h3>Repeated Misses</h3>
+            <h3>Repeated misses</h3>
             <p>Questions that have missed more than once.</p>
           </div>
         </header>
@@ -135,7 +137,7 @@
       <article class="dashboard-panel answer-pattern-panel">
         <header>
           <div>
-            <h3>Answer Patterns</h3>
+            <h3>Answer patterns</h3>
             <p>Current wrong answers grouped by selected and correct answer.</p>
           </div>
         </header>

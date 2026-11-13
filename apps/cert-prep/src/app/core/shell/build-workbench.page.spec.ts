@@ -15,7 +15,8 @@ describe('BuildWorkbenchPage', () => {
     const fixture = TestBed.createComponent(BuildWorkbenchPage);
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Local Workspace');
+    // The 'Local Workspace' eyebrow was removed (design audit, gate 54); the heading names the page.
+    expect(fixture.nativeElement.textContent).not.toContain('Local Workspace');
     expect(fixture.nativeElement.textContent).toContain('Cert Prep');
     expect(fixture.nativeElement.textContent).toContain('Workspace ready');
     expect(fixture.nativeElement.textContent).toContain('Source files');

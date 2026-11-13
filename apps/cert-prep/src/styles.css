@@ -36,8 +36,10 @@
 }
 
 .practice-resume-confirm {
-  border-left: 3px solid #a53d2d;
-  padding-left: 1rem;
+  border: 1px solid #f2b8b5;
+  border-radius: 6px;
+  background: #fff7f6;
+  padding: 0.75rem 1rem;
 }
 
 .practice-resume-confirm > div {
@@ -99,6 +101,11 @@
   app-wrong-answer-review {
     display: contents;
   }
+
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
 }
 
 @layer components {
@@ -112,7 +119,7 @@
     --workbench-border-soft: #dce1e8;
     --workbench-text: #191c1d;
     --workbench-muted: #424752;
-    --workbench-faint: #727783;
+    --workbench-faint: #595e68;
     --workbench-primary: #00488d;
     --workbench-primary-strong: #005fb8;
     --workbench-primary-soft: #d6e3ff;
@@ -216,8 +223,10 @@
   }
 
   .workbench-icon-button:disabled {
-    opacity: 1;
-    cursor: default;
+    border-color: var(--workbench-border-soft);
+    background: var(--workbench-surface-muted);
+    color: var(--workbench-muted);
+    cursor: not-allowed;
   }
 
   .workbench-icon-button:not(:disabled):hover,
@@ -280,9 +289,8 @@
     color: var(--workbench-muted);
     font-size: 0.75rem;
     font-weight: 800;
-    letter-spacing: 0.08em;
+    letter-spacing: 0;
     line-height: 1rem;
-    text-transform: uppercase;
   }
 
   .workbench-nav {
@@ -449,9 +457,16 @@
   }
 
   .workbench-action-button:disabled,
-  .workbench-secondary-button:disabled,
+  .workbench-secondary-button:disabled {
+    border-color: var(--workbench-border-soft);
+    background: var(--workbench-surface-muted);
+    color: var(--workbench-muted);
+    cursor: not-allowed;
+  }
+
   .workbench-link-button:disabled {
-    opacity: 0.6;
+    background: transparent;
+    color: var(--workbench-faint);
     cursor: not-allowed;
   }
 
@@ -568,8 +583,7 @@
     color: var(--workbench-muted);
     font-size: 0.75rem;
     font-weight: 800;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    letter-spacing: 0;
   }
 
   .workbench-preview-list {
@@ -625,7 +639,6 @@
     flex-wrap: wrap;
     gap: 0.5rem;
     color: var(--workbench-faint);
-    font-family: var(--font-mono);
     font-size: 0.75rem;
   }
 
@@ -682,7 +695,6 @@
     color: var(--workbench-muted);
     font-size: 0.75rem;
     font-weight: 800;
-    text-transform: uppercase;
   }
 
   .workbench-rationale p {
@@ -828,12 +840,11 @@
     color: var(--workbench-primary);
     font-size: 0.75rem;
     font-weight: 800;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    letter-spacing: 0;
   }
 
   .about-alpha-warning {
-    border-left: 4px solid #a86300;
+    border: 1px solid #ffd89d;
     border-radius: 4px;
     background: #fff5df;
     padding: 0.875rem 1rem;
