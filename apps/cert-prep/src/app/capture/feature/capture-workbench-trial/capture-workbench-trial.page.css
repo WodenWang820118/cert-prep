@@ -23,8 +23,7 @@
   color: var(--text-color-secondary);
   font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0;
 }
 
 h2,
@@ -124,7 +123,6 @@ h3 {
 .capture-trial-result dt {
   color: var(--text-color-secondary);
   font-size: 0.75rem;
-  text-transform: uppercase;
 }
 
 .capture-trial-result dd {
@@ -145,8 +143,9 @@ h3 {
 }
 
 .capture-trial-download-button:disabled {
-  opacity: 0.65;
-  cursor: wait;
+  background: var(--workbench-surface-muted, #edeeef);
+  color: var(--workbench-muted, #424752);
+  cursor: not-allowed;
 }
 
 @media (max-width: 640px) {

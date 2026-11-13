@@ -32,9 +32,8 @@
 .dashboard-eyebrow {
   font-size: 0.75rem;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   line-height: 1rem;
-  text-transform: uppercase;
 }
 
 .dashboard-header h2 {
@@ -61,7 +60,9 @@
 
 .dashboard-refresh-button:disabled,
 .dashboard-retry-button:disabled {
-  opacity: 0.55;
+  border-color: var(--workbench-border-soft);
+  background: var(--workbench-surface-muted);
+  color: var(--workbench-muted);
   cursor: not-allowed;
 }
 

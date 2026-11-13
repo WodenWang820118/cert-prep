@@ -45,11 +45,11 @@
         <dd>{{ summary.repeated_misses.length }}</dd>
       </div>
       <div>
-        <dt>Last Wrong</dt>
+        <dt>Last wrong</dt>
         <dd>{{ lastWrongDateLabel(summary.last_wrong_date) }}</dd>
       </div>
       <div>
-        <dt>Weak Areas</dt>
+        <dt>Weak areas</dt>
         <dd>{{ summary.clusters.length }}</dd>
       </div>
     </dl>
@@ -75,7 +75,7 @@
 
         <div class="answer-comparison">
           <section class="answer-panel is-selected" aria-label="Your answer">
-            <span>Your Answer</span>
+            <span>Your answer</span>
             <p>{{ answerLabel(wrong, wrong.selected_answer) }}</p>
           </section>
 
@@ -83,7 +83,7 @@
             <div class="answer-key-heading">
               <span>
                 <app-icon name="lucideCircleCheck" />
-                Correct Answer
+                Correct answer
               </span>
               <app-ai-inferred-answer-badge [source]="wrong.answer_key_source" />
             </div>

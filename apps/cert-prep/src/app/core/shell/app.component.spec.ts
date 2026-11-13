@@ -99,7 +99,7 @@ describe('App', () => {
         TestBed.tick();
         return vi.waitFor(() => {
           fixture.detectChanges();
-          expect(compiled.textContent).toContain('Source Document');
+          expect(compiled.textContent).toContain('Source document');
           expect(compiled.textContent).toContain('security.pdf');
           expect(compiled.textContent).toContain('Start full exam');
           expect(compiled.textContent).not.toContain('Source files');
@@ -111,7 +111,7 @@ describe('App', () => {
         TestBed.tick();
         return vi.waitFor(() => {
           fixture.detectChanges();
-          expect(compiled.textContent).toContain('Random Draw');
+          expect(compiled.textContent).toContain('Random draw');
           expect(compiled.textContent).toContain('Start random quiz');
         });
       })

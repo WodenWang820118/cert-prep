@@ -2,7 +2,7 @@
   display: grid;
   gap: 1.5rem;
   --pp-border: var(--workbench-border, #c2c6d4);
-  --pp-faint: var(--workbench-faint, #727783);
+  --pp-faint: var(--workbench-faint, #595e68);
   --pp-muted: var(--workbench-muted, #424752);
   --pp-primary: var(--workbench-primary, #00488d);
   --pp-primary-border: var(--workbench-primary-border, #a8c8ff);
@@ -47,7 +47,6 @@
   color: #001b3d;
   font-size: 0.75rem;
   font-weight: 800;
-  text-transform: uppercase;
 }
 
 .practice-setup-card,
@@ -167,7 +166,9 @@
 .practice-secondary-button:disabled,
 .practice-submit-button:disabled,
 .practice-flag-button:disabled {
-  opacity: 0.6;
+  border-color: var(--workbench-border-soft, #dce1e8);
+  background: var(--pp-surface-muted);
+  color: var(--pp-muted);
   cursor: not-allowed;
 }
 
@@ -189,10 +190,9 @@
 
 .practice-metrics dt {
   color: var(--pp-muted);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: 0;
-  text-transform: uppercase;
 }
 
 .practice-metrics dd {
@@ -311,7 +311,6 @@
   font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: 0;
-  text-transform: uppercase;
 }
 
 .practice-choice-row {

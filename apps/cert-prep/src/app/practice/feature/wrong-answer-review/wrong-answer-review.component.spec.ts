@@ -251,8 +251,8 @@ describe('WrongAnswerReviewComponent', () => {
     expect(summaryMetric(element, 'Current')).toBe('1');
     expect(summaryMetric(element, 'Cleared')).toBe('2');
     expect(summaryMetric(element, 'Repeated')).toBe('1');
-    expect(summaryMetric(element, 'Last Wrong')).toBe('2026-06-23');
-    expect(summaryMetric(element, 'Weak Areas')).toBe('1');
+    expect(summaryMetric(element, 'Last wrong')).toBe('2026-06-23');
+    expect(summaryMetric(element, 'Weak areas')).toBe('1');
   });
 
   it('enables refresh when a project is selected and review is not busy', () => {

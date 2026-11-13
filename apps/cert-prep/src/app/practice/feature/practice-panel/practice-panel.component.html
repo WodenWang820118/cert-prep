@@ -15,7 +15,6 @@
       aria-labelledby="practice-resume-title"
     >
       <div>
-        <p class="practice-section-label">Active session found</p>
         <h3 id="practice-resume-title">Continue your unfinished practice?</h3>
         <p>
           {{ resumable.mode }} session {{ resumable.id }} is still active.
@@ -69,9 +68,9 @@
   <section class="practice-setup-card" aria-labelledby="practice-setup-title">
     <div class="practice-setup-main">
       <div>
-        <p class="practice-section-label" id="practice-setup-title">
-          {{ sessionMode() === 'full_document' ? 'Source Document' : 'Random Draw' }}
-        </p>
+        <h3 class="practice-section-label" id="practice-setup-title">
+          {{ sessionMode() === 'full_document' ? 'Source document' : 'Random draw' }}
+        </h3>
         @if (sessionMode() === 'full_document') {
           <label class="practice-select-field">
             <app-icon name="lucideFile" />
@@ -125,7 +124,7 @@
         </dd>
       </div>
       <div>
-        <dt>{{ sessionMode() === 'full_document' ? 'Questions' : 'Draw Size' }}</dt>
+        <dt>{{ sessionMode() === 'full_document' ? 'Questions' : 'Draw size' }}</dt>
         <dd>
           {{
             sessionMode() === 'full_document'
@@ -233,11 +232,11 @@
 
     <aside class="practice-session-rail" aria-label="Session details">
       <section>
-        <h3>Session Details</h3>
+        <h3>Session details</h3>
         <dl>
           <div>
             <dt>Session ID</dt>
-            <dd [attr.title]="sessionDetails().fullId">
+            <dd class="practice-session-id" [attr.title]="sessionDetails().fullId">
               {{ sessionDetails().id }}
             </dd>
           </div>
@@ -253,7 +252,7 @@
       </section>
 
       <section>
-        <h3>Question Navigator</h3>
+        <h3>Question navigator</h3>
         <div class="practice-question-nav">
           @for (item of questionNavigatorItems(); track item.number) {
             <span

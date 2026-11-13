@@ -50,7 +50,9 @@
 }
 
 .project-create-toggle:disabled {
-  opacity: 0.6;
+  border-color: var(--workbench-border-soft);
+  background: var(--workbench-surface-muted);
+  color: var(--workbench-muted);
   cursor: not-allowed;
 }
 

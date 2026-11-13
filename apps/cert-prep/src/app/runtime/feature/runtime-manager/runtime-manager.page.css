@@ -142,8 +142,7 @@
   color: var(--workbench-muted, #424752);
   font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: 0;
 }
 
 .provider-selection-badge {
@@ -219,7 +218,9 @@
 }
 
 .runtime-modal-refresh:disabled {
-  opacity: 0.65;
+  border-color: var(--workbench-border-soft, #dce1e8);
+  background: var(--workbench-surface-muted, #edeeef);
+  color: var(--workbench-muted, #424752);
   cursor: not-allowed;
 }
 
