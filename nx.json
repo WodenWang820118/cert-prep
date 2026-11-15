@@ -16,7 +16,11 @@
       "{workspaceRoot}/tools/capture-runtime-version.json",
       "{workspaceRoot}/tools/capture-runtime-version.mts",
       "{workspaceRoot}/tools/capture-version-source.mts",
-      "{workspaceRoot}/apps/cert-prep-desktop/src-tauri/tauri.conf.json"
+      "{workspaceRoot}/apps/cert-prep-desktop/src-tauri/tauri.conf.json",
+      "{workspaceRoot}/tools/run-local-ci.mts",
+      "{workspaceRoot}/tools/local-ci-plan.mts",
+      "{workspaceRoot}/.github/workflows/ci.yml",
+      "{workspaceRoot}/pnpm-workspace.yaml"
     ]
   },
   "targetDefaults": {

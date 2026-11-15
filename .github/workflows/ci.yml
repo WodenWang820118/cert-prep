@@ -103,7 +103,7 @@ jobs:
         run: >-
           node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts
           --test tools/architecture-graph.test.mts tools/architecture-diff.test.mts
-          tools/architecture-exceptions-gate.test.mts
+          tools/architecture-exceptions-gate.test.mts tools/run-local-ci.test.mts
 
       # docs/architecture/*.md are generated from the Nx graph, the grimp
       # import graph of the backend, and the Sheriff modules; fix with
