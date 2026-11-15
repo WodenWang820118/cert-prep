@@ -1,258 +1,29 @@
 // Runs the checks and Nx targets of .github/workflows/ci.yml on this machine.
-// Pull requests do not run CI on GitHub, so run this before merging and paste
-// the summary into the PR description.
+// By default it runs the always-on workspace gates plus only the lanes affected
+// between --base (default origin/main) and the working tree; pass --all before
+// a release or whenever a full run is wanted, or positional job names
+// (portable-quality, windows-quality) to restrict the run. Pull requests do not
+// run CI on GitHub, so run this before merging and paste the summary into the
+// PR description; keep the lane list in tools/local-ci-plan.mts in step with ci.yml.
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 
-type JobId = 'portable-quality' | 'windows-quality';
-
-interface Step {
-  readonly job: JobId;
-  readonly name: string;
-  readonly nx?: readonly string[];
-  readonly pnpm?: readonly string[];
-  readonly node?: readonly string[];
-  readonly commands?: readonly (readonly string[])[];
-  readonly run?: () => boolean;
-}
-
-// keep in step with .github/workflows/ci.yml
-const steps: readonly Step[] = [
-  // --- Job: portable-quality (Portable quality) ---
-  {
-    job: 'portable-quality',
-    name: 'Install published Capture Workbench packages',
-    run: () => installLockedDependencies(),
-  },
-  {
-    job: 'portable-quality',
-    name: 'Sync backend Python environment',
-    commands: [
-      [
-        'uv',
-        'sync',
-        '--project',
-        'apps/cert-prep-backend',
-        '--python',
-        '3.14',
-        '--frozen',
-        '--reinstall-package',
-        'capture-runtime-client',
-      ],
-    ],
-  },
-  {
-    job: 'portable-quality',
-    name: 'Lint portable projects',
-    nx: [
-      'run-many',
-      '-t',
-      'lint',
-      '-p',
-      'cert-prep',
-      'cert-prep-contracts',
-      'cert-prep-ollama',
-      'cert-prep-backend',
-      '--parallel=3',
-    ],
-  },
-  {
-    job: 'portable-quality',
-    name: 'Test portable projects',
-    nx: [
-      'run-many',
-      '-t',
-      'test',
-      '-p',
-      'cert-prep',
-      'cert-prep-contracts',
-      'cert-prep-ollama',
-      'cert-prep-backend',
-      '--parallel=3',
-    ],
-  },
-  {
-    job: 'portable-quality',
-    name: 'Type-check projects',
-    nx: ['run-many', '-t', 'typecheck', '--parallel=3'],
-  },
-  {
-    job: 'portable-quality',
-    name: 'Dead-code gate',
-    commands: [
-      [
-        'node',
-        '--import',
-        './apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts',
-        '--test',
-        'tools/dead-code-gate.test.mts',
-      ],
-      ['node', 'tools/dead-code-gate.mts', '--ci'],
-    ],
-  },
-  {
-    job: 'portable-quality',
-    name: 'Test architecture tools',
-    node: [
-      '--import',
-      './apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts',
-      '--test',
-      'tools/architecture-graph.test.mts',
-      'tools/architecture-diff.test.mts',
-      'tools/architecture-exceptions-gate.test.mts',
-    ],
-  },
-  {
-    job: 'portable-quality',
-    name: 'Architecture diagrams',
-    node: ['tools/architecture-graph.mts', '--check'],
-  },
-  {
-    job: 'portable-quality',
-    name: 'Architecture exceptions gate',
-    node: ['tools/architecture-exceptions-gate.mts', '--ci'],
-  },
-  {
-    job: 'portable-quality',
-    name: 'Test generated API client',
-    nx: ['run', 'cert-prep-api:vite:test'],
-  },
-  {
-    job: 'portable-quality',
-    name: 'Build Angular application',
-    nx: ['run', 'cert-prep:build'],
-  },
-  {
-    job: 'portable-quality',
-    // CI also passes --with-deps, which installs Linux system packages with sudo;
-    // a workstation only needs the browser revision Playwright pins.
-    name: 'Install Playwright Chromium',
-    pnpm: ['exec', 'playwright', 'install', 'chromium'],
-  },
-  {
-    job: 'portable-quality',
-    name: 'Test mocked browser regression',
-    nx: [
-      'run',
-      'cert-prep-e2e:e2e-local-package',
-      '--args=--project=chromium --workers=2',
-    ],
-  },
-
-  // --- Job: windows-quality (Windows product quality) ---
-  {
-    job: 'windows-quality',
-    name: 'Verify source Capture Runtime consumer declarations',
-    node: ['--test', 'tools/capture-runtime-version.test.mts'],
-  },
-  {
-    job: 'windows-quality',
-    name: 'Install published Capture Workbench packages',
-    run: () => installLockedDependencies(),
-  },
-  {
-    job: 'windows-quality',
-    name: 'Sync backend Python environment',
-    commands: [
-      [
-        'uv',
-        'sync',
-        '--project',
-        'apps/cert-prep-backend',
-        '--python',
-        '3.14',
-        '--frozen',
-        '--reinstall-package',
-        'capture-runtime-client',
-      ],
-    ],
-  },
-  {
-    job: 'windows-quality',
-    name: 'Type-check desktop scripts',
-    nx: ['run', 'cert-prep-desktop:typecheck-scripts'],
-  },
-  {
-    job: 'windows-quality',
-    name: 'Test package QA',
-    nx: ['run', 'cert-prep-desktop:package-qa-test'],
-  },
-  {
-    job: 'windows-quality',
-    name: 'Test release tooling contract',
-    nx: ['run', 'cert-prep-desktop:release-tool-test'],
-  },
-  {
-    job: 'windows-quality',
-    name: 'Stage the published Capture Runtime release',
-    nx: ['run', 'cert-prep-desktop:install-capture-runtime', '--skip-nx-cache'],
-  },
-  {
-    job: 'windows-quality',
-    name: 'Verify Capture Runtime installer behavior',
-    node: ['--test', 'tools/install-capture-runtime.test.mts'],
-  },
-  {
-    job: 'windows-quality',
-    name: 'Run the Capture Runtime consumer smoke',
-    nx: [
-      'run',
-      'cert-prep-desktop:capture-runtime-consumer-smoke',
-      '--skip-nx-cache',
-    ],
-  },
-  {
-    job: 'windows-quality',
-    name: 'Test Capture consumer contract',
-    nx: [
-      'run',
-      'cert-prep-desktop:capture-runtime-consumer-test',
-      '--skip-nx-cache',
-    ],
-  },
-  {
-    job: 'windows-quality',
-    name: 'Verify adopted Capture versions and installed contract',
-    nx: ['run', 'cert-prep-desktop:version-check', '--skip-nx-cache'],
-  },
-  {
-    job: 'windows-quality',
-    name: 'Verify published Capture registry installation',
-    run: () => {
-      const captureVersion = getCaptureRuntimeVersion();
-      return runCommand('uv', [
-        'run',
-        '--isolated',
-        '--no-project',
-        '--with',
-        `capture-runtime-client==${captureVersion}`,
-        '--',
-        'python',
-        '-c',
-        `import capture_runtime_client; assert capture_runtime_client.CAPTURE_RUNTIME_VERSION == '${captureVersion}'`,
-      ]);
-    },
-  },
-  {
-    job: 'windows-quality',
-    name: 'Test Capture candidate gates',
-    nx: [
-      'run-many',
-      '-p',
-      'cert-prep-desktop',
-      '-t',
-      'capture-candidate-gate-test',
-      'capture-candidate-install-binding-test',
-    ],
-  },
-  {
-    job: 'windows-quality',
-    name: 'Test Tauri host',
-    nx: ['run', 'cert-prep-desktop:cargo-test'],
-  },
-];
+import {
+  type JobId,
+  LocalCiOptionError,
+  type LocalCiOptions,
+  type PlannedLane,
+  type RanLaneRecord,
+  SETUP_LABELS,
+  type SetupId,
+  affectedMainProjects,
+  extractJsonArray,
+  formatSummary,
+  parseOptions,
+  selectLanes,
+} from './local-ci-plan.mts';
 
 const workspaceRoot = resolve(import.meta.dirname, '..');
 
@@ -326,104 +97,186 @@ function runNx(args: readonly string[]): boolean {
   ]);
 }
 
-function executeStep(step: Step): boolean {
-  if (step.run) {
-    return step.run();
-  }
-  if (step.nx) {
-    return runNx(step.nx);
-  }
-  if (step.pnpm) {
-    return runPnpm(step.pnpm);
-  }
-  if (step.node) {
-    return runNode(step.node);
-  }
-  if (step.commands) {
-    for (const [cmd, ...args] of step.commands) {
-      const exe = cmd === 'node' ? process.execPath : cmd;
-      if (!runCommand(exe, args)) return false;
-    }
-    return true;
-  }
-  throw new Error(`Step "${step.name}" has no execution handler.`);
-}
-
-interface StepResult {
-  readonly job: JobId;
-  readonly name: string;
-  readonly status: 'passed' | 'failed';
-  readonly duration: string;
-}
-
-function printSummary(results: readonly StepResult[]): void {
-  console.log('\n=== Local CI Summary ===');
-  let currentJob: JobId | '' = '';
-  for (const r of results) {
-    if (r.job !== currentJob) {
-      currentJob = r.job;
-      console.log(`\n-- ${currentJob} --`);
-    }
-    if (r.status === 'passed') {
-      console.log(`- [passed]  ${r.name} (${r.duration})`);
-    } else {
-      console.log(`- [failed]  ${r.name} (${r.duration})`);
-    }
-  }
-  console.log('========================');
-}
-
-const KNOWN_JOBS = new Map<string, JobId>([
-  ['portable', 'portable-quality'],
-  ['portable-quality', 'portable-quality'],
-  ['windows', 'windows-quality'],
-  ['windows-quality', 'windows-quality'],
-]);
-
-const userArgs = process.argv.slice(2);
-const unknown = userArgs.filter((arg) => !KNOWN_JOBS.has(arg.toLowerCase()));
-if (unknown.length > 0) {
-  console.error(
-    `Unknown CI job: ${unknown.join(', ')}. Valid jobs: portable, windows (or portable-quality, windows-quality).`,
+function queryAffectedProjects(base: string): string[] {
+  const result = spawnSync(
+    process.execPath,
+    [resolveNx(), 'show', 'projects', '--affected', `--base=${base}`, '--json'],
+    {
+      cwd: workspaceRoot,
+      encoding: 'utf8',
+      env: { ...process.env, NX_DAEMON: 'false' },
+      maxBuffer: 16 * 1024 * 1024,
+    },
   );
-  process.exit(2);
+  if (result.error) {
+    throw new Error(
+      `Failed to run Nx affected query against ${base}: ${result.error.message}`,
+    );
+  }
+  if (result.status !== 0) {
+    const detail = (result.stderr || result.stdout || '').trim();
+    throw new Error(
+      `Nx affected query against ${base} exited with status ${result.status}${detail ? `: ${detail}` : '.'}`,
+    );
+  }
+  return extractJsonArray(result.stdout);
 }
 
-const requestedJobs = new Set(
-  userArgs.flatMap((arg) => KNOWN_JOBS.get(arg.toLowerCase()) ?? []),
-);
+const CUSTOM_LANE_RUNNERS: Readonly<Record<string, () => boolean>> = {
+  'dead-code-gate': () =>
+    runNode([
+      '--import',
+      './apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts',
+      '--test',
+      'tools/dead-code-gate.test.mts',
+    ]) && runNode(['tools/dead-code-gate.mts', '--ci']),
+  'test-architecture-tools': () =>
+    runNode([
+      '--import',
+      './apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts',
+      '--test',
+      'tools/architecture-graph.test.mts',
+      'tools/architecture-diff.test.mts',
+      'tools/architecture-exceptions-gate.test.mts',
+      'tools/run-local-ci.test.mts',
+    ]),
+  'architecture-diagrams': () =>
+    runNode(['tools/architecture-graph.mts', '--check']),
+  'architecture-exceptions-gate': () =>
+    runNode(['tools/architecture-exceptions-gate.mts', '--ci']),
+  'verify-capture-version-source': () =>
+    runNode(['--test', 'tools/capture-runtime-version.test.mts']),
+  'verify-capture-installer': () =>
+    runNode(['--test', 'tools/install-capture-runtime.test.mts']),
+  'verify-capture-registry': () => {
+    const captureVersion = getCaptureRuntimeVersion();
+    return runCommand('uv', [
+      'run',
+      '--isolated',
+      '--no-project',
+      '--with',
+      `capture-runtime-client==${captureVersion}`,
+      '--',
+      'python',
+      '-c',
+      `import capture_runtime_client; assert capture_runtime_client.CAPTURE_RUNTIME_VERSION == '${captureVersion}'`,
+    ]);
+  },
+};
 
-const results: StepResult[] = [];
+function executeSetup(setup: SetupId): boolean {
+  switch (setup) {
+    case 'pnpm-install':
+      return installLockedDependencies();
+    case 'uv-sync':
+      return runCommand('uv', [
+        'sync',
+        '--project',
+        'apps/cert-prep-backend',
+        '--python',
+        '3.14',
+        '--frozen',
+        '--reinstall-package',
+        'capture-runtime-client',
+      ]);
+    case 'playwright-chromium':
+      return runPnpm(['exec', 'playwright', 'install', 'chromium']);
+    case 'install-capture-runtime':
+      return runNx([
+        'run',
+        'cert-prep-desktop:install-capture-runtime',
+        '--skip-nx-cache',
+      ]);
+  }
+}
 
-for (const step of steps) {
-  if (requestedJobs.size > 0 && !requestedJobs.has(step.job)) {
-    continue;
+function executeLane(lane: PlannedLane): boolean {
+  const custom = CUSTOM_LANE_RUNNERS[lane.id];
+  if (custom) {
+    return custom();
+  }
+  if (lane.nx) {
+    return runNx(lane.nx);
+  }
+  throw new Error(`Lane "${lane.id}" has no execution handler.`);
+}
+
+let options: LocalCiOptions;
+try {
+  options = parseOptions(process.argv.slice(2));
+} catch (error) {
+  if (error instanceof LocalCiOptionError) {
+    console.error(error.message);
+    process.exit(2);
+  }
+  throw error;
+}
+
+let affectedProjects: string[] = [];
+if (!options.all) {
+  try {
+    affectedProjects = queryAffectedProjects(options.base);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(
+      `${message}\nCould not determine affected projects; re-run with --all to run every lane.`,
+    );
+    process.exit(1);
+  }
+}
+
+const affectedMain = affectedMainProjects(affectedProjects);
+if (options.all) {
+  console.log('Local CI mode: all');
+} else {
+  const mainList =
+    affectedMain.length > 0 ? affectedMain.join(', ') : '(none)';
+  console.log(`Local CI base: ${options.base}`);
+  console.log(`Affected projects: ${mainList}`);
+}
+
+const plan = selectLanes(affectedProjects, options);
+const completedSetups = new Set<SetupId>();
+const ran: RanLaneRecord[] = [];
+
+function runSetupForJob(setup: SetupId, job: JobId): void {
+  if (completedSetups.has(setup)) return;
+  const label = SETUP_LABELS[setup];
+  console.log(`\n== [${job}] ${label}`);
+  const start = performance.now();
+  const passed = executeSetup(setup);
+  const durationSeconds = (performance.now() - start) / 1000;
+  if (!passed) {
+    console.error(`\nLocal CI failed at setup "${label}" in ${job}.`);
+    process.exit(1);
+  }
+  completedSetups.add(setup);
+  ran.push({ job, name: label, durationSeconds });
+}
+
+for (const lane of plan.selected) {
+  for (const setup of lane.setups) {
+    runSetupForJob(setup, lane.job);
   }
 
-  console.log(`\n== [${step.job}] ${step.name}`);
+  console.log(`\n== [${lane.job}] ${lane.name}`);
   const start = performance.now();
-  const passed = executeStep(step);
-  const duration = `${((performance.now() - start) / 1000).toFixed(1)}s`;
+  const passed = executeLane(lane);
+  const durationSeconds = (performance.now() - start) / 1000;
 
   if (!passed) {
-    results.push({
-      job: step.job,
-      name: step.name,
-      status: 'failed',
-      duration,
-    });
-    printSummary(results);
-    console.error(`\nLocal CI failed at step "${step.name}" in ${step.job}.`);
+    console.error(`\nLocal CI failed at step "${lane.name}" in ${lane.job}.`);
     process.exit(1);
   }
 
-  results.push({
-    job: step.job,
-    name: step.name,
-    status: 'passed',
-    duration,
+  ran.push({
+    job: lane.job,
+    name: lane.name,
+    ...(lane.nx ? { detail: `nx ${lane.nx.join(' ')}` } : {}),
+    durationSeconds,
   });
 }
 
-printSummary(results);
-console.log('\nLocal CI passed.');
+console.log(`\n${formatSummary(plan, options, affectedMain, ran)}`);
+const modeNote = options.all ? 'all' : `affected, base ${options.base}`;
+console.log(`\nLocal CI passed. (${modeNote})`);

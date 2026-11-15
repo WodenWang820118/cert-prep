@@ -5,6 +5,7 @@
   "sourceRoot": "packages/cert-prep-ollama/src",
   "projectType": "library",
   "tags": ["scope:cert", "type:infrastructure"],
+  "implicitDependencies": ["cert-prep-contracts"],
   "targets": {
     "test": {
       "cache": true,

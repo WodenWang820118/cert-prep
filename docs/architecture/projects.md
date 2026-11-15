@@ -21,4 +21,5 @@ flowchart LR
   n_cert_prep_desktop --> n_cert_prep_backend
   n_cert_prep_e2e --> n_cert_prep
   n_cert_prep_e2e --> n_cert_prep_api
+  n_cert_prep_ollama --> n_cert_prep_contracts
 ```
