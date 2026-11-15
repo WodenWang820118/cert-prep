@@ -244,9 +244,9 @@ dependencies = [
 
 [[package]]
 name = "capture-sidecar-launcher"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d76a0b931de998a33e101f7150c185c6522f3fde01aff95ade1c0c467ed24242"
+checksum = "9d32ee8e608fb5bb149dcbbd53997e651d4a94185e9bd8b5a3719dbcfff86b3f"
 dependencies = [
  "rand",
  "serde",
