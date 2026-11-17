@@ -65,7 +65,9 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 24
-          cache: pnpm
+          # No pnpm cache here: on a day without a new Capture release nothing is
+          # installed, the store path does not exist, and the cache step that runs
+          # after the job failed the whole run.
           registry-url: https://npm.pkg.github.com
           scope: '@gx-capture'
 
