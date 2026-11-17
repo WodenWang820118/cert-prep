@@ -199,7 +199,7 @@
       ],
       "options": {
         "commands": [
-          "node --test tools/release/*.test.ts",
+          "node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts --test tools/release/*.test.ts",
           "uv run --project apps/cert-prep-backend python -m unittest discover -s tools/release -p test_*.py",
           "uv run --project apps/cert-prep-backend ruff check tools/release/collect-python-licenses.py tools/release/test_collect_python_licenses.py"
         ],
