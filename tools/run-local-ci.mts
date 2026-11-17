@@ -145,9 +145,19 @@ const CUSTOM_LANE_RUNNERS: Readonly<Record<string, () => boolean>> = {
   'architecture-exceptions-gate': () =>
     runNode(['tools/architecture-exceptions-gate.mts', '--ci']),
   'verify-capture-version-source': () =>
-    runNode(['--test', 'tools/capture-runtime-version.test.mts']),
+    runNode([
+      '--import',
+      './apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts',
+      '--test',
+      'tools/capture-runtime-version.test.mts',
+    ]),
   'verify-capture-installer': () =>
-    runNode(['--test', 'tools/install-capture-runtime.test.mts']),
+    runNode([
+      '--import',
+      './apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts',
+      '--test',
+      'tools/install-capture-runtime.test.mts',
+    ]),
   'verify-capture-registry': () => {
     const captureVersion = getCaptureRuntimeVersion();
     return runCommand('uv', [

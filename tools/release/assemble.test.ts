@@ -48,11 +48,14 @@ test('package QA accepts the backend plus Capture Runtime public contract', () =
 
 test('archive gate rejects a redistributed FastFlow executable', () => {
   const root = mkdtempSync(join(tmpdir(), 'cert-prep-assemble-'));
-  const archive = join(root, 'runtime.zip');
-  writeFileSync(archive, 'bin/fastflowlm.exe');
-  assert.throws(
-    () => rejectFastFlowBinaryInArchive(archive),
-    /must not be redistributed/,
-  );
-  rmSync(root, { recursive: true, force: true });
+  try {
+    const archive = join(root, 'runtime.zip');
+    writeFileSync(archive, 'bin/fastflowlm.exe');
+    assert.throws(
+      () => rejectFastFlowBinaryInArchive(archive),
+      /must not be redistributed/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

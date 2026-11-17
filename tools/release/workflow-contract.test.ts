@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 
 const workflow = readFileSync(
@@ -47,6 +48,12 @@ const assemble = readFileSync(
   resolve(import.meta.dirname, 'assemble.ts'),
   'utf8',
 );
+const captureAdoptionVersion = JSON.parse(
+  readFileSync(
+    resolve(import.meta.dirname, '../capture-runtime-version.json'),
+    'utf8',
+  ),
+).runtimeVersion as string;
 const expectedPnpmVersion = /^pnpm@(\d+\.\d+\.\d+)$/.exec(
   packageJson.packageManager,
 )?.[1];
@@ -365,6 +372,30 @@ test('downstream jobs reuse the exact candidate without checkout or rebuild', ()
   assert.match(workflow, /ExpectedCommitSha/);
 });
 
+function runPowerShell(script: string) {
+  const executables = [
+    'pwsh',
+    resolve(
+      process.env.SystemRoot ?? 'C:\\Windows',
+      'System32/WindowsPowerShell/v1.0/powershell.exe',
+    ),
+  ];
+  for (const executable of executables) {
+    const result = spawnSync(
+      executable,
+      ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+      {
+        encoding: 'utf8',
+        windowsHide: true,
+      },
+    );
+    if (!result.error) {
+      return result;
+    }
+  }
+  assert.fail('A Windows PowerShell executable must be available.');
+}
+
 test('Capture Runtime remains candidate-bound and fail-closed through clean install', () => {
   const body = jobBody('clean-install');
   assert.match(body, /environment:\s*alpha-release/);
@@ -373,10 +404,114 @@ test('Capture Runtime remains candidate-bound and fail-closed through clean inst
   assert.match(body, /--candidate-root candidate/);
   assert.match(body, /--candidate-id/);
   assert.match(body, /--publication-owner/);
-  assert.match(cleanInstall, /capture-runtime-manifest\.json/);
   assert.match(cleanInstall, /captureRuntimeVerified = \$true/);
   assert.doesNotMatch(cleanInstall, /Invoke-WebRequest/);
 });
+
+test(
+  'clean-install Assert-InstalledRuntimeContract verifies Capture Runtime manifests and fails closed',
+  { skip: process.platform !== 'win32' },
+  () => {
+    const shaHelperStart = cleanInstall.indexOf('function Get-Sha256');
+    const shaHelperEnd = cleanInstall.indexOf('function Get-StringSha256');
+    assert.ok(shaHelperStart >= 0 && shaHelperEnd > shaHelperStart);
+    const shaHelper = cleanInstall.slice(shaHelperStart, shaHelperEnd);
+
+    const contractStart = cleanInstall.indexOf(
+      'function Assert-InstalledRuntimeContract',
+    );
+    const contractEnd = cleanInstall.indexOf('$candidateRoot = ');
+    assert.ok(contractStart >= 0 && contractEnd > contractStart);
+    const contractHelper = cleanInstall.slice(contractStart, contractEnd);
+
+    const installRoot = mkdtempSync(
+      join(tmpdir(), 'cert-prep-clean-install-contract-'),
+    );
+    try {
+      const zipBytes = Buffer.from('fake-backend-zip-bytes');
+      const zipSha256 = createHash('sha256').update(zipBytes).digest('hex');
+      writeFileSync(join(installRoot, 'backend-runtime.zip'), zipBytes);
+      writeFileSync(
+        join(installRoot, 'backend-runtime-manifest.json'),
+        JSON.stringify({
+          version: '9.9.9-test',
+          artifact: {
+            url: null,
+            file_name: 'backend-runtime.zip',
+            bytes: zipBytes.length,
+            sha256: zipSha256,
+          },
+        }),
+      );
+      const captureManifestPath = join(
+        installRoot,
+        'capture-runtime-manifest.json',
+      );
+      writeFileSync(
+        captureManifestPath,
+        JSON.stringify({
+          runtimeVersion: captureAdoptionVersion,
+          apiVersion: '2.0',
+          captureDocumentSchemaVersion: '2',
+        }),
+      );
+
+      const escapedRoot = installRoot.replaceAll("'", "''");
+      const escapedCaptureManifest = captureManifestPath.replaceAll("'", "''");
+      const mismatchManifest = JSON.stringify({
+        runtimeVersion: '0.0.0',
+        apiVersion: '2.0',
+        captureDocumentSchemaVersion: '2',
+      }).replaceAll("'", "''");
+
+      const script = [
+        "$ErrorActionPreference = 'Stop'",
+        'Set-StrictMode -Version Latest',
+        `$captureAdoptionVersion = '${captureAdoptionVersion.replaceAll("'", "''")}'`,
+        shaHelper,
+        contractHelper,
+        "$plan = [pscustomobject]@{ version = '9.9.9-test' }",
+        `$valid = Assert-InstalledRuntimeContract '${escapedRoot}' $plan`,
+        "$missingError = ''",
+        `Remove-Item -LiteralPath '${escapedCaptureManifest}'`,
+        'try {',
+        `  [void](Assert-InstalledRuntimeContract '${escapedRoot}' $plan)`,
+        '} catch {',
+        '  $missingError = $_.Exception.Message',
+        '}',
+        `Set-Content -LiteralPath '${escapedCaptureManifest}' -Encoding utf8 -Value '${mismatchManifest}'`,
+        "$mismatchError = ''",
+        'try {',
+        `  [void](Assert-InstalledRuntimeContract '${escapedRoot}' $plan)`,
+        '} catch {',
+        '  $mismatchError = $_.Exception.Message',
+        '}',
+        '[pscustomobject]@{',
+        '  runtimeVersion = $valid.capture.runtimeVersion',
+        '  captureManifestPath = $valid.captureManifestPath',
+        '  missingError = $missingError',
+        '  mismatchError = $mismatchError',
+        '} | ConvertTo-Json -Compress',
+      ].join('\n');
+
+      const invocation = runPowerShell(script);
+      assert.equal(invocation.status, 0, invocation.stderr);
+      const result = JSON.parse(invocation.stdout.trim());
+      assert.equal(result.runtimeVersion, captureAdoptionVersion);
+      assert.equal(result.captureManifestPath, captureManifestPath);
+      assert.match(
+        result.missingError,
+        /Installed runtime manifests were not found/,
+      );
+      assert.match(
+        result.mismatchError,
+        /Installed Capture Runtime manifest does not describe the pinned contract/,
+      );
+    } finally {
+      rmSync(installRoot, { recursive: true, force: true });
+    }
+  },
+);
 
 test('candidate build verifies the staged Capture release attestation with the exact signer', () => {
   const body = jobBody('build-candidate');
@@ -403,11 +538,7 @@ test('candidate build verifies the staged Capture release attestation with the e
   assert.match(step, /if \(\$LASTEXITCODE -ne 0\) \{ throw/);
 });
 
-test('clean-install canonicalizes candidate identities with ordinal ordering', () => {
-  assert.match(
-    cleanInstall,
-    /\[Array\]::Sort\(\$identities, \[StringComparer\]::Ordinal\)/,
-  );
+test('clean-install canonicalizes candidate identities through Get-CanonicalCandidateId', () => {
   assert.match(
     cleanInstall,
     /\$computedCandidateId\s*=\s*Get-CanonicalCandidateId \$candidate\.files/,
@@ -416,12 +547,13 @@ test('clean-install canonicalizes candidate identities with ordinal ordering', (
 });
 
 test(
-  'clean-install PowerShell hashing matches Node for mixed-case identities',
+  'clean-install PowerShell hashing matches Node ordinal ordering for mixed-case and punctuation identities',
   { skip: process.platform !== 'win32' },
   () => {
     const identities = [
       `harness/tools/release/assemble.test.ts:${'a'.repeat(64)}`,
       `harness/tools/release/README.md:${'b'.repeat(64)}`,
+      `harness/tools/release/_helper.ts:${'c'.repeat(64)}`,
     ];
     const expected = createHash('sha256')
       .update([...identities].sort().join('\n'))
@@ -439,30 +571,7 @@ test(
       '  legacy = Get-StringSha256 (($identities | Sort-Object) -join [char]10)',
       '} | ConvertTo-Json -Compress',
     ].join('\n');
-    const executables = [
-      'pwsh',
-      resolve(
-        process.env.SystemRoot ?? 'C:\\Windows',
-        'System32/WindowsPowerShell/v1.0/powershell.exe',
-      ),
-    ];
-    let invocation;
-    for (const executable of executables) {
-      const result = spawnSync(
-        executable,
-        ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
-        {
-          encoding: 'utf8',
-          windowsHide: true,
-        },
-      );
-      if (!result.error) {
-        invocation = result;
-        break;
-      }
-    }
-
-    assert.ok(invocation, 'A Windows PowerShell executable must be available.');
+    const invocation = runPowerShell(script);
     assert.equal(invocation.status, 0, invocation.stderr);
     const result = JSON.parse(invocation.stdout.trim());
     assert.equal(result.canonical, expected);
