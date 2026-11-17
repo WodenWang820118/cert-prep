@@ -247,7 +247,7 @@ async function createConsistentSource(): Promise<{
   const files = new Map<string, Uint8Array>();
   for (const path of CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS) {
     const bytes = await readFile(join(workspaceRoot, path));
-    files.set(path, Uint8Array.from(Buffer.from(bytes.toString('utf8').replaceAll('0.4.1', CAPTURE_RUNTIME_VERSION))));
+    files.set(path, Uint8Array.from(bytes));
   }
   return {
     files,

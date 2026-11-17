@@ -197,55 +197,6 @@ export class SourceImportStore {
   readonly progressLabel = computed(() =>
     this.metrics.progressLabel(this.activeDocument()),
   );
-  readonly parseStageText = computed(() => {
-    const document = this.activeDocument();
-    if (document === null) {
-      return 'No source file uploaded.';
-    }
-    if (document.source_kind === 'audio') {
-      if (document.status === 'processing') {
-        return document.transcription_status === 'succeeded'
-          ? 'Japanese transcription complete; translating to Traditional Chinese.'
-          : 'Transcribing Japanese audio.';
-      }
-      if (document.status === 'cancel_requested') {
-        return 'Cancel requested; waiting for the audio processing checkpoint.';
-      }
-      if (document.status === 'canceled') {
-        return 'Audio processing canceled. The original source file is retained and can be retried.';
-      }
-      if (document.status === 'transcription_failed') {
-        return 'Japanese transcription failed. The original source file is retained and can be retried.';
-      }
-      if (document.status === 'ready') {
-        return document.translation_status === 'failed'
-          ? 'Japanese transcription is ready; Traditional Chinese translation failed and can be retried.'
-          : 'Japanese transcription and Traditional Chinese translation complete.';
-      }
-      return 'Audio processing needs attention.';
-    }
-    if (document.status === 'processing') {
-      return document.chunks_count > 0
-        ? 'Parsing continues; completed chunks are already available.'
-        : 'Parsing started; waiting for the first completed page.';
-    }
-    if (document.status === 'cancel_requested') {
-      return 'Cancel requested; waiting for the active parser checkpoint.';
-    }
-    if (document.status === 'canceled') {
-      return 'Parsing canceled. The original source file is retained and can be retried.';
-    }
-    if (document.status === 'ready') {
-      return 'Parsing complete.';
-    }
-    if (document.status === 'ocr_failed') {
-      return 'OCR failed before the document could be completed.';
-    }
-    if (document.status === 'no_text_detected') {
-      return 'Parsing finished, but no text was detected.';
-    }
-    return 'Question generation needs attention.';
-  });
   readonly elapsedTime = computed(() =>
     this.metrics.elapsedTime(this.activeDocument()),
   );
