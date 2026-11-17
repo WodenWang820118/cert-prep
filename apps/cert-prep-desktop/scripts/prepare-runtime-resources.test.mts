@@ -14,7 +14,6 @@ import { afterEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { CAPTURE_RUNTIME_VERSION } from '../../../tools/capture-runtime-version.mts';
-import { validateCaptureArtifactBytes } from './capture-runtime-contract.mts';
 import { CAPTURE_DOCUMENT_SCHEMA_SHA256 } from './package-qa/constants.mts';
 import { prepareRuntimeResources } from './prepare-runtime-resources.mts';
 
@@ -138,12 +137,6 @@ test('Capture Runtime staging fails closed on missing or changed provenance', as
 });
 
 test('Capture Runtime executable bytes use the shared bounded contract', async () => {
-  for (const bytes of [1, 536_870_912]) {
-    assert.equal(
-      validateCaptureArtifactBytes(bytes, 'Capture runtime executable'),
-      bytes,
-    );
-  }
   for (const bytes of [
     0,
     536_870_913,

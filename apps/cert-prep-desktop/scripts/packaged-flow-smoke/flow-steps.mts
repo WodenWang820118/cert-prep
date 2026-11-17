@@ -35,7 +35,7 @@ import { captureGenerationReadinessAtProjectCreate } from './generation-readines
 import type { SmokeRunState } from './types.mts';
 
 export const PDF_PARSE_TERMINAL_TEXT_PATTERN =
-  /Parsing complete\.|Ready to review|\d+\/\d+ pages|ready\s*Page|OCR failed|Parsing failed|WindowsML OCR is unavailable/i;
+  /Ready to review|\d+\/\d+ pages|ready\s*Page|OCR failed|Parsing failed|WindowsML OCR is unavailable/i;
 
 export async function createProject(run: SmokeRunState): Promise<void> {
   await closeRuntimeDrawer(run);
@@ -359,7 +359,7 @@ export async function runFullExamWrongAnswer(
   const isFakeProvider = run.options.llmProvider === 'fake';
   const questionText = isFakeProvider
     ? ''
-    : await article.locator('h3').first().innerText();
+    : await article.locator('p.practice-question-text').first().innerText();
   log(run, 'full exam visible answer selection started');
   // The real acceptance package deliberately uses the deterministic fake
   // provider. Its answer is part of that provider's contract, so avoid a
@@ -393,7 +393,7 @@ export async function runFullExamWrongAnswer(
   );
   await screenshot(run, 'practice-wrong-answer');
 
-  await clickButtonPattern(run, /^\s*Review\s*$/);
+  await clickButtonPattern(run, /^\s*Wrong Answers\s*$/);
   await waitText(
     run,
     /Wrong Answers|1 recorded|Selected:/i,
@@ -432,7 +432,10 @@ export async function runRandomQuizCorrectClear(
     if ((await article.count()) === 0) {
       break;
     }
-    const questionText = await article.locator('h3').first().innerText();
+    const questionText = await article
+      .locator('p.practice-question-text')
+      .first()
+      .innerText();
     const answer = await answerForVisiblePracticeQuestion(run, questionText);
     await article
       .locator('label')
@@ -453,7 +456,7 @@ export async function runRandomQuizCorrectClear(
 
   await screenshot(run, 'random-quiz-correct-answer');
 
-  await clickButtonPattern(run, /^\s*Review\s*$/);
+  await clickButtonPattern(run, /^\s*Wrong Answers\s*$/);
   await waitText(
     run,
     /0 recorded|Wrong answers will appear here/i,

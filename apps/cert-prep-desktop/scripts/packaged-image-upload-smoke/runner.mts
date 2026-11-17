@@ -398,7 +398,7 @@ async function uploadAndVerifyImage(
   } else {
     await waitText(
       run,
-      /Parsing finished, but no text was detected\./i,
+      /The source was accepted, but no reviewable text was found\./i,
       30_000,
       'one-page image terminal state visible',
     );
@@ -438,7 +438,7 @@ async function waitForExpectedOcrImageDocumentWithOneRetry(
     }
 
     const retry = activePage(run)
-      .getByRole('button', { name: /Retry parsing/i })
+      .getByRole('button', { name: /Retry source processing/i })
       .first();
     await retry.waitFor({ state: 'visible', timeout: 10_000 });
     run.metrics.observations.push(

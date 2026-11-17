@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -496,7 +497,10 @@ function evidenceFixture(): EvidenceFixture {
 }
 
 async function cliEvidenceFixture(): Promise<CliEvidenceFixture> {
-  const evidenceParent = join(WORKSPACE_ROOT, 'tmp', 'cert-prep-desktop');
+  const tmpRoot = join(WORKSPACE_ROOT, 'tmp');
+  const tmpRootExisted = existsSync(tmpRoot);
+  const evidenceParent = join(tmpRoot, 'cert-prep-desktop');
+  const evidenceParentExisted = existsSync(evidenceParent);
   mkdirSync(evidenceParent, { recursive: true });
   const fixtureRoot = realpathSync(
     mkdtempSync(join(evidenceParent, 'local-evidence-cli-')),
@@ -606,6 +610,16 @@ async function cliEvidenceFixture(): Promise<CliEvidenceFixture> {
     },
     cleanup() {
       rmSync(fixtureRoot, { recursive: true, force: true });
+      if (
+        !evidenceParentExisted &&
+        existsSync(evidenceParent) &&
+        readdirSync(evidenceParent).length === 0
+      ) {
+        rmSync(evidenceParent, { recursive: true, force: true });
+      }
+      if (!tmpRootExisted && existsSync(tmpRoot) && readdirSync(tmpRoot).length === 0) {
+        rmSync(tmpRoot, { recursive: true, force: true });
+      }
     },
   };
 }
