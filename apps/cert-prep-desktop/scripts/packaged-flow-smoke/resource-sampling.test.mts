@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
+import { CAPTURE_RUNTIME_FILE } from '../package-qa/constants.mts';
 import {
   dxgiAdapterProbeScript,
   finalizeResourceSamplingArtifacts,
@@ -34,7 +35,10 @@ test('windows resource sampling script captures CPU, process, and GPU counters',
   assert.match(script, /GPU Process Memory/);
   assert.match(script, /GPU Engine/);
   assert.match(script, /cert-prep-desktop\.exe/);
-  assert.match(script, /capture-runtime\.exe/);
+  assert.match(
+    script,
+    new RegExp(CAPTURE_RUNTIME_FILE.replaceAll('.', '\\.')),
+  );
   assert.match(script, /llama-server\.exe/);
   assert.match(script, /ollama\.exe/);
   assert.match(script, /ollama app\.exe/);
@@ -114,7 +118,7 @@ test('resource summary finalizer preserves closeout evidence and target process 
     writeFileSync(
       join(dir, 'windows-resource-sampling.csv'),
       `timestamp,source,path,pid,name,metric,value,unit
-"2026-06-21T00:00:00Z","windows_process","Win32_Process","42","capture-runtime.exe","working_set_bytes","1024","bytes"
+"2026-06-21T00:00:00Z","windows_process","Win32_Process","42","${CAPTURE_RUNTIME_FILE}","working_set_bytes","1024","bytes"
 "2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x000136C5_phys_0)\\Shared Usage","","","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x000136C5_phys_0)\\Shared Usage","4096","raw"
 "2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_42_luid_0x00000000_0x000136C5_phys_0)\\Shared Usage","","","\\\\MSI\\GPU Process Memory(pid_42_luid_0x00000000_0x000136C5_phys_0)\\Shared Usage","2048","raw"
 `,
@@ -179,7 +183,7 @@ test('resource summary finalizer preserves closeout evidence and target process 
     assert.equal(summary.named_target_process_gpu_usage.length, 1);
     assert.equal(
       summary.named_target_process_gpu_usage[0].name,
-      'capture-runtime.exe',
+      CAPTURE_RUNTIME_FILE,
     );
     assert.equal(
       summary.named_target_process_gpu_usage[0].adapter_kind,
@@ -202,7 +206,7 @@ test('resource summary finalizer preserves closeout evidence and target process 
 test('windows resource summary aggregates CPU, process RSS, and GPU LUID metrics', () => {
   const summary = summarizeWindowsResourceCsv(`timestamp,source,path,pid,name,metric,value,unit
 "2026-06-21T00:00:00Z","windows_cpu","Win32_PerfFormattedData_PerfOS_Processor","","_Total","percent_processor_time","55","percent"
-"2026-06-21T00:00:00Z","windows_process","Win32_Process","42","capture-runtime.exe","working_set_bytes","1024","bytes"
+"2026-06-21T00:00:00Z","windows_process","Win32_Process","42","${CAPTURE_RUNTIME_FILE}","working_set_bytes","1024","bytes"
 "2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x000136C5_phys_0)\\Dedicated Usage","","","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x000136C5_phys_0)\\Dedicated Usage","256","raw"
 "2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Engine(pid_42_luid_0x00000000_0x000136C5_phys_0_eng_2_engtype_Compute 0)\\Utilization Percentage","","","\\\\MSI\\GPU Engine(pid_42_luid_0x00000000_0x000136C5_phys_0_eng_2_engtype_Compute 0)\\Utilization Percentage","75.5","raw"
 "2026-06-21T00:00:01Z","windows_gpu_counter","\\\\MSI\\GPU Engine(pid_42_luid_0x00000000_0x000136C5_phys_0_eng_2_engtype_Compute 0)\\Utilization Percentage","","","\\\\MSI\\GPU Engine(pid_42_luid_0x00000000_0x000136C5_phys_0_eng_2_engtype_Compute 0)\\Utilization Percentage","25.5","raw"
@@ -240,7 +244,7 @@ test('windows resource summary aggregates CPU, process RSS, and GPU LUID metrics
 
 test('adapter-aware summary joins GPU LUID metrics to DXGI adapter kinds', () => {
   const windowsSummary = summarizeWindowsResourceCsv(`timestamp,source,path,pid,name,metric,value,unit
-"2026-06-21T00:00:00Z","windows_process","Win32_Process","42","capture-runtime.exe","working_set_bytes","1024","bytes"
+"2026-06-21T00:00:00Z","windows_process","Win32_Process","42","${CAPTURE_RUNTIME_FILE}","working_set_bytes","1024","bytes"
 "2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x000136C5_phys_0)\\Dedicated Usage","","","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x000136C5_phys_0)\\Dedicated Usage","256","raw"
 "2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Engine(pid_42_luid_0x00000000_0x000136C5_phys_0_eng_2_engtype_Compute 0)\\Utilization Percentage","","","\\\\MSI\\GPU Engine(pid_42_luid_0x00000000_0x000136C5_phys_0_eng_2_engtype_Compute 0)\\Utilization Percentage","75.5","raw"
 "2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_42_luid_0x00000000_0x000136C5_phys_0)\\Shared Usage","","","\\\\MSI\\GPU Process Memory(pid_42_luid_0x00000000_0x000136C5_phys_0)\\Shared Usage","4096","raw"
@@ -289,11 +293,11 @@ test('adapter-aware summary joins GPU LUID metrics to DXGI adapter kinds', () =>
     summary.target_process_gpu_usage[0].adapter_name,
     'AMD Radeon(TM) 880M Graphics',
   );
-  assert.equal(summary.target_process_gpu_usage[0].name, 'capture-runtime.exe');
+  assert.equal(summary.target_process_gpu_usage[0].name, CAPTURE_RUNTIME_FILE);
   assert.equal(summary.named_target_process_gpu_usage.length, 1);
   assert.equal(
     summary.named_target_process_gpu_usage[0].name,
-    'capture-runtime.exe',
+    CAPTURE_RUNTIME_FILE,
   );
   assert.equal(summary.gpu_routing_checks.capture_runtime_process_observed, true);
   assert.equal(summary.gpu_routing_checks.capture_runtime_uses_amd_igpu, true);
@@ -302,7 +306,7 @@ test('adapter-aware summary joins GPU LUID metrics to DXGI adapter kinds', () =>
 
 test('adapter-aware summary accepts AMD WindowsML routing with only the required adapter', () => {
   const windowsSummary = summarizeWindowsResourceCsv(`timestamp,source,path,pid,name,metric,value,unit
-"2026-06-21T00:00:00Z","windows_process","Win32_Process","42","capture-runtime.exe","working_set_bytes","1024","bytes"
+"2026-06-21T00:00:00Z","windows_process","Win32_Process","42","${CAPTURE_RUNTIME_FILE}","working_set_bytes","1024","bytes"
 "2026-06-21T00:00:00Z","windows_process","Win32_Process","77","llama-server.exe","working_set_bytes","2048","bytes"
 "2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x000136C5_phys_0)\\Dedicated Usage","","","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x000136C5_phys_0)\\Dedicated Usage","256","raw"
 "2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_42_luid_0x00000000_0x000136C5_phys_0)\\Shared Usage","","","\\\\MSI\\GPU Process Memory(pid_42_luid_0x00000000_0x000136C5_phys_0)\\Shared Usage","8192","raw"

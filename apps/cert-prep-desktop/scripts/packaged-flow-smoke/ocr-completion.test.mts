@@ -61,7 +61,7 @@ test('PDF page-one scope rejects persisted all-pages evidence', () => {
 
 test('PDF completion accepts the current review-ready terminal label', () => {
   assert.match('Ready to review', PDF_PARSE_TERMINAL_TEXT_PATTERN);
-  assert.match('Parsing complete.', PDF_PARSE_TERMINAL_TEXT_PATTERN);
+  assert.doesNotMatch('Parsing complete.', PDF_PARSE_TERMINAL_TEXT_PATTERN);
   assert.doesNotMatch('Parsing started', PDF_PARSE_TERMINAL_TEXT_PATTERN);
 });
 

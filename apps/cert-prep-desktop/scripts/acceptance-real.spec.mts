@@ -114,9 +114,8 @@ test('real Cert Prep packaged PDF and JPEG acceptance journeys pass', async () =
               page.locator('[data-testid="document-progress-metrics"]'),
               page.locator('[data-testid="document-progress-bar"]'),
               page.locator('[data-testid="draft-question-id"]'),
-              // Capture Runtime assigns a fresh UUID to each raw segment. The
-              // result JSON is functionally asserted separately, so keep this
-              // visual checkpoint focused on the rendered result shell.
+              // Practice sessions display a dynamic session ID in the
+              // session-details rail.
               page.locator('aside.practice-session-rail dd').first(),
             ],
           });

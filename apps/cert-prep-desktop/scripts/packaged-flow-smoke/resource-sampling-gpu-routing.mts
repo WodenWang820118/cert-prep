@@ -1,3 +1,4 @@
+import { CAPTURE_RUNTIME_FILE } from '../package-qa/constants.mts';
 import type {
   DxgiAdapter,
   FinalAggregate,
@@ -91,10 +92,11 @@ function gpuRoutingChecksForProcessUsage(
   processNames: ReadonlySet<string>,
 ): Record<string, boolean | number> {
   const captureRuntimeUsage = processGpuUsage.filter(
-    (usage) => usage.name === 'capture-runtime.exe',
+    (usage) => usage.name === CAPTURE_RUNTIME_FILE,
   );
   const captureRuntimeProcessObserved =
-    processNames.has('capture-runtime.exe') || captureRuntimeUsage.length > 0;
+    processNames.has(CAPTURE_RUNTIME_FILE.toLowerCase()) ||
+    captureRuntimeUsage.length > 0;
   return {
     capture_runtime_process_observed: captureRuntimeProcessObserved,
     capture_runtime_uses_amd_igpu: hasAnyProcessGpuUsage(

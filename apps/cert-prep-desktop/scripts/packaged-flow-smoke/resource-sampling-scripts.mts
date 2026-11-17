@@ -1,3 +1,4 @@
+import { CAPTURE_RUNTIME_FILE } from '../package-qa/constants.mts';
 import type { WindowsResourceScriptOptions } from './resource-sampling-types.mts';
 
 function psString(value: string): string {
@@ -165,7 +166,7 @@ $intervalMs = ${intervalMs}
 $targetProcessNames = @(
   'cert-prep-desktop.exe',
   'cert-prep-backend.exe',
-  'capture-runtime.exe',
+  '${CAPTURE_RUNTIME_FILE}',
   'llama-server.exe',
   'ollama.exe',
   'ollama app.exe',

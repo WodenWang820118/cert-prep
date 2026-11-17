@@ -464,7 +464,7 @@ export async function restartAndVerifyPersistence(
   let reviewPersisted = true;
   if (run.options.acceptanceVerifyMarkdownExport) {
     const reviewLink = activePage(run).getByRole('link', {
-      name: 'Review',
+      name: 'Wrong Answers',
       exact: true,
     });
     await reviewLink.waitFor({ state: 'visible', timeout: 30_000 });
