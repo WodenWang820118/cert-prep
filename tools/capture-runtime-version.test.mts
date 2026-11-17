@@ -771,10 +771,7 @@ test('snapshot capture copies source bytes and rejects mutation of its own bytes
 test('the lock reader separates package and snapshot ownership', () => {
   withInventoryWorkspace((workspaceRoot) => {
     const lockPath = join(workspaceRoot, 'pnpm-lock.yaml');
-    const original = readFileSync(lockPath, 'utf8').replaceAll(
-      '@gx-capture/capture-runtime-client@0.4.1',
-      `@gx-capture/capture-runtime-client@${CAPTURE_RUNTIME_VERSION}`,
-    );
+    const original = readFileSync(lockPath, 'utf8');
     writeFileSync(
       lockPath,
       mutateLockEntry(
@@ -814,10 +811,7 @@ test('the lock reader separates package and snapshot ownership', () => {
 
   withInventoryWorkspace((workspaceRoot) => {
     const lockPath = join(workspaceRoot, 'pnpm-lock.yaml');
-    const original = readFileSync(lockPath, 'utf8').replaceAll(
-      '@gx-capture/capture-runtime-client@0.4.1',
-      `@gx-capture/capture-runtime-client@${CAPTURE_RUNTIME_VERSION}`,
-    );
+    const original = readFileSync(lockPath, 'utf8');
     writeFileSync(
       lockPath,
       mutateLockEntry(
