@@ -43,6 +43,9 @@ const CAPTURE_CHILD_ENV_ALLOWLIST: &[&str] = &[
     "LOCALAPPDATA",
     "APPDATA",
     "USERPROFILE",
+    // The speech worker's PyTorch asks for the user name when it loads a
+    // model; without it the recording fails with a bare `progressive_failed`.
+    "USERNAME",
     "PROGRAMDATA",
     "ProgramFiles",
     "ProgramFiles(x86)",
@@ -529,5 +532,12 @@ mod tests {
         };
 
         assert_eq!(error, "Capture Runtime start was cancelled.");
+    }
+
+    #[test]
+    fn the_runtime_receives_the_user_name_the_speech_worker_needs() {
+        // Capture Runtime 0.10.0 gives its workers no default user name, and
+        // the launcher forwards only the names on this list.
+        assert!(CAPTURE_CHILD_ENV_ALLOWLIST.contains(&"USERNAME"));
     }
 }
