@@ -131,9 +131,11 @@ describe('CaptureWorkbenchTrialPage', () => {
     expect(enabledSources).not.toContain('audio');
     expect(enabledSources).not.toContain('recording');
     expect(fixture.nativeElement.textContent).not.toContain('speech recognition');
-    expect(fixture.nativeElement.textContent).toContain(
-      'Recordings are imported on the Build page.',
-    );
+    const status = fixture.nativeElement.querySelector(
+      '.capture-trial-status',
+    ) as HTMLElement;
+    expect(status.textContent).toContain('Capture Workbench is ready.');
+    expect(status.textContent).toContain('Import recordings on the Build page.');
   });
 
   it('waits for the custom element view before configuring a defined component', async () => {
