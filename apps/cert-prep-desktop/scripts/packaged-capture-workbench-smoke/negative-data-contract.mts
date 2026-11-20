@@ -40,16 +40,17 @@ export async function assertPublishedCaptureSurface(page: Page): Promise<void> {
   });
   if (
     !Array.isArray(enabledSources) ||
-    JSON.stringify(enabledSources) !== JSON.stringify(['pdf', 'image', 'audio'])
+    JSON.stringify(enabledSources) !== JSON.stringify(['pdf', 'image'])
   ) {
     throw new Error(
-      `${CAPTURE_RUNTIME_VERSION} host did not expose PDF, image, and audio capture.`,
+      `${CAPTURE_RUNTIME_VERSION} host did not expose exactly PDF and image capture.`,
     );
   }
   const copy = await page.locator('main').innerText();
   for (const statement of [
-    'PDF, image, and audio sources are processed',
-    'explicit OCR and speech recognition consent',
+    'PDF and image sources are processed',
+    'explicit OCR consent',
+    'Recordings are imported on the Build page.',
   ]) {
     if (!copy.includes(statement)) {
       throw new Error(`${CAPTURE_RUNTIME_VERSION} host copy omitted: ${statement}`);

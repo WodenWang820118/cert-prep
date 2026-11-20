@@ -94,7 +94,7 @@ describe('CaptureWorkbenchTrialPage', () => {
     expect(
       fixture.nativeElement.querySelector('capture-workbench').config,
     ).toMatchObject({
-      enabledSources: ['pdf', 'image', 'audio'],
+      enabledSources: ['pdf', 'image'],
       structuringMode: 'host',
       hostStructuringOwner: 'component',
       hostManagedHandshake: true,
@@ -105,7 +105,7 @@ describe('CaptureWorkbenchTrialPage', () => {
         .structuringProvider,
     ).toBe(captureClient);
     expect(fixture.nativeElement.textContent).toContain(
-      'PDF, image, and audio sources are processed',
+      'PDF and image sources are processed',
     );
     expect(
       fixture.nativeElement.querySelector('[data-testid="ocr-compute-status"]'),
@@ -114,6 +114,26 @@ describe('CaptureWorkbenchTrialPage', () => {
       'OCR acceleration enabled (DirectML).',
     );
     expect(fixture.nativeElement.textContent).not.toContain('in-memory');
+  });
+
+  it('offers no recordings because capture review accepts PDF and image only', async () => {
+    const fixture = TestBed.createComponent(CaptureWorkbenchTrialPage);
+    fixture.detectChanges();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(fixture.nativeElement.textContent).toContain('Element registered');
+    });
+
+    const { enabledSources } = fixture.nativeElement.querySelector(
+      'capture-workbench',
+    ).config as { enabledSources: string[] };
+    expect(enabledSources).toEqual(['pdf', 'image']);
+    expect(enabledSources).not.toContain('audio');
+    expect(enabledSources).not.toContain('recording');
+    expect(fixture.nativeElement.textContent).not.toContain('speech recognition');
+    expect(fixture.nativeElement.textContent).toContain(
+      'Recordings are imported on the Build page.',
+    );
   });
 
   it('waits for the custom element view before configuring a defined component', async () => {
@@ -148,7 +168,7 @@ describe('CaptureWorkbenchTrialPage', () => {
     expect(
       fixture.nativeElement.querySelector('capture-workbench').config,
     ).toMatchObject({
-      enabledSources: ['pdf', 'image', 'audio'],
+      enabledSources: ['pdf', 'image'],
       showRuntimeSetup: false,
     });
   });
