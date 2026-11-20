@@ -12,7 +12,8 @@
     "apps/cert-prep-desktop/scripts/packaged-image-upload-smoke.mts",
     "**/*.{spec,test}.{ts,mts}",
     "sheriff.config.ts",
-    "tools/run-local-ci.mts"
+    "tools/run-local-ci.mts",
+    "tools/retired-names-gate.mts"
   ],
   "project": [
     "apps/cert-prep/src/**/*.ts!",

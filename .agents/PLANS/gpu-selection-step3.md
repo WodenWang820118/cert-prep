@@ -165,7 +165,7 @@ Add `LLMHealthRead.device: OllamaDeviceRead | null` (optional, so the change is 
 - `ProviderHealth`, `LLMHealthRead`, and `OllamaProvider._health_metadata_fields`.
 - Delete the now-unused `device_execution` path: `ollama_transport.py:86-88`, `provider.py:65`, the coordinator's `:473-475`, and the test `test_ollama_coordinator_wiring.py:250-259`.
 - Regenerate `libs/cert-prep-api/src/lib/cert-prep-api.generated.ts`.
-- Add vocabulary concepts (`packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json`), glossary rows (`.agents/PLANS/ddd-refactor/glossary.md` §AI 供應, line 101), the 用語 table in `docs/domain/ai_providers.md`, and `.agents/SPECS/domains/parsing-reasoning.md:17-22`.
+- Add vocabulary concepts (`packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json`), glossary rows (`docs/domain/glossary.md` §AI 供應), the 用語 table in `docs/domain/ai_providers.md`, and `.agents/SPECS/domains/parsing-reasoning.md:17-22`.
 - A frontend type change is optional: the e2e mock's `satisfies LLMHealthRead` (`apps/cert-prep-e2e/src/e2e/support/mock-api.ts:396-404`) still compiles.
 
 **Compatibility.** No stored data changes. Older clients ignore the optional field. A contract test should check:

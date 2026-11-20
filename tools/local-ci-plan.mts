@@ -176,6 +176,13 @@ const LANES: readonly LaneSpec[] = [
   },
   {
     kind: 'always',
+    id: 'retired-names-gate',
+    job: 'portable-quality',
+    name: 'Retired-names gate',
+    setups: [],
+  },
+  {
+    kind: 'always',
     id: 'test-architecture-tools',
     job: 'portable-quality',
     name: 'Test architecture tools',

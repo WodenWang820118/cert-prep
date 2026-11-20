@@ -15,7 +15,7 @@ from types import ModuleType
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 SOURCE_ROOT = REPOSITORY_ROOT / "apps" / "cert-prep-backend" / "src" / "cert_prep_backend"
 DOMAIN_DOCS = REPOSITORY_ROOT / "docs" / "domain"
-GLOSSARY = REPOSITORY_ROOT / ".agents" / "PLANS" / "ddd-refactor" / "glossary.md"
+GLOSSARY = REPOSITORY_ROOT / "docs" / "domain" / "glossary.md"
 _CODE_NAME = re.compile(r"`([A-Za-z_][A-Za-z0-9_]*)`")
 
 

@@ -23,6 +23,7 @@ const nx = createRequire(join(workspaceRoot, 'package.json')).resolve(
 
 const ALWAYS_LANE_IDS = [
   'dead-code-gate',
+  'retired-names-gate',
   'test-architecture-tools',
   'architecture-diagrams',
   'architecture-exceptions-gate',
@@ -34,6 +35,7 @@ const ALL_LANE_IDS = [
   'test-portable',
   'typecheck',
   'dead-code-gate',
+  'retired-names-gate',
   'test-architecture-tools',
   'architecture-diagrams',
   'architecture-exceptions-gate',
@@ -95,6 +97,7 @@ test('selectLanes for web-only change skips backend and Tauri lanes', () => {
     'test-portable',
     'typecheck',
     'dead-code-gate',
+  'retired-names-gate',
     'test-architecture-tools',
     'architecture-diagrams',
     'architecture-exceptions-gate',
@@ -217,7 +220,7 @@ test('selectLanes combines positional job filters with affected and --all modes'
 
   const allWindows = selectLanes([], { all: true, jobs: ['windows-quality'] });
   assert.equal(allWindows.selected.length, 11);
-  assert.equal(allWindows.excluded.length, 10);
+  assert.equal(allWindows.excluded.length, 11);
   assert.deepEqual(allWindows.skipped, []);
 });
 

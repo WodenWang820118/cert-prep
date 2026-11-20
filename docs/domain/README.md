@@ -2,7 +2,7 @@
 
 Cert Prep 依業務的意義分成幾個「上下文」，每個上下文負責一塊業務，有自己的模型、規則和用語。這個目錄給要理解或參與設計的人讀：每個上下文一份說明，圖用 Mermaid 畫，在 GitHub 上直接顯示。
 
-- 用語對照：[glossary.md](../../.agents/PLANS/ddd-refactor/glossary.md)
+- 用語對照：[glossary.md](glossary.md)
 - 為什麼這樣切、怎麼遷移：[DDD 重構計畫](../../.agents/PLANS/ddd-refactor/README.md)、[決策](../../.agents/PLANS/ddd-refactor/decisions.md)
 
 ## 上下文

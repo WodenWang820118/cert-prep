@@ -129,7 +129,10 @@ const CUSTOM_LANE_RUNNERS: Readonly<Record<string, () => boolean>> = {
       './apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts',
       '--test',
       'tools/dead-code-gate.test.mts',
+      'tools/retired-names-gate.test.mts',
     ]) && runNode(['tools/dead-code-gate.mts', '--ci']),
+  'retired-names-gate': () =>
+    runNode(['tools/retired-names-gate.mts', '--ci']),
   'test-architecture-tools': () =>
     runNode([
       '--import',
