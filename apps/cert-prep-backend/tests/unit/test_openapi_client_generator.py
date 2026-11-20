@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 from pathlib import Path
+
+import pytest
 
 from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.platform.config import Settings
@@ -18,6 +21,7 @@ TRACKED_CLIENT = (
 )
 sys.path.insert(0, str(SCRIPTS_DIR))
 
+from openapi_client import io as openapi_io  # noqa: E402
 from openapi_client.typescript import render_typescript  # noqa: E402
 
 
@@ -296,3 +300,32 @@ def test_tracked_client_is_byte_exact_for_live_openapi(tmp_path: Path) -> None:
     ).openapi()
 
     assert TRACKED_CLIENT.read_bytes() == render_typescript(openapi).encode("utf-8")
+
+
+def test_schema_generation_leaves_the_user_data_directory_untouched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user_data = tmp_path / "user-data"
+    temp_root = tmp_path / "temp"
+    user_data.mkdir()
+    temp_root.mkdir()
+    monkeypatch.setenv("LOCALAPPDATA", str(user_data))
+    monkeypatch.setenv("XDG_DATA_HOME", str(user_data))
+    monkeypatch.delenv("CERT_PREP_DATA_DIR", raising=False)
+    monkeypatch.setattr(tempfile, "tempdir", str(temp_root))
+    used_data_dirs: list[Path] = []
+
+    def recording_create_app(settings: Settings):
+        used_data_dirs.append(settings.data_dir)
+        return create_app(settings)
+
+    monkeypatch.setattr(openapi_io, "create_app", recording_create_app)
+
+    openapi = openapi_io.load_openapi_schema()
+
+    assert openapi["paths"]
+    assert list(user_data.iterdir()) == []
+    assert len(used_data_dirs) == 1
+    assert used_data_dirs[0].parent == temp_root
+    assert not used_data_dirs[0].exists()
+    assert list(temp_root.iterdir()) == []

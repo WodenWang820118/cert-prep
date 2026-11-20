@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from typing import Final
 
@@ -791,7 +791,9 @@ class Database:
             if self._migrated:
                 return
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            with sqlite3.connect(self.path) as connection:
+            # closing(): sqlite3's own context manager commits but leaves the
+            # connection open, which keeps the file locked on Windows.
+            with closing(sqlite3.connect(self.path)) as connection:
                 connection.execute("PRAGMA foreign_keys = ON")
                 connection.execute("PRAGMA journal_mode = WAL")
                 connection.execute("PRAGMA busy_timeout = 30000")
