@@ -14,8 +14,10 @@ Its unit tests run in `cert-prep-desktop:package-qa-test`.
 ## Current state
 
 The harness still follows the flow from before the OCR compute preflight and
-stops at that step. Updating it, and adding the audio leg, is open work in
+stops at that step. Updating it is open work in
 [capture-workbench-cert-prep-pdf.md](../TODOS/capture-workbench-cert-prep-pdf.md).
+The trial page offers PDF and image only; a successful packaged transcription
+belongs to the Build page's source-library import path, not to this smoke.
 The real OCR proof on the packaged app is `cert-prep-desktop:acceptance-real`
 ([acceptance spec](cert-prep-pdf-image-acceptance.md)).
 

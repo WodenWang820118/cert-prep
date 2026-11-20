@@ -166,7 +166,7 @@ export class CaptureWorkbenchTrialPage implements AfterViewInit, OnDestroy {
     }
 
     element.config = {
-      enabledSources: ['pdf', 'image', 'audio'],
+      enabledSources: ['pdf', 'image'],
       structuringMode: 'host',
       outputMode: 'json',
       multiple: false,
@@ -193,7 +193,7 @@ export class CaptureWorkbenchTrialPage implements AfterViewInit, OnDestroy {
     );
     this.registrationState.set('ready');
     this.trialStatus.set(
-      'Capture Workbench is ready. Capture Runtime can process PDF, image, and audio sources after their explicit OCR and speech recognition consent steps.',
+      'Capture Workbench is ready. Capture Runtime can process PDF and image sources after the explicit OCR consent step. Import recordings on the Build page.',
     );
   }
 

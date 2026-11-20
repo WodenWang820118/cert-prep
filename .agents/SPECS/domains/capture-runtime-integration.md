@@ -92,9 +92,11 @@ host never retries on CPU.
 ## Capture Workbench page
 
 `/capture-workbench-trial` hosts the published Web Component with
-`enabledSources: ['pdf', 'image', 'audio']`, `structuringMode: 'host'`,
+`enabledSources: ['pdf', 'image']`, `structuringMode: 'host'`,
 `hostStructuringOwner: 'component'`, `hostManagedHandshake: true` and
-`showRuntimeSetup: false`. Its `CertPrepCaptureClient` calls the authenticated
+`showRuntimeSetup: false`. Capture review accepts PDF and image only, so the
+page offers no recordings; recordings are imported in the source library (the
+Build page). Its `CertPrepCaptureClient` calls the authenticated
 backend at `/projects/{project_id}/capture-workbench/captures`; the browser never
 calls Capture Runtime. The client and structuring provider are cold RxJS
 Observables: unsubscribing closes only that backend SSE listener and never
