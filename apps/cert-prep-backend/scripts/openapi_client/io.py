@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -11,8 +12,22 @@ from openapi_client.typescript import render_typescript
 
 
 def load_openapi_schema() -> dict[str, Any]:
-    """Build the FastAPI OpenAPI schema used as the generator source."""
-    return create_app(Settings(api_token="contract-generation")).openapi()
+    """Build the FastAPI OpenAPI schema used as the generator source.
+
+    Building the app opens and migrates the database in its data directory, so the
+    generator gives it a temporary one: the default is the user's own database. The
+    database name is fixed too, because an absolute ``CERT_PREP_DATABASE_NAME`` from
+    the environment would otherwise point outside the temporary directory.
+    """
+    with tempfile.TemporaryDirectory(prefix="cert-prep-openapi-") as data_dir:
+        app = create_app(
+            Settings(
+                api_token="contract-generation",
+                data_dir=Path(data_dir),
+                database_name="openapi-generation.sqlite3",
+            )
+        )
+        return app.openapi()
 
 
 def generate_openapi_outputs(
