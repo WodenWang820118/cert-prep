@@ -20,7 +20,7 @@
 | 錯題     | `WrongAnswer`        | 最近一次作答答錯、待複習的題目                           |
 | 錯題總覽 | `WrongAnswerSummary` | 目前錯題、已訂正與重複答錯的題目，依教材頁碼分組         |
 
-完整對照見 [glossary](../../.agents/PLANS/ddd-refactor/glossary.md)；API 的列舉值對應到[概念集](../../packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json)。
+完整對照見 [glossary](glossary.md)；API 的列舉值對應到[概念集](../../packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json)。
 
 ## 聚合與不變條件
 

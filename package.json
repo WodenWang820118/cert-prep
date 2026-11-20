@@ -4,6 +4,8 @@
   "license": "MIT",
   "packageManager": "pnpm@12.8.2",
   "scripts": {
+    "retired-names:check": "node tools/retired-names-gate.mts",
+    "retired-names:update": "node tools/retired-names-gate.mts --update",
     "dead-code:check": "node tools/dead-code-gate.mts",
     "dead-code:update": "node tools/dead-code-gate.mts --update",
     "architecture:update": "node tools/architecture-graph.mts --write",

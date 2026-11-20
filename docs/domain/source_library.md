@@ -28,7 +28,7 @@
 | 作業階段         | `DocumentOperationPhase`    | 上傳、處理、等待檢閱、轉錄、翻譯、取消中、寫入結果等   |
 | 失敗後的教材狀態 | `DocumentFailureState`      | 作業失敗或取消後，頁面教材留下的狀態，之後可以重試     |
 
-完整對照見 [glossary](../../.agents/PLANS/ddd-refactor/glossary.md)；API 的列舉值對應到[概念集](../../packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json)。
+完整對照見 [glossary](glossary.md)；API 的列舉值對應到[概念集](../../packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json)。
 
 ## 聚合與不變條件
 

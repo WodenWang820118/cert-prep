@@ -96,8 +96,9 @@ jobs:
       - name: Dead-code gate
         run: >-
           node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts
-          --test tools/dead-code-gate.test.mts
+          --test tools/dead-code-gate.test.mts tools/retired-names-gate.test.mts
           && node tools/dead-code-gate.mts --ci
+          && node tools/retired-names-gate.mts --ci
 
       - name: Test architecture tools
         run: >-

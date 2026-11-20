@@ -15,7 +15,7 @@
 | 學習專案 | `Project`     | 一組教材、題目與練習的範圍，例如一次檢定 |
 | 專案名稱 | `ProjectName` | 專案的名稱，不能是空字串                 |
 
-完整對照見 [glossary](../../.agents/PLANS/ddd-refactor/glossary.md)。
+完整對照見 [glossary](glossary.md)。
 
 ## 聚合與不變條件
 

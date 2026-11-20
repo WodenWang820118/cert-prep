@@ -5,6 +5,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/tools/retired-names-gate.mts\" --hook",
+            "timeout": 120
+          },
+          {
+            "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/tools/dead-code-gate.mts\" --hook",
             "timeout": 120
           },
