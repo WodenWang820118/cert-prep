@@ -7,7 +7,7 @@ from cert_prep_backend.platform.config import Settings
 
 
 def test_health_endpoint_returns_app_status(tmp_path: Path) -> None:
-    client = TestClient(create_app(Settings(data_dir=tmp_path)))
+    client = TestClient(create_app(Settings(data_dir=tmp_path, database_name="health.sqlite3")))
 
     response = client.get("/health")
 

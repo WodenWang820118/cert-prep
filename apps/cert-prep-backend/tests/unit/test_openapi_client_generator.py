@@ -312,6 +312,9 @@ def test_schema_generation_leaves_the_user_data_directory_untouched(
     monkeypatch.setenv("LOCALAPPDATA", str(user_data))
     monkeypatch.setenv("XDG_DATA_HOME", str(user_data))
     monkeypatch.delenv("CERT_PREP_DATA_DIR", raising=False)
+    # An absolute database name from the environment must not lead the generator
+    # out of its temporary directory.
+    monkeypatch.setenv("CERT_PREP_DATABASE_NAME", str(user_data / "escaped.sqlite3"))
     monkeypatch.setattr(tempfile, "tempdir", str(temp_root))
     used_data_dirs: list[Path] = []
 
