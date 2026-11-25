@@ -79,7 +79,7 @@ jobs:
 
       - name: Resolve the next Capture release
         id: release
-        uses: gx-capture/capture-workbench/.github/actions/resolve-capture-release@17dde392ff0a881024c8ed8aa6d1e97f2fd41b81
+        uses: gx-capture/capture-workbench/.github/actions/resolve-capture-release@29b948dfc16b571a601821af6b0f0bec3c993ded
         with:
           mode: ${{ inputs.mode || 'route-a' }}
           current-version: ${{ steps.current.outputs.version }}
