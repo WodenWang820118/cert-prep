@@ -133,7 +133,7 @@ export async function ensureCaptureRuntimeReady(
   );
   await ensureCaptureRuntimeRequirement(
     run,
-    'windowsml-ocr',
+    'text-recognition',
     requirementTimeoutMs,
   );
 
@@ -178,7 +178,7 @@ export const CAPTURE_REQUIREMENT_INSTALL_TIMEOUT_MS = 30 * 60_000;
 
 export async function ensureCaptureRuntimeRequirement(
   run: SmokeRunState,
-  requirementId: 'windowsml-ocr',
+  requirementId: 'text-recognition',
   timeoutMs = CAPTURE_REQUIREMENT_INSTALL_TIMEOUT_MS,
 ): Promise<void> {
   const projectApi = run.projectApi;
@@ -307,6 +307,102 @@ async function isVisible(locator: Locator, timeout: number): Promise<boolean> {
   }
 }
 
+/**
+ * Waits until the native Start the UI requested has finished: the host's
+ * read-only `capture_runtime_status` reports `running` only once the restarted
+ * backend replaced the old one. A `failed` status ends the wait at once. It
+ * never calls `start_capture_runtime` itself.
+ */
+export async function waitForCaptureRuntimeStart(
+  run: SmokeRunState,
+): Promise<void> {
+  await waitForCaptureRuntimeRunning((command, timeoutMs) =>
+    invokeTauri(run, command, undefined, timeoutMs),
+  );
+}
+
+type StatusRead =
+  | { readonly kind: 'value'; readonly value: unknown }
+  | { readonly kind: 'error'; readonly message: string }
+  | { readonly kind: 'deadline' };
+
+/**
+ * Polls the read-only status until Start ends. Each status request is bounded
+ * by the time left before the Start deadline: during a slow Start the host
+ * holds the ownership lock while the replacement backend comes up, so a
+ * status call may not answer until then.
+ */
+export async function waitForCaptureRuntimeRunning(
+  invoke: (
+    command: 'capture_runtime_status',
+    timeoutMs: number,
+  ) => Promise<unknown>,
+  { timeoutMs = 120_000, intervalMs = 500 } = {},
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let lastStatus = 'unknown';
+  let lastError: string | null = null;
+  for (;;) {
+    const remaining = Math.max(1, deadline - Date.now());
+    const read = await readStatusWithin(
+      () => invoke('capture_runtime_status', remaining),
+      remaining,
+    );
+    if (read.kind === 'deadline') break;
+    if (read.kind === 'error') {
+      lastError = read.message;
+      if (Date.now() >= deadline) break;
+      await delay(intervalMs);
+      continue;
+    }
+    const current = read.value;
+    const status = readStringField(current, 'status');
+    lastStatus = status ?? 'unknown';
+    if (status === 'running') return;
+    if (status === 'failed') {
+      const reason = [
+        readStringField(current, 'detail'),
+        readStringField(current, 'unavailable_reason'),
+      ]
+        .filter((part): part is string => part !== null)
+        .join('; ');
+      throw new Error(
+        `Capture Runtime Start failed: ${reason || 'no detail reported'}`,
+      );
+    }
+    if (Date.now() >= deadline) break;
+    await delay(intervalMs);
+  }
+  throw new Error(
+    `Timed out waiting for Capture Runtime Start; last status was ${lastStatus}` +
+      (lastError === null ? '.' : `; last status read failed: ${lastError}`),
+  );
+}
+
+async function readStatusWithin(
+  read: () => Promise<unknown>,
+  timeoutMs: number,
+): Promise<StatusRead> {
+  const deadline = new AbortController();
+  try {
+    return await Promise.race([
+      read().then(
+        (value): StatusRead => ({ kind: 'value', value }),
+        (error: unknown): StatusRead => ({
+          kind: 'error',
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      ),
+      delay(timeoutMs, undefined, { signal: deadline.signal }).then(
+        (): StatusRead => ({ kind: 'deadline' }),
+        (): StatusRead => ({ kind: 'deadline' }),
+      ),
+    ]);
+  } finally {
+    deadline.abort();
+  }
+}
+
 async function runNativeCaptureRuntimeJob(
   run: SmokeRunState,
   command: 'install_capture_runtime' | 'start_capture_runtime',
@@ -335,6 +431,7 @@ async function invokeTauri(
   run: SmokeRunState,
   command: string,
   args?: Record<string, string>,
+  timeoutMs = 30_000,
 ): Promise<unknown> {
   const response = await fetch(`http://127.0.0.1:${run.port}/json/list`);
   if (!response.ok) throw new Error('WebView2 CDP endpoint is unavailable.');
@@ -359,7 +456,7 @@ async function invokeTauri(
     let settled = false;
     const timer = setTimeout(
       () => finishError('Tauri command timed out.'),
-      30_000,
+      timeoutMs,
     );
     const finish = (callback: () => void): void => {
       if (settled) return;

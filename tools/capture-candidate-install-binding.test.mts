@@ -31,7 +31,7 @@ function richContract(version: string): Buffer {
       contractSetVersion: '2',
       schemas: [
         {
-          name: 'CaptureOcrProjectionV3',
+          name: 'CaptureOcrProjection',
           schema: {
             properties: {
               apiVersion: { const: '2.0' },
@@ -41,7 +41,7 @@ function richContract(version: string): Buffer {
           },
         },
         {
-          name: 'OcrComputePreflightV2',
+          name: 'OcrComputePreflight',
           schema: {
             properties: {
               apiVersion: { const: '2.0' },
@@ -67,7 +67,7 @@ function richContract(version: string): Buffer {
         {
           method: 'GET',
           path: '/v2/captures/{capture_id}/ocr',
-          responseSchema: 'CaptureOcrProjectionV3',
+          responseSchema: 'CaptureOcrProjection',
         },
       ],
     }),
@@ -222,7 +222,10 @@ async function createCandidateFixture(sourceCommit = 'a'.repeat(40)): Promise<{
     ],
     status: 'candidate-verified',
   };
-  await writeFile(join(root, 'release-ledger.json'), JSON.stringify(ledger));
+  await writeFile(join(root, 'candidate-verification-summary.json'), JSON.stringify({
+    schemaVersion: '1', candidateId, sourceCommit, candidateManifestSha256,
+    contractSetSha256, captureDocumentSchemaSha256: ledger.schemaSha256,
+  }));
   return {
     root,
     contractPath: join(root, 'contracts/contract-set.json'),

@@ -228,7 +228,7 @@ const LANES: readonly LaneSpec[] = [
     setups: ['pnpm-install', 'playwright-chromium'],
     nx: [
       'run',
-      'cert-prep-e2e:e2e-local-package',
+      'cert-prep-e2e:e2e-mocked-api',
       '--args=--project=chromium --workers=2',
     ],
     triggerProjects: ['cert-prep-e2e'],

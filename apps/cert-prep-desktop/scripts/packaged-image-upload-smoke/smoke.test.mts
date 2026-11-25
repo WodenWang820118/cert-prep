@@ -110,6 +110,23 @@ test('OCR image evidence requires a ready document with provenance and chunks', 
       ),
     /extraction_method expected windowsml_ocr/,
   );
+  assert.deepEqual(
+    requireExpectedOcrImageDocument(
+      { ...document, ocr_device: 'cpu' },
+      { filename: 'ocr_test_image.jpeg', sha256: 'a'.repeat(64) },
+    ),
+    { ...document, ocr_device: 'cpu' },
+  );
+  for (const device of ['windowsml-dml', 'directml:0', '', null]) {
+    assert.throws(
+      () =>
+        requireExpectedOcrImageDocument(
+          { ...document, ocr_device: device },
+          { filename: 'ocr_test_image.jpeg', sha256: 'a'.repeat(64) },
+        ),
+      /OCR device expected directml or cpu/,
+    );
+  }
 });
 
 test('OCR image polling waits through processing and validates the supplied fixture', async () => {
@@ -216,7 +233,7 @@ function ocrDocument(): Record<string, unknown> {
     has_text: true,
     chunks_count: 3,
     extraction_method: 'windowsml_ocr',
-    ocr_device: 'windowsml-dml',
+    ocr_device: 'directml',
     ocr_fallback_reason: null,
   };
 }

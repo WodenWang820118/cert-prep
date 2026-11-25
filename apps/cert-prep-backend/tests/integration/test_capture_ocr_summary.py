@@ -160,7 +160,7 @@ def test_closed_capture_states_return_gone_without_runtime_reads(
     assert runtime.calls == []
 
 
-@pytest.mark.parametrize("operation_status", ["created", "waiting_input", "extracting"])
+@pytest.mark.parametrize("operation_status", ["waiting_input", "extracting"])
 def test_early_pending_runtime_states_return_conflict_without_projection_read(
     tmp_path: Path,
     operation_status: str,
@@ -584,9 +584,9 @@ def _completed_projection() -> SimpleNamespace:
                 failure=None,
             )
         ],
-        page_count=1,
+        processed_page_count=1,
         runtime_version=CAPTURE_RUNTIME_VERSION,
-        contract_sha256="d" * 64,
+        contract_set_sha256="d" * 64,
         provenance=provenance,
         failure=None,
     )
@@ -612,9 +612,9 @@ def _failed_projection() -> SimpleNamespace:
         status=_enum("failed"),
         source=None,
         pages=[],
-        page_count=0,
+        processed_page_count=0,
         runtime_version=CAPTURE_RUNTIME_VERSION,
-        contract_sha256="d" * 64,
+        contract_set_sha256="d" * 64,
         provenance=provenance,
         failure=failure,
     )
@@ -623,7 +623,7 @@ def _failed_projection() -> SimpleNamespace:
 def _resolved_provenance() -> SimpleNamespace:
     return SimpleNamespace(
         status=_enum("resolved"),
-        engine="windowsml-ocr",
+        engine="text-recognition",
         model="capture-ocr-model",
         model_digest="sha256:" + "b" * 64,
         device="directml:0",

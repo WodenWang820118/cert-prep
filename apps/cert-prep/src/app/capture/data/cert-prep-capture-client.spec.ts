@@ -6,6 +6,7 @@ import { firstValueFrom, lastValueFrom, of, throwError, toArray } from 'rxjs';
 import type {
   CaptureDocument,
   CaptureStructuringRequest,
+  RuntimeCapabilities,
 } from '@gx-capture/capture-workbench-ui';
 import { CERT_PREP_API } from '../../core/data';
 import { CertPrepRuntimeConfig } from '../../core/data';
@@ -43,8 +44,8 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
       captureRuntimeRequirements: vi.fn().mockReturnValue(
         of({
           items: [
-            readyRequirement('windowsml-ocr', ['pdf', 'image']),
-            readyRequirement('speech-recognition', ['audio']),
+            readyRequirement('text-recognition', ['pdf', 'image']),
+            readyRequirement('speech-recognition', ['recording']),
           ],
         }),
       ),
@@ -96,7 +97,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     const controller = new AbortController();
     const file = new File(['pdf'], 'scan.pdf', { type: 'application/pdf' });
 
-    const request$ = client.startStreamingCapture({
+    const request$ = client.startCapture({
       clientRequestId: 'request-1',
       file,
       sourceKind: 'pdf',
@@ -368,7 +369,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     await seedCapture();
     const candidate = makeDocument();
 
-    const commit$ = client.commitStreamingStructuredResult('capture-1', {
+    const commit$ = client.commitStructure('capture-1', {
       clientRequestId: 'commit-1',
       candidate,
     });
@@ -389,7 +390,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     await seedCapture();
 
     await expect(
-      firstValueFrom(client.getStreamingPartial('capture-1')),
+      firstValueFrom(client.getPartial('capture-1')),
     ).resolves.toMatchObject({
       protocolVersion: '2',
       captureId: 'capture-1',
@@ -397,14 +398,14 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
       segments: [{ text: 'Recognized OCR text' }],
     });
     await expect(
-      firstValueFrom(client.getStreamingRaw('capture-1')),
+      firstValueFrom(client.getRaw('capture-1')),
     ).resolves.toMatchObject({
       schemaVersion: '2',
       source: { sha256: 'a'.repeat(64) },
       segments: [{ text: 'Recognized OCR text' }],
     });
     await expect(
-      firstValueFrom(client.getStreamingResult('capture-1')),
+      firstValueFrom(client.getResult('capture-1')),
     ).resolves.toMatchObject({
       operation: { protocolVersion: '2', status: 'completed' },
       raw: { diagnosticOnly: true },
@@ -428,22 +429,22 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     api.getResult.mockReturnValueOnce(of(mismatched));
 
     await expect(
-      firstValueFrom(client.getStreamingResult('capture-1')),
+      firstValueFrom(client.getResult('capture-1')),
     ).rejects.toThrow('result source does not match the capture operation');
   });
 
   it('forwards cancellation, failure reporting, and deletion through the backend', async () => {
     await seedCapture();
 
-    await firstValueFrom(client.cancelStreamingCapture('capture-1'));
+    await firstValueFrom(client.cancelCapture('capture-1'));
     await firstValueFrom(
-      client.reportStreamingStructuringFailure('capture-1', {
+      client.reportStructuringFailure('capture-1', {
         clientRequestId: 'failure-1',
         code: 'host_structuring_failed',
         message: 'Host structuring failed.',
       }),
     );
-    await firstValueFrom(client.deleteStreamingCapture('capture-1'));
+    await firstValueFrom(client.deleteCapture('capture-1'));
 
     expect(api.cancelCapture).toHaveBeenCalledWith(
       TEST_PROJECT_ID,
@@ -468,6 +469,99 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     expect(client.documentIdForSourceSha256('a'.repeat(64))).toBe('document-1');
   });
 
+  it.each([undefined, null, 'NVIDIA GeForce RTX 4060'])(
+    'preserves structuring deviceName %s through result, review and commit',
+    async (deviceName) => {
+      await seedCapture();
+      const document = makeDocument();
+      const engine = { ...document.structuringEngine, device: 'cuda',
+        ...(deviceName === undefined ? {} : { deviceName }) };
+      const candidate = { ...document, structuringEngine: engine };
+      api.getResult.mockReturnValueOnce(of({ ...makeCompositeResult(), result: candidate }));
+      const result = await firstValueFrom(client.getResult('capture-1'));
+      expect(result.result.structuringEngine).toEqual(engine);
+      api.structureCapture.mockReturnValueOnce(of(candidate));
+      const reviewed = await firstValueFrom(client.structure({
+        raw: makeRaw(), review: { reviewVersion: 1, edits: [] },
+        documentContract: { schemaVersion: '2', schemaSha256: 'schema-digest', jsonSchema: {} },
+        signal: new AbortController().signal, reportProgress: vi.fn(),
+      }));
+      expect(reviewed.structuringEngine).toEqual(engine);
+      await firstValueFrom(client.commitStructure('capture-1', {
+        clientRequestId: 'commit-device', candidate: reviewed,
+      }));
+      expect(api.commitCapture.mock.calls[0][2].candidate.structuringEngine).toEqual(engine);
+    },
+  );
+
+  it.each(['', '   ', 42, {}, false])('rejects invalid deviceName %s', async (deviceName) => {
+    await seedCapture();
+    const document = makeDocument();
+    api.getResult.mockReturnValueOnce(of({ ...makeCompositeResult(), result: {
+      ...document, structuringEngine: { ...document.structuringEngine, deviceName },
+    } }));
+    await expect(firstValueFrom(client.getResult('capture-1')))
+      .rejects.toThrow('structuringEngine.deviceName');
+  });
+
+  it('accepts waiting_input and rejects the retired created status', async () => {
+    await seedCapture();
+    api.getCapture.mockReturnValueOnce(of(makeOperation({ status: 'waiting_input' })));
+    await expect(firstValueFrom(client.getCapture('capture-1')))
+      .resolves.toMatchObject({ status: 'waiting_input' });
+    api.getCapture.mockReturnValueOnce(of(makeOperation({ status: 'created' })));
+    await expect(firstValueFrom(client.getCapture('capture-1')))
+      .rejects.toThrow('capture status is unsupported');
+  });
+
+  it.each(['recording', 'audio'])('decodes SSE kind %s against 0.11.0', async (kind) => {
+    await seedCapture();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+      sseFrame(4, 'checkpoint', { kind }),
+      { headers: { 'Content-Type': 'text/event-stream' } },
+    )));
+    const stream = firstValueFrom(client.captureEvents('capture-1'));
+    if (kind === 'recording') {
+      await expect(stream).resolves.toMatchObject({ kind: 'recording' });
+    } else {
+      await expect(stream).rejects.toThrow('event stream is invalid');
+    }
+  });
+
+  it('admits recording with speech recognition and preserves its ingestion identity', async () => {
+    api.createCapture.mockReturnValueOnce(of({ ...makeOperation(), kind: 'recording',
+      ingestionId: 'runtime-ingestion-recording' }));
+    await expect(firstValueFrom(client.startCapture({
+      clientRequestId: 'recording-1', file: new File(['audio'], 'lecture.mp3'),
+      sourceKind: 'recording', structuringMode: 'host',
+    }))).resolves.toMatchObject({ kind: 'recording', ingestionId: 'runtime-ingestion-recording' });
+    expect(api.createCapture).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['maxUploadBytes', undefined], ['maxChunkBytes', 0], ['maxChunkBytes', 4 * 1024 * 1024 + 1],
+    ['checkpointIntervalMs', -1], ['heartbeatIntervalMs', 1.5], ['stallTimeoutMs', Number.NaN],
+    ['supportsProgressiveRecording', undefined], ['captureKinds', ['audio']],
+    ['structuringModes', ['unknown']],
+  ] as const)('rejects malformed capability %s=%s before upload', async (field, value) => {
+    api.captureRuntimeReady.mockReturnValueOnce(of(readyResponse({ capabilities: { [field]: value } })));
+    await expect(firstValueFrom(client.startCapture({
+      clientRequestId: 'bad-capability', file: new File(['pdf'], 'scan.pdf'),
+      sourceKind: 'pdf', structuringMode: 'host',
+    }))).rejects.toThrow(`capabilities.${field}`);
+    expect(api.createCapture).not.toHaveBeenCalled();
+  });
+
+  it('preserves false capability flags from a valid runtime', async () => {
+    api.captureRuntimeReady.mockReturnValueOnce(of(readyResponse({ capabilities: {
+      supportsCancellation: false, supportsRawDiagnostics: false, supportsProgressiveRecording: false,
+    } })));
+    const ready = await firstValueFrom(client.getReady());
+    expect(ready.capabilities).toMatchObject({ supportsCancellation: false,
+      supportsRawDiagnostics: false, supportsProgressiveRecording: false });
+    expect(ready).not.toHaveProperty('schemaSha256');
+  });
+
   it('maps readiness and preserves the browser abort signal', async () => {
     const controller = new AbortController();
     await expect(
@@ -475,8 +569,11 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     ).resolves.toMatchObject({
       service: 'capture-runtime',
       runtimeVersion: CAPTURE_RUNTIME_VERSION,
-      ocrCompute: { runtimeVersion: CAPTURE_RUNTIME_VERSION },
-      capabilities: { captureKinds: ['pdf', 'image', 'audio'] },
+      ocrCompute: {
+        runtimeVersion: CAPTURE_RUNTIME_VERSION,
+        contractSetSha256: 'a'.repeat(64),
+      },
+      capabilities: readyCapabilities(),
     });
     expect(api.captureRuntimeReady).toHaveBeenCalledWith({
       signal: controller.signal,
@@ -484,8 +581,8 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
   });
 
   it.each([
-    ['dedicated', 'gpu-dml', null, false, null],
-    ['integrated', 'gpu-dml', null, false, null],
+    ['dedicated', 'gpu', null, false, null],
+    ['integrated', 'gpu', null, false, null],
     [
       'integrated',
       'cpu-fallback',
@@ -496,7 +593,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     [
       'unknown',
       'cpu-fallback',
-      'dml_provider_unavailable',
+      'gpu_provider_unavailable',
       true,
       'ocr_cpu_fallback',
     ],
@@ -536,7 +633,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
         readyResponse({
           ocrCompute: {
             ...readyOcrCompute(),
-            mode: 'gpu-dml',
+            mode: 'gpu',
             reasonCode: 'no_compatible_gpu',
             userNoticeRequired: true,
             noticeCode: 'ocr_cpu_fallback',
@@ -546,28 +643,28 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     );
 
     await expect(firstValueFrom(client.getReady())).rejects.toThrow(
-      'gpu-dml cannot carry a fallback reason or notice',
+      'gpu cannot carry a fallback reason or notice',
     );
   });
 
   it.each([
     [
       'pdf',
-      'windowsml-ocr',
-      'WindowsML OCR is unavailable',
+      'text-recognition',
+      'Text recognition is unavailable',
       new File(['pdf'], 'scan.pdf', { type: 'application/pdf' }),
     ],
     [
       'image',
-      'windowsml-ocr',
-      'WindowsML OCR is unavailable',
+      'text-recognition',
+      'Text recognition is unavailable',
       new File(['image'], 'scan.png', { type: 'image/png' }),
     ],
     [
-      'audio',
+      'recording',
       'speech-recognition',
       'Speech recognition is unavailable',
-      new File(['audio'], 'lecture.mp3', { type: 'audio/mpeg' }),
+      new File(['recording'], 'lecture.mp3', { type: 'audio/mpeg' }),
     ],
   ] as const)(
     'rejects %s before upload when its runtime requirement is unavailable',
@@ -575,19 +672,19 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
       api.captureRuntimeRequirements.mockReturnValueOnce(
         of({
           items: [
-            requirementId === 'windowsml-ocr'
-              ? unavailableRequirement('windowsml-ocr', ['pdf', 'image'])
-              : readyRequirement('windowsml-ocr', ['pdf', 'image']),
+            requirementId === 'text-recognition'
+              ? unavailableRequirement('text-recognition', ['pdf', 'image'])
+              : readyRequirement('text-recognition', ['pdf', 'image']),
             requirementId === 'speech-recognition'
-              ? unavailableRequirement('speech-recognition', ['audio'])
-              : readyRequirement('speech-recognition', ['audio']),
+              ? unavailableRequirement('speech-recognition', ['recording'])
+              : readyRequirement('speech-recognition', ['recording']),
           ],
         }),
       );
 
       await expect(
         firstValueFrom(
-          client.startStreamingCapture({
+          client.startCapture({
             clientRequestId: `blocked-${sourceKind}`,
             file,
             sourceKind,
@@ -606,7 +703,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
 
     await expect(
       firstValueFrom(
-        client.startStreamingCapture({
+        client.startCapture({
           clientRequestId: 'wrong-runtime',
           file: new File(['pdf'], 'scan.pdf', { type: 'application/pdf' }),
           sourceKind: 'pdf',
@@ -624,7 +721,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     );
 
     await expect(
-      firstValueFrom(client.getStreamingCapture('capture-1')),
+      firstValueFrom(client.getCapture('capture-1')),
     ).rejects.toThrow('backend unavailable');
   });
 
@@ -636,8 +733,8 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     ],
     [
       'capabilities outside the Capture contract',
-      { capabilities: { supportsCancellation: false } },
-      'outside the Capture contract',
+      { capabilities: { supportsCancellation: 'yes' } },
+      'capabilities.supportsCancellation',
     ],
     [
       'an OCR preflight for a different runtime version',
@@ -659,8 +756,8 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     ],
     [
       'a preflight with a malformed contract digest',
-      { ocrCompute: { ...readyOcrCompute(), contractSha256: 'nope' } },
-      'ocrCompute.contractSha256',
+      { ocrCompute: { ...readyOcrCompute(), contractSetSha256: 'nope' } },
+      'ocrCompute.contractSetSha256',
     ],
   ] as const)(
     'rejects readiness with %s',
@@ -680,7 +777,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
 
     await expect(
       firstValueFrom(
-        client.startStreamingCapture({
+        client.startCapture({
           clientRequestId: 'unsupported-kind',
           file: new File(['pdf'], 'scan.pdf', { type: 'application/pdf' }),
           sourceKind: 'pdf',
@@ -698,7 +795,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
 
     await expect(
       firstValueFrom(
-        client.startStreamingCapture({
+        client.startCapture({
           clientRequestId: 'not-ready',
           file: new File(['pdf'], 'scan.pdf', { type: 'application/pdf' }),
           sourceKind: 'pdf',
@@ -716,7 +813,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
 
     await expect(
       firstValueFrom(
-        client.startStreamingCapture({
+        client.startCapture({
           clientRequestId: 'kind-mismatch',
           file: new File(['pdf'], 'scan.pdf', { type: 'application/pdf' }),
           sourceKind: 'pdf',
@@ -727,7 +824,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
   });
 
   it('rejects malformed capture identifiers before any backend call', () => {
-    expect(() => client.getStreamingCapture('bad id')).toThrow(
+    expect(() => client.getCapture('bad id')).toThrow(
       'captureId has an invalid format',
     );
     expect(api.getCapture).not.toHaveBeenCalled();
@@ -773,7 +870,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
       );
 
       await expect(
-        firstValueFrom(client.getStreamingCapture('capture-1')),
+        firstValueFrom(client.getCapture('capture-1')),
       ).rejects.toThrow(message);
     },
   );
@@ -782,12 +879,12 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     await seedCapture();
     const { signal } = new AbortController();
 
-    await firstValueFrom(client.getStreamingCapture('capture-1', signal));
-    await firstValueFrom(client.getStreamingPartial('capture-1', signal));
-    await firstValueFrom(client.getStreamingRaw('capture-1', signal));
-    await firstValueFrom(client.getStreamingResult('capture-1', signal));
-    await firstValueFrom(client.cancelStreamingCapture('capture-1', signal));
-    await firstValueFrom(client.deleteStreamingCapture('capture-1', signal));
+    await firstValueFrom(client.getCapture('capture-1', signal));
+    await firstValueFrom(client.getPartial('capture-1', signal));
+    await firstValueFrom(client.getRaw('capture-1', signal));
+    await firstValueFrom(client.getResult('capture-1', signal));
+    await firstValueFrom(client.cancelCapture('capture-1', signal));
+    await firstValueFrom(client.deleteCapture('capture-1', signal));
 
     expect(api.getCapture).toHaveBeenLastCalledWith(
       TEST_PROJECT_ID,
@@ -829,13 +926,13 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     );
 
     await expect(
-      firstValueFrom(client.getStreamingResult('capture-1')),
+      firstValueFrom(client.getResult('capture-1')),
     ).rejects.toThrow('result source does not match the capture operation');
   });
 
   async function seedCapture(): Promise<void> {
     await firstValueFrom(
-      client.startStreamingCapture({
+      client.startCapture({
         clientRequestId: 'seed-capture',
         file: new File(['pdf'], 'scan.pdf', { type: 'application/pdf' }),
         sourceKind: 'pdf',
@@ -917,10 +1014,10 @@ function makeRaw() {
     ],
     sourceText: 'Recognized OCR text',
     extractionEngine: {
-      engine: 'windowsml_ocr',
+      engine: 'text-recognition',
       model: `capture-runtime@${CAPTURE_RUNTIME_VERSION}`,
       digest: `sha256:${'a'.repeat(64)}`,
-      device: 'WindowsML',
+      device: 'directml',
     },
     warnings: [],
     createdAt: '2026-07-23T10:00:00.000Z',
@@ -988,13 +1085,18 @@ function sseFrame(
   return `id: ${sequence}\nevent: ${eventType}\ndata: ${JSON.stringify(event)}\n\n`;
 }
 
-function readyCapabilities() {
+function readyCapabilities(): RuntimeCapabilities {
   return {
-    captureKinds: ['pdf', 'image', 'audio'],
+    captureKinds: ['pdf', 'image', 'recording'],
     structuringModes: ['host'],
     supportsCancellation: true,
     supportsRawDiagnostics: true,
     maxUploadBytes: 50_000_000,
+    maxChunkBytes: 4 * 1024 * 1024,
+    checkpointIntervalMs: 1000,
+    heartbeatIntervalMs: 5000,
+    stallTimeoutMs: 60000,
+    supportsProgressiveRecording: true,
   };
 }
 
@@ -1005,9 +1107,9 @@ function readyOcrCompute() {
     service: 'capture-runtime',
     runtimeVersion: CAPTURE_RUNTIME_VERSION,
     contractSetVersion: '2',
-    contractSha256: 'a'.repeat(64),
+    contractSetSha256: 'a'.repeat(64),
     workerSha256: 'b'.repeat(64),
-    mode: 'gpu-dml',
+    mode: 'gpu',
     adapterClass: 'dedicated',
     reasonCode: null,
     userNoticeRequired: false,
@@ -1040,15 +1142,15 @@ function readyResponse(override: Record<string, unknown>) {
 }
 
 function unavailableRequirement(
-  requirementId: 'windowsml-ocr' | 'speech-recognition',
+  requirementId: 'text-recognition' | 'speech-recognition',
   requiredFor: readonly string[],
 ) {
   return {
     requirementId,
-    kind: requirementId === 'windowsml-ocr' ? 'ocr' : 'speech-to-text',
+    kind: requirementId,
     displayName:
-      requirementId === 'windowsml-ocr'
-        ? 'WindowsML OCR'
+      requirementId === 'text-recognition'
+        ? 'Text recognition'
         : 'Speech recognition',
     status: 'unavailable',
     requiredFor,
@@ -1059,7 +1161,7 @@ function unavailableRequirement(
 }
 
 function readyRequirement(
-  requirementId: 'windowsml-ocr' | 'speech-recognition',
+  requirementId: 'text-recognition' | 'speech-recognition',
   requiredFor: readonly string[],
 ) {
   return {

@@ -24,7 +24,7 @@ describe('CaptureRuntimePreflightStore', () => {
   });
 
   it('keeps GPU acceleration visible without a CPU fallback notice', () => {
-    client.getReady.mockReturnValue(of(runtimeReady('gpu-dml', 'dedicated')));
+    client.getReady.mockReturnValue(of(runtimeReady('gpu', 'dedicated')));
     const store = TestBed.inject(CaptureRuntimePreflightStore);
 
     store.load().subscribe();
@@ -45,7 +45,7 @@ describe('CaptureRuntimePreflightStore', () => {
     ],
     [
       'CPU fallback with unavailable DirectML provider',
-      () => runtimeReady('cpu-fallback', 'unknown', 'dml_provider_unavailable'),
+      () => runtimeReady('cpu-fallback', 'unknown', 'gpu_provider_unavailable'),
       'no compatible GPU/DML, CPU may be slower',
     ],
     [
@@ -88,7 +88,7 @@ describe('CaptureRuntimePreflightStore', () => {
 
   it('blocks import when the runtime omits its OCR decision', () => {
     client.getReady.mockReturnValue(
-      of({ ...runtimeReady('gpu-dml', 'dedicated'), ocrCompute: null }),
+      of({ ...runtimeReady('gpu', 'dedicated'), ocrCompute: null }),
     );
     const store = TestBed.inject(CaptureRuntimePreflightStore);
 
@@ -114,9 +114,9 @@ describe('CaptureRuntimePreflightStore', () => {
 });
 
 function runtimeReady(
-  mode: 'gpu-dml' | 'cpu-fallback',
+  mode: 'gpu' | 'cpu-fallback',
   adapterClass: 'dedicated' | 'integrated' | 'unknown',
-  reasonCode: 'no_compatible_gpu' | 'dml_provider_unavailable' | null = null,
+  reasonCode: 'no_compatible_gpu' | 'gpu_provider_unavailable' | null = null,
 ): CaptureRuntimeReady {
   return {
     ready: true,
@@ -124,14 +124,25 @@ function runtimeReady(
     apiVersion: '2.0',
     runtimeVersion: CAPTURE_RUNTIME_VERSION,
     captureDocumentSchemaVersion: '2',
-    capabilities: {},
+    capabilities: {
+      captureKinds: ['pdf', 'image', 'recording'],
+      structuringModes: ['host'],
+      supportsCancellation: true,
+      supportsRawDiagnostics: true,
+      maxUploadBytes: 50_000_000,
+      maxChunkBytes: 4 * 1024 * 1024,
+      checkpointIntervalMs: 1000,
+      heartbeatIntervalMs: 5000,
+      stallTimeoutMs: 60000,
+      supportsProgressiveRecording: true,
+    },
     ocrCompute: {
       apiVersion: '2.0',
       schemaVersion: '1',
       service: 'capture-runtime',
       runtimeVersion: SDK_RUNTIME_VERSION,
       contractSetVersion: '2',
-      contractSha256: 'a'.repeat(64),
+      contractSetSha256: 'a'.repeat(64),
       workerSha256: 'b'.repeat(64),
       mode,
       adapterClass,

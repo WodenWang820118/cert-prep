@@ -389,6 +389,7 @@ const COMBINED_CANDIDATE_CONTROL_FILES = new Set([
   'candidate-manifest.json',
   'candidate-manifest.json.sha256',
   'release-ledger.json',
+  'candidate-verification-summary.json',
   'contract-impact.json',
 ]);
 
@@ -773,43 +774,76 @@ async function verifyCombinedCandidateRoot(
   if (sidecar !== `${manifestSha256}  candidate-manifest.json`) {
     throw new Error('Candidate manifest SHA-256 sidecar is invalid.');
   }
-  const ledger = parseJsonBytes(
-    await readFile(join(root, 'release-ledger.json')),
-    'Candidate release ledger',
-  );
-  exactRecordKeys(
-    ledger,
-    [
-      'artifacts',
-      'candidateId',
-      'candidateManifestSha256',
-      'releaseMode',
-      'schemaSha256',
-      'sourceCommit',
-      'status',
-      'version',
-    ],
-    'Candidate release ledger',
-  );
-  if (
-    ledger.candidateId !== manifestCandidateId ||
-    ledger.candidateManifestSha256 !== manifestSha256 ||
-    ledger.sourceCommit !== input.sourceCommit ||
-    ledger.version !== input.releaseVersion ||
-    ledger.releaseMode !== manifest.releaseMode ||
-    ledger.status !== 'candidate-verified' ||
-    !Array.isArray(ledger.artifacts)
-  ) {
-    throw new Error('Candidate release ledger identity is invalid.');
-  }
   const schemaArtifact = artifacts.find(
     (artifact) => artifact.path === 'runtime/capture-document-v2.schema.json',
   );
   if (!schemaArtifact) {
     throw new Error('Candidate runtime schema artifact is missing.');
   }
-  if (ledger.schemaSha256 !== schemaArtifact.sha256) {
-    throw new Error('Candidate release ledger schema digest is invalid.');
+  const cutoff = /^(0)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?$/u.exec(String(manifest.releaseVersion));
+  const allowsLegacy = cutoff !== null && (Number(cutoff[2]) < 11 || (Number(cutoff[2]) === 11 && Number(cutoff[3]) === 0 && Boolean(cutoff[4])));
+  let summaryBytes: Buffer | undefined;
+  try {
+    summaryBytes = await readFile(join(root, 'candidate-verification-summary.json'));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || !allowsLegacy) throw error;
+  }
+  let ledger: Record<string, unknown> | undefined;
+  if (summaryBytes !== undefined) {
+    const summary = parseJsonBytes(summaryBytes, 'Candidate verification summary');
+    exactRecordKeys(summary, ['schemaVersion', 'candidateId', 'sourceCommit', 'candidateManifestSha256', 'contractSetSha256', 'captureDocumentSchemaSha256'], 'Candidate verification summary');
+    if (summary.schemaVersion !== '1' || summary.candidateId !== manifest.candidateId || summary.sourceCommit !== manifest.sourceCommit || summary.candidateManifestSha256 !== manifestSha256 || summary.contractSetSha256 !== manifest.contractSetSha256 || summary.captureDocumentSchemaSha256 !== schemaArtifact.sha256) {
+      throw new Error('Candidate verification summary does not match the candidate manifest.');
+    }
+    const contractDigest = sha256(await readFile(join(root, 'contracts/contract-set.json')));
+    if (contractDigest !== summary.contractSetSha256) throw new Error('Candidate verification summary contract digest is invalid.');
+    // From 0.11.0 on the summary is the only receipt; a ledger beside it would
+    // be accepted unvalidated, so its presence fails the candidate.
+    if (!allowsLegacy) {
+      const leftoverLedger = await lstat(join(root, 'release-ledger.json')).then(
+        () => true,
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === 'ENOENT') return false;
+          throw error;
+        },
+      );
+      if (leftoverLedger) {
+        throw new Error('Candidate release ledger is not allowed beside a verification summary from 0.11.0 on.');
+      }
+    }
+  } else {
+    ledger = parseJsonBytes(
+      await readFile(join(root, 'release-ledger.json')),
+      'Candidate release ledger',
+    );
+    exactRecordKeys(
+      ledger,
+      [
+        'artifacts',
+        'candidateId',
+        'candidateManifestSha256',
+        'releaseMode',
+        'schemaSha256',
+        'sourceCommit',
+        'status',
+        'version',
+      ],
+      'Candidate release ledger',
+    );
+    if (
+      ledger.candidateId !== manifestCandidateId ||
+      ledger.candidateManifestSha256 !== manifestSha256 ||
+      ledger.sourceCommit !== input.sourceCommit ||
+      ledger.version !== input.releaseVersion ||
+      ledger.releaseMode !== manifest.releaseMode ||
+      ledger.status !== 'candidate-verified' ||
+      !Array.isArray(ledger.artifacts)
+    ) {
+      throw new Error('Candidate release ledger identity is invalid.');
+    }
+    if (ledger.schemaSha256 !== schemaArtifact.sha256) {
+      throw new Error('Candidate release ledger schema digest is invalid.');
+    }
   }
   if (schemaArtifact.sha256 !== CAPTURE_DOCUMENT_SCHEMA_SHA256) {
     throw new Error(
@@ -899,26 +933,28 @@ async function verifyCombinedCandidateRoot(
       sha256: artifact.sha256,
     };
   });
-  const declaredLedgerArtifacts = ledger.artifacts.map(ledgerArtifact);
-  const ledgerArtifactKey = (artifact: {
-    readonly registry: string;
-    readonly name: string;
-    readonly sha256: string;
-  }): string =>
-    `${artifact.registry}\u0000${artifact.name}\u0000${artifact.sha256}`;
-  const expectedLedgerKeys = new Set(
-    expectedLedgerArtifacts.map(ledgerArtifactKey),
-  );
-  const declaredLedgerKeys = declaredLedgerArtifacts.map(ledgerArtifactKey);
-  if (
-    declaredLedgerArtifacts.length !== expectedLedgerArtifacts.length ||
-    expectedLedgerKeys.size !== expectedLedgerArtifacts.length ||
-    new Set(declaredLedgerKeys).size !== declaredLedgerKeys.length ||
-    declaredLedgerKeys.some((key) => !expectedLedgerKeys.has(key))
-  ) {
-    throw new Error(
-      'Candidate release ledger artifact inventory is incomplete.',
+  if (ledger) {
+    const declaredLedgerArtifacts = (ledger.artifacts as unknown[]).map(ledgerArtifact);
+    const ledgerArtifactKey = (artifact: {
+      readonly registry: string;
+      readonly name: string;
+      readonly sha256: string;
+    }): string =>
+      `${artifact.registry}\u0000${artifact.name}\u0000${artifact.sha256}`;
+    const expectedLedgerKeys = new Set(
+      expectedLedgerArtifacts.map(ledgerArtifactKey),
     );
+    const declaredLedgerKeys = declaredLedgerArtifacts.map(ledgerArtifactKey);
+    if (
+      declaredLedgerArtifacts.length !== expectedLedgerArtifacts.length ||
+      expectedLedgerKeys.size !== expectedLedgerArtifacts.length ||
+      new Set(declaredLedgerKeys).size !== declaredLedgerKeys.length ||
+      declaredLedgerKeys.some((key) => !expectedLedgerKeys.has(key))
+    ) {
+      throw new Error(
+        'Candidate release ledger artifact inventory is incomplete.',
+      );
+    }
   }
   for (const artifact of expectedRegistryArtifacts) {
     const name = basename(artifact.path);
@@ -1076,20 +1112,20 @@ async function loadContractIdentity(
       (value as Record<string, unknown>).path ===
         '/v2/captures/{capture_id}/ocr',
   ) as Record<string, unknown> | undefined;
-  if (ocrOperation?.responseSchema !== 'CaptureOcrProjectionV3') {
+  if (ocrOperation?.responseSchema !== 'CaptureOcrProjection') {
     throw new Error(
-      'Candidate contract set does not expose the CaptureOcrProjectionV3 schema.',
+      'Candidate contract set does not expose the CaptureOcrProjection schema.',
     );
   }
   const schemas = Array.isArray(contractSet.schemas)
     ? contractSet.schemas.filter(isRecord)
     : [];
   const projectionSchemas = schemas.filter(
-    (schema) => schema.name === 'CaptureOcrProjectionV3',
+    (schema) => schema.name === 'CaptureOcrProjection',
   );
   if (projectionSchemas.length !== 1) {
     throw new Error(
-      'Candidate contract set must declare exactly one CaptureOcrProjectionV3 schema.',
+      'Candidate contract set must declare exactly one CaptureOcrProjection schema.',
     );
   }
   const projectionProperties = isRecord(projectionSchemas[0].schema)
@@ -1102,7 +1138,7 @@ async function loadContractIdentity(
     : undefined;
   if (projectionSchemaVersion !== '3') {
     throw new Error(
-      `Candidate CaptureOcrProjectionV3 schema version must be 3, found ${String(projectionSchemaVersion)}.`,
+      `Candidate CaptureOcrProjection schema version must be 3, found ${String(projectionSchemaVersion)}.`,
     );
   }
   return {
@@ -1165,7 +1201,7 @@ async function loadCandidateWorker(
       typeof value === 'object' &&
       value !== null &&
       !Array.isArray(value) &&
-      (value as Record<string, unknown>).requirementId === 'windowsml-ocr',
+      (value as Record<string, unknown>).requirementId === 'text-recognition',
   ) as Record<string, unknown> | undefined;
   const artifacts =
     ocrRequirement && Array.isArray(ocrRequirement.artifacts)
@@ -1177,7 +1213,7 @@ async function loadCandidateWorker(
     artifacts[0] === null
   ) {
     if (required)
-      throw new Error('Candidate engine catalog has no WindowsML OCR worker.');
+      throw new Error('Candidate engine catalog has no text recognition worker.');
     return undefined;
   }
   const artifact = artifacts[0] as Record<string, unknown>;
@@ -1194,7 +1230,7 @@ async function loadCandidateWorker(
     expectedBytes < 1
   ) {
     throw new Error(
-      'Candidate engine catalog has an invalid WindowsML OCR worker.',
+      'Candidate engine catalog has an invalid text recognition worker.',
     );
   }
   const workerPath = join(runtimeRoot, fileName);

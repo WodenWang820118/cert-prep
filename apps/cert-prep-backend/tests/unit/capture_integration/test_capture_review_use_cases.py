@@ -10,8 +10,8 @@ import pytest
 
 from capture_runtime_client import (
     CAPTURE_RUNTIME_VERSION,
-    StreamingCaptureStatus,
-    StreamingEventType,
+    CaptureStatus,
+    CaptureEventType,
 )
 
 from cert_prep_backend.capture_integration.application import use_cases
@@ -507,7 +507,7 @@ class FakeRuntime:
         self.terminal_sequence = 4
         self.cancellation_sequence: int | None = 5
         self.operation: object = "runtime-operation"
-        self.view = _RuntimeOperation(StreamingCaptureStatus.EXTRACTING, 4)
+        self.view = _RuntimeOperation(CaptureStatus.EXTRACTING, 4)
         self.partial: object = "partial"
         self.raw: object = "raw"
         self.structured: object = "structured"
@@ -516,7 +516,7 @@ class FakeRuntime:
         )
         self.ocr_projection: object = object()
         self.result = _RuntimeResult(
-            _RuntimeOperation(StreamingCaptureStatus.COMPLETED, 7),
+            _RuntimeOperation(CaptureStatus.COMPLETED, 7),
             "raw-result",
         )
         self.should_cancel = None
@@ -613,11 +613,11 @@ class FakeRuntime:
 
     def status_is(self, operation: object, token: str) -> bool:
         self.trace.append(("status_is", token))
-        return operation.status is StreamingCaptureStatus(token)
+        return operation.status is CaptureStatus(token)
 
     def status_equals(self, operation: object, *tokens: str) -> bool:
         self.trace.append(("status_equals", tokens))
-        return operation.status in {StreamingCaptureStatus(token) for token in tokens}
+        return operation.status in {CaptureStatus(token) for token in tokens}
 
 
 class FakeWork:
@@ -1943,11 +1943,11 @@ def test_an_event_stream_runtime_error_keeps_its_status_code() -> None:
     assert stream.calls == [("runtime", -1)]
 
     runtime = CoordinatorCaptureRuntime(object(), object())
-    terminal = SimpleNamespace(event_type=StreamingEventType.FAILED, stage="failed")
+    terminal = SimpleNamespace(event_type=CaptureEventType.FAILED, stage="failed")
     heartbeat = SimpleNamespace(event_type="checkpoint", stage="extracting")
     awaiting = SimpleNamespace(
         event_type="checkpoint",
-        stage=StreamingCaptureStatus.AWAITING_STRUCTURING.value,
+        stage=CaptureStatus.AWAITING_STRUCTURING.value,
     )
     assert runtime.event_is_terminal(terminal) is True
     assert runtime.event_is_terminal(heartbeat) is False
@@ -2072,9 +2072,9 @@ def test_view_capture_propagates_a_missing_session_or_document() -> None:
 @pytest.mark.parametrize(
     "status",
     [
-        StreamingCaptureStatus.COMPLETED,
-        StreamingCaptureStatus.FAILED,
-        StreamingCaptureStatus.CANCELLED,
+        CaptureStatus.COMPLETED,
+        CaptureStatus.FAILED,
+        CaptureStatus.CANCELLED,
     ],
 )
 def test_an_active_terminal_runtime_status_is_observed_then_hidden(status: object) -> None:
@@ -2097,7 +2097,7 @@ def test_an_active_terminal_runtime_status_is_observed_then_hidden(status: objec
 def test_a_session_terminalized_by_observe_keeps_a_matching_operation() -> None:
     world = World()
     with_runtime(world)
-    world.runtime.view = _RuntimeOperation(StreamingCaptureStatus.COMPLETED, 11)
+    world.runtime.view = _RuntimeOperation(CaptureStatus.COMPLETED, 11)
     world.sessions.observed = replace(
         world.sessions.session,
         status=CaptureReviewStatus.COMPLETED,
@@ -2114,10 +2114,9 @@ def test_a_session_terminalized_by_observe_keeps_a_matching_operation() -> None:
 @pytest.mark.parametrize(
     "status",
     [
-        StreamingCaptureStatus.CREATED,
-        StreamingCaptureStatus.WAITING_INPUT,
-        StreamingCaptureStatus.EXTRACTING,
-        StreamingCaptureStatus.STRUCTURING,
+        CaptureStatus.WAITING_INPUT,
+        CaptureStatus.EXTRACTING,
+        CaptureStatus.STRUCTURING,
     ],
 )
 def test_a_pending_capture_returns_other_statuses_without_reporting_extracting(
@@ -2147,7 +2146,7 @@ def test_pending_awaiting_structuring_reports_extracting_until_review(
 ) -> None:
     world = World()
     with_runtime(world)
-    world.runtime.view = _RuntimeOperation(StreamingCaptureStatus.AWAITING_STRUCTURING, 9)
+    world.runtime.view = _RuntimeOperation(CaptureStatus.AWAITING_STRUCTURING, 9)
     world.operations.phase = phase
 
     viewed = view(world)
@@ -2161,7 +2160,7 @@ def test_pending_awaiting_structuring_reports_extracting_until_review(
 def test_a_failed_phase_read_is_not_ready_and_reports_extracting() -> None:
     world = World()
     with_runtime(world)
-    world.runtime.view = _RuntimeOperation(StreamingCaptureStatus.AWAITING_STRUCTURING, 9)
+    world.runtime.view = _RuntimeOperation(CaptureStatus.AWAITING_STRUCTURING, 9)
     world.operations.operation_error = RuntimeError("missing")
 
     viewed = view(world)
@@ -2198,7 +2197,7 @@ def test_an_active_capture_whose_observe_fails_is_unavailable() -> None:
 
 @pytest.mark.parametrize(
     "status",
-    ["completed", StreamingCaptureStatus.FAILED],
+    ["completed", CaptureStatus.FAILED],
 )
 def test_a_terminal_session_whose_status_is_fails_returns_no_operation(status: object) -> None:
     world = World()
@@ -2236,7 +2235,7 @@ def test_an_inactive_capture_tolerates_an_observe_failure() -> None:
     )
     world.sessions.session = original
     world.sessions.observe_error = RuntimeError("db")
-    world.runtime.view = _RuntimeOperation(StreamingCaptureStatus.CANCELLED, 9)
+    world.runtime.view = _RuntimeOperation(CaptureStatus.CANCELLED, 9)
 
     viewed = view(world)
 
@@ -2412,7 +2411,7 @@ def test_runtime_status_predicates_keep_identity_apart_from_membership() -> None
             self.status = status
 
     runtime = CoordinatorCaptureRuntime(object(), object())
-    member = _Operation(StreamingCaptureStatus.COMPLETED)
+    member = _Operation(CaptureStatus.COMPLETED)
     assert runtime.status_is(member, "completed") is True
     assert runtime.status_equals(member, "completed", "failed", "cancelled") is True
 
@@ -2420,11 +2419,11 @@ def test_runtime_status_predicates_keep_identity_apart_from_membership() -> None
     assert runtime.status_is(text, "completed") is False
     assert runtime.status_equals(text, "completed", "failed", "cancelled") is True
 
-    extracting = _Operation(StreamingCaptureStatus.EXTRACTING)
+    extracting = _Operation(CaptureStatus.EXTRACTING)
     assert runtime.status_is(extracting, "awaiting_structuring") is False
     assert runtime.status_equals(extracting, "completed", "failed", "cancelled") is False
 
-    awaiting = _Operation(StreamingCaptureStatus.AWAITING_STRUCTURING)
+    awaiting = _Operation(CaptureStatus.AWAITING_STRUCTURING)
     assert runtime.status_is(awaiting, "awaiting_structuring") is True
 
 
@@ -2444,7 +2443,7 @@ def _ocr_source() -> SimpleNamespace:
 def _ocr_provenance() -> SimpleNamespace:
     return SimpleNamespace(
         status=_enum_value("resolved"),
-        engine="windowsml-ocr",
+        engine="text-recognition",
         model="capture-ocr-model",
         model_digest="sha256:" + "b" * 64,
         device="directml:0",
@@ -2478,9 +2477,9 @@ def _ocr_projection() -> SimpleNamespace:
         status=_enum_value("completed"),
         source=_ocr_source(),
         pages=[page],
-        page_count=1,
+        processed_page_count=1,
         runtime_version=CAPTURE_RUNTIME_VERSION,
-        contract_sha256="d" * 64,
+        contract_set_sha256="d" * 64,
         provenance=_ocr_provenance(),
         failure=None,
     )
@@ -2616,7 +2615,7 @@ def test_an_unknown_review_status_is_ocr_unavailable() -> None:
     assert calls(world) == ["get"]
 
 
-@pytest.mark.parametrize("status", ["created", "waiting_input", "extracting"])
+@pytest.mark.parametrize("status", ["waiting_input", "extracting"])
 def test_an_early_runtime_status_is_not_ready_and_does_not_read_ocr(status: str) -> None:
     world = World()
     with_runtime(world)
@@ -2808,7 +2807,7 @@ def test_a_completed_capture_loads_chunks_then_display_before_fetch_and_observe(
     chunk = object()
     world.documents.chunks = [chunk]
     world.files.size = 18
-    operation = _RuntimeOperation(StreamingCaptureStatus.COMPLETED, 9)
+    operation = _RuntimeOperation(CaptureStatus.COMPLETED, 9)
     world.runtime.result = _RuntimeResult(operation, "raw-body")
 
     stored = load_completed(world)

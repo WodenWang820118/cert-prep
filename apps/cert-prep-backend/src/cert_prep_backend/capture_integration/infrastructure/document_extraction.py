@@ -85,7 +85,10 @@ class CaptureSourceExtraction:
                 file_name=file_name,
                 content=content,
                 media_type=_MEDIA_TYPES.get(canonical_suffix.lower(), "application/octet-stream"),
-                source_kind=CaptureSourceKind(source_kind),
+                # Cert stores "audio"; Capture names that source kind "recording".
+                source_kind=CaptureSourceKind.RECORDING
+                if is_audio
+                else CaptureSourceKind(source_kind),
                 target_language="zh-Hant" if is_audio else None,
                 should_cancel=should_cancel,
                 spoken_language=capture_spoken_language(language_hint) if is_audio else None,

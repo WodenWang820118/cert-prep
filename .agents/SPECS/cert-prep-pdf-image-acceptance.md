@@ -8,6 +8,11 @@ Runtime installation. `cert-prep-desktop:acceptance-real-recorded` runs the
 same journeys without the pixel baseline comparison. The journey steps are in
 the header of `apps/cert-prep-desktop/scripts/acceptance-real.spec.mts`.
 
+`acceptance-real` covers JPEG and scanned PDF text recognition.
+`acceptance-real-recorded` records the same OCR journey; speech recognition and
+Cert-owned Ollama require separate installed-app journeys with actual device
+evidence.
+
 The pixel baselines of the privacy-free runtime screens date from an older UI
 and need the product owner's review before they are updated
 (https://github.com/gx-capture/capture-workbench/issues/241).

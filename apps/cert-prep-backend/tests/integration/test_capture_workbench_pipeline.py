@@ -29,7 +29,7 @@ from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeError,
     CaptureRuntimeProtocolError,
-    CaptureStreamingResult,
+    CaptureResult,
     CaptureUpload,
 )
 from cert_prep_backend.capture_integration.infrastructure import review_workflow
@@ -60,7 +60,7 @@ NOW = datetime(2026, 7, 20, 5, 0, tzinfo=UTC)
 
 def _public_capture_document(
     *,
-    engine: str = "windowsml-ocr",
+    engine: str = "text-recognition",
 ) -> tuple[CaptureDocument, RawCapture]:
     raw = RawCapture.model_validate(
         {
@@ -133,7 +133,7 @@ def _attach_public_capture(
     client: TestClient,
     tmp_path: Path,
     *,
-    engine: str = "windowsml-ocr",
+    engine: str = "text-recognition",
 ) -> dict[str, object]:
     headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
     project_id = _create_project(client, headers)
@@ -584,7 +584,7 @@ class DeterministicCaptureRuntime(TypedPullSessionRuntimeMixin):
                 ],
                 "sourceText": "Sidecar extracted source text",
                 "extractionEngine": {
-                    "engine": "windowsml-ocr",
+                    "engine": "text-recognition",
                     "model": "capture-ocr-v1",
                     "digest": f"sha256:{'b' * 64}",
                     "device": "igpu",
@@ -620,10 +620,10 @@ class DeterministicCaptureRuntime(TypedPullSessionRuntimeMixin):
         assert self.raw is not None
         return self.raw
 
-    def get_result(self, _capture_id: str) -> CaptureStreamingResult:
+    def get_result(self, _capture_id: str) -> CaptureResult:
         assert self.raw is not None
         assert self.result is not None
-        return CaptureStreamingResult(
+        return CaptureResult(
             operation=self._operation(status="completed"),
             raw=self.raw,
             result=self.result,
@@ -775,7 +775,7 @@ class BlockingDeterministicCaptureRuntime(DeterministicCaptureRuntime):
         self.release_commit = Event()
         self.result_reads = 0
 
-    def get_result(self, capture_id: str) -> CaptureStreamingResult:
+    def get_result(self, capture_id: str) -> CaptureResult:
         self.result_reads += 1
         if self.result_reads > 1:
             self.commit_started.set()
@@ -793,7 +793,7 @@ class InvalidResultReplayCaptureRuntime(DeterministicCaptureRuntime):
         super().__init__()
         self.result_reads = 0
 
-    def get_result(self, capture_id: str) -> CaptureStreamingResult:
+    def get_result(self, capture_id: str) -> CaptureResult:
         self.result_reads += 1
         if self.result_reads > 1:
             raise CaptureRuntimeProtocolError(
@@ -803,7 +803,18 @@ class InvalidResultReplayCaptureRuntime(DeterministicCaptureRuntime):
 
 
 class DeterministicAudioCaptureRuntime(DeterministicCaptureRuntime):
-    expected_source_kind = CaptureSourceKind.AUDIO
+    expected_source_kind = CaptureSourceKind.RECORDING
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.started_source_kinds: list[CaptureSourceKind] = []
+        self.started_media_types: list[str] = []
+        self.result_kinds: set[str] = set()
+
+    def _operation(self, *, status: str) -> CaptureOperation:
+        operation = super()._operation(status=status)
+        self.result_kinds.add(operation.kind.value)
+        return operation
 
     def start_capture(
         self,
@@ -813,8 +824,10 @@ class DeterministicAudioCaptureRuntime(DeterministicCaptureRuntime):
         client_request_id: str,
         target_language: str | None = None,
     ) -> CaptureOperation:
-        assert source_kind is CaptureSourceKind.AUDIO
+        assert source_kind is CaptureSourceKind.RECORDING
         assert target_language == "zh-Hant"
+        self.started_source_kinds.append(source_kind)
+        self.started_media_types.append(upload.media_type)
         assert isinstance(upload.content, bytes)
         self.created_request_ids.append(client_request_id)
         self.raw = RawCapture.model_validate(
@@ -854,6 +867,11 @@ class CoreOnlyCaptureRuntime(DeterministicCaptureRuntime):
         super().__init__()
         self.create_attempts = 0
         self.requirement_reads = 0
+
+    def handshake(self) -> RuntimeReady:
+        # Like Capture 0.11.0 without an installed OCR worker: readiness carries
+        # no OCR compute preflight.
+        return super().handshake().model_copy(update={"ocr_compute": None})
 
     def get_requirements(self) -> RuntimeRequirements:
         self.requirement_reads += 1
@@ -962,7 +980,7 @@ class DurableTerminalReplayCaptureRuntime(DeterministicCaptureRuntime):
             }
         )
 
-    def get_result(self, capture_id: str) -> CaptureStreamingResult:
+    def get_result(self, capture_id: str) -> CaptureResult:
         if capture_id in self.deleted:
             raise CaptureRuntimeError(
                 status_code=404,
@@ -1148,8 +1166,14 @@ def test_review_image_preserves_canonical_jpeg_source_identity(tmp_path: Path) -
         assert partial.json()["source"]["mediaType"] == "image/jpeg"
 
 
+@pytest.mark.parametrize(
+    ("suffix", "media_type"),
+    [(".wav", "audio/wav"), (".mp3", "audio/mpeg")],
+)
 def test_audio_upload_uses_capture_time_provenance_without_cert_whisper(
     tmp_path: Path,
+    suffix: str,
+    media_type: str,
 ) -> None:
     runtime = DeterministicAudioCaptureRuntime()
     settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
@@ -1164,13 +1188,13 @@ def test_audio_upload_uses_capture_time_provenance_without_cert_whisper(
     ) as client:
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
         project_id = _create_project(client, headers)
-        source = minimal_audio(".wav")
+        source = minimal_audio(suffix)
 
         response = client.post(
             f"/projects/{project_id}/documents",
             headers=headers,
             data={"language_hint": "ja"},
-            files={"file": ("capture.wav", source, "audio/wav")},
+            files={"file": (f"capture{suffix}", source, media_type)},
         )
 
         assert response.status_code == 201
@@ -1190,6 +1214,16 @@ def test_audio_upload_uses_capture_time_provenance_without_cert_whisper(
         assert chunks[0]["end_ms"] == 900
         assert chunks[0]["text"] == "Audio source text"
         assert chunks[0]["translated_text"] == "Audio source text"
+        # Cert stores the source as "audio"; Capture received and answered a
+        # "recording" capture, and the persisted row keeps Cert's kind.
+        assert runtime.started_source_kinds == [CaptureSourceKind.RECORDING]
+        assert runtime.started_media_types == [media_type]
+        assert runtime.result_kinds == {"recording"}
+        persisted = client.get(
+            f"/projects/{project_id}/documents/{document['id']}",
+            headers=headers,
+        ).json()
+        assert persisted["source_kind"] == "audio"
 
     assert runtime.deleted == ["capture-pipeline-1"]
 
@@ -1377,7 +1411,7 @@ def test_pending_host_snapshot_does_not_expose_runtime_terminal_state(
                 headers=headers,
             )
             assert snapshot.status_code == 200
-            assert snapshot.json()["status"] == "created"
+            assert snapshot.json()["status"] == "waiting_input"
             assert snapshot.json()["ingestionId"] == document_id
         finally:
             runtime.release_terminal_event.set()
@@ -1436,7 +1470,7 @@ def test_review_capture_pauses_before_persistence_and_applies_confirmed_overlay(
         capture = created.json()
         capture_id = capture["captureId"]
         assert capture["protocolVersion"] == "2"
-        assert capture["status"] == "created"
+        assert capture["status"] == "waiting_input"
 
         pending_document = client.get(
             f"/projects/{project_id}/documents/{capture['documentId']}",

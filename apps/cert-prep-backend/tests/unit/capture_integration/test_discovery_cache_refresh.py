@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
+from conftest import _test_runtime_requirements
 
 from capture_runtime_client import (
     CAPTURE_RUNTIME_VERSION,
@@ -15,6 +16,7 @@ from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeCompatibilityError,
 )
 from cert_prep_backend.capture_integration.infrastructure.coordinator import (
+    CaptureRuntimeRequirementUnavailableError,
     CertPrepCaptureCoordinator,
 )
 from cert_prep_backend.capture_integration.infrastructure.host_models import RuntimeReady
@@ -31,7 +33,18 @@ def _ready(*, gpu: bool) -> RuntimeReady:
         "apiVersion": "2.0",
         "runtimeVersion": CAPTURE_RUNTIME_VERSION,
         "captureDocumentSchemaVersion": "2",
-        "capabilities": {"captureKinds": ["pdf", "image", "audio"]},
+        "capabilities": {
+            "structuringModes": ["host", "runtime"],
+            "supportsCancellation": True,
+            "supportsRawDiagnostics": True,
+            "maxUploadBytes": 50_000_000,
+            "maxChunkBytes": 1_048_576,
+            "checkpointIntervalMs": 250,
+            "heartbeatIntervalMs": 1000,
+            "stallTimeoutMs": 30_000,
+            "supportsProgressiveRecording": True,
+            "captureKinds": ["pdf", "image", "recording"],
+        },
     }
     if gpu:
         payload["ocrCompute"] = {
@@ -40,8 +53,8 @@ def _ready(*, gpu: bool) -> RuntimeReady:
             "service": "capture-runtime",
             "runtimeVersion": CAPTURE_RUNTIME_VERSION,
             "contractSetVersion": "2",
-            "contractSha256": "a" * 64,
-            "mode": "gpu-dml",
+            "contractSetSha256": "a" * 64,
+            "mode": "gpu",
             "adapterClass": "dedicated",
             "reasonCode": None,
             "userNoticeRequired": False,
@@ -53,7 +66,7 @@ def _ready(*, gpu: bool) -> RuntimeReady:
 def _installation(status: RuntimeInstallationStatus) -> RuntimeInstallation:
     return RuntimeInstallation(
         installation_id="installation-1",
-        requirement_id="windowsml-ocr",
+        requirement_id="text-recognition",
         status=status,
         progress=1,
         created_at=_NOW,
@@ -106,7 +119,7 @@ def test_listing_a_terminal_installation_drops_the_discovery_cache(
 
     assert listed.items[0].status == status
     assert refreshed.ocr_compute is not None
-    assert refreshed.ocr_compute.mode == "gpu-dml"
+    assert refreshed.ocr_compute.mode == "gpu"
     assert client._sdk.discover_calls == 2
 
 
@@ -128,9 +141,19 @@ class _PreflightCleared(Exception):
     """Sentinel raised once the OCR preflight has been admitted."""
 
 
+class _RequirementsUnreadable(Exception):
+    """Stands in for a transport or decode failure of the requirements read."""
+
+
 class _RefreshingClient:
-    def __init__(self, readies: list[object]) -> None:
+    def __init__(
+        self,
+        readies: list[object],
+        *,
+        requirement_status: str | None = None,
+    ) -> None:
         self._readies = list(readies)
+        self._requirement_status = requirement_status
         self.handshakes = 0
         self.invalidations = 0
         self.requirement_reads = 0
@@ -148,16 +171,20 @@ class _RefreshingClient:
 
     def get_requirements(self) -> object:
         self.requirement_reads += 1
-        raise _PreflightCleared
+        if self._requirement_status is None:
+            raise _PreflightCleared
+        if self._requirement_status == "unreadable":
+            raise _RequirementsUnreadable("requirements request failed")
+        return _test_runtime_requirements(self._requirement_status)
 
 
 def _begin(client: _RefreshingClient, kind: CaptureSourceKind) -> None:
     coordinator = CertPrepCaptureCoordinator(client=client, structurer=SimpleNamespace())
     coordinator.begin_capture(
         operation_id="capture-1",
-        file_name="sample.pdf" if kind is not CaptureSourceKind.AUDIO else "sample.wav",
+        file_name="sample.pdf" if kind is not CaptureSourceKind.RECORDING else "sample.wav",
         content=b"source bytes",
-        media_type="application/pdf" if kind is not CaptureSourceKind.AUDIO else "audio/wav",
+        media_type="application/pdf" if kind is not CaptureSourceKind.RECORDING else "audio/wav",
         source_kind=kind,
         target_language=None,
         should_cancel=lambda: False,
@@ -168,7 +195,9 @@ def _begin(client: _RefreshingClient, kind: CaptureSourceKind) -> None:
 def test_a_missing_ocr_preflight_is_read_again_before_it_is_rejected(
     kind: CaptureSourceKind,
 ) -> None:
-    client = _RefreshingClient([_ready(gpu=False), _ready(gpu=False)])
+    client = _RefreshingClient(
+        [_ready(gpu=False), _ready(gpu=False)], requirement_status="ready"
+    )
 
     with pytest.raises(
         CaptureRuntimeCompatibilityError,
@@ -178,7 +207,44 @@ def test_a_missing_ocr_preflight_is_read_again_before_it_is_rejected(
 
     assert client.handshakes == 2
     assert client.invalidations == 1
-    assert client.requirement_reads == 0
+    assert client.requirement_reads == 1
+
+
+@pytest.mark.parametrize("kind", [CaptureSourceKind.PDF, CaptureSourceKind.IMAGE])
+def test_a_missing_ocr_preflight_names_an_ocr_requirement_that_is_not_ready(
+    kind: CaptureSourceKind,
+) -> None:
+    client = _RefreshingClient(
+        [_ready(gpu=False), _ready(gpu=False)], requirement_status="unavailable"
+    )
+
+    with pytest.raises(
+        CaptureRuntimeRequirementUnavailableError,
+        match=" is unavailable\\. ",
+    ) as raised:
+        _begin(client, kind)
+
+    assert raised.value.requirement_id == "text-recognition"
+    assert raised.value.source_kind is kind
+    assert client.requirement_reads == 1
+
+
+@pytest.mark.parametrize("kind", [CaptureSourceKind.PDF, CaptureSourceKind.IMAGE])
+def test_a_missing_ocr_preflight_stays_a_compatibility_error_when_requirements_cannot_be_read(
+    kind: CaptureSourceKind,
+) -> None:
+    client = _RefreshingClient(
+        [_ready(gpu=False), _ready(gpu=False)], requirement_status="unreadable"
+    )
+
+    with pytest.raises(
+        CaptureRuntimeCompatibilityError,
+        match="Capture Runtime did not return the required OCR compute preflight\\.$",
+    ) as raised:
+        _begin(client, kind)
+
+    assert isinstance(raised.value.__cause__, _RequirementsUnreadable)
+    assert client.requirement_reads == 1
 
 
 @pytest.mark.parametrize("kind", [CaptureSourceKind.PDF, CaptureSourceKind.IMAGE])
@@ -200,7 +266,7 @@ def test_an_invalid_ocr_preflight_is_rejected_without_another_handshake(
     invalid = _ready(gpu=True).model_copy(
         update={
             "ocr_compute": SimpleNamespace(
-                mode="gpu-dml",
+                mode="gpu",
                 adapter_class="dedicated",
                 reason_code="no_compatible_gpu",
                 user_notice_required=True,
@@ -208,21 +274,21 @@ def test_an_invalid_ocr_preflight_is_rejected_without_another_handshake(
             )
         }
     )
-    client = _RefreshingClient([invalid, _ready(gpu=True)])
+    client = _RefreshingClient([invalid, _ready(gpu=True)], requirement_status="ready")
 
     with pytest.raises(CaptureRuntimeCompatibilityError, match="invalid GPU-DML"):
         _begin(client, kind)
 
     assert client.handshakes == 1
     assert client.invalidations == 0
-    assert client.requirement_reads == 0
+    assert client.requirement_reads == 1
 
 
 def test_audio_capture_does_not_refresh_a_missing_ocr_preflight() -> None:
     client = _RefreshingClient([_ready(gpu=False), _ready(gpu=True)])
 
     with pytest.raises(_PreflightCleared):
-        _begin(client, CaptureSourceKind.AUDIO)
+        _begin(client, CaptureSourceKind.RECORDING)
 
     assert client.handshakes == 1
     assert client.invalidations == 0

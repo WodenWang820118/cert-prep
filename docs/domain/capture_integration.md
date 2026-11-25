@@ -128,7 +128,7 @@ stateDiagram-v2
 - 檢閱修訂要指向存在的片段，文字不能是空白。和 runtime 原文相同的修訂不留下。
 - 確認時候選的 SHA-256 要等於教材。寫入時再對一次來源檔的 SHA-256。
 - 工作台建立只接受 PDF 與圖片。
-- PDF 區塊必須是頁面定位，音訊區塊必須是時間定位。空的投影不寫入。擷取引擎必須是 `windowsml-ocr`，存成 `windowsml_ocr`。
+- PDF 區塊必須是頁面定位，音訊區塊必須是時間定位。空的投影不寫入。擷取引擎必須是 `text-recognition`，存成 `windowsml_ocr`。
 - 檢閱疊加只能改區塊與文件的 targetText。
 - 公布 OCR 需要投影、已解析的來源證明，而且頁面證明要一致。
 
@@ -227,3 +227,7 @@ sequenceDiagram
 Capture Runtime 的就緒、來源證明、需求與安裝屬於擷取整合（見上文「負責與不負責」），所以 OCR 預檢的 store 在 `capture/data`，不在 `runtime`。它原本在 `stores/capture-runtime`，反向引用 `pages/capture-workbench-trial` 的 client 與型別（最後兩項 Sheriff 已知例外）；client 搬到同一層、型別搬到 `capture/domain` 後，store 經同層與 `../domain` 引用，兩項例外移除。
 
 `cert-prep-capture-protocol` 以 Cert Prep 的採用版本（`@cert-prep/capture-runtime-version`，`tools/capture-runtime-version.mts`）檢查 runtime 的 minor 版本。Sheriff 把 `tools` 標成 `layer:capture-runtime-version`，只有 `type:data` 與 `context:capture` 可以引用。`tools/capture-runtime-consumer-source.mts` 與 `tools/capture-runtime-version-check.mts` 用 `capture/data/cert-prep-capture-client.ts` 的路徑檢查採用的 SDK。
+
+Capture 0.11.0 acceptance: `acceptance-real` covers JPEG and scanned PDF text recognition.
+`acceptance-real-recorded` records that same OCR journey; it does not add speech recognition.
+Speech recognition and Cert-owned Ollama require separate installed-app journeys and device evidence.

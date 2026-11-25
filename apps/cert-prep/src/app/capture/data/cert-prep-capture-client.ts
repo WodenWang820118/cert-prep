@@ -8,18 +8,18 @@ import type {
   CaptureOperation,
   CaptureReviewEdit,
   CaptureSourceKind,
-  CaptureStreamingResult,
+  CaptureResult,
   CaptureStructuringProvider,
   CaptureStructuringRequest,
-  CommitStreamingStructuredResultRequest,
+  CommitStructuredResultRequest,
   PartialCapture,
   RawCapture,
-  ReportStreamingStructuringFailureRequest,
+  ReportStructuringFailureRequest,
   RuntimeInstallation,
   RuntimeReady,
   RuntimeRequirement,
   StartRuntimeInstallationRequest,
-  StartStreamingCaptureRequest,
+  StartCaptureRequest,
 } from '@gx-capture/capture-workbench-ui';
 import {
   assertCaptureRuntimeCompatible,
@@ -30,14 +30,13 @@ import { CertPrepRuntimeConfig } from '../../core/data';
 import { ProjectStore } from '../../projects/data';
 import { certPrepCaptureEventStream } from './cert-prep-capture-event-stream';
 import {
-  array,
   assertCaptureRuntimeMinorCompatible,
   assertRequirementReady,
   exactCaptureOperation,
   fail,
   mapCaptureDocument,
   mapCaptureOperation,
-  mapCaptureStreamingResult,
+  mapCaptureResult,
   mapInstallation,
   mapPartialCapture,
   mapRawCapture,
@@ -51,7 +50,7 @@ import {
 import type { CaptureRecord, CaptureRuntimeReady } from '../domain';
 
 /**
- * Adapts Cert Prep's durable document pipeline to the published streaming v2
+ * Adapts Cert Prep's durable document pipeline to the Capture 0.11.0 v2
  * client contract. Browser requests only reach the authenticated Cert Prep
  * backend; the Capture Runtime address and sidecar credential remain private
  * to the backend coordinator.
@@ -158,8 +157,8 @@ export class CertPrepCaptureClient
     });
   }
 
-  startStreamingCapture(
-    request: StartStreamingCaptureRequest,
+  startCapture(
+    request: StartCaptureRequest,
   ): Observable<CaptureOperation> {
     const projectId = this.requireProjectId();
     return defer(() =>
@@ -187,7 +186,7 @@ export class CertPrepCaptureClient
     );
   }
 
-  getStreamingCapture(
+  getCapture(
     id: string,
     signal?: AbortSignal,
   ): Observable<CaptureOperation> {
@@ -202,7 +201,7 @@ export class CertPrepCaptureClient
       );
   }
 
-  cancelStreamingCapture(
+  cancelCapture(
     id: string,
     signal?: AbortSignal,
   ): Observable<CaptureOperation> {
@@ -217,7 +216,7 @@ export class CertPrepCaptureClient
       );
   }
 
-  getStreamingPartial(
+  getPartial(
     id: string,
     signal?: AbortSignal,
   ): Observable<PartialCapture> {
@@ -228,7 +227,7 @@ export class CertPrepCaptureClient
       .pipe(map((response) => mapPartialCapture(response, captureId)));
   }
 
-  getStreamingRaw(id: string, signal?: AbortSignal): Observable<RawCapture> {
+  getRaw(id: string, signal?: AbortSignal): Observable<RawCapture> {
     const captureId = opaqueCaptureId(id);
     const record = this.requireCapture(captureId);
     return this.api
@@ -236,14 +235,14 @@ export class CertPrepCaptureClient
       .pipe(map(mapRawCapture));
   }
 
-  getStreamingResult(
+  getResult(
     id: string,
     signal?: AbortSignal,
-  ): Observable<CaptureStreamingResult> {
+  ): Observable<CaptureResult> {
     const captureId = opaqueCaptureId(id);
     const record = this.requireCapture(captureId);
     return this.api.getResult(record.projectId, captureId, { signal }).pipe(
-      map((response) => mapCaptureStreamingResult(response, captureId)),
+      map((response) => mapCaptureResult(response, captureId)),
       map((result) => ({
         operation: this.rememberOperation(
           result.operation,
@@ -264,9 +263,9 @@ export class CertPrepCaptureClient
     );
   }
 
-  commitStreamingStructuredResult(
+  commitStructure(
     id: string,
-    request: CommitStreamingStructuredResultRequest,
+    request: CommitStructuredResultRequest,
     signal?: AbortSignal,
   ): Observable<CaptureOperation> {
     const captureId = opaqueCaptureId(id);
@@ -288,9 +287,9 @@ export class CertPrepCaptureClient
       );
   }
 
-  reportStreamingStructuringFailure(
+  reportStructuringFailure(
     id: string,
-    request: ReportStreamingStructuringFailureRequest,
+    request: ReportStructuringFailureRequest,
     signal?: AbortSignal,
   ): Observable<CaptureOperation> {
     const captureId = opaqueCaptureId(id);
@@ -315,7 +314,7 @@ export class CertPrepCaptureClient
       );
   }
 
-  deleteStreamingCapture(id: string, signal?: AbortSignal): Observable<void> {
+  deleteCapture(id: string, signal?: AbortSignal): Observable<void> {
     const captureId = opaqueCaptureId(id);
     const record = this.requireCapture(captureId);
     return this.api
@@ -450,23 +449,18 @@ function assertCaptureAdmission(
   requirements: readonly RuntimeRequirement[],
   sourceKind: CaptureSourceKind,
 ): void {
-  if (!ready['ready']) throw new Error('Capture Runtime is not ready.');
+  if (!ready.ready) throw new Error('Capture Runtime is not ready.');
   assertCaptureRuntimeCompatible(ready, CAPTURE_RUNTIME_MAJOR, 'host');
   assertCaptureRuntimeMinorCompatible(ready.runtimeVersion);
-  const capabilities = record(ready['capabilities'], 'capabilities');
-  const captureKinds = array(
-    capabilities['captureKinds'],
-    'capabilities.captureKinds',
-  );
-  if (!captureKinds.includes(sourceKind)) {
+  if (!ready.capabilities.captureKinds.includes(sourceKind)) {
     throw new Error(
       `Capture Runtime does not support ${sourceKind.toUpperCase()} capture.`,
     );
   }
   if (sourceKind === 'pdf' || sourceKind === 'image') {
-    assertRequirementReady(requirements, 'windowsml-ocr', 'WindowsML OCR');
+    assertRequirementReady(requirements, 'text-recognition', 'Text recognition');
   }
-  if (sourceKind === 'audio') {
+  if (sourceKind === 'recording') {
     assertRequirementReady(
       requirements,
       'speech-recognition',

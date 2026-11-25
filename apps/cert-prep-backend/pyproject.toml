@@ -220,11 +220,6 @@ containers = [
   "cert_prep_backend.runtime_provisioning",
 ]
 layers = ["(api) | (infrastructure)", "(application)", "(domain)"]
-# The runtime router still returns RuntimeReady, which the Capture SDK client in infrastructure
-# also parses.
-ignore_imports = [
-  "cert_prep_backend.capture_integration.api.runtime_router -> cert_prep_backend.capture_integration.infrastructure.host_models",
-]
 
 [[tool.importlinter.contracts]]
 name = "Other contexts reach Study Projects only through its application and domain"

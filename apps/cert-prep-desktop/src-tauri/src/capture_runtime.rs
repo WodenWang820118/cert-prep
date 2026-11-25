@@ -10,7 +10,7 @@ use std::{
 };
 
 use capture_sidecar_launcher::{
-    generate_bearer_token, launch_sidecar, reserve_distinct_loopback_port, LaunchOptions,
+    generate_bearer_token, launch_sidecar, pick_distinct_free_loopback_port, LaunchOptions,
     SidecarLaunchSpec,
 };
 
@@ -44,7 +44,7 @@ const CAPTURE_CHILD_ENV_ALLOWLIST: &[&str] = &[
     "APPDATA",
     "USERPROFILE",
     // The speech worker's PyTorch asks for the user name when it loads a
-    // model; without it the recording fails with a bare `progressive_failed`.
+    // model; forwarding it avoids a speech-worker initialization failure.
     "USERNAME",
     "PROGRAMDATA",
     "ProgramFiles",
@@ -231,7 +231,7 @@ struct CaptureLaunchPolicy {
 impl CaptureLaunchPolicy {
     fn new(data_dir: PathBuf, excluded_ports: &HashSet<u16>) -> Result<Self, String> {
         Ok(Self {
-            port: reserve_distinct_loopback_port(excluded_ports)?,
+            port: pick_distinct_free_loopback_port(excluded_ports)?,
             token: generate_bearer_token()?,
             data_dir,
         })
@@ -535,9 +535,29 @@ mod tests {
     }
 
     #[test]
+    fn launch_policy_excludes_previously_used_ports_and_authenticates_the_child() {
+        let previous_port =
+            capture_sidecar_launcher::pick_free_loopback_port().expect("free port");
+        let excluded = HashSet::from([previous_port]);
+        let data_dir = PathBuf::from("capture-data");
+        let policy = CaptureLaunchPolicy::new(data_dir.clone(), &excluded).expect("policy");
+
+        assert_ne!(policy.port, 0);
+        assert!(!excluded.contains(&policy.port));
+        assert!(!policy.token.is_empty());
+        assert_eq!(policy.data_dir, data_dir);
+        let environment = policy.environment();
+        assert!(environment.contains(&("CAPTURE_API_TOKEN", policy.token.clone())));
+        assert!(environment.contains(&(
+            "CAPTURE_ALLOWED_HOSTS",
+            format!("127.0.0.1:{}", policy.port),
+        )));
+    }
+
+    #[test]
     fn the_runtime_receives_the_user_name_the_speech_worker_needs() {
-        // Capture Runtime 0.10.0 gives its workers no default user name, and
-        // the launcher forwards only the names on this list.
+        // The speech worker needs a user name, and the launcher forwards
+        // only the names on this list.
         assert!(CAPTURE_CHILD_ENV_ALLOWLIST.contains(&"USERNAME"));
     }
 }

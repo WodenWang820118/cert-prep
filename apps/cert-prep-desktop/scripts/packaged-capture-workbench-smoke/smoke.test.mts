@@ -89,7 +89,7 @@ test('requires a supplied exe and fresh isolated output paths', () => {
   );
 });
 
-test('waits for the current host-managed Capture Workbench ready status', () => {
+test('the trial page source carries the ready status the smoke waits for', () => {
   const captureTrialPageSource = readFileSync(
     new URL(
       '../../../../apps/cert-prep/src/app/capture/feature/capture-workbench-trial/capture-workbench-trial.page.ts',
@@ -159,7 +159,7 @@ test('redacts auth, tokens, URLs, and raw text from Capture evidence', () => {
     authorization: 'Bearer should-never-persist',
     raw: {
       sourceText: 'private source text',
-      extractionEngine: { engine: 'windowsml-ocr', device: 'windowsml-dml' },
+      extractionEngine: { engine: 'text-recognition', device: 'directml' },
       source: { sha256: 'a'.repeat(64), fileName: 'fixture.pdf' },
     },
     responseHeaders: { authorization: 'Bearer also-secret', xRequestId: 'safe' },
@@ -182,7 +182,7 @@ test('redacts auth, tokens, URLs, and raw text from Capture evidence', () => {
   assert.deepEqual(redacted, {
     raw: {
       source: { sha256: 'a'.repeat(64), fileName: 'fixture.pdf' },
-      extractionEngine: { engine: 'windowsml-ocr', device: 'windowsml-dml' },
+      extractionEngine: { engine: 'text-recognition', device: 'directml' },
     },
     responseHeaders: { xRequestId: 'safe' },
     errors: [

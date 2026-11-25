@@ -79,7 +79,7 @@ export function assertDownloadedWorkerPathBudget(
     resolve(appDataDirectory),
     'capture-workbench',
     'engines',
-    'windowsml-ocr',
+    'text-recognition',
     'versions',
     `.${runtimeVersion}.${HIDDEN_VERSION_UUID}`,
     'worker',

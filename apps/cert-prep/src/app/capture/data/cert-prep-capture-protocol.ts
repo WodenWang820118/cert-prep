@@ -8,22 +8,22 @@ import type {
   CaptureDocument as ApiCaptureDocument,
   RuntimeInstallation as ApiRuntimeInstallation,
   RuntimeReady as ApiRuntimeReady,
-  RuntimeRequirementV2 as ApiRuntimeRequirement,
+  RuntimeRequirement as ApiRuntimeRequirement,
 } from '@cert-prep/api';
 import type {
   CaptureBlock,
   CaptureDocument,
   CaptureEngine,
-  CaptureFailure,
+  OperationFailure,
   CaptureOperation,
   CaptureSourceKind,
-  CaptureStreamingResult,
+  CaptureResult,
   PartialCapture,
   RawCaptureSegment,
   RawCapture,
+  RuntimeCapabilities,
   RuntimeInstallation,
   RuntimeRequirement,
-  StructuringMode,
 } from '@gx-capture/capture-workbench-ui';
 import type {
   CaptureRuntimeReady,
@@ -39,54 +39,65 @@ export function mapReady(response: ApiRuntimeReady): CaptureRuntimeReady {
       'Cert Prep backend returned a non-Capture Runtime service.',
     );
   }
-  const capabilities = record(response.capabilities, 'capabilities');
-  const captureKinds = array(
-    capabilities['captureKinds'],
-    'capabilities.captureKinds',
-  ).filter(
-    (value): value is CaptureSourceKind =>
-      typeof value === 'string' && isSourceKind(value),
-  );
-  const structuringModes = array(
-    capabilities['structuringModes'],
-    'capabilities.structuringModes',
-  ).filter(
-    (value): value is StructuringMode =>
-      typeof value === 'string' && isStructuringMode(value),
-  );
-  if (
-    capabilities['supportsCancellation'] !== true ||
-    capabilities['supportsRawDiagnostics'] !== true
-  ) {
-    throw new Error(
-      'Cert Prep backend returned runtime capabilities outside the Capture contract.',
-    );
-  }
+  const capabilities = mapCapabilities(response.capabilities);
   return {
     ready: response.ready,
     service: 'capture-runtime',
     apiVersion: response.apiVersion,
     runtimeVersion: response.runtimeVersion,
     captureDocumentSchemaVersion: response.captureDocumentSchemaVersion,
-    capabilities: {
-      captureKinds,
-      structuringModes,
-      supportsCancellation: true,
-      supportsRawDiagnostics: true,
-      maxUploadBytes:
-        capabilities['maxUploadBytes'] === undefined
-          ? undefined
-          : integer(
-              capabilities['maxUploadBytes'],
-              'capabilities.maxUploadBytes',
-            ),
-    },
+    capabilities,
     captureDocumentSchemaSha256:
       response.captureDocumentSchemaSha256 ?? undefined,
-    schemaSha256: response.schemaSha256 ?? undefined,
     contractSetVersion: response.contractSetVersion,
     ocrCompute: mapOcrCompute(response.ocrCompute, response.runtimeVersion),
     message: response.message,
+  };
+}
+
+function mapCapabilities(value: unknown): RuntimeCapabilities {
+  const capabilities = record(value, 'capabilities');
+  const captureKinds = nonEmptyArray(
+    capabilities['captureKinds'],
+    'capabilities.captureKinds',
+  ).map((kind) =>
+    enumValue(kind, 'capabilities.captureKinds', ['pdf', 'image', 'recording'] as const),
+  );
+  const structuringModes = nonEmptyArray(
+    capabilities['structuringModes'],
+    'capabilities.structuringModes',
+  ).map((mode) =>
+    enumValue(mode, 'capabilities.structuringModes', ['runtime', 'host'] as const),
+  );
+  const positive = (field: string): number => {
+    const result = integer(capabilities[field], `capabilities.${field}`);
+    if (result < 1) fail(`capabilities.${field} must be positive`);
+    return result;
+  };
+  const maxChunkBytes = positive('maxChunkBytes');
+  if (maxChunkBytes > 4 * 1024 * 1024) {
+    fail('capabilities.maxChunkBytes exceeds the limit');
+  }
+  return {
+    captureKinds,
+    structuringModes,
+    supportsCancellation: booleanValue(
+      capabilities['supportsCancellation'],
+      'capabilities.supportsCancellation',
+    ),
+    supportsRawDiagnostics: booleanValue(
+      capabilities['supportsRawDiagnostics'],
+      'capabilities.supportsRawDiagnostics',
+    ),
+    maxUploadBytes: positive('maxUploadBytes'),
+    maxChunkBytes,
+    checkpointIntervalMs: positive('checkpointIntervalMs'),
+    heartbeatIntervalMs: positive('heartbeatIntervalMs'),
+    stallTimeoutMs: positive('stallTimeoutMs'),
+    supportsProgressiveRecording: booleanValue(
+      capabilities['supportsProgressiveRecording'],
+      'capabilities.supportsProgressiveRecording',
+    ),
   };
 }
 
@@ -107,13 +118,13 @@ function mapOcrCompute(
     fail('ocrCompute.runtimeVersion does not match runtimeVersion');
   }
   literal(preflight, 'contractSetVersion', '2');
-  const contractSha256 = pattern(
-    preflight['contractSha256'],
-    'ocrCompute.contractSha256',
+  const contractSetSha256 = pattern(
+    preflight['contractSetSha256'],
+    'ocrCompute.contractSetSha256',
     /^[0-9a-f]{64}$/u,
   );
   const workerSha256 =
-    preflight['workerSha256'] === null
+    preflight['workerSha256'] == null
       ? null
       : pattern(
           preflight['workerSha256'],
@@ -121,7 +132,7 @@ function mapOcrCompute(
           /^[0-9a-f]{64}$/u,
         );
   const mode = enumValue(preflight['mode'], 'ocrCompute.mode', [
-    'gpu-dml',
+    'gpu',
     'cpu-fallback',
   ]) as OcrComputePreflight['mode'];
   const adapterClass = enumValue(
@@ -132,7 +143,7 @@ function mapOcrCompute(
   const reasonCode = nullableEnumValue(
     preflight['reasonCode'],
     'ocrCompute.reasonCode',
-    ['no_compatible_gpu', 'dml_provider_unavailable'],
+    ['no_compatible_gpu', 'gpu_provider_unavailable'],
   ) as OcrComputeReasonCode | null;
   const userNoticeRequired = booleanValue(
     preflight['userNoticeRequired'],
@@ -143,9 +154,9 @@ function mapOcrCompute(
     'ocrCompute.noticeCode',
     ['ocr_cpu_fallback'],
   ) as OcrComputePreflight['noticeCode'];
-  if (mode === 'gpu-dml') {
+  if (mode === 'gpu') {
     if (reasonCode !== null || userNoticeRequired || noticeCode !== null) {
-      fail('ocrCompute gpu-dml cannot carry a fallback reason or notice');
+      fail('ocrCompute gpu cannot carry a fallback reason or notice');
     }
   } else if (
     reasonCode === null ||
@@ -164,7 +175,7 @@ function mapOcrCompute(
     runtimeVersion:
       preflightRuntimeVersion as OcrComputePreflight['runtimeVersion'],
     contractSetVersion: '2',
-    contractSha256,
+    contractSetSha256,
     workerSha256,
     mode,
     adapterClass,
@@ -180,7 +191,7 @@ export function mapRequirement(
   return {
     requirementId:
       requirement.requirementId as RuntimeRequirement['requirementId'],
-    kind: requirement.kind,
+    kind: requirement.kind as RuntimeRequirement['kind'],
     displayName: requirement.displayName,
     status: requirement.status as RuntimeRequirement['status'],
     requiredFor: requirement.requiredFor,
@@ -207,7 +218,7 @@ export function mapInstallation(
 
 function mapFailure(
   failure: NonNullable<ApiRuntimeInstallation['error']>,
-): CaptureFailure {
+): OperationFailure {
   return {
     code: failure.code,
     message: failure.message,
@@ -269,7 +280,6 @@ export function mapCaptureOperation(
   if (
     typeof status !== 'string' ||
     ![
-      'created',
       'waiting_input',
       'extracting',
       'awaiting_structuring',
@@ -307,7 +317,7 @@ export function mapCaptureOperation(
   const error =
     operation['error'] === undefined || operation['error'] === null
       ? null
-      : mapCaptureFailure(operation['error']);
+      : mapOperationFailure(operation['error']);
   if ((status === 'failed') !== (error !== null)) {
     fail('capture error does not match status');
   }
@@ -393,10 +403,10 @@ export function mapPartialCapture(
   };
 }
 
-export function mapCaptureStreamingResult(
+export function mapCaptureResult(
   value: unknown,
   expectedCaptureId: string,
-): CaptureStreamingResult {
+): CaptureResult {
   const composite = record(value, 'capture result');
   const operation = mapCaptureOperation(
     composite['operation'],
@@ -440,7 +450,7 @@ export function mapRawCapture(value: unknown): RawCapture {
   };
 }
 
-function mapCaptureFailure(
+function mapOperationFailure(
   value: unknown,
 ): NonNullable<CaptureOperation['error']> {
   const failure = record(value, 'capture error');
@@ -564,6 +574,14 @@ function mapEngine(value: unknown, label: string): CaptureEngine {
       `${label}.digest`,
       /^sha256:[0-9a-f]{64}$/u,
     ),
+    ...(engine['deviceName'] === undefined
+      ? {}
+      : {
+          deviceName:
+            engine['deviceName'] === null
+              ? null
+              : text(engine['deviceName'], `${label}.deviceName`),
+        }),
     device:
       engine['device'] == null
         ? null
@@ -744,11 +762,7 @@ export function opaqueCaptureId(value: unknown): string {
 }
 
 function isSourceKind(value: string): value is CaptureSourceKind {
-  return value === 'pdf' || value === 'image' || value === 'audio';
-}
-
-function isStructuringMode(value: string): value is StructuringMode {
-  return value === 'runtime' || value === 'host';
+  return value === 'pdf' || value === 'image' || value === 'recording';
 }
 
 export function assertCaptureRuntimeMinorCompatible(

@@ -409,13 +409,18 @@ def test_capture_ocr_summary_contract_is_named_discriminated_and_privacy_safe(
         == "unavailable"
     )
 
-    serialized_components = str(
-        {
-            name: schema
-            for name, schema in openapi["components"]["schemas"].items()
-            if name.startswith("CaptureOcr")
-        }
-    ).lower()
+    # The OCR engine's name is a constant, not recognized text.
+    serialized_components = (
+        str(
+            {
+                name: schema
+                for name, schema in openapi["components"]["schemas"].items()
+                if name.startswith("CaptureOcr")
+            }
+        )
+        .lower()
+        .replace("'const': 'text-recognition'", "")
+    )
     for forbidden in (
         "raw",
         "text",

@@ -120,7 +120,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          node tools/install-capture-workbench-dependencies.mts `
+          node tools/install-capture-npm-packages.mts `
             --candidate-package-dir (Join-Path $env:RUNNER_TEMP 'capture-candidate/package')
 
       - name: Run the consumer-owned candidate checks

@@ -28,13 +28,13 @@ from capture_runtime_client import (
     CaptureBlock,
     CaptureDocument,
     CaptureEngine,
-    CaptureFailure,
+    OperationFailure,
     CaptureOperation,
     CaptureSourceKind,
     PartialCapture,
     RawCaptureSegment,
     RawCapture,
-    StreamingCaptureStatus,
+    CaptureStatus,
 )
 from cert_prep_backend.platform.dependencies import (
     get_database,
@@ -140,12 +140,12 @@ class CaptureReviewStructureRequest(_ApiModel):
     review: CaptureReview
 
 
-class CaptureStreamingCommitRequest(_ApiModel):
+class CommitStructuredResultRequest(_ApiModel):
     client_request_id: str = Field(min_length=1, max_length=128)
     candidate: CaptureDocument
 
 
-class CaptureStreamingFailureRequest(_ApiModel):
+class ReportStructuringFailureRequest(_ApiModel):
     client_request_id: str | None = Field(default=None, min_length=1, max_length=128)
     code: str = Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")
     message: str = Field(min_length=1, max_length=500)
@@ -157,7 +157,7 @@ class CaptureReviewOperationRead(CaptureOperation):
     document_id: str
 
 
-class CaptureStreamingResultRead(_ApiModel):
+class CaptureResultRead(_ApiModel):
     operation: CaptureReviewOperationRead
     raw: RawCapture
     result: CaptureDocument
@@ -319,7 +319,7 @@ async def create_capture(
     return _operation_from_document(
         started.session.id,
         started.document,
-        status_value=StreamingCaptureStatus.CREATED,
+        status_value=CaptureStatus.WAITING_INPUT,
         progress=0,
         bytes_count=started.content_length,
         media_type=_media_type(started.document.filename, started.canonical_suffix),
@@ -364,7 +364,7 @@ def get_capture(
             # The runtime awaits structuring before the host operation can
             # take the review; until then the host is still extracting.
             operation = operation.model_copy(
-                update={"status": StreamingCaptureStatus.EXTRACTING}
+                update={"status": CaptureStatus.EXTRACTING}
             )
         return _host_operation(
             operation,
@@ -581,7 +581,7 @@ def commit_capture(
     request: Request,
     project_id: str,
     capture_id: str,
-    commit_request: CaptureStreamingCommitRequest,
+    commit_request: CommitStructuredResultRequest,
     db: Database = Depends(get_database),
     documents: CaptureDocuments = Depends(get_capture_documents),
     operations: CaptureOperations = Depends(get_capture_operations),
@@ -627,7 +627,7 @@ def commit_capture(
     return _operation_from_document(
         capture_id,
         queued.document,
-        status_value=StreamingCaptureStatus.STRUCTURING,
+        status_value=CaptureStatus.STRUCTURING,
         progress=0.75,
         bytes_count=content_length,
         media_type=media_type,
@@ -643,7 +643,7 @@ def report_structuring_failure(
     request: Request,
     project_id: str,
     capture_id: str,
-    failure: CaptureStreamingFailureRequest,
+    failure: ReportStructuringFailureRequest,
     db: Database = Depends(get_database),
     operations: CaptureOperations = Depends(get_capture_operations),
     sessions: CaptureReviewStore = Depends(get_capture_review_store),
@@ -706,13 +706,13 @@ def cancel_capture(
     return get_capture(request, project_id, capture_id, db)
 
 
-@router.get("/{capture_id}/result", response_model=CaptureStreamingResultRead)
+@router.get("/{capture_id}/result", response_model=CaptureResultRead)
 def get_result(
     request: Request,
     project_id: str,
     capture_id: str,
     db: Database = Depends(get_database),
-) -> CaptureStreamingResultRead:
+) -> CaptureResultRead:
     require_capture_coordinator(request)
     capture_reviews.expire_capture_reviews(get_capture_review_maintenance(request))
     documents = get_capture_documents(request)
@@ -748,7 +748,7 @@ def get_result(
                 runtime_capture_id=runtime_id,
             )
             if viewed is not None:
-                response = CaptureStreamingResultRead(
+                response = CaptureResultRead(
                     operation=_host_operation(
                         viewed.operation,
                         capture_id=capture_id,
@@ -785,11 +785,11 @@ def get_result(
         project_id=project_id,
         document_id=stored.document.id,
     )
-    return CaptureStreamingResultRead(
+    return CaptureResultRead(
         operation=_operation_from_document(
             capture_id,
             stored.document,
-            status_value=StreamingCaptureStatus.COMPLETED,
+            status_value=CaptureStatus.COMPLETED,
             progress=1,
             bytes_count=content_length,
             media_type=media_type,
@@ -862,18 +862,18 @@ def _operation_for_session(
     document: SourceDocument,
 ) -> CaptureReviewOperationRead:
     status_value = {
-        CaptureReviewStatus.PENDING: StreamingCaptureStatus.CREATED,
-        CaptureReviewStatus.CONFIRMING: StreamingCaptureStatus.STRUCTURING,
-        CaptureReviewStatus.COMPLETED: StreamingCaptureStatus.COMPLETED,
-        CaptureReviewStatus.CANCELED: StreamingCaptureStatus.CANCELLED,
-        CaptureReviewStatus.FAILED: StreamingCaptureStatus.FAILED,
+        CaptureReviewStatus.PENDING: CaptureStatus.WAITING_INPUT,
+        CaptureReviewStatus.CONFIRMING: CaptureStatus.STRUCTURING,
+        CaptureReviewStatus.COMPLETED: CaptureStatus.COMPLETED,
+        CaptureReviewStatus.CANCELED: CaptureStatus.CANCELLED,
+        CaptureReviewStatus.FAILED: CaptureStatus.FAILED,
     }[session.status]
     progress = {
-        StreamingCaptureStatus.CREATED: 0,
-        StreamingCaptureStatus.STRUCTURING: 0.75,
-        StreamingCaptureStatus.COMPLETED: 1,
-        StreamingCaptureStatus.CANCELLED: 1,
-        StreamingCaptureStatus.FAILED: 1,
+        CaptureStatus.WAITING_INPUT: 0,
+        CaptureStatus.STRUCTURING: 0.75,
+        CaptureStatus.COMPLETED: 1,
+        CaptureStatus.CANCELLED: 1,
+        CaptureStatus.FAILED: 1,
     }[status_value]
     content_length, media_type = capture_reviews.capture_source_display(
         documents,
@@ -896,25 +896,25 @@ def _operation_from_document(
     capture_id: str,
     document: SourceDocument,
     *,
-    status_value: StreamingCaptureStatus,
+    status_value: CaptureStatus,
     progress: float,
     bytes_count: int,
     media_type: str,
     last_event_sequence: int = 0,
 ) -> CaptureReviewOperationRead:
     terminal = status_value in {
-        StreamingCaptureStatus.COMPLETED,
-        StreamingCaptureStatus.FAILED,
-        StreamingCaptureStatus.CANCELLED,
+        CaptureStatus.COMPLETED,
+        CaptureStatus.FAILED,
+        CaptureStatus.CANCELLED,
     }
     failure = (
-        CaptureFailure(
+        OperationFailure(
             code="host_capture_failed",
             message="Cert Prep capture processing failed.",
             stage="host",
             retryable=False,
         )
-        if status_value is StreamingCaptureStatus.FAILED
+        if status_value is CaptureStatus.FAILED
         else None
     )
     return CaptureReviewOperationRead(
@@ -995,7 +995,11 @@ def _document_projection(
     }
     digest = f"sha256:{document.sha256}"
     extraction = CaptureEngine(
-        engine=document.extraction_method or "windowsml-ocr",
+        engine=(
+            "text-recognition"
+            if document.extraction_method in {None, "windowsml_ocr"}
+            else document.extraction_method
+        ),
         model=f"capture-runtime@{CAPTURE_RUNTIME_VERSION}",
         digest=digest,
         device=document.ocr_device,

@@ -144,7 +144,7 @@ Build the Tauri application with the desktop project targets:
 
 ```bash
 corepack pnpm nx run cert-prep-desktop:build
-corepack pnpm nx run cert-prep-desktop:build-capture
+corepack pnpm nx run cert-prep-desktop:build-windows-x64
 ```
 
 ## Contracts and generated code

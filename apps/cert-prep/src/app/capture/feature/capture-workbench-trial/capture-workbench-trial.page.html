@@ -119,6 +119,15 @@
         <dt>Blocks</dt>
         <dd>{{ completed.document.blocks.length }}</dd>
       </div>
+      <div>
+        <dt>Structuring device</dt>
+        <dd data-testid="structuring-device">
+          {{ completed.document.structuringEngine.device ?? 'Unknown' }}
+          @if (completed.document.structuringEngine.deviceName; as deviceName) {
+          <span>({{ deviceName }})</span>
+          }
+        </dd>
+      </div>
       @if (sourceImport.activeDocument(); as savedDocument) {
       <div>
         <dt>Cert Prep status</dt>

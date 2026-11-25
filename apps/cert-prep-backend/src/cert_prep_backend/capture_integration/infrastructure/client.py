@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
-import hashlib
 from threading import Lock
 from typing import BinaryIO
 from uuid import UUID
@@ -24,23 +23,20 @@ from capture_runtime_client import (
     CaptureRuntimeError,
     CaptureRuntimeProtocolError,
     CaptureSourceKind,
-    CaptureStreamingResult,
+    CaptureResult,
     CaptureUpload as SdkCaptureUpload,
     HttpRuntimeTransport,
-    Ingestion as SdkIngestion,
     PartialCapture,
     OpenStructuringSession,
     RawCapture,
     RuntimeInstallation,
     RuntimeInstallations,
     RuntimeRequirements,
-    RuntimeStreamingCapabilities,
     StructuringBatch,
     StructuringSession,
     StructuringMode,
     SubmitStructuringBatch,
 )
-from capture_runtime_client.codec import decode_model as _decode_model
 from cert_prep_backend.capture_integration.infrastructure.host_models import RuntimeReady
 
 
@@ -72,7 +68,6 @@ class CaptureRuntimeClient:
         timeout_seconds: float = 30,
         client: httpx.Client | None = None,
     ) -> None:
-        _install_candidate_runtime_ready_decoder()
         transport = HttpRuntimeTransport(
             base_url=base_url,
             bearer_token=bearer_token,
@@ -105,22 +100,7 @@ class CaptureRuntimeClient:
 
         with self._discovery_lock:
             ready = self._sdk.discover().ready
-        # Keep the host boundary typed with the generated OCR preflight field.
-        # The conversion is intentionally lossless for the pinned SDK and lets
-        # the current 0.4.1 rollback pin continue to represent a missing
-        # preflight as ``None`` until the candidate SDK is installed.
-        return RuntimeReady.model_validate(
-            ready.model_dump(mode="python", by_alias=True)
-        )
-
-    def get_streaming_capabilities(self) -> RuntimeStreamingCapabilities:
-        with self._discovery_lock:
-            discovery = self._sdk.discover()
-        if discovery.streaming is None:
-            raise CaptureRuntimeCompatibilityError(
-                "Capture Runtime does not advertise streaming capabilities."
-            )
-        return discovery.streaming
+        return ready
 
     def get_requirements(self) -> RuntimeRequirements:
         return self._sdk.get_requirements()
@@ -155,7 +135,7 @@ class CaptureRuntimeClient:
         installation = self._sdk.get_installation(installation_id)
         if _installation_status_value(installation) in _TERMINAL_INSTALLATION_STATUSES:
             # The candidate SDK caches the first discovery result. A cold
-            # runtime reports no OCR compute before windowsml-ocr is installed,
+            # runtime reports no OCR compute before text-recognition is installed,
             # so the installation poll must invalidate that result before the
             # UI's post-install readiness check negotiates again.
             with self._discovery_lock:
@@ -193,116 +173,12 @@ class CaptureRuntimeClient:
             structuring_mode=StructuringMode.HOST,
             target_language=target_language,
             spoken_language=upload.spoken_language,
+            pdf_page_numbers=upload.pdf_page_numbers,
         )
-        if upload.pdf_page_numbers is None:
-            return self._sdk.start_capture(
-                sdk_upload,
-                client_request_id=client_request_id,
-            )
-        return self._start_capture_with_pdf_page_scope(
+        return self._sdk.start_capture(
             sdk_upload,
             client_request_id=client_request_id,
-            page_numbers=upload.pdf_page_numbers,
         )
-
-    def _start_capture_with_pdf_page_scope(
-        self,
-        upload: SdkCaptureUpload,
-        *,
-        client_request_id: str,
-        page_numbers: tuple[int, ...],
-    ) -> CaptureOperation:
-        """Use the SDK transport seam while adding the page-scope field.
-
-        The published SDK validates the generated StartCaptureV2 model,
-        but its convenience upload method predates ``pdfPageNumbers``. Keep
-        discovery, authentication, retries, and response decoding in that SDK;
-        this narrow compatibility path only supplies the optional request
-        member used by PDF-only acceptance.
-        """
-
-        request = getattr(self._sdk, "_request", None)
-        if not callable(request):
-            raise CaptureRuntimeCompatibilityError(
-                "Capture Runtime SDK does not expose the v2 request seam required for PDF page scope."
-            )
-        decode_model = _decode_model
-        content = upload.content
-        digest = hashlib.sha256(content).hexdigest()
-        ingestion = decode_model(
-            request(
-                "POST",
-                "/v2/ingestions",
-                headers={"X-Idempotency-Key": f"{client_request_id}-ingestion"},
-                json={
-                    "protocolVersion": "2",
-                    "kind": CaptureSourceKind(upload.source_kind).value,
-                    "mode": "file",
-                    "clientRequestId": f"{client_request_id}-ingestion",
-                    "fileName": upload.file_name,
-                    "mediaType": upload.media_type,
-                    "totalBytes": len(content),
-                    "sourceSha256": digest,
-                },
-            ),
-            SdkIngestion,
-        )
-        try:
-            chunk_size = min(1024 * 1024, self.get_streaming_capabilities().max_chunk_bytes)
-            for offset in range(ingestion.next_offset, len(content), chunk_size):
-                chunk = content[offset : offset + chunk_size]
-                ingestion = decode_model(
-                    request(
-                        "PUT",
-                        f"/v2/ingestions/{ingestion.ingestion_id}/chunks/{ingestion.next_chunk_index}",
-                        headers={
-                            "Content-Range": (
-                                f"bytes {offset}-{offset + len(chunk) - 1}/{len(content)}"
-                            ),
-                            "Digest": f"sha-256={hashlib.sha256(chunk).hexdigest()}",
-                            "X-Idempotency-Key": (
-                                f"{ingestion.ingestion_id}-{ingestion.next_chunk_index}"
-                            ),
-                        },
-                        content=chunk,
-                    ),
-                    SdkIngestion,
-                )
-            decode_model(
-                request(
-                    "POST",
-                    f"/v2/ingestions/{ingestion.ingestion_id}/finalize",
-                    json={"protocolVersion": "2", "totalBytes": len(content), "sha256": digest},
-                ),
-                SdkIngestion,
-            )
-            return decode_model(
-                request(
-                    "POST",
-                    "/v2/captures",
-                    headers={"X-Idempotency-Key": client_request_id},
-                    json={
-                        "protocolVersion": "2",
-                        "clientRequestId": client_request_id,
-                        "ingestionId": ingestion.ingestion_id,
-                        "structuringMode": StructuringMode(upload.structuring_mode).value,
-                        "targetLanguage": upload.target_language,
-                        "startPolicy": "eager",
-                        "pdfPageNumbers": list(page_numbers),
-                    },
-                ),
-                CaptureOperation,
-            )
-        except Exception:
-            transport = getattr(self._sdk, "_transport", None)
-            if transport is not None:
-                try:
-                    transport.request(
-                        "DELETE", f"/v2/ingestions/{ingestion.ingestion_id}"
-                    )
-                except Exception:
-                    pass
-            raise
 
     def get_capture(self, capture_id: str) -> CaptureOperation:
         return self._sdk.get_capture(capture_id)
@@ -315,15 +191,11 @@ class CaptureRuntimeClient:
         max_reconnects: int | None = None,
         on_activity: Callable[[], None] | None = None,
     ) -> Iterator[CaptureEvent]:
-        kwargs: dict[str, object] = {
-            "last_event_id": last_event_id,
-            "on_activity": on_activity,
-        }
-        if max_reconnects is not None:
-            kwargs["max_reconnects"] = max_reconnects
         return self._sdk.capture_events(
             capture_id,
-            **kwargs,
+            last_event_id=last_event_id,
+            max_reconnects=2 if max_reconnects is None else max_reconnects,
+            on_activity=on_activity,
         )
 
     def get_partial(self, capture_id: str) -> PartialCapture:
@@ -333,22 +205,11 @@ class CaptureRuntimeClient:
         return self._sdk.get_raw(capture_id)
 
     def get_ocr(self, capture_id: str) -> object:
-        """Return the runtime-owned schema-3 OCR page projection.
+        """Return the runtime-owned OCR page projection."""
 
-        The candidate SDK owns decoding and validation of this endpoint.
-        Keep the compatibility error explicit while the repository still
-        carries the published 0.4.1 dependency pin; a production capture must
-        never silently fall back to the legacy raw/embedded path.
-        """
+        return self._sdk.get_ocr(capture_id)
 
-        method = getattr(self._sdk, "get_ocr", None)
-        if not callable(method):
-            raise CaptureRuntimeCompatibilityError(
-                "Capture Runtime OCR projection requires the pinned SDK."
-            )
-        return method(capture_id)
-
-    def get_result(self, capture_id: str) -> CaptureStreamingResult:
+    def get_result(self, capture_id: str) -> CaptureResult:
         return self._sdk.get_result(capture_id)
 
     def open_structuring_session(
@@ -356,7 +217,7 @@ class CaptureRuntimeClient:
         capture_id: str,
         request: OpenStructuringSession | Mapping[str, object],
         *,
-        idempotency_key: UUID | str | None = None,
+        idempotency_key: UUID | str,
     ) -> StructuringSession:
         """Open or replay an authenticated typed pull-structuring session."""
 
@@ -369,8 +230,8 @@ class CaptureRuntimeClient:
     def get_structuring_session(self, capture_id: str) -> StructuringSession:
         return self._sdk.get_structuring_session(capture_id)
 
-    def pull_structuring_batch(self, capture_id: str, batch_index: int) -> StructuringBatch:
-        return self._sdk.pull_structuring_batch(capture_id, batch_index)
+    def get_structuring_batch(self, capture_id: str, batch_index: int) -> StructuringBatch:
+        return self._sdk.get_structuring_batch(capture_id, batch_index)
 
     def submit_structuring_batch(
         self,
@@ -438,32 +299,9 @@ __all__ = [
     "CaptureRuntimeCompatibilityError",
     "CaptureRuntimeError",
     "CaptureRuntimeProtocolError",
-    "CaptureStreamingResult",
+    "CaptureResult",
     "CaptureUpload",
 ]
-
-
-def _install_candidate_runtime_ready_decoder() -> None:
-    """Route SDK discovery through the generated readiness model.
-
-    The candidate wheel's public ``contracts.RuntimeReady`` omits the
-    generated ``ocrCompute`` member even though the candidate runtime emits
-    it. The private discovery function keeps that public class in its module
-    global, so replace only that decoder class with Cert's generated host
-    model. All transport, contract-hash, and compatibility checks remain in
-    the SDK; the wheel itself is never modified or rehashed.
-    """
-
-    try:
-        import capture_runtime_client._discovery as sdk_discovery
-    except ModuleNotFoundError:
-        # The repository's 0.4.1 rollback client has no private discovery
-        # module and already decodes its legacy readiness shape correctly.
-        return
-
-    fields = getattr(sdk_discovery.RuntimeReady, "model_fields", {})
-    if "ocr_compute" not in fields:
-        sdk_discovery.RuntimeReady = RuntimeReady
 
 
 def _installation_status_value(installation: RuntimeInstallation) -> object:

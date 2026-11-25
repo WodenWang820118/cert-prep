@@ -19,7 +19,7 @@ from capture_runtime_client import (
     CaptureEvent,
     CaptureOperation,
     RuntimeRequirements,
-    StreamingCaptureStatus,
+    CaptureStatus,
 )
 from cert_prep_backend.capture_integration.api.router import CaptureReviewOperationRead
 from cert_prep_backend.capture_integration.infrastructure.client import (
@@ -49,14 +49,25 @@ def test_runtime_ready_accepts_the_generated_ocr_compute_preflight() -> None:
             "apiVersion": "2.0",
             "runtimeVersion": CAPTURE_RUNTIME_VERSION,
             "captureDocumentSchemaVersion": "2",
-            "capabilities": {},
+            "capabilities": {
+                "captureKinds": ["pdf", "image", "recording"],
+                "structuringModes": ["host", "runtime"],
+                "supportsCancellation": True,
+                "supportsRawDiagnostics": True,
+                "maxUploadBytes": 50_000_000,
+                "maxChunkBytes": 1_048_576,
+                "checkpointIntervalMs": 250,
+                "heartbeatIntervalMs": 1000,
+                "stallTimeoutMs": 30_000,
+                "supportsProgressiveRecording": True,
+            },
             "ocrCompute": {
                 "apiVersion": "2.0",
                 "schemaVersion": "1",
                 "service": "capture-runtime",
                 "runtimeVersion": CAPTURE_RUNTIME_VERSION,
                 "contractSetVersion": "2",
-                "contractSha256": "a" * 64,
+                "contractSetSha256": "a" * 64,
                 "mode": "cpu-fallback",
                 "adapterClass": "integrated",
                 "reasonCode": "no_compatible_gpu",
@@ -107,7 +118,18 @@ def test_candidate_discovery_is_single_flight(monkeypatch: pytest.MonkeyPatch) -
                             "apiVersion": "2.0",
                             "runtimeVersion": CAPTURE_RUNTIME_VERSION,
                             "captureDocumentSchemaVersion": "2",
-                            "capabilities": {},
+                            "capabilities": {
+                                "captureKinds": ["pdf", "image", "recording"],
+                                "structuringModes": ["host", "runtime"],
+                                "supportsCancellation": True,
+                                "supportsRawDiagnostics": True,
+                                "maxUploadBytes": 50_000_000,
+                                "maxChunkBytes": 1_048_576,
+                                "checkpointIntervalMs": 250,
+                                "heartbeatIntervalMs": 1000,
+                                "stallTimeoutMs": 30_000,
+                                "supportsProgressiveRecording": True,
+                            },
                         }
                     )
                 )
@@ -149,7 +171,18 @@ def test_terminal_installation_refreshes_candidate_discovery_cache(
             "apiVersion": "2.0",
             "runtimeVersion": CAPTURE_RUNTIME_VERSION,
             "captureDocumentSchemaVersion": "2",
-            "capabilities": {},
+            "capabilities": {
+                "captureKinds": ["pdf", "image", "recording"],
+                "structuringModes": ["host", "runtime"],
+                "supportsCancellation": True,
+                "supportsRawDiagnostics": True,
+                "maxUploadBytes": 50_000_000,
+                "maxChunkBytes": 1_048_576,
+                "checkpointIntervalMs": 250,
+                "heartbeatIntervalMs": 1000,
+                "stallTimeoutMs": 30_000,
+                "supportsProgressiveRecording": True,
+            },
         }
         if with_gpu:
             payload["ocrCompute"] = {
@@ -158,8 +191,8 @@ def test_terminal_installation_refreshes_candidate_discovery_cache(
                 "service": "capture-runtime",
                 "runtimeVersion": CAPTURE_RUNTIME_VERSION,
                 "contractSetVersion": "2",
-                "contractSha256": "a" * 64,
-                "mode": "gpu-dml",
+                "contractSetSha256": "a" * 64,
+                "mode": "gpu",
                 "adapterClass": "dedicated",
                 "reasonCode": None,
                 "userNoticeRequired": False,
@@ -194,7 +227,7 @@ def test_terminal_installation_refreshes_candidate_discovery_cache(
     refreshed = client.handshake()
 
     assert refreshed.ocr_compute is not None
-    assert refreshed.ocr_compute.mode == "gpu-dml"
+    assert refreshed.ocr_compute.mode == "gpu"
     assert client._sdk.discover_calls == 2
 
 
@@ -202,7 +235,7 @@ def test_terminal_installation_refreshes_candidate_discovery_cache(
     "payload",
     [
         {
-            "mode": "gpu-dml",
+            "mode": "gpu",
             "adapterClass": "dedicated",
             "reasonCode": "no_compatible_gpu",
             "userNoticeRequired": True,
@@ -220,7 +253,7 @@ def test_terminal_installation_refreshes_candidate_discovery_cache(
 def test_runtime_ready_rejects_a_preflight_that_silently_changes_compute_policy(
     payload: dict[str, object],
 ) -> None:
-    with pytest.raises(ValueError, match="(gpu-dml|cpu-fallback)"):
+    with pytest.raises(ValueError, match="(gpu|cpu-fallback)"):
         RuntimeReady.model_validate(
             {
                 "ready": True,
@@ -228,14 +261,25 @@ def test_runtime_ready_rejects_a_preflight_that_silently_changes_compute_policy(
                 "apiVersion": "2.0",
                 "runtimeVersion": CAPTURE_RUNTIME_VERSION,
                 "captureDocumentSchemaVersion": "2",
-                "capabilities": {},
+                "capabilities": {
+                    "captureKinds": ["pdf", "image", "recording"],
+                    "structuringModes": ["host", "runtime"],
+                    "supportsCancellation": True,
+                    "supportsRawDiagnostics": True,
+                    "maxUploadBytes": 50_000_000,
+                    "maxChunkBytes": 1_048_576,
+                    "checkpointIntervalMs": 250,
+                    "heartbeatIntervalMs": 1000,
+                    "stallTimeoutMs": 30_000,
+                    "supportsProgressiveRecording": True,
+                },
                 "ocrCompute": {
                     "apiVersion": "2.0",
                     "schemaVersion": "1",
                     "service": "capture-runtime",
                     "runtimeVersion": CAPTURE_RUNTIME_VERSION,
                     "contractSetVersion": "2",
-                    "contractSha256": "a" * 64,
+                    "contractSetSha256": "a" * 64,
                     **payload,
                 },
             }
@@ -249,8 +293,6 @@ def test_v2_capture_lifecycle_is_checksum_bounded_ordered_and_authenticated() ->
         requests.append(request)
         assert request.headers["Authorization"] == f"Bearer {TOKEN}"
         assert TOKEN not in str(request.url)
-        if request.method == "GET" and request.url.path == "/v2/streaming/health/ready":
-            return _json_response(request, _streaming_capabilities(max_chunk_bytes=8))
         if request.method == "POST" and request.url.path == "/v2/ingestions":
             assert json.loads(request.content) == {
                 "protocolVersion": "2",
@@ -322,7 +364,7 @@ def test_v2_capture_lifecycle_is_checksum_bounded_ordered_and_authenticated() ->
     )
 
     assert operation.capture_id == "capture-1"
-    assert operation.status is StreamingCaptureStatus.EXTRACTING
+    assert operation.status is CaptureStatus.EXTRACTING
     assert [request.method for request in requests] == [
         "POST",
         "PUT",
@@ -339,8 +381,6 @@ def test_v2_uncertain_open_and_capture_create_retry_the_canonical_idempotent_rou
 
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal opens, starts
-        if request.url.path == "/v2/streaming/health/ready":
-            return _json_response(request, _streaming_capabilities(max_chunk_bytes=64))
         if request.method == "POST" and request.url.path == "/v2/ingestions":
             opens += 1
             assert request.headers["X-Idempotency-Key"] == "request-recovery-ingestion"
@@ -383,8 +423,6 @@ def test_v2_uncertain_open_and_capture_create_retry_the_canonical_idempotent_rou
 
 def test_v2_page_scoped_capture_sends_only_the_ordered_page_prefix() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.method == "GET" and request.url.path == "/v2/streaming/health/ready":
-            return _json_response(request, _streaming_capabilities(max_chunk_bytes=64))
         if request.method == "POST" and request.url.path == "/v2/ingestions":
             return _json_response(request, _ingestion(received=0, next_chunk=0), status=201)
         if request.method == "PUT":
@@ -427,12 +465,10 @@ def test_v2_page_scoped_capture_sends_only_the_ordered_page_prefix() -> None:
 def test_v2_audio_capture_names_its_spoken_language_only_when_given(
     spoken_language: str | None,
 ) -> None:
-    audio = {"kind": "audio", "fileName": "listening.mp3", "mediaType": "audio/mpeg"}
+    audio = {"kind": "recording", "fileName": "listening.mp3", "mediaType": "audio/mpeg"}
     starts: list[dict[str, object]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.method == "GET" and request.url.path == "/v2/streaming/health/ready":
-            return _json_response(request, _streaming_capabilities(max_chunk_bytes=64))
         if request.method == "POST" and request.url.path == "/v2/ingestions":
             return _json_response(
                 request, {**_ingestion(received=0, next_chunk=0), **audio}, status=201
@@ -451,7 +487,7 @@ def test_v2_audio_capture_names_its_spoken_language_only_when_given(
             return _json_response(request, {**ready, **audio})
         if request.method == "POST" and request.url.path == "/v2/captures":
             starts.append(json.loads(request.content))
-            return _json_response(request, {**_operation(), "kind": "audio"}, status=202)
+            return _json_response(request, {**_operation(), "kind": "recording"}, status=202)
         raise AssertionError(f"Unexpected request: {request.method} {request.url.path}")
 
     _client(handler).start_capture(
@@ -461,7 +497,7 @@ def test_v2_audio_capture_names_its_spoken_language_only_when_given(
             "audio/mpeg",
             spoken_language=spoken_language,
         ),
-        source_kind="audio",
+        source_kind="recording",
         client_request_id="request-spoken-language",
     )
 
@@ -676,7 +712,7 @@ def test_coordinator_waits_for_the_snapshot_after_an_early_completed_event() -> 
         should_cancel=lambda: False,
     )
 
-    assert operation.status is StreamingCaptureStatus.AWAITING_STRUCTURING
+    assert operation.status is CaptureStatus.AWAITING_STRUCTURING
     assert runtime.event_cursors == [0]
     assert runtime.snapshot_calls == 3
     assert runtime.cancel_calls == 0
@@ -701,7 +737,7 @@ def test_coordinator_polls_durable_status_after_sse_utf8_framing_failure() -> No
         should_cancel=lambda: False,
     )
 
-    assert operation.status is StreamingCaptureStatus.AWAITING_STRUCTURING
+    assert operation.status is CaptureStatus.AWAITING_STRUCTURING
     assert runtime.event_cursors == [0]
     assert runtime.snapshot_calls == 1
 
@@ -803,7 +839,7 @@ def test_v2_responses_accept_capture_090_download_and_page_progress_fields() -> 
     }
     installation = {
         "installationId": "installation-1",
-        "requirementId": "windowsml-ocr",
+        "requirementId": "text-recognition",
         "status": "running",
         "progress": 0.25,
         "createdAt": NOW.isoformat(),
@@ -879,7 +915,12 @@ class _ReconnectingRuntimeClient:
                 "runtimeVersion": CAPTURE_RUNTIME_VERSION,
                 "captureDocumentSchemaVersion": "2",
                 "capabilities": {
-                    "captureKinds": ["pdf", "image", "audio"],
+                    "maxChunkBytes": 1_048_576,
+                    "checkpointIntervalMs": 250,
+                    "heartbeatIntervalMs": 1000,
+                    "stallTimeoutMs": 30_000,
+                    "supportsProgressiveRecording": True,
+                    "captureKinds": ["pdf", "image", "recording"],
                     "structuringModes": ["host"],
                     "supportsCancellation": True,
                     "supportsRawDiagnostics": True,
@@ -891,8 +932,8 @@ class _ReconnectingRuntimeClient:
                     "service": "capture-runtime",
                     "runtimeVersion": CAPTURE_RUNTIME_VERSION,
                     "contractSetVersion": "2",
-                    "contractSha256": "a" * 64,
-                    "mode": "gpu-dml",
+                    "contractSetSha256": "a" * 64,
+                    "mode": "gpu",
                     "adapterClass": "dedicated",
                     "reasonCode": None,
                     "userNoticeRequired": False,
@@ -1032,7 +1073,12 @@ def _client(handler, *, max_chunk_bytes: int = 1_048_576) -> CaptureRuntimeClien
                     "captureDocumentSchemaVersion": "2",
                     "contractSetVersion": "2",
                     "capabilities": {
-                        "captureKinds": ["pdf", "image", "audio"],
+                        "maxChunkBytes": max_chunk_bytes,
+                        "checkpointIntervalMs": 250,
+                        "heartbeatIntervalMs": 1000,
+                        "stallTimeoutMs": 30_000,
+                        "supportsProgressiveRecording": True,
+                        "captureKinds": ["pdf", "image", "recording"],
                         "structuringModes": ["host", "runtime"],
                         "supportsCancellation": True,
                         "supportsRawDiagnostics": True,
@@ -1044,7 +1090,6 @@ def _client(handler, *, max_chunk_bytes: int = 1_048_576) -> CaptureRuntimeClien
             return _json_response(
                 request,
                 {
-                    "catalogVersion": "2",
                     "runtimeVersion": CAPTURE_RUNTIME_VERSION,
                     "contractSetVersion": "2",
                     "surfaces": [{"id": "v2"}],
@@ -1058,11 +1103,6 @@ def _client(handler, *, max_chunk_bytes: int = 1_048_576) -> CaptureRuntimeClien
                 content=bundle,
                 headers={"X-Contract-SHA256": digest, "ETag": f'"{digest}"'},
                 request=request,
-            )
-        if request.url.path == "/v2/streaming/health/ready":
-            return _json_response(
-                request,
-                _streaming_capabilities(max_chunk_bytes=max_chunk_bytes),
             )
         return handler(request)
 
@@ -1080,18 +1120,6 @@ def _json_response(
     status: int = 200,
 ) -> httpx.Response:
     return httpx.Response(status, json=payload, request=request)
-
-
-def _streaming_capabilities(*, max_chunk_bytes: int) -> dict[str, object]:
-    return {
-        "protocolVersion": "2",
-        "captureKinds": ["pdf", "image", "audio"],
-        "supportsProgressiveAudio": True,
-        "maxChunkBytes": max_chunk_bytes,
-        "checkpointIntervalMs": 250,
-        "heartbeatIntervalMs": 1_000,
-        "stallTimeoutMs": 30_000,
-    }
 
 
 def _ingestion(
@@ -1176,7 +1204,7 @@ def _streaming_result() -> dict[str, object]:
         "text": "Captured source text",
     }
     extraction_engine = {
-        "engine": "windowsml-ocr",
+        "engine": "text-recognition",
         "model": f"capture-runtime@{CAPTURE_RUNTIME_VERSION}",
         "digest": f"sha256:{'a' * 64}",
         "device": "WindowsML",
@@ -1219,3 +1247,45 @@ def _streaming_result() -> dict[str, object]:
         "completedAt": NOW.isoformat(),
     }
     return {"operation": operation, "raw": raw, "result": result}
+
+
+def test_structuring_open_uses_route_identity_and_header_idempotency() -> None:
+    from capture_runtime_client import OpenStructuringSession
+
+    request = OpenStructuringSession.model_validate({
+        "profileId": "qwen3.5-4b-structure-v1",
+        "providerCapability": {
+            "provider": {
+                "engine": "ollama", "model": "qwen3.5:4b",
+                "digest": "sha256:" + "d" * 64,
+                "device": "cuda", "deviceName": "RTX 4060",
+            },
+            "schemaDialect": "https://json-schema.org/draft/2020-12/schema",
+        },
+        "schemaDialect": "https://json-schema.org/draft/2020-12/schema",
+    })
+    calls = []
+
+    def handler(http_request: httpx.Request) -> httpx.Response:
+        assert http_request.method == "POST"
+        assert http_request.url.path == "/v2/captures/capture-1/structure/session"
+        assert http_request.headers["X-Idempotency-Key"] == "operation-1"
+        payload = json.loads(http_request.content)
+        assert payload == request.model_dump(mode="json", by_alias=True)
+        assert not {"captureId", "clientRequestId", "capability"} & payload.keys()
+        assert "capability" not in payload["providerCapability"]
+        calls.append(payload)
+        return _json_response(http_request, {
+            "sessionId": "session-1", "captureId": "capture-1",
+            "sourceSha256": SOURCE_SHA256, "contractSetSha256": "a" * 64,
+            "providerCapability": payload["providerCapability"],
+            "schemaDialect": payload["schemaDialect"],
+            "batchCount": 1, "nextBatchIndex": 0, "sessionDigest": "b" * 64,
+            "status": "open", "createdAt": NOW.isoformat(), "updatedAt": NOW.isoformat(),
+        })
+
+    with _client(handler) as client:
+        first = client.open_structuring_session("capture-1", request, idempotency_key="operation-1")
+        replay = client.open_structuring_session("capture-1", request, idempotency_key="operation-1")
+    assert first == replay
+    assert calls[0] == calls[1]

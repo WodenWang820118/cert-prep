@@ -106,9 +106,11 @@ jobs:
       - name: Stage the published Capture Runtime release
         run: pnpm nx run cert-prep-desktop:install-capture-runtime --skip-nx-cache
 
-      # The full Capture release attests capture-release-manifest-v1.json, which
-      # lists every runtime asset's SHA-256. Verify that attestation's exact
-      # signer workflow, then every staged asset against the manifest.
+      # The full Capture release attests one release manifest, found among its
+      # assets (capture-release-manifest-v1.json before 0.11.0, -v2.json from
+      # 0.11.0 on), which lists every runtime asset's SHA-256. Verify that
+      # attestation's exact signer workflow, then every staged asset against
+      # the manifest.
       - name: Verify the staged Capture Runtime release attestation
         shell: pwsh
         env:
@@ -118,13 +120,20 @@ jobs:
           $version = (Get-Content tools/capture-runtime-version.json -Raw | ConvertFrom-Json).runtimeVersion
           $staged = "tmp/cert-prep/capture-runtime/$version"
           $attested = Join-Path $env:RUNNER_TEMP 'capture-release-attestation'
-          gh release download "v$version" -R gx-capture/capture-workbench -D $attested -p capture-release-manifest-v1.json
+          if ($version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') { throw 'Invalid Capture release version.' }
+          # The release carries exactly one manifest, v1 or v2; take its name from the assets.
+          $releaseJson = gh release view "v$version" -R gx-capture/capture-workbench --json assets
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read the Capture release assets.' }
+          $manifestNames = @(($releaseJson | Out-String | ConvertFrom-Json).assets | ForEach-Object { $_.name } | Where-Object { $_ -cmatch '^capture-release-manifest-v[12]\.json$' })
+          if ($manifestNames.Count -ne 1) { throw 'The Capture release must carry exactly one release manifest.' }
+          $manifestName = $manifestNames[0]
+          gh release download "v$version" -R gx-capture/capture-workbench -D $attested -p $manifestName
           if ($LASTEXITCODE -ne 0) { throw 'Could not download the Capture release manifest.' }
           $assetArgs = @(Get-ChildItem -LiteralPath $staged -File | ForEach-Object { '--asset'; $_.Name })
           node tools/verify-capture-release-attestation.mts `
             --repo gx-capture/capture-workbench --tag "v$version" `
             --signer-workflow gx-capture/capture-workbench/.github/workflows/_publish-github-release.yml `
-            --release-manifest (Join-Path $attested 'capture-release-manifest-v1.json') `
+            --release-manifest (Join-Path $attested $manifestName) `
             --directory $staged @assetArgs
           if ($LASTEXITCODE -ne 0) { throw 'Capture Runtime release assets failed attestation verification.' }
 

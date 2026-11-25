@@ -61,8 +61,8 @@ def test_completed_projection_maps_only_privacy_safe_page_evidence() -> None:
         "provenance": {
             "status": "resolved",
             "runtimeVersion": CAPTURE_RUNTIME_VERSION,
-            "contractSha256": "d" * 64,
-            "engine": "windowsml-ocr",
+            "contractSetSha256": "d" * 64,
+            "engine": "text-recognition",
             "model": "capture-ocr-model",
             "modelDigest": "sha256:" + "b" * 64,
             "device": "directml:0",
@@ -116,7 +116,7 @@ def test_failed_projection_redacts_free_form_failure_and_unavailable_provenance(
     assert payload["provenance"] == {
         "status": "unavailable",
         "runtimeVersion": CAPTURE_RUNTIME_VERSION,
-        "contractSha256": "d" * 64,
+        "contractSetSha256": "d" * 64,
         "profileId": "profile-1",
         "profileSpecSha256": "c" * 64,
         "reason": "worker_timeout",
@@ -186,7 +186,7 @@ def _source(*, sha256: str = "a" * 64) -> SimpleNamespace:
 def _resolved_provenance() -> SimpleNamespace:
     return SimpleNamespace(
         status=_enum("resolved"),
-        engine="windowsml-ocr",
+        engine="text-recognition",
         model="capture-ocr-model",
         model_digest="sha256:" + "b" * 64,
         device="directml:0",
@@ -242,9 +242,9 @@ def _projection(
         status=_enum(status),
         source=source,
         pages=projection_pages,
-        page_count=len(projection_pages),
+        processed_page_count=len(projection_pages),
         runtime_version=CAPTURE_RUNTIME_VERSION,
-        contract_sha256="d" * 64,
+        contract_set_sha256="d" * 64,
         provenance=provenance or _resolved_provenance(),
         failure=failure,
     )

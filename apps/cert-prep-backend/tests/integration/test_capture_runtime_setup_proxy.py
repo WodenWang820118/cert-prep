@@ -35,7 +35,7 @@ class RecordingSetupClient:
         self.cancelled: list[str] = []
         self.installation = RuntimeInstallation(
             installation_id=str(INSTALLATION_ID),
-            requirement_id="windowsml-ocr",
+            requirement_id="text-recognition",
             status=RuntimeInstallationStatus.RUNNING,
             progress=0.5,
             created_at=NOW,
@@ -50,6 +50,11 @@ class RecordingSetupClient:
             runtime_version=CAPTURE_RUNTIME_VERSION,
             capture_document_schema_version="2",
             capabilities={
+                "maxChunkBytes": 1_048_576,
+                "checkpointIntervalMs": 250,
+                "heartbeatIntervalMs": 1000,
+                "stallTimeoutMs": 30_000,
+                "supportsProgressiveRecording": True,
                 "captureKinds": [kind.value for kind in CaptureSourceKind],
                 "structuringModes": [StructuringMode.HOST.value],
                 "supportsCancellation": True,
@@ -62,8 +67,8 @@ class RecordingSetupClient:
                 "service": "capture-runtime",
                 "runtimeVersion": CAPTURE_RUNTIME_VERSION,
                 "contractSetVersion": "2",
-                "contractSha256": "a" * 64,
-                "mode": "gpu-dml",
+                "contractSetSha256": "a" * 64,
+                "mode": "gpu",
                 "adapterClass": "dedicated",
                 "reasonCode": None,
                 "userNoticeRequired": False,
@@ -76,25 +81,25 @@ class RecordingSetupClient:
         return RuntimeRequirements(
             items=[
                 RuntimeRequirement(
-                    requirement_id="windowsml-ocr",
-                    kind="ocr",
+                    requirement_id="text-recognition",
+                    kind="text-recognition",
                     display_name="WindowsML OCR",
                     status=RuntimeRequirementStatus.INSTALLABLE,
                     required_for=["pdf", "image"],
                     install_strategy="checksum-pinned-bundle",
                     artifact=RuntimeArtifactDescriptor(
                         artifact_url="https://github.com/example/capture-windowsml.zip",
-                        artifact_file_name="capture-windowsml-ocr-windows-x64.zip",
+                        artifact_file_name="capture-text-recognition-windows-x64.zip",
                         bytes=138_837_175,
                         sha256="a88c9a3097771d07bd1d940db6acdcbb5336e7c6c85406f5c22655ed6930704a",
                     ),
                 ),
                 RuntimeRequirement(
                     requirement_id="speech-recognition",
-                    kind="speech-to-text",
+                    kind="speech-recognition",
                     display_name="Speech recognition",
                     status=RuntimeRequirementStatus.READY,
-                    required_for=["audio"],
+                    required_for=["recording"],
                     install_strategy="managed-model-download",
                 ),
             ]
@@ -106,7 +111,7 @@ class RecordingSetupClient:
         *,
         idempotency_key: UUID,
     ) -> RuntimeInstallation:
-        assert requirement_id == "windowsml-ocr"
+        assert requirement_id == "text-recognition"
         self.idempotency_keys.append(idempotency_key)
         return self.installation
 
@@ -136,8 +141,8 @@ class CoreOnlySetupClient(RecordingSetupClient):
         return RuntimeRequirements(
             items=[
                 RuntimeRequirement(
-                    requirement_id="windowsml-ocr",
-                    kind="ocr",
+                    requirement_id="text-recognition",
+                    kind="text-recognition",
                     display_name="WindowsML OCR",
                     status=RuntimeRequirementStatus.UNAVAILABLE,
                     required_for=["pdf", "image"],
@@ -146,10 +151,10 @@ class CoreOnlySetupClient(RecordingSetupClient):
                 ),
                 RuntimeRequirement(
                     requirement_id="speech-recognition",
-                    kind="speech-to-text",
+                    kind="speech-recognition",
                     display_name="Speech recognition",
                     status=RuntimeRequirementStatus.UNAVAILABLE,
-                    required_for=["audio"],
+                    required_for=["recording"],
                     install_strategy="unavailable",
                     detail=detail,
                 ),
@@ -193,7 +198,13 @@ def test_capture_runtime_ready_proxy_requires_auth_and_keeps_sidecar_token_backe
     assert response.status_code == 200
     assert response.json()["runtimeVersion"] == CAPTURE_RUNTIME_VERSION
     assert response.json()["capabilities"]["structuringModes"] == ["host"]
-    assert response.json()["ocrCompute"]["mode"] == "gpu-dml"
+    assert set(response.json()["capabilities"]) == {
+        "captureKinds", "structuringModes", "supportsCancellation", "supportsRawDiagnostics",
+        "maxUploadBytes", "maxChunkBytes", "checkpointIntervalMs", "heartbeatIntervalMs",
+        "stallTimeoutMs", "supportsProgressiveRecording",
+    }
+    assert response.json()["ocrCompute"]["contractSetSha256"] == "a" * 64
+    assert response.json()["ocrCompute"]["mode"] == "gpu"
     assert response.json()["ocrCompute"]["adapterClass"] == "dedicated"
 
 
@@ -216,17 +227,17 @@ def test_capture_runtime_setup_proxy_keeps_sidecar_token_backend_only(
             "/capture-runtime/requirements", headers=headers
         ).json()["items"]
         assert [item["requirementId"] for item in requirements] == [
-            "windowsml-ocr",
+            "text-recognition",
             "speech-recognition",
         ]
         assert requirements[0]["artifact"]["artifactFileName"] == (
-            "capture-windowsml-ocr-windows-x64.zip"
+            "capture-text-recognition-windows-x64.zip"
         )
 
         started = client.post(
             "/capture-runtime/installations",
             headers={**headers, "X-Idempotency-Key": str(REQUEST_ID)},
-            json={"requirementId": "windowsml-ocr", "consent": True},
+            json={"requirementId": "text-recognition", "consent": True},
         )
         assert started.status_code == 202
         assert started.json()["installationId"] == str(INSTALLATION_ID)
@@ -270,7 +281,7 @@ def test_capture_runtime_setup_proxy_preserves_core_only_unavailable_requirement
         for item in response.json()["items"]
     ] == [
         (
-            "windowsml-ocr",
+            "text-recognition",
             "unavailable",
             "No downloadable model is published for this runtime release.",
         ),

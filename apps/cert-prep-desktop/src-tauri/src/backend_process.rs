@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use capture_sidecar_launcher::{reserve_loopback_port, OwnedSidecarProcess};
+use capture_sidecar_launcher::{pick_free_loopback_port, OwnedSidecarProcess};
 
 use crate::{
     backend::{build_backend_config, BackendConfig, BackendRuntimeInner},
@@ -45,7 +45,7 @@ pub(crate) fn launch_backend_entrypoint(
         return Ok(());
     }
 
-    let port = reserve_loopback_port()?;
+    let port = pick_free_loopback_port()?;
     let token = uuid::Uuid::new_v4().to_string();
     fs::create_dir_all(&inner.data_dir)
         .map_err(|error| format!("failed to create app data directory: {error}"))?;
@@ -298,8 +298,8 @@ mod tests {
     }
 
     #[test]
-    fn shared_loopback_port_reservation_returns_bindable_port() {
-        let port = reserve_loopback_port().expect("port should be reserved");
+    fn shared_loopback_port_picker_returns_bindable_port() {
+        let port = pick_free_loopback_port().expect("free port should be picked");
 
         assert!(port > 0);
     }
