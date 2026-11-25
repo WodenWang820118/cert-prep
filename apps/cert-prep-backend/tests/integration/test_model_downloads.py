@@ -75,7 +75,7 @@ def test_model_download_uses_the_selected_model_installer(tmp_path) -> None:
                 api_token="test-token",
                 llm_provider="fake",
             ),
-            llm_installation_manager=runtime,
+            llm_installation=runtime,
         )
     )
 
@@ -215,7 +215,7 @@ def test_model_download_reuses_existing_running_job(tmp_path, monkeypatch) -> No
             llm_provider=provider,
         )
     )
-    manager = client.app.state.llm_installation_manager
+    installation = client.app.state.llm_installation
     original_start = llm_installations.download_selected_model
 
     def start_after_progress(runtime):
@@ -229,10 +229,10 @@ def test_model_download_reuses_existing_running_job(tmp_path, monkeypatch) -> No
         second = client.post("/llm/installations", headers=AUTH_HEADERS, json={"kind": "ollama_model"})
     finally:
         release_pull.set()
-        for worker in manager.work.workers():
+        for worker in installation.work.workers():
             worker.join(timeout=5)
             assert not worker.is_alive()
-        llm_installations.stop_llm_installations(manager)
+        llm_installations.stop_llm_installations(installation)
 
     assert first.status_code == 202
     assert second.status_code == 202

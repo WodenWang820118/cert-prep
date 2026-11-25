@@ -7,10 +7,13 @@ from threading import Event, Thread
 import pytest
 from fastapi.testclient import TestClient
 
-from cert_prep_backend.bootstrap.app import create_app
+from cert_prep_backend.bootstrap.app import build_llm_installation, create_app
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.errors import InstallerUnavailable
-from cert_prep_backend.llm_provisioning.infrastructure.manager import LLMInstallationManager
+from cert_prep_backend.llm_provisioning.application.use_cases import (
+    recover_llm_installations,
+    stop_llm_installations,
+)
 from cert_prep_contracts.llm_installation import (
     LLMInstallationStatus as Status,
     LLMInstallProgress as Progress,
@@ -62,18 +65,28 @@ def llm_http(tmp_path, monkeypatch):
     settings = Settings(data_dir=tmp_path, api_token="test-token", llm_provider="fake")
     app = create_app(settings=settings)
     installers = {kind: HttpCharacterizationInstaller(kind) for kind in Kind}
-    manager = LLMInstallationManager(
-        settings=settings, llm_provider=object(), machine_inventory=object(),
-        db=app.state.database, async_jobs=False, installers=list(installers.values()),
-    )
-    app.state.llm_installation_manager = manager
+    installation = install_http_runtime(app, installers, async_jobs=False)
     with TestClient(app) as client:
-        yield client, app, manager, installers
+        yield client, app, installation, installers
+
+
+def install_http_runtime(app, installers, *, async_jobs: bool):
+    installation = build_llm_installation(
+        settings=app.state.settings,
+        llm_provider=object(),
+        machine_inventory=object(),
+        db=app.state.database,
+        async_jobs=async_jobs,
+        installers=list(installers.values()),
+    )
+    recover_llm_installations(installation)
+    app.state.llm_installation = installation
+    return installation
 
 
 @pytest.mark.parametrize("kind", list(Kind))
 def test_llm_http_ready_poll_cancel_and_terminal_sse(llm_http, kind):
-    client, app, manager, installers = llm_http
+    client, _app, _installation, installers = llm_http
     installers[kind].available = True
     first = client.post(INSTALLATIONS, headers=AUTH, json={"kind": kind})
     assert first.status_code == 202
@@ -100,7 +113,7 @@ def test_llm_http_ready_poll_cancel_and_terminal_sse(llm_http, kind):
 
 @pytest.mark.parametrize("kind", list(Kind))
 def test_llm_http_auth_missing_and_validation_envelopes(llm_http, kind):
-    client, app, manager, installers = llm_http
+    client, _app, _installation, installers = llm_http
     assert client.post(INSTALLATIONS, json={"kind": kind}).status_code == 401
     assert client.get(f"{INSTALLATIONS}/missing").status_code == 401
     assert client.get(f"{INSTALLATIONS}/missing/events").status_code == 401
@@ -119,7 +132,7 @@ def test_llm_http_auth_missing_and_validation_envelopes(llm_http, kind):
 
 
 def test_llm_http_requirements_invalid_kind_waiting_reuse_and_restart(llm_http):
-    client, app, manager, installers = llm_http
+    client, app, _installation, installers = llm_http
     assert client.get("/llm/requirements").status_code == 401
     response = client.get("/llm/requirements", headers=AUTH)
     assert response.status_code == 200
@@ -136,11 +149,7 @@ def test_llm_http_requirements_invalid_kind_waiting_reuse_and_restart(llm_http):
     requested = client.delete(path, headers=AUTH).json()
     assert requested["status"] == "cancel_requested"
     assert client.get(path, headers=AUTH).json() == requested
-    restarted = LLMInstallationManager(
-        settings=app.state.settings, llm_provider=object(), machine_inventory=object(),
-        db=app.state.database, async_jobs=False, installers=list(installers.values()),
-    )
-    app.state.llm_installation_manager = restarted
+    install_http_runtime(app, installers, async_jobs=False)
     assert client.get(path, headers=AUTH).json()["status"] == "canceled"
     retried = client.post(INSTALLATIONS, headers=AUTH, json={"kind": Kind.OLLAMA}).json()
     assert retried["id"] != started["id"]
@@ -150,12 +159,12 @@ def test_llm_http_requirements_invalid_kind_waiting_reuse_and_restart(llm_http):
 
 @pytest.mark.parametrize("kind", list(Kind))
 def test_llm_http_commit_and_committed_rejections(llm_http, kind):
-    client, app, manager, installers = llm_http
+    client, _app, installation, installers = llm_http
     observed = []
 
     def install(progress):
         progress(Progress("commit", 4, 12, "committing", False))
-        job_id = next(iter(manager._jobs))
+        job_id = installation.jobs.list_all()[0].id
         observed.append(client.get(f"{INSTALLATIONS}/{job_id}", headers=AUTH).json())
         rejected = client.delete(f"{INSTALLATIONS}/{job_id}", headers=AUTH)
         assert rejected.status_code == 409
@@ -185,7 +194,7 @@ def test_llm_http_before_worker_start_cancel_retry_and_failure(
 ):
     from cert_prep_backend.llm_provisioning.infrastructure import manager as module
 
-    client, app, previous, installers = llm_http
+    client, app, _previous, installers = llm_http
     gates, failures = [], []
 
     def worker_factory(*, target, args, **kwargs):
@@ -205,11 +214,7 @@ def test_llm_http_before_worker_start_cancel_retry_and_failure(
         return worker
 
     monkeypatch.setattr(module, "Thread", worker_factory)
-    manager = LLMInstallationManager(
-        settings=app.state.settings, llm_provider=object(), machine_inventory=object(),
-        db=app.state.database, async_jobs=True, installers=list(installers.values()),
-    )
-    app.state.llm_installation_manager = manager
+    installation = install_http_runtime(app, installers, async_jobs=True)
     try:
         first = client.post(INSTALLATIONS, headers=AUTH, json={"kind": kind}).json()
         assert first["status"] == "queued"
@@ -239,7 +244,7 @@ def test_llm_http_before_worker_start_cancel_retry_and_failure(
             release.set()
             worker.join(timeout=10)
             assert done.is_set()
-        manager.close()
+        stop_llm_installations(installation)
     assert failures == []
 
 
@@ -247,7 +252,7 @@ def test_llm_http_before_worker_start_cancel_retry_and_failure(
 def test_llm_http_sse_controlled_heartbeat_then_waiting_becomes_ready(
     llm_http, monkeypatch, kind,
 ):
-    client, app, manager, installers = llm_http
+    client, app, _installation, installers = llm_http
     installer = installers[kind]
     installer.action = lambda progress: Status.WAITING_FOR_USER
     job = client.post(INSTALLATIONS, headers=AUTH, json={"kind": kind}).json()
@@ -279,14 +284,14 @@ def test_llm_http_sse_controlled_heartbeat_then_waiting_becomes_ready(
 
 
 def test_llm_http_evicted_ids_are_missing_while_database_keeps_history(llm_http):
-    client, app, manager, installers = llm_http
+    client, app, installation, installers = llm_http
     installers[Kind.OLLAMA].available = True
     jobs = []
     for _ in range(103):
         response = client.post(INSTALLATIONS, headers=AUTH, json={"kind": Kind.OLLAMA})
         assert response.status_code == 202
         jobs.append(response.json()["id"])
-    assert list(manager._jobs) == jobs[3:]
+    assert [job.id for job in installation.jobs.list_all()] == jobs[3:]
     assert client.get(f"{INSTALLATIONS}/{jobs[0]}", headers=AUTH).status_code == 404
     assert client.get(f"{INSTALLATIONS}/{jobs[0]}/events", headers=AUTH).status_code == 404
     newest = client.get(f"{INSTALLATIONS}/{jobs[-1]}", headers=AUTH)

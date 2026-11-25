@@ -6,17 +6,25 @@ from threading import Event
 
 import pytest
 
+from cert_prep_backend.bootstrap.app import build_llm_installation
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.errors import InstallerUnavailable
 from cert_prep_backend.ai_providers.infrastructure import llm_installers
-from cert_prep_backend.llm_provisioning.infrastructure.manager import LLMInstallationManager
+from cert_prep_backend.llm_provisioning.application.use_cases import (
+    download_selected_model,
+    list_llm_requirements,
+    recover_llm_installations,
+    start_llm_installation,
+    stop_llm_installations,
+    view_llm_installation,
+)
 from cert_prep_contracts.llm_installation import LLMInstallationStatus as Status
 from cert_prep_contracts.llm_installation import LLMRequirementKind as Kind
 from llm_test_fakes import FakeProfileInstaller, GIB, _profile_inventory
 from llm_characterization_support import (
     ScriptedInstaller,
     installer as installer,
-    make_manager as make_manager,
+    make_installation as make_installation,
     no_ollama_start as no_ollama_start,
     runtime_clock as runtime_clock,
     worker_gates as worker_gates,
@@ -39,22 +47,32 @@ def test_default_catalog_lazy_selection_and_empty_override(
     inventory = _profile_inventory(total_ram=16 * GIB, free_disk=64 * GIB)
     machine = SimpleNamespace(inventory=lambda: probes.append("inventory") or inventory)
     provider = SimpleNamespace(provider="ollama", model="raw", llm_engine_requirement_kind=Kind.OLLAMA)
-    manager = LLMInstallationManager(
-        settings=Settings(data_dir=tmp_path, llm_provider="ollama", ollama_profile_enabled=profile_enabled),
-        llm_provider=provider, machine_inventory=machine, installers=overrides, async_jobs=False,
+    installation = build_llm_installation(
+        settings=Settings(
+            data_dir=tmp_path, llm_provider="ollama", ollama_profile_enabled=profile_enabled,
+        ),
+        llm_provider=provider,
+        machine_inventory=machine,
+        installers=overrides,
+        async_jobs=False,
     )
+    recover_llm_installations(installation)
     try:
-        assert list(manager._installers) == [Kind.OLLAMA, Kind.OLLAMA_MODEL]
+        assert [item.kind for item in installation.installers.ordered()] == [
+            Kind.OLLAMA,
+            Kind.OLLAMA_MODEL,
+        ]
         assert probes == events == []
-        model = manager._installers[Kind.OLLAMA_MODEL]
+        model = installation.installers.get(Kind.OLLAMA_MODEL)
+        assert model is not None
         assert model.model == ("ollama-profile:auto" if profile_enabled else "raw")
-        first = manager.requirement(Kind.OLLAMA_MODEL)
-        second = manager.requirement(Kind.OLLAMA_MODEL)
+        first = model.requirement()
+        second = model.requirement()
         assert first == second
         assert probes == (["inventory"] if profile_enabled else [])
         assert len(events) == (1 if profile_enabled else 0)
     finally:
-        manager.close()
+        stop_llm_installations(installation)
 
 
 def test_disabled_profile_uses_provider_preselection_without_inventory(tmp_path, monkeypatch):
@@ -66,19 +84,21 @@ def test_disabled_profile_uses_provider_preselection_without_inventory(tmp_path,
         profile_installer, "OllamaProfileInstaller",
         lambda profile, **kwargs: FakeProfileInstaller(profile, events),
     )
-    manager = LLMInstallationManager(
+    installation = build_llm_installation(
         settings=Settings(data_dir=tmp_path, llm_provider="ollama", ollama_profile_enabled=False),
         llm_provider=SimpleNamespace(
             provider="ollama", model="raw", llm_engine_requirement_kind=Kind.OLLAMA,
             profile_selection=SimpleNamespace(selected_profile=selected),
         ),
-        machine_inventory=object(), async_jobs=False,
+        machine_inventory=object(),
+        async_jobs=False,
     )
+    recover_llm_installations(installation)
     try:
         assert events == [("init", "chosen-profile")]
-        assert manager.start_model_installation().model == "chosen"
+        assert download_selected_model(installation).model == "chosen"
     finally:
-        manager.close()
+        stop_llm_installations(installation)
 
 
 def test_provider_name_alone_does_not_enable_a_runtime_or_profile(tmp_path):
@@ -149,39 +169,41 @@ def test_concurrent_lazy_profile_probes_construct_one_installer(tmp_path, monkey
     assert events == [("init", "cached-profile")]
 
 
-def test_override_catalog_last_duplicate_wins_and_requirements_follow_enum(make_manager):
+def test_override_catalog_last_duplicate_wins_and_requirements_follow_enum(make_installation):
     first = ScriptedInstaller(Kind.OLLAMA_MODEL)
     replacement = ScriptedInstaller(Kind.OLLAMA_MODEL)
     runtime = ScriptedInstaller(Kind.OLLAMA)
-    manager = make_manager(installers=[first, runtime, replacement])
-    assert [item.kind for item in manager.requirements()] == list(Kind)
+    installation = make_installation(installers=[first, runtime, replacement])
+    assert [item.kind for item in list_llm_requirements(installation)] == list(Kind)
     assert first.calls == []
     assert replacement.calls == runtime.calls == ["requirement"]
 
 
-def test_shutdown_cancels_queued_work_and_joins_with_bound(make_manager, worker_gates, monkeypatch):
-    manager = make_manager(async_jobs=True)
-    queued = manager.start_installation(Kind.OLLAMA)
+def test_shutdown_cancels_queued_work_and_joins_with_bound(make_installation, worker_gates, monkeypatch):
+    installation = make_installation(async_jobs=True)
+    queued = start_llm_installation(installation, Kind.OLLAMA)
     joins = []
     worker = worker_gates[0][2]
     original_join = worker.join
     monkeypatch.setattr(worker, "join", lambda timeout: joins.append(timeout))
-    manager.close()
+    stop_llm_installations(installation)
     assert joins == [1]
-    assert manager.get_installation(queued.id).status == Status.CANCELED
+    assert view_llm_installation(installation, queued.id).status == Status.CANCELED
     monkeypatch.setattr(worker, "join", original_join)
 
 
-def test_shutdown_keeps_committing_jobs(make_manager, installer):
+def test_shutdown_keeps_committing_jobs(make_installation, installer):
     from cert_prep_contracts.llm_installation import LLMInstallProgress
 
-    manager = make_manager()
+    installation = make_installation()
 
     def install(progress):
         progress(LLMInstallProgress("commit", phase="committing", cancellable=False))
-        manager.close()
-        assert manager.get_installation(next(iter(manager._jobs))).status == Status.RUNNING
+        stop_llm_installations(installation)
+        assert view_llm_installation(
+            installation, installation.jobs.list_all()[0].id,
+        ).status == Status.RUNNING
         return Status.SUCCEEDED
 
     installer.action = install
-    assert manager.start_installation(Kind.OLLAMA).status == Status.SUCCEEDED
+    assert start_llm_installation(installation, Kind.OLLAMA).status == Status.SUCCEEDED

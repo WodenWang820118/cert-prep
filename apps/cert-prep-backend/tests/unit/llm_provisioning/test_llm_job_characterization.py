@@ -6,12 +6,20 @@ from threading import Event, Thread
 import pytest
 from llm_characterization_support import (
     installer as installer,
-    make_manager as make_manager,
+    make_installation as make_installation,
     no_ollama_start as no_ollama_start,
     runtime_clock as runtime_clock,
     worker_gates as worker_gates,
 )
 
+from cert_prep_backend.llm_provisioning.application.use_cases import (
+    _update_job,
+    cancel_llm_installation,
+    download_selected_model,
+    start_llm_installation,
+    stop_llm_installations,
+    view_llm_installation,
+)
 from cert_prep_backend.platform.errors import InstallerUnavailable, OperationNotCancellableError
 from cert_prep_contracts.llm_installation import (
     LLMInstallationStatus as Status,
@@ -21,15 +29,15 @@ from cert_prep_contracts.llm_installation import (
 from cert_prep_ollama.exceptions import OllamaInstallationUnavailable
 
 
-def test_ready_creates_fresh_success_before_validation_or_active_reuse(make_manager, installer):
-    manager = make_manager(async_jobs=True)
-    queued = manager.start_installation(Kind.OLLAMA)
+def test_ready_creates_fresh_success_before_validation_or_active_reuse(make_installation, installer):
+    installation = make_installation(async_jobs=True)
+    queued = start_llm_installation(installation, Kind.OLLAMA)
     installer.available = True
     installer.validation_error = AssertionError("ready must bypass validation")
     installer.calls.clear()
 
-    ready = manager.start_installation(Kind.OLLAMA)
-    another = manager.start_installation(Kind.OLLAMA)
+    ready = start_llm_installation(installation, Kind.OLLAMA)
+    another = start_llm_installation(installation, Kind.OLLAMA)
 
     assert len({queued.id, ready.id, another.id}) == 3
     assert installer.calls == ["requirement", "requirement"]
@@ -40,7 +48,7 @@ def test_ready_creates_fresh_success_before_validation_or_active_reuse(make_mana
     assert ready.completed == ready.total == 80
     assert ready.created_at == ready.updated_at
     assert ready.commit_started_at is ready.error is None
-    assert manager.get_installation(queued.id).status == Status.QUEUED
+    assert view_llm_installation(installation, queued.id).status == Status.QUEUED
 
 
 @pytest.mark.parametrize("error", [
@@ -48,37 +56,37 @@ def test_ready_creates_fresh_success_before_validation_or_active_reuse(make_mana
     OllamaInstallationUnavailable("unavailable"),
     ValueError("unavailable"),
 ])
-def test_validation_precedes_reuse_and_translates_failures(make_manager, installer, error):
-    manager = make_manager(async_jobs=True)
-    job = manager.start_installation(Kind.OLLAMA)
+def test_validation_precedes_reuse_and_translates_failures(make_installation, installer, error):
+    installation = make_installation(async_jobs=True)
+    job = start_llm_installation(installation, Kind.OLLAMA)
     installer.validation_error = error
     installer.calls.clear()
 
     with pytest.raises(InstallerUnavailable, match="^unavailable$") as caught:
-        manager.start_installation(Kind.OLLAMA)
+        start_llm_installation(installation, Kind.OLLAMA)
 
     assert (caught.value is error) == isinstance(error, InstallerUnavailable)
     if caught.value is not error:
         assert caught.value.__cause__ is error
     assert installer.calls == ["requirement", "validate"]
-    assert manager.get_installation(job.id) == job
+    assert view_llm_installation(installation, job.id) == job
 
 
-def test_invalid_unconfigured_and_missing_jobs(make_manager):
-    manager = make_manager()
+def test_invalid_unconfigured_and_missing_jobs(make_installation):
+    installation = make_installation()
     with pytest.raises(ValueError):
-        manager.start_installation("not-a-kind")
-    assert manager.requirement(Kind.OLLAMA_MODEL) is None
+        start_llm_installation(installation, "not-a-kind")
+    assert installation.installers.get(Kind.OLLAMA_MODEL) is None
     with pytest.raises(InstallerUnavailable, match="No installer is configured for ollama_model."):
-        manager.start_model_installation()
-    for method in (manager.get_installation, manager.cancel_installation):
+        download_selected_model(installation)
+    for read in (view_llm_installation, cancel_llm_installation):
         with pytest.raises(KeyError, match="missing"):
-            method("missing")
+            read(installation, "missing")
 
 
 @pytest.mark.parametrize("active", ["queued", "running", "cancel_requested", "waiting_for_user"])
 def test_active_reuse_is_by_kind_even_if_provider_and_model_change(
-    make_manager, installer, worker_gates, active,
+    make_installation, installer, worker_gates, active,
 ):
     entered, release = Event(), Event()
 
@@ -88,8 +96,8 @@ def test_active_reuse_is_by_kind_even_if_provider_and_model_change(
         return Status.WAITING_FOR_USER if active == "waiting_for_user" else Status.SUCCEEDED
 
     installer.action = install
-    manager = make_manager(async_jobs=True)
-    job = manager.start_installation(Kind.OLLAMA)
+    installation = make_installation(async_jobs=True)
+    job = start_llm_installation(installation, Kind.OLLAMA)
     try:
         if active != "queued":
             worker_gates[0][0].set()
@@ -98,10 +106,10 @@ def test_active_reuse_is_by_kind_even_if_provider_and_model_change(
             release.set()
             assert worker_gates[0][1].wait(timeout=10)
         if active == "cancel_requested":
-            manager.cancel_installation(job.id)
-        assert manager.get_installation(job.id).status == active
+            cancel_llm_installation(installation, job.id)
+        assert view_llm_installation(installation, job.id).status == active
         installer.provider, installer.model = "changed-provider", "changed-model"
-        reused = manager.start_installation(Kind.OLLAMA)
+        reused = start_llm_installation(installation, Kind.OLLAMA)
         assert reused.id == job.id
         assert (reused.provider, reused.model) == (job.provider, job.model)
         assert len(worker_gates) == 1
@@ -109,51 +117,51 @@ def test_active_reuse_is_by_kind_even_if_provider_and_model_change(
         release.set()
 
 
-def test_different_kinds_have_independent_active_jobs(make_manager, installer):
+def test_different_kinds_have_independent_active_jobs(make_installation, installer):
     other = type(installer)(Kind.OLLAMA_MODEL)
-    manager = make_manager(installers=[installer, other], async_jobs=True)
-    runtime = manager.start_installation(Kind.OLLAMA)
-    model = manager.start_model_installation()
+    installation = make_installation(installers=[installer, other], async_jobs=True)
+    runtime = start_llm_installation(installation, Kind.OLLAMA)
+    model = download_selected_model(installation)
     assert runtime.id != model.id
-    assert manager.start_installation(Kind.OLLAMA).id == runtime.id
-    assert manager.start_model_installation().id == model.id
+    assert start_llm_installation(installation, Kind.OLLAMA).id == runtime.id
+    assert download_selected_model(installation).id == model.id
 
 
 @pytest.mark.parametrize("terminal", [Status.SUCCEEDED, Status.FAILED, Status.CANCELED])
-def test_terminal_jobs_allow_new_attempts(make_manager, installer, worker_gates, terminal):
+def test_terminal_jobs_allow_new_attempts(make_installation, installer, worker_gates, terminal):
     def fail(progress):
         raise RuntimeError("installer failed")
 
     if terminal == Status.FAILED:
         installer.action = fail
-    manager = make_manager(async_jobs=terminal == Status.CANCELED)
-    first = manager.start_installation(Kind.OLLAMA)
+    installation = make_installation(async_jobs=terminal == Status.CANCELED)
+    first = start_llm_installation(installation, Kind.OLLAMA)
     if terminal == Status.CANCELED:
-        first = manager.cancel_installation(first.id)
+        first = cancel_llm_installation(installation, first.id)
     assert first.status == terminal
-    second = manager.start_installation(Kind.OLLAMA)
+    second = start_llm_installation(installation, Kind.OLLAMA)
     assert second.id != first.id
-    assert manager.get_installation(first.id) == first
+    assert view_llm_installation(installation, first.id) == first
 
 
-def test_worker_start_progress_defaults_and_null_counts(make_manager, installer, runtime_clock):
+def test_worker_start_progress_defaults_and_null_counts(make_installation, installer, runtime_clock):
     seen = []
-    manager = make_manager()
+    installation = make_installation()
 
     def install(progress):
-        job_id = next(iter(manager._jobs))
-        seen.append(manager.get_installation(job_id))
+        job_id = installation.jobs.list_all()[0].id
+        seen.append(view_llm_installation(installation, job_id))
         for item in (
             Progress("download", 50, 100, "custom-phase", False),
             Progress("reset counts"),
             Progress("counts may decrease", -2, 0, "", None),
         ):
             progress(item)
-            seen.append(manager.get_installation(job_id))
+            seen.append(view_llm_installation(installation, job_id))
         return Status.SUCCEEDED
 
     installer.action = install
-    completed = manager.start_installation(Kind.OLLAMA)
+    completed = start_llm_installation(installation, Kind.OLLAMA)
     assert [item.status for item in seen] == [Status.RUNNING] * 4
     assert (seen[0].phase, seen[0].detail, seen[0].cancellable) == (
         "starting", "test-provider installation running", True,
@@ -174,17 +182,17 @@ def test_worker_start_progress_defaults_and_null_counts(make_manager, installer,
 
 
 def test_commit_latches_first_noncancellable_timestamp_and_rejects_cancellation(
-    make_manager, installer,
+    make_installation, installer,
 ):
     seen = []
-    manager = make_manager()
+    installation = make_installation()
 
     def install(progress):
-        job_id = next(iter(manager._jobs))
+        job_id = installation.jobs.list_all()[0].id
         progress(Progress("not yet a commit", phase="committing", cancellable=True))
-        assert manager.get_installation(job_id).commit_started_at is None
+        assert view_llm_installation(installation, job_id).commit_started_at is None
         progress(Progress("other noncancellable phase", phase="verifying", cancellable=False))
-        assert manager.get_installation(job_id).commit_started_at is None
+        assert view_llm_installation(installation, job_id).commit_started_at is None
         for item in (
             Progress("commit", 1, 2, "committing", False),
             Progress("late download", 2, 3, "downloading", True),
@@ -192,14 +200,14 @@ def test_commit_latches_first_noncancellable_timestamp_and_rejects_cancellation(
             Progress("defaults after commit"),
         ):
             progress(item)
-            seen.append(manager.get_installation(job_id))
+            seen.append(view_llm_installation(installation, job_id))
         with pytest.raises(OperationNotCancellableError) as caught:
-            manager.cancel_installation(job_id)
+            cancel_llm_installation(installation, job_id)
         assert str(caught.value) == "LLM installation is committing and can no longer be canceled."
         return Status.SUCCEEDED
 
     installer.action = install
-    result = manager.start_installation(Kind.OLLAMA)
+    result = start_llm_installation(installation, Kind.OLLAMA)
     assert {item.phase for item in seen} == {"committing"}
     assert all(item.cancellable is False for item in seen)
     assert len({item.commit_started_at for item in seen}) == 1
@@ -207,7 +215,7 @@ def test_commit_latches_first_noncancellable_timestamp_and_rejects_cancellation(
     assert result.commit_started_at == seen[0].commit_started_at
     assert result.phase == "completed"
     with pytest.raises(OperationNotCancellableError) as caught:
-        manager.cancel_installation(result.id)
+        cancel_llm_installation(installation, result.id)
     assert str(caught.value) == "LLM installation committed and can no longer be canceled."
 
 
@@ -215,7 +223,7 @@ def test_commit_latches_first_noncancellable_timestamp_and_rejects_cancellation(
 @pytest.mark.parametrize("counts", [(None, None), (0, 0), (3, None), (None, 7)])
 @pytest.mark.parametrize("detail", ["last detail", ""])
 def test_completion_detail_and_independent_count_fallbacks(
-    make_manager, installer, kind, counts, detail,
+    make_installation, installer, kind, counts, detail,
 ):
     installer.kind = kind
 
@@ -224,8 +232,8 @@ def test_completion_detail_and_independent_count_fallbacks(
         return Status.SUCCEEDED
 
     installer.action = install
-    manager = make_manager()
-    result = manager.start_installation(kind)
+    installation = make_installation()
+    result = start_llm_installation(installation, kind)
     assert not installer.available  # Current normal-return success does not require readiness.
     assert result.status == Status.SUCCEEDED
     assert result.detail == (
@@ -237,29 +245,29 @@ def test_completion_detail_and_independent_count_fallbacks(
 
 
 @pytest.mark.parametrize("returned", [Status.QUEUED, Status.RUNNING, Status.FAILED, Status.CANCELED, None])
-def test_every_normal_nonwaiting_installer_return_is_success(make_manager, installer, returned):
+def test_every_normal_nonwaiting_installer_return_is_success(make_installation, installer, returned):
     installer.action = lambda progress: returned
-    result = make_manager().start_installation(Kind.OLLAMA)
+    result = start_llm_installation(make_installation(), Kind.OLLAMA)
     assert result.status == Status.SUCCEEDED
     assert result.detail == "test-provider installation running"
     assert (result.completed, result.total) == (80, 80)
 
 
-def test_waiting_completion_clears_completed_then_poll_observes_readiness(make_manager, installer):
+def test_waiting_completion_clears_completed_then_poll_observes_readiness(make_installation, installer):
     def install(progress):
         progress(Progress("downloaded", 70, 90))
         return Status.WAITING_FOR_USER
 
     installer.action = install
-    manager = make_manager()
-    waiting = manager.start_installation(Kind.OLLAMA)
+    installation = make_installation()
+    waiting = start_llm_installation(installation, Kind.OLLAMA)
     assert (waiting.status, waiting.phase, waiting.cancellable) == (
         Status.WAITING_FOR_USER, "waiting_for_user", True,
     )
     assert (waiting.detail, waiting.completed, waiting.total) == ("Manual setup required", None, 80)
-    assert manager.get_installation(waiting.id) == waiting
+    assert view_llm_installation(installation, waiting.id) == waiting
     installer.available = True
-    ready = manager.get_installation(waiting.id)
+    ready = view_llm_installation(installation, waiting.id)
     assert (ready.status, ready.phase, ready.cancellable) == (Status.SUCCEEDED, "completed", False)
     assert ready.detail == "Test requirement is ready"
     assert ready.completed == ready.total == 80
@@ -267,26 +275,26 @@ def test_waiting_completion_clears_completed_then_poll_observes_readiness(make_m
 
 
 def test_queued_cancellation_prevents_installer_and_repeats_are_noops(
-    make_manager, installer, worker_gates,
+    make_installation, installer, worker_gates,
 ):
-    manager = make_manager(async_jobs=True)
-    queued = manager.start_installation(Kind.OLLAMA)
+    installation = make_installation(async_jobs=True)
+    queued = start_llm_installation(installation, Kind.OLLAMA)
     assert (queued.status, queued.phase, queued.cancellable) == (Status.QUEUED, "queued", True)
     assert queued.detail == "Test requirement installation queued"
     assert queued.completed is None and queued.total == 80
-    canceled = manager.cancel_installation(queued.id)
+    canceled = cancel_llm_installation(installation, queued.id)
     assert (canceled.status, canceled.phase, canceled.cancellable) == (Status.CANCELED, "canceled", False)
     assert canceled.detail == "LLM installation canceled"
-    assert manager.cancel_installation(queued.id) == canceled
+    assert cancel_llm_installation(installation, queued.id) == canceled
     worker_gates[0][0].set()
     assert worker_gates[0][1].wait(timeout=10)
-    assert manager.get_installation(queued.id) == canceled
+    assert view_llm_installation(installation, queued.id) == canceled
     assert installer.calls == ["requirement", "validate", "cancel"]
 
 
 @pytest.mark.parametrize("outcome", ["progress", "success", "failure", "waiting"])
 def test_running_cancellation_wins_over_worker_finalization(
-    make_manager, installer, worker_gates, outcome,
+    make_installation, installer, worker_gates, outcome,
 ):
     entered, release = Event(), Event()
 
@@ -301,22 +309,22 @@ def test_running_cancellation_wins_over_worker_finalization(
         return Status.WAITING_FOR_USER if outcome == "waiting" else Status.SUCCEEDED
 
     installer.action = install
-    manager = make_manager(async_jobs=True)
-    queued = manager.start_installation(Kind.OLLAMA)
+    installation = make_installation(async_jobs=True)
+    queued = start_llm_installation(installation, Kind.OLLAMA)
     worker_gates[0][0].set()
     try:
         assert entered.wait(timeout=10)
-        requested = manager.cancel_installation(queued.id)
+        requested = cancel_llm_installation(installation, queued.id)
         assert (requested.status, requested.phase, requested.cancellable) == (
             Status.CANCEL_REQUESTED, "canceling", False,
         )
         assert requested.detail == "LLM installation cancellation requested"
-        assert manager.cancel_installation(queued.id) == requested
+        assert cancel_llm_installation(installation, queued.id) == requested
         assert installer.calls.count("cancel") == 1
     finally:
         release.set()
     assert worker_gates[0][1].wait(timeout=10)
-    canceled = manager.get_installation(queued.id)
+    canceled = view_llm_installation(installation, queued.id)
     assert (canceled.status, canceled.phase, canceled.cancellable) == (Status.CANCELED, "canceled", False)
     assert canceled.detail == "LLM installation canceled"
     assert canceled.error is None
@@ -324,22 +332,22 @@ def test_running_cancellation_wins_over_worker_finalization(
     assert canceled.total == (80 if outcome == "waiting" else 8)
 
 
-def test_waiting_cancel_stays_requested_without_worker(make_manager, installer):
+def test_waiting_cancel_stays_requested_without_worker(make_installation, installer):
     # Pins current behaviour: waiting cancellation has no worker to acknowledge it.
     installer.action = lambda progress: Status.WAITING_FOR_USER
-    manager = make_manager()
-    waiting = manager.start_installation(Kind.OLLAMA)
-    requested = manager.cancel_installation(waiting.id)
+    installation = make_installation()
+    waiting = start_llm_installation(installation, Kind.OLLAMA)
+    requested = cancel_llm_installation(installation, waiting.id)
     installer.available = True
     assert requested.status == Status.CANCEL_REQUESTED
-    assert manager.get_installation(waiting.id) == requested
-    assert manager.cancel_installation(waiting.id) == requested
-    manager.close()
-    assert manager.get_installation(waiting.id) == requested
+    assert view_llm_installation(installation, waiting.id) == requested
+    assert cancel_llm_installation(installation, waiting.id) == requested
+    stop_llm_installations(installation)
+    assert view_llm_installation(installation, waiting.id) == requested
 
 
 @pytest.mark.parametrize("failed", [False, True])
-def test_terminal_finalization_and_cancellation_are_idempotent(make_manager, installer, failed):
+def test_terminal_finalization_and_cancellation_are_idempotent(make_installation, installer, failed):
     def install(progress):
         progress(Progress("partial", 3, 8))
         if failed:
@@ -347,23 +355,24 @@ def test_terminal_finalization_and_cancellation_are_idempotent(make_manager, ins
         return Status.SUCCEEDED
 
     installer.action = install
-    manager = make_manager()
-    terminal = manager.start_installation(Kind.OLLAMA)
+    installation = make_installation()
+    terminal = start_llm_installation(installation, Kind.OLLAMA)
     assert terminal.status == (Status.FAILED if failed else Status.SUCCEEDED)
     assert terminal.error == ("installer failed" if failed else None)
     assert terminal.detail == ("installer failed" if failed else "partial")
     assert (terminal.completed, terminal.total) == (3, 8)
-    assert manager.cancel_installation(terminal.id) == terminal
-    manager._update_job(
+    assert cancel_llm_installation(installation, terminal.id) == terminal
+    _update_job(
+        installation,
         terminal.id, status=Status.FAILED, phase="different", cancellable=True,
         detail="late finalization", completed=None, total=None, error="late error",
     )
-    assert manager.get_installation(terminal.id) == terminal
+    assert view_llm_installation(installation, terminal.id) == terminal
     assert "cancel" not in installer.calls
 
 
 @pytest.mark.parametrize("failed", [False, True])
-def test_late_progress_after_terminal_revives_job(make_manager, installer, failed):
+def test_late_progress_after_terminal_revives_job(make_installation, installer, failed):
     # Pins current behaviour: progress after success/failure revives a terminal job.
     def install(progress):
         if failed:
@@ -371,10 +380,10 @@ def test_late_progress_after_terminal_revives_job(make_manager, installer, faile
         return Status.SUCCEEDED
 
     installer.action = install
-    manager = make_manager()
-    terminal = manager.start_installation(Kind.OLLAMA)
+    installation = make_installation()
+    terminal = start_llm_installation(installation, Kind.OLLAMA)
     installer.progress(Progress("late progress", 1, None))
-    revived = manager.get_installation(terminal.id)
+    revived = view_llm_installation(installation, terminal.id)
     assert (revived.status, revived.phase, revived.cancellable) == (Status.RUNNING, "installing", True)
     assert (revived.detail, revived.completed, revived.total) == ("late progress", 1, None)
     assert revived.error == terminal.error
@@ -384,9 +393,9 @@ def test_late_progress_after_terminal_revives_job(make_manager, installer, faile
 
 
 def test_cancel_callback_is_outside_lock_and_callback_failure_is_swallowed(
-    make_manager, installer,
+    make_installation, installer,
 ):
-    manager = make_manager()
+    installation = make_installation()
     reads = []
     readers = []
     callback_unlocked = []
@@ -395,7 +404,7 @@ def test_cancel_callback_is_outside_lock_and_callback_failure_is_swallowed(
         observed = Event()
 
         def read():
-            reads.append(manager.get_installation(next(iter(manager._jobs))))
+            reads.append(view_llm_installation(installation, installation.jobs.list_all()[0].id))
             observed.set()
 
         reader = Thread(target=read)
@@ -406,13 +415,13 @@ def test_cancel_callback_is_outside_lock_and_callback_failure_is_swallowed(
 
     def install(progress):
         progress(Progress("partial", 2, 9))
-        requested = manager.cancel_installation(next(iter(manager._jobs)))
+        requested = cancel_llm_installation(installation, installation.jobs.list_all()[0].id)
         assert requested.status == Status.CANCEL_REQUESTED
         raise RuntimeError("worker failed after cancellation")
 
     installer.on_cancel = cancel
     installer.action = install
-    result = manager.start_installation(Kind.OLLAMA)
+    result = start_llm_installation(installation, Kind.OLLAMA)
     for reader in readers:
         reader.join(timeout=5)
         assert not reader.is_alive()
@@ -423,7 +432,7 @@ def test_cancel_callback_is_outside_lock_and_callback_failure_is_swallowed(
     assert (result.completed, result.total) == (2, 9)
 
 
-def test_post_install_requirement_exception_leaves_job_running(make_manager, installer):
+def test_post_install_requirement_exception_leaves_job_running(make_installation, installer):
     # Pins current behaviour: the post-install probe is outside the worker's
     # exception handler, so its exception escapes without finalizing the job.
     original_requirement = installer.requirement
@@ -434,10 +443,10 @@ def test_post_install_requirement_exception_leaves_job_running(make_manager, ins
         return original_requirement()
 
     installer.requirement = requirement
-    manager = make_manager()
+    installation = make_installation()
     with pytest.raises(RuntimeError, match="^post-install probe failed$"):
-        manager.start_installation(Kind.OLLAMA)
-    result = manager.get_installation(next(iter(manager._jobs)))
+        start_llm_installation(installation, Kind.OLLAMA)
+    result = view_llm_installation(installation, installation.jobs.list_all()[0].id)
     assert (result.status, result.phase, result.cancellable) == (Status.RUNNING, "starting", True)
     assert result.error is None
 
@@ -445,9 +454,9 @@ def test_post_install_requirement_exception_leaves_job_running(make_manager, ins
 @pytest.mark.parametrize("bytes_count", [None, 0])
 @pytest.mark.parametrize("kind", list(Kind))
 def test_completion_fallback_preserves_null_or_zero_requirement_bytes(
-    make_manager, installer, bytes_count, kind,
+    make_installation, installer, bytes_count, kind,
 ):
     installer.bytes = bytes_count
     installer.kind = kind
-    result = make_manager().start_installation(kind)
+    result = start_llm_installation(make_installation(), kind)
     assert result.completed == result.total == bytes_count

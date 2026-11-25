@@ -12,7 +12,7 @@ from cert_prep_backend.api.errors import not_found_error
 from cert_prep_backend.platform.change_notifications import DatabaseChangeNotifier
 from cert_prep_backend.platform.dependencies import get_database_change_notifier
 from cert_prep_backend.platform.sse import operation_snapshot_stream, streaming_response
-from cert_prep_backend.llm_provisioning.api.router import get_llm_installation_manager
+from cert_prep_backend.llm_provisioning.api.router import get_app_llm_installation
 from cert_prep_backend.llm_provisioning.application import use_cases as llm_installations
 from cert_prep_backend.llm_provisioning.application.ports import LLMInstallation
 from cert_prep_backend.llm_provisioning.domain.installation import TERMINAL_JOB_STATUSES
@@ -32,17 +32,17 @@ LastEventIdHeader = Annotated[str | None, Header(alias="Last-Event-ID")]
 def llm_installation_events(
     job_id: str,
     last_event_id: LastEventIdHeader = None,
-    manager: LLMInstallation = Depends(get_llm_installation_manager),
+    installation: LLMInstallation = Depends(get_app_llm_installation),
     notifier: DatabaseChangeNotifier = Depends(get_database_change_notifier),
 ):
     try:
-        _llm_installation_snapshot(manager, job_id)
+        _llm_installation_snapshot(installation, job_id)
     except KeyError as exc:
         raise not_found_error("LLM installation job was not found.") from exc
     return streaming_response(
         operation_snapshot_stream(
             notifier=notifier,
-            snapshot=lambda: _llm_installation_snapshot(manager, job_id),
+            snapshot=lambda: _llm_installation_snapshot(installation, job_id),
             event_name="llm-installation",
             is_terminal=_installation_ended,
             last_event_id=last_event_id,
@@ -50,8 +50,8 @@ def llm_installation_events(
     )
 
 
-def _llm_installation_snapshot(manager: LLMInstallation, job_id: str) -> dict:
-    return asdict(llm_installations.view_llm_installation(manager, job_id))
+def _llm_installation_snapshot(installation: LLMInstallation, job_id: str) -> dict:
+    return asdict(llm_installations.view_llm_installation(installation, job_id))
 
 
 def _installation_ended(snapshot: dict) -> bool:
