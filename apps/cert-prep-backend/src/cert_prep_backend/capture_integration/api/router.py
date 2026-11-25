@@ -19,7 +19,6 @@ from cert_prep_backend.capture_integration.api import (
 from cert_prep_backend.capture_integration.api.capture_event_stream import (
     CaptureRuntimeEventRegistry,
 )
-from cert_prep_backend.capture_integration.api.schemas import CaptureReviewOperationRead
 
 
 router = APIRouter(
@@ -37,4 +36,4 @@ review_results.register_result(router)
 review_lifecycle.register_discard(router)
 
 
-__all__ = ["CaptureReviewOperationRead", "CaptureRuntimeEventRegistry", "router"]
+__all__ = ["CaptureRuntimeEventRegistry", "router"]

@@ -21,7 +21,7 @@ from capture_runtime_client import (
     RuntimeRequirements,
     CaptureStatus,
 )
-from cert_prep_backend.capture_integration.api.router import CaptureReviewOperationRead
+from cert_prep_backend.capture_integration.api.schemas import CaptureReviewOperationRead
 from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeClient,
     CaptureRuntimeProtocolError,

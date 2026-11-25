@@ -446,6 +446,10 @@ def test_capture_reviews_are_isolated_between_apps(tmp_path: Path) -> None:
     assert created_a.status_code == 202
     assert created_b.status_code == 202
     assert capture_a != capture_b
+    assert (
+        app_a.state.capture_runtime_event_registry
+        is not app_b.state.capture_runtime_event_registry
+    )
     assert too_large_for_a.status_code == 422
     assert too_large_for_a.json()["code"] == "validation_error"
     assert a_with_b_token.status_code == b_with_a_token.status_code == 401

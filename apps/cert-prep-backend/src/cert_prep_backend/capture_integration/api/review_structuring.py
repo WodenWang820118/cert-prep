@@ -35,13 +35,13 @@ from cert_prep_backend.capture_integration.api.dependencies import (
     require_capture_coordinator,
 )
 from cert_prep_backend.capture_integration.api.review_lifecycle import (
-    _host_operation,
-    _operation_from_source,
+    host_operation,
+    operation_from_source,
     get_capture,
 )
 from cert_prep_backend.capture_integration.api.schemas import (
     CaptureReviewOperationRead,
-    _ApiModel,
+    ApiModel,
 )
 from cert_prep_backend.capture_integration.application import use_cases as capture_reviews
 from cert_prep_backend.capture_integration.application.review_envelope import CaptureReview
@@ -65,17 +65,17 @@ from cert_prep_backend.capture_integration.application.ports import (
 from cert_prep_backend.platform.database import Database
 
 
-class CaptureReviewStructureRequest(_ApiModel):
+class CaptureReviewStructureRequest(ApiModel):
     client_request_id: str = Field(min_length=1, max_length=128)
     review: CaptureReview
 
 
-class CommitStructuredResultRequest(_ApiModel):
+class CommitStructuredResultRequest(ApiModel):
     client_request_id: str = Field(min_length=1, max_length=128)
     candidate: CaptureDocument
 
 
-class ReportStructuringFailureRequest(_ApiModel):
+class ReportStructuringFailureRequest(ApiModel):
     client_request_id: str | None = Field(default=None, min_length=1, max_length=128)
     code: str = Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")
     message: str = Field(min_length=1, max_length=500)
@@ -177,7 +177,7 @@ def commit_capture(
         project_id=project_id,
         source_id=queued.source.id,
     )
-    return _operation_from_source(
+    return operation_from_source(
         capture_id,
         queued.source,
         status_value=CaptureStatus.STRUCTURING,
@@ -220,7 +220,7 @@ def report_structuring_failure(
     if reported.replay or reported.runtime_operation is None:
         return get_capture(request, project_id, capture_id, db)
     session = session_or_404(sessions, project_id, capture_id)
-    return _host_operation(
+    return host_operation(
         reported.runtime_operation,
         capture_id=capture_id,
         source_id=reported.source_id,

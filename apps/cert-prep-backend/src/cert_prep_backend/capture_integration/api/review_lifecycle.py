@@ -110,7 +110,7 @@ def get_capture(
             operation = operation.model_copy(
                 update={"status": CaptureStatus.EXTRACTING}
             )
-        return _host_operation(
+        return host_operation(
             operation,
             capture_id=capture_id,
             source_id=viewed.session.source_id,
@@ -235,7 +235,7 @@ def _operation_for_session(
         project_id=project_id,
         source_id=source.id,
     )
-    return _operation_from_source(
+    return operation_from_source(
         session.id,
         source,
         status_value=status_value,
@@ -252,7 +252,7 @@ def _operation_for_session(
     )
 
 
-def _operation_from_source(
+def operation_from_source(
     capture_id: str,
     source: Source,
     *,
@@ -291,7 +291,7 @@ def _operation_from_source(
     )
 
 
-def _host_operation(
+def host_operation(
     operation: CaptureOperation,
     *,
     capture_id: str,

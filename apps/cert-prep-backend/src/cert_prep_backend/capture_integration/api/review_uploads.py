@@ -34,7 +34,7 @@ from cert_prep_backend.capture_integration.api.dependencies import (
     get_capture_sources,
     require_capture_coordinator,
 )
-from cert_prep_backend.capture_integration.api.review_lifecycle import _operation_from_source
+from cert_prep_backend.capture_integration.api.review_lifecycle import operation_from_source
 from cert_prep_backend.capture_integration.api.schemas import CaptureReviewOperationRead
 from cert_prep_backend.capture_integration.application import use_cases as capture_reviews
 from cert_prep_backend.capture_integration.application.errors import CaptureAudioRejected
@@ -133,7 +133,7 @@ async def create_capture(
         )
     except CaptureAudioRejected as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
-    return _operation_from_source(
+    return operation_from_source(
         started.session.id,
         started.source,
         status_value=CaptureStatus.WAITING_INPUT,

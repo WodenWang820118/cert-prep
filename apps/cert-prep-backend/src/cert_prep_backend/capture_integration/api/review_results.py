@@ -33,12 +33,12 @@ from cert_prep_backend.capture_integration.api.dependencies import (
     require_capture_coordinator,
 )
 from cert_prep_backend.capture_integration.api.review_lifecycle import (
-    _host_operation,
-    _operation_from_source,
+    host_operation,
+    operation_from_source,
 )
 from cert_prep_backend.capture_integration.api.schemas import (
     CaptureReviewOperationRead,
-    _ApiModel,
+    ApiModel,
 )
 from cert_prep_backend.capture_integration.application import use_cases as capture_reviews
 from cert_prep_backend.capture_integration.application.errors import (
@@ -50,7 +50,7 @@ from cert_prep_backend.source_library.domain.source import Source, SourceChunk
 from cert_prep_backend.platform.database import Database
 
 
-class CaptureExtractionProvenanceRead(_ApiModel):
+class CaptureExtractionProvenanceRead(ApiModel):
     status: Literal["recorded", "reconstructed"]
     engine: str
     model: str | None
@@ -63,7 +63,7 @@ class _RecordedExtraction(BaseModel):
     runtime_version: str
 
 
-class CaptureResultRead(_ApiModel):
+class CaptureResultRead(ApiModel):
     operation: CaptureReviewOperationRead
     raw: RawCapture
     result: CaptureDocument
@@ -116,7 +116,7 @@ def get_result(
             )
             if viewed is not None:
                 response = CaptureResultRead(
-                    operation=_host_operation(
+                    operation=host_operation(
                         viewed.operation,
                         capture_id=capture_id,
                         source_id=stored.session.source_id,
@@ -154,7 +154,7 @@ def get_result(
         source_id=stored.source.id,
     )
     return CaptureResultRead(
-        operation=_operation_from_source(
+        operation=operation_from_source(
             capture_id,
             stored.source,
             status_value=CaptureStatus.COMPLETED,
