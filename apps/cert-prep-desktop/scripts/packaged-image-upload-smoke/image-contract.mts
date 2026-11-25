@@ -145,9 +145,9 @@ export function requireExpectedOcrImageDocument(
   if (typeof payload.project_id !== 'string' || payload.project_id.length === 0) {
     throw new Error('Packaged OCR image document project_id was missing.');
   }
-  if (payload.source_kind !== 'document') {
+  if (payload.source_kind !== 'image') {
     throw new Error(
-      `Packaged OCR image document source_kind expected document but received ${String(payload.source_kind)}.`,
+      `Packaged OCR image document source_kind expected image but received ${String(payload.source_kind)}.`,
     );
   }
   // Capture 0.11.0 reports text recognition on DirectML or CPU.

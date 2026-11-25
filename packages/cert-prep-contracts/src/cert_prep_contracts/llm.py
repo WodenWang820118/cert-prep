@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from cert_prep_contracts.runtime import RuntimeRequirementKind
+from cert_prep_contracts.llm_installation import LLMRequirementKind
 
 
 DEFAULT_LLM_PRIMARY_MODEL = "qwen3.5:4b"
@@ -67,8 +67,8 @@ class LLMProviderSelection:
     effective_model: str
     selection_reason: str
     fallback_reason: str | None
-    runtime_requirement_kind: RuntimeRequirementKind | None
-    model_requirement_kind: RuntimeRequirementKind | None
+    llm_engine_requirement_kind: LLMRequirementKind | None
+    model_requirement_kind: LLMRequirementKind | None
 
 
 @dataclass(frozen=True, slots=True)

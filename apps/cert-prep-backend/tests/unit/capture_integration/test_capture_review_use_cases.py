@@ -14,6 +14,8 @@ from capture_runtime_client import (
     CaptureEventType,
 )
 
+from cert_prep_contracts.documents import SourceKind
+
 from cert_prep_backend.capture_integration.application import use_cases
 from cert_prep_backend.capture_integration.application.errors import (
     CaptureAudioRejected,
@@ -89,17 +91,20 @@ RESULT_UNAVAILABLE = "Capture Runtime result unavailable."
 
 
 class Prepared:
-    def __init__(self, kind: str, canonical_suffix: str, page_count: int) -> None:
+    def __init__(self, kind: SourceKind, canonical_suffix: str, page_count: int) -> None:
         self.kind = kind
         self.canonical_suffix = canonical_suffix
         self.page_count = page_count
 
 
-def source_document(filename: str = "scan.png", *, chunks_count: int = 0) -> SourceDocument:
+def source_document(
+    filename: str = "scan.png", *, chunks_count: int = 0, source_kind: SourceKind = "image"
+) -> SourceDocument:
     return SourceDocument(
         id="document",
         project_id=PROJECT,
         filename=filename,
+        source_kind=source_kind,
         sha256=DIGEST,
         language_hint="auto",
         page_count=2,
@@ -168,6 +173,7 @@ class FakeDocuments:
         self.trace = trace
         self.source = source
         self.document_filename = "scan.png"
+        self.source_kind: SourceKind = "image"
         self.document_error: BaseException | None = None
         self.source_error: BaseException | None = None
         self.source_outcomes: list[object] = []
@@ -178,7 +184,7 @@ class FakeDocuments:
         self.trace.append(("document", project_id, document_id))
         if self.document_error is not None:
             raise self.document_error
-        return source_document(self.document_filename)
+        return source_document(self.document_filename, source_kind=self.source_kind)
 
     def source_file(self, project_id: str, document_id: str) -> SourceFile:
         self.trace.append(("source_file", project_id, document_id))
@@ -207,6 +213,7 @@ class FakeDocuments:
         language_hint: str,
         storage_path: str,
         page_count: int,
+        source_kind: SourceKind,
     ) -> SourceDocument:
         self.trace.append(
             (
@@ -220,7 +227,8 @@ class FakeDocuments:
                 page_count,
             )
         )
-        return source_document(filename)
+        self.source_kind = source_kind
+        return source_document(filename, source_kind=source_kind)
 
 
 class FakeOperations:
@@ -805,7 +813,7 @@ def test_a_cross_project_operation_conflict_propagates() -> None:
 
 def test_audio_is_rejected_after_prepare_and_abandons_without_a_session() -> None:
     world = World()
-    world.prepared.kind = "audio"
+    world.prepared.kind = "recording"
 
     with pytest.raises(CaptureAudioRejected) as caught:
         start(world)
@@ -926,6 +934,7 @@ def test_pdf_requirement_failure_uses_the_pdf_message_and_no_sequence() -> None:
     world = World()
     world.source = SourceFile("notes.bin", DIGEST, "uploads/notes.PDF")
     world.documents.source = world.source
+    world.documents.source_kind = "pdf"
     world.workflow.error = CaptureRequirementUnavailable("runtime detail")
 
     extract(world)
@@ -980,6 +989,7 @@ def test_a_pdf_requirement_job_keeps_the_pdf_message_and_the_sequence() -> None:
     world.source = SourceFile("notes.pdf", DIGEST, "uploads/blob")
     world.documents.source = world.source
     world.documents.document_filename = "notes.pdf"
+    world.documents.source_kind = "pdf"
     world.workflow.error = CaptureExtractionFailed("requirement_unavailable", 8)
 
     extract(world)
@@ -3133,9 +3143,10 @@ def test_noting_an_event_observes_before_the_hold() -> None:
     assert ("wait", 0, 1) in world.trace
 
 
-def test_capture_source_kind_uses_the_stored_suffix() -> None:
+def test_capture_source_kind_reads_the_document_kind() -> None:
     world = World()
-    world.documents.source = SourceFile("scan.png", DIGEST, "uploads/page.pdf")
+    world.documents.source = SourceFile("scan.png", DIGEST, "uploads/page.png")
+    world.documents.source_kind = "pdf"
 
     assert (
         use_cases.capture_source_kind(
@@ -3144,7 +3155,8 @@ def test_capture_source_kind_uses_the_stored_suffix() -> None:
         == "pdf"
     )
 
-    world.documents.source = SourceFile("notes.pdf", DIGEST, "uploads/notes.png")
+    world.documents.source = SourceFile("notes.pdf", DIGEST, "uploads/notes.pdf")
+    world.documents.source_kind = "image"
     assert (
         use_cases.capture_source_kind(
             world.documents, project_id=PROJECT, document_id="document"
@@ -3152,7 +3164,7 @@ def test_capture_source_kind_uses_the_stored_suffix() -> None:
         == "image"
     )
 
-    world.documents.source_error = NotFoundError("Document not found.")
+    world.documents.document_error = NotFoundError("Document not found.")
     with pytest.raises(NotFoundError, match="Document not found."):
         use_cases.capture_source_kind(
             world.documents, project_id=PROJECT, document_id="document"

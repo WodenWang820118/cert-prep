@@ -138,4 +138,4 @@ sequenceDiagram
 
 三個容器都注入 store 或 service，因此歸 `feature`；本次沒有獨立的 `ui` 層。練習只經上游的公開 API 使用題目編寫（`authoring/data` 的 `DraftReviewStore`、`authoring/domain` 的 `displayChoice`）、教材來源（`source-library/data` 的 `SourceImportStore`）、學習專案（`projects/data` 的 `ProjectStore`）及 `core` 的 API、作業狀態、型別與展示元件。沒有反向呼叫，也沒有新增架構例外。
 
-殼層的 `loadComponent` 改經 `practice/feature` 公開 API；頁面路由為 `/wrong-answers/summary`、`/whole-source`、`/random-draw` 與 `/wrong-answer-retry`。執行環境健康（`RuntimeHealthViewModel*`）與 `runtime-manager` 屬於 `runtime` 上下文（見[執行環境供應](runtime_provisioning.md)）；`api`、`utils`、`testing` 不搬移。
+殼層的 `loadComponent` 改經 `practice/feature` 公開 API；頁面路由為 `/wrong-answers/summary`、`/whole-source`、`/random-draw` 與 `/wrong-answer-retry`。執行環境健康（`RuntimeHealthViewModel*`）與 `runtime-manager` 屬於 `runtime` 上下文（見[執行環境](llm_provisioning.md)）；`api`、`utils`、`testing` 不搬移。

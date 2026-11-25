@@ -7,7 +7,7 @@ import type {
 import { requestErrorMessage } from '../../core/domain';
 import { DEVICE_COPY } from '../domain';
 import { HealthStore } from './health.store';
-import { RuntimeApiClientsService } from './runtime-api-clients.service';
+import { LLMApiClientsService } from './llm-api-clients.service';
 
 function isUnknownDeviceError(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) {
@@ -23,7 +23,7 @@ function isUnknownDeviceError(error: unknown): boolean {
 
 @Injectable({ providedIn: 'root' })
 export class DevicePreferenceStore {
-  private readonly runtimeApi = inject(RuntimeApiClientsService);
+  private readonly runtimeApi = inject(LLMApiClientsService);
   private readonly health = inject(HealthStore);
 
   readonly preference = signal<DevicePreferenceRead | null>(null);

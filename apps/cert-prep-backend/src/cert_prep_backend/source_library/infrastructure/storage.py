@@ -51,9 +51,9 @@ class LocalSourceFileStore:
         except (OSError, ValueError) as exc:
             raise InvalidSourceError("The stored source file is unavailable.") from exc
         source_limit = (
-            self._settings.max_audio_upload_bytes
+            self._settings.max_recording_upload_bytes
             if source_path.suffix.lower() in AUDIO_MEDIA_TYPES
-            else self._settings.max_upload_bytes
+            else self._settings.max_page_source_upload_bytes
         )
         if not source_path.is_file() or stat.st_size <= 0 or stat.st_size > source_limit:
             raise InvalidSourceError("The stored source file is unavailable.")

@@ -11,10 +11,10 @@ flowchart LR
   n_cert_prep_backend_bootstrap["cert_prep_backend.bootstrap<br/>Bootstrap"]
   n_cert_prep_backend_capture_integration["cert_prep_backend.capture_integration<br/>Capture Integration"]
   n_cert_prep_backend_entrypoints["cert_prep_backend.entrypoints<br/>Bootstrap"]
+  n_cert_prep_backend_llm_provisioning["cert_prep_backend.llm_provisioning<br/>LLM Provisioning"]
   n_cert_prep_backend_platform["cert_prep_backend.platform<br/>Platform"]
   n_cert_prep_backend_practice["cert_prep_backend.practice<br/>Practice and Review"]
   n_cert_prep_backend_projects["cert_prep_backend.projects<br/>Study Projects"]
-  n_cert_prep_backend_runtime_provisioning["cert_prep_backend.runtime_provisioning<br/>Runtime Provisioning"]
   n_cert_prep_backend_source_library["cert_prep_backend.source_library<br/>Source Library"]
   n_cert_prep_backend_ai_providers --> n_cert_prep_backend_api
   n_cert_prep_backend_ai_providers --> n_cert_prep_backend_platform
@@ -27,10 +27,10 @@ flowchart LR
   n_cert_prep_backend_bootstrap --> n_cert_prep_backend_api
   n_cert_prep_backend_bootstrap --> n_cert_prep_backend_authoring
   n_cert_prep_backend_bootstrap --> n_cert_prep_backend_capture_integration
+  n_cert_prep_backend_bootstrap --> n_cert_prep_backend_llm_provisioning
   n_cert_prep_backend_bootstrap --> n_cert_prep_backend_platform
   n_cert_prep_backend_bootstrap --> n_cert_prep_backend_practice
   n_cert_prep_backend_bootstrap --> n_cert_prep_backend_projects
-  n_cert_prep_backend_bootstrap --> n_cert_prep_backend_runtime_provisioning
   n_cert_prep_backend_bootstrap --> n_cert_prep_backend_source_library
   n_cert_prep_backend_capture_integration --> n_cert_prep_backend_ai_providers
   n_cert_prep_backend_capture_integration --> n_cert_prep_backend_api
@@ -39,14 +39,14 @@ flowchart LR
   n_cert_prep_backend_capture_integration --> n_cert_prep_backend_source_library
   n_cert_prep_backend_entrypoints --> n_cert_prep_backend_bootstrap
   n_cert_prep_backend_entrypoints --> n_cert_prep_backend_platform
+  n_cert_prep_backend_llm_provisioning --> n_cert_prep_backend_ai_providers
+  n_cert_prep_backend_llm_provisioning --> n_cert_prep_backend_api
+  n_cert_prep_backend_llm_provisioning --> n_cert_prep_backend_platform
   n_cert_prep_backend_practice --> n_cert_prep_backend_ai_providers
   n_cert_prep_backend_practice --> n_cert_prep_backend_api
   n_cert_prep_backend_practice --> n_cert_prep_backend_platform
   n_cert_prep_backend_projects --> n_cert_prep_backend_api
   n_cert_prep_backend_projects --> n_cert_prep_backend_platform
-  n_cert_prep_backend_runtime_provisioning --> n_cert_prep_backend_ai_providers
-  n_cert_prep_backend_runtime_provisioning --> n_cert_prep_backend_api
-  n_cert_prep_backend_runtime_provisioning --> n_cert_prep_backend_platform
   n_cert_prep_backend_source_library --> n_cert_prep_backend_api
   n_cert_prep_backend_source_library --> n_cert_prep_backend_platform
   n_cert_prep_backend_source_library --> n_cert_prep_backend_projects

@@ -12,7 +12,7 @@ from cert_prep_backend.ai_providers.infrastructure.ollama_transport import Ollam
 from cert_prep_backend.ai_providers.infrastructure.provider import provider_from_settings
 from cert_prep_contracts.hardware import MachineAcceleratorSnapshot
 from cert_prep_contracts.llm import LLMExecutionMode
-from cert_prep_contracts.runtime import RuntimeRequirementKind
+from cert_prep_contracts.llm_installation import LLMRequirementKind
 from cert_prep_ollama import profiles as ollama_package_profiles
 from cert_prep_ollama.profiles import DEFAULT_PROFILE_ID
 from llm_test_fakes import GIB, RecordingDownloadProvider, _profile_inventory
@@ -27,7 +27,7 @@ def test_llm_health_does_not_pull_missing_ollama_model(tmp_path) -> None:
         create_app(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
             llm_provider=provider,
-            runtime_installation_async_jobs=False,
+            llm_installation_async_jobs=False,
         )
     )
 
@@ -86,7 +86,7 @@ def test_provider_selection_endpoint_reports_configured_and_effective_truth(
         "effective_model": "effective-model",
         "selection_reason": "Selected Ollama from the local provider registry.",
         "fallback_reason": None,
-        "runtime_requirement_kind": "ollama",
+        "llm_engine_requirement_kind": "ollama",
         "model_requirement_kind": "ollama_model",
     }
 
@@ -109,7 +109,7 @@ def test_provider_selection_endpoint_resolves_profile_model_before_health(
         resolve_provider,
         provider="ollama",
         model="qwen3.5:4b",
-        runtime_requirement_kind=RuntimeRequirementKind.OLLAMA,
+        llm_engine_requirement_kind=LLMRequirementKind.OLLAMA,
     )
     client = TestClient(
         create_app(

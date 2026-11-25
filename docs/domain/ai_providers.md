@@ -23,7 +23,7 @@
 | 釋放資源           | `ResourceReleasingProvider`                | 串流產生工作結束後讓模型卸載                                   |
 | 串流參數           | `StreamingGenerationOptionsProvider`       | 串流產生時供應者自己的呼叫參數，例如用完就卸載模型             |
 | 產生時才啟動       | `StartsOnGenerationProvider`               | 產生時才啟動還沒執行的供應者執行環境                           |
-| 需要安裝的執行環境 | `RuntimeInstallationProvider`              | 供應者需要在本機安裝的執行環境（Ollama）                       |
+| 需要安裝的執行環境 | `LLMInstallationProvider`              | 供應者需要在本機安裝的執行環境（Ollama）                       |
 | 延遲建立的供應者   | `LazyLLMProvider`                          | 第一次用到時才依設定建立的供應者                               |
 | 供應者偏好         | `LLMProviderPreference`                    | 使用者設定的偏好：自動、Ollama 或假供應者                      |
 | 供應者選擇         | `LLMProviderSelection`、`select_provider`  | 偏好選中的供應者、實際使用的供應者，以及它需要安裝什麼         |
@@ -128,14 +128,14 @@ sequenceDiagram
   Ollama->>Ollama: 成功才記入產生歸屬；任何失敗包成 LanguageModelUnavailable
 ```
 
-`create_app` 把 `lazy_provider_from_settings(settings)`（測試可以注入自己的供應者）放在 `app.state.llm_provider`，把 `OllamaMachineInventory(settings)` 放在 `app.state.machine_inventory`，並交給執行環境的 `RuntimeInstallationManager`。router 只呼叫 `application/use_cases.py` 的用例。
+`create_app` 把 `lazy_provider_from_settings(settings)`（測試可以注入自己的供應者）放在 `app.state.llm_provider`，把 `OllamaMachineInventory(settings)` 放在 `app.state.machine_inventory`，並經 `build_llm_installation` 交給執行環境的 `LLMInstallation`。router 只呼叫 `application/use_cases.py` 的用例。
 
 ## 與其他上下文的關係
 
 - 題目編寫：用 `draft_writer_for` 為設定的供應者挑選寫草稿者，Ollama 經 JSON 對話寫草稿；串流產生使用串流參數、產生歸屬與釋放資源。
 - 練習與複習：用供應者的健康狀態決定能不能請模型解說錯題；解說能力 `PracticeExplanationProvider` 由練習與複習自己定義。
 - 擷取整合：用結構化 JSON 整理擷取結果。
-- 執行環境：用模型下載、模型上線檢查與需要安裝的執行環境安裝 Ollama 與模型；安裝設定檔模型時用 `choose_ollama_profile`；`/runtime/machine-inventory` 用 `inspect_machine`，回應用 AI 供應的 `MachineInventoryRead`（已知例外，D15）。`/llm/model-downloads` 是執行環境的端點（D14）。
+- 執行環境：用模型下載、模型上線檢查與需要安裝的執行環境安裝 Ollama 與模型；安裝設定檔模型時用 `choose_ollama_profile`；`/llm/machine-inventory` 用 `inspect_machine`，回應用 AI 供應的 `MachineInventoryRead`。模型安裝使用 `POST /llm/installations`，JSON 內的 `kind` 為 `ollama_model`。
 - 教材來源：`infrastructure/translation.py` 的 `OllamaTraditionalChineseTranslator` 實作教材來源的 `TraditionalChineseTranslator` port，由 `bootstrap/source_library_links.py` 接線。使用設定的主機、模型與逾時；單段翻譯用完即卸載，批次翻譯保留模型 5 分鐘，結束時釋放資源。每個翻譯請求算一次使用擁有的伺服器，裝置切換會等它；使用者選 CPU 時加上 `num_gpu=0`。翻譯提示詞依段落所屬教材的 `language_hint` 指定來源語言；自動偵測時由模型判斷。
 
 其他上下文只能經 `ai_providers.application` 與 `ai_providers.domain` 使用 AI 供應（import-linter「Other contexts reach AI Providers only through its application and domain」），AI 供應不依賴任何其他上下文（「AI Providers does not depend on other contexts」）。
@@ -144,7 +144,7 @@ sequenceDiagram
 
 - 設定：`CERT_PREP_LLM_PROVIDER`（`auto`、`ollama`、`fake`）、`CERT_PREP_OLLAMA_HOST`、`CERT_PREP_OLLAMA_MODEL`、`CERT_PREP_OLLAMA_PROFILE_ENABLED`、`CERT_PREP_OLLAMA_PROFILE_ID`、`CERT_PREP_OLLAMA_PROFILE_INVENTORY_TIMEOUT_SECONDS`（`platform/config.py`）。
 - 設定檔目錄、選設定檔與執行模式的規則：`packages/cert-prep-ollama`（`cert_prep_ollama.profiles`）；機器盤點：`cert_prep_ollama.inventory`。
-- HTTP：`/llm/health`、`/llm/provider-selection`、`/llm/profiles`、`/llm/profile-selection`、`GET /llm/device-preference`、`PUT /llm/device-preference`（DTO 在 `ai_providers/api/schemas.py`）。
+- HTTP：`/llm/health`、`/llm/provider-selection`、`/llm/profiles`、`/llm/profile-selection`、`GET /llm/device-preference`、`PUT /llm/device-preference`、`GET /llm/machine-inventory`（DTO 在 `ai_providers/api/schemas.py`）。
 - 資料表：`ollama_device_preference`（遷移 29，單列）。沒有資料列就是自動。選擇顯示卡時一併存名稱與 PCI 識別，供顯示卡換插槽後對回。
 - 查看與選擇裝置偏好是應用層用例；router 只做對應。`GET` 用快取的機器盤點；`PUT` 也先用快取，只有要求的顯示卡不在快取清單裡才重新盤點一次。`PUT` 回傳寫入後讀回的資料列。它把選擇交給協調器就回傳，不做 I/O、不拿生命週期的鎖、不等停止或啟動：擁有的伺服器跑的是別的選擇，或已經有切換在進行時，回 `pending`；伺服器已經跑這個選擇時，什麼都不做。
 - 畫面：執行環境管理畫面（`/runtime`）在有裝置資料時以分頁組織：「執行環境」（預設，包含 LLM 供應者摘要與各執行環境列）與「運算裝置」（裝置設定區塊）。若為假供應者等無裝置資料的狀況，不顯示分頁列，維持原先單一畫面。當裝置頁籤不在前景且需要注意（切換等待 `pending`、找不到選擇的顯示卡 `adapter_missing`、驗證不符 `mismatch` 或儲存錯誤）時，在「運算裝置」頁籤標籤顯示注意圓點與「需要注意」無障礙文字。裝置區塊內部標題改為視覺隱藏（`sr-only`），保留 `aria-labelledby`；單選按鈕群組包含「自動（建議）」、各可用顯示卡（標示名稱、獨立／內建顯示卡與後端）、若先前存下的顯示卡已不在機器上則列出該遺失卡（標示名稱，若無名稱則為「先前選擇的顯示卡」，不可選並選中，附註「目前找不到這張顯示卡」；若存下的卡匹配到不可選的實體卡則不重複列出；若存下的顯示卡鍵值改變但後端以名稱重新匹配到唯一可選顯示卡，該顯示卡維持選中；若無法唯一匹配且狀態非遺失，則以合成選項列出原存顯示卡且無遺失註記）、最後一項「只用 CPU（較慢）」；一行即時狀態（正在使用、預定與實際不符、載入模型後確認、切換等待、找不到選擇的顯示卡暫用自動選擇等）；外部伺服器時顯示常駐指引（說明 Cert Prep 不會更改它、請從系統匣結束 Ollama 再按「Refresh all」）；不適用（`not_applicable`）時顯示「這台電腦由 Ollama 自行決定運算裝置」並隱藏單選按鈕群組；儲存失敗時在區塊內顯示錯誤並回復先前選項；若為 422 `unknown_device` 則提示重新整理後再試並重新載入偏好；健康狀態沒有裝置資料且偏好無法載入時，不繪製分頁列與運算裝置區塊。
@@ -155,4 +155,4 @@ sequenceDiagram
 - 啟動失敗時狀態維持 `pending`，健康檢查的 `device.server` 是 `not_running`。切換執行緒不重試；下一次啟動伺服器（健康檢查發現 API 沒有回應時的 `ensure_running`）用最新的選擇啟動。在那之前再送選擇，不會啟動伺服器，狀態仍是 `pending`。停止失敗時舊伺服器繼續服務，之後的呼叫不被擋，也不在每次載入後重試；等它不再回應時由 `ensure_running` 停掉並啟動新選擇。停止進行中存下的新選擇不會遺失，之後照常切換。切換執行緒裡意外的錯誤只記錄；擋住呼叫的旗標一定清掉，執行緒繼續處理之後的選擇。新伺服器已經起來後讀不到存下的選擇，不算切換失敗：伺服器繼續服務；啟動期間若存了更新的選擇，那個選擇維持 `pending`，等下一次選擇或下一次啟動。關閉時切換執行緒停不掉它啟動的伺服器，`close()` 會再停一次。
 - 關閉時，還沒開始的切換直接取消。正在停止或啟動的切換在步驟之間看到關閉，停掉它啟動的伺服器並結束；關閉最多等它兩次停止程序的時間（不等 30 秒的就緒等待），之後再停掉協調器仍記得的程序，所以直譯器隨即結束也不會留下 `ollama serve`。
 - 外部伺服器只儲存、不重設。使用者選 CPU 時，`execution_mode` 是 `cpu`，警告寫出是使用者的選擇，每個產生與翻譯請求都帶 `num_gpu=0`（每次呼叫時決定）；外部 Ollama 也送 `num_gpu=0`，但不重啟。機器上沒有 GPU 而且選自動時，仍用建立供應者當下的執行政策與原來的警告，翻譯請求也和以前一樣。
-- API 的 `LLMExecutionMode`、`LLMProviderName`、`LLMProviderPreference`、`OllamaServerOwnership`、`DeviceTarget`、`DeviceBackend`、`DeviceVerification`、`DevicePreferenceMode`、`DevicePreferenceStatus` 列舉值對應到概念集的 `ai-providers.*`；`RuntimeRequirementKind` 對應到 `runtime-provisioning.*`。
+- API 的 `LLMExecutionMode`、`LLMProviderName`、`LLMProviderPreference`、`OllamaServerOwnership`、`DeviceTarget`、`DeviceBackend`、`DeviceVerification`、`DevicePreferenceMode`、`DevicePreferenceStatus` 列舉值對應到概念集的 `ai-providers.*`；`LLMRequirementKind` 對應到 `llm-provisioning.*`。

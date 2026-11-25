@@ -7,7 +7,7 @@ keeping application data and local processing under the user's control.
 The main user journey is:
 
 1. Create or select a study project.
-2. Import PDF, image, or audio source files.
+2. Import PDFs, images, or recordings.
 3. Review the captured text and source evidence.
 4. Edit and approve multiple-choice question drafts.
 5. Practice with Whole source or Random draw sessions.

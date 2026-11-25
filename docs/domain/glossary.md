@@ -14,6 +14,7 @@
 | 中文             | 程式名稱                                      | 意思                                                           |
 | ---------------- | --------------------------------------------- | -------------------------------------------------------------- |
 | 教材             | `SourceDocument`                              | 匯入的一份 PDF、圖片或錄音                                     |
+| 教材類型         | `SourceKind`                                   | `pdf`（PDF）、`image`（圖片）、`recording`（錄音）             |
 | 原始檔           | `SourceFile`                                  | 匯入的檔案、它的 SHA-256 與存放位置                            |
 | 段落             | `DocumentChunk`                               | 教材切成的一段文字，題目由段落產生；錄音的段落有時間區間與翻譯 |
 | 教材狀態         | `SourceDocumentStatus`                        | 處理中、取消中、已取消、可用，或處理失敗的原因                 |
@@ -126,7 +127,7 @@
 | 釋放資源           | `ResourceReleasingProvider`                | 串流產生工作結束後讓模型卸載                                   |
 | 串流參數           | `StreamingGenerationOptionsProvider`       | 串流產生時供應者自己的呼叫參數，例如用完就卸載模型             |
 | 產生時才啟動       | `StartsOnGenerationProvider`               | 產生時才啟動還沒執行的供應者執行環境                           |
-| 需要安裝的執行環境 | `RuntimeInstallationProvider`              | 供應者需要在本機安裝的執行環境（Ollama）                       |
+| 需要安裝的執行環境 | `LLMInstallationProvider`              | 供應者需要在本機安裝的執行環境（Ollama）                       |
 | 延遲建立的供應者   | `LazyLLMProvider`                          | 第一次用到時才依設定建立的供應者                               |
 | 供應者偏好         | `LLMProviderPreference`                    | 使用者設定的偏好：自動、Ollama 或假供應者                      |
 | 供應者選擇         | `LLMProviderSelection`、`select_provider`  | 偏好選中的供應者、實際使用的供應者，以及它需要安裝什麼         |
@@ -149,15 +150,15 @@
 | 裝置偏好狀態       | `DevicePreferenceStatus`                   | active、pending、external_server、adapter_missing、not_applicable |
 | 裝置偏好被拒       | `DevicePreferenceRejected`                 | 這台機器不能儲存這個選擇，例如顯示卡不在可選清單裡             |
 
-## 執行環境
+## 語言模型佈建（LLM Provisioning）
 
 | 中文             | 程式名稱                      | 意思                                                           |
 | ---------------- | ----------------------------- | -------------------------------------------------------------- |
-| 執行環境安裝     | `RuntimeInstallationJob`      | 安裝或檢查 Ollama 執行環境與語言模型等本機元件的背景工作 |
-| 執行環境安裝目標 | `RuntimeInstallationTarget`   | 安裝工作的需求種類、供應者名稱與模型                           |
-| 執行環境安裝階段 | `RuntimeInstallationPhase`    | 安裝工作的技術階段，例如排隊、執行中、提交中等                 |
-| 執行環境安裝進度 | `RuntimeInstallationProgress` | 安裝工作的進度更新：說明、完成度、總量、階段與是否可取消       |
-| 執行環境安裝快照 | `RuntimeInstallationSnapshot` | 執行環境安裝工作對外的序列化檢視                               |
-| 執行環境安裝已取消 | `RuntimeInstallationCanceledError` | 安裝工作已取消而拒絕狀態轉換的錯誤                             |
-| 執行環境需求種類 | `RuntimeRequirementKind`      | 可安裝的本機相依類別，例如 Ollama 執行環境或模型               |
-| 執行環境安裝狀態 | `RuntimeInstallationStatus`   | 執行環境安裝工作的生命週期狀態                                 |
+| 執行環境安裝     | `LLMInstallationJob`      | 安裝或檢查 Ollama 執行環境與語言模型等本機元件的背景工作 |
+| 執行環境安裝目標 | `LLMInstallationTarget`   | 安裝工作的需求種類、供應者名稱與模型                           |
+| 執行環境安裝階段 | `LLMInstallationPhase`    | 安裝工作的技術階段，例如排隊、執行中、提交中等                 |
+| 執行環境安裝進度 | `LLMInstallationProgress` | 安裝工作的進度更新：說明、完成度、總量、階段與是否可取消       |
+| 執行環境安裝快照 | `LLMInstallationSnapshot` | 執行環境安裝工作對外的序列化檢視                               |
+| 執行環境安裝已取消 | `LLMInstallationCanceledError` | 安裝工作已取消而拒絕狀態轉換的錯誤                             |
+| 執行環境需求種類 | `LLMRequirementKind`      | 可安裝的本機相依類別，例如 Ollama 執行環境或模型               |
+| 執行環境安裝狀態 | `LLMInstallationStatus`   | 執行環境安裝工作的生命週期狀態                                 |

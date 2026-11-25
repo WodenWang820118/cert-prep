@@ -104,9 +104,9 @@ function createApiClient() {
   return {
     health: vi.fn().mockReturnValue(of(backendHealth())),
     llmHealth: vi.fn().mockReturnValue(of(availableLlmHealth())),
-    runtimeRequirements: vi.fn().mockReturnValue(of({ items: [] })),
-    startRuntimeInstallation: vi.fn(),
-    getRuntimeInstallation: vi.fn(),
+    llmRequirements: vi.fn().mockReturnValue(of({ items: [] })),
+    startLlmInstallation: vi.fn(),
+    getLlmInstallation: vi.fn(),
     listProjects: vi.fn().mockReturnValue(of({ items: [appProject] })),
     listDocuments: vi.fn().mockReturnValue(of({ items: [appDocument] })),
     getDocument: vi.fn().mockReturnValue(of(appDocument)),

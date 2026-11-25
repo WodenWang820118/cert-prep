@@ -340,9 +340,9 @@ function createApiClient() {
       .mockReturnValue(
         throwError(() => new Error('Device preference unavailable')),
       ),
-    runtimeRequirements: vi.fn().mockReturnValue(of({ items: [] })),
-    startRuntimeInstallation: vi.fn(),
-    getRuntimeInstallation: vi.fn(),
+    llmRequirements: vi.fn().mockReturnValue(of({ items: [] })),
+    startLlmInstallation: vi.fn(),
+    getLlmInstallation: vi.fn(),
     listProjects: vi.fn().mockReturnValue(of({ items: [appProject] })),
     listDocuments: vi.fn().mockReturnValue(of({ items: [appDocument] })),
     getDocument: vi.fn().mockReturnValue(of(appDocument)),

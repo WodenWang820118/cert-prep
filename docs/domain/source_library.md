@@ -13,6 +13,7 @@
 | 中文             | 程式名稱                    | 意思                                                   |
 | ---------------- | --------------------------- | ------------------------------------------------------ |
 | 教材             | `SourceDocument`            | 匯入的一份 PDF、圖片或錄音                             |
+| 教材類型         | `SourceKind`                 | `pdf`（PDF）、`image`（圖片）、`recording`（錄音）     |
 | 原始檔           | `SourceFile`                | 匯入的檔案、它的 SHA-256 與存放位置                    |
 | 段落             | `DocumentChunk`             | 教材切成的一段文字；錄音的段落有時間區間與翻譯         |
 | 教材狀態         | `SourceDocumentStatus`      | 處理中、取消中、已取消、可用，或處理失敗的原因         |
@@ -152,7 +153,7 @@ stateDiagram-v2
 匯入與重試的規則：
 
 - 認領作業 id 前先確認專案存在。id 已被使用時，已取消或要求取消的是「上傳已取消」，其他是衝突；兩者都不改變那個作業。
-- 錄音（依檔名的副檔名判斷）的大小上限是 `max_audio_upload_bytes`，其他是 `max_upload_bytes`（`upload_size_limit`）。語言提示不是已知的值時記為 `auto`（`language_hint_or_auto`）。
+- 錄音（上傳前依檔名的副檔名判斷）的大小上限是 `max_recording_upload_bytes`（`CERT_PREP_MAX_RECORDING_UPLOAD_BYTES`）；頁面教材使用 `max_page_source_upload_bytes`（`CERT_PREP_MAX_PAGE_SOURCE_UPLOAD_BYTES`）。語言提示不是已知的值時記為 `auto`（`language_hint_or_auto`）。
 - 驗證與保存之後各確認一次作業仍在等待上傳（`DocumentOperation.ensure_awaiting_upload`）；這時被取消的上傳停止，不附上教材。
 - 認領之後，檔案太大、格式不符、擷取無法使用或其他失敗都讓作業失敗；取消、衝突、專案或教材不存在不改變作業。
 - 處理在背景（`DocumentWork`，即 document worker pool）或在請求內執行。排隊中被取消的工作直接確認取消；開始處理後，作業不再是「處理這份教材、可以取消」（`DocumentOperation.is_processing`）或 app 正在關閉時，擷取停止並確認取消。
@@ -199,7 +200,7 @@ sequenceDiagram
 - 資料表：`documents`、`document_chunks`、`document_operations` 屬教材來源；migration 在 `platform/database.py`。`projects` 與 `draft_generation_jobs` 由所屬上下文的用例使用，教材來源的 infrastructure 不查那些資料表。
 - 原始檔：`<data_dir>/uploads/<project_id>/<sha256><副檔名>`（`infrastructure/storage.py`）。
 - HTTP：`/projects/{project_id}/documents`、`/projects/{project_id}/document-operations`（`api/router.py`；DTO 在 `source_library/api/schemas.py` 與 `cert_prep_contracts.documents`）。作業的即時狀態經 `api/operation_events.py` 的 server-sent events（`…/document-operations/{operation_id}/events`、`…/documents/{document_id}/document-operation/events`）；串流由 `platform/sse.py` 提供，快照來自 `view_operation_progress`，作業結束時串流結束。
-- API 的 `SourceDocumentStatus`、`ExtractionMethod`、`ContentProfile`、`QuestionItemKind`、`DocumentOperationStatus`、`DocumentOperationPhase` 列舉值對應到概念集的 `source-library.*`。
+- API 的 `SourceKind`、`SourceDocumentStatus`、`ExtractionMethod`、`ContentProfile`、`QuestionItemKind`、`DocumentOperationStatus`、`DocumentOperationPhase` 列舉值對應到概念集的 `source-library.*`。
 
 ## 前端
 

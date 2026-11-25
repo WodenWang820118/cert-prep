@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from cert_prep_backend.runtime_provisioning.infrastructure.installers import LLMModelInstaller
+from cert_prep_backend.llm_provisioning.infrastructure.installers import LLMModelInstaller
 from cert_prep_contracts.llm import ModelPullProgress
-from cert_prep_contracts.runtime import (
-    RuntimeInstallationStatus,
-    RuntimeInstallProgress,
+from cert_prep_contracts.llm_installation import (
+    LLMInstallationStatus,
+    LLMInstallProgress,
 )
 
 
@@ -30,12 +30,12 @@ class RecordingOnboardingProvider:
 
 def test_model_installer_enters_commit_before_final_onboarding_verification() -> None:
     provider = RecordingOnboardingProvider()
-    progress: list[RuntimeInstallProgress] = []
+    progress: list[LLMInstallProgress] = []
     installer = LLMModelInstaller(provider)
 
     status = installer.install(progress.append)
 
-    assert status == RuntimeInstallationStatus.SUCCEEDED
+    assert status == LLMInstallationStatus.SUCCEEDED
     commit_index = next(
         index for index, item in enumerate(progress) if item.phase == "committing"
     )

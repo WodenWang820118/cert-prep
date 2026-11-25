@@ -7,6 +7,14 @@ from enum import StrEnum
 from typing import Final, TypeAlias
 
 
+class SourceKind(StrEnum):
+    """What an imported source is: a page source (PDF or image) or a recording."""
+
+    PDF = "pdf"
+    IMAGE = "image"
+    RECORDING = "recording"
+
+
 class SourceDocumentStatus(StrEnum):
     """Persisted lifecycle states for one uploaded source document."""
 
@@ -73,4 +81,5 @@ __all__ = [
     "DocumentOperationStatus",
     "SourceDocumentStatus",
     "SourceDocumentStatusValue",
+    "SourceKind",
 ]

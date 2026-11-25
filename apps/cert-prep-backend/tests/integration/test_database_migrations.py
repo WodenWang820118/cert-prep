@@ -10,6 +10,7 @@ from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.source_library.infrastructure import chunks as chunk_repository
 from cert_prep_backend.platform import database as database_module
 from cert_prep_backend.platform.database import MIGRATIONS, Database
+from cert_prep_backend.source_library.infrastructure.documents import insert_processing_document
 
 
 # Text only Capture Runtime could have written; migration 30 must not keep it.
@@ -52,7 +53,7 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
         session_columns = _columns(connection, "practice_sessions")
         session_question_columns = _columns(connection, "practice_session_questions")
         document_operation_columns = _columns(connection, "document_operations")
-        runtime_installation_columns = _columns(
+        llm_installation_columns = _columns(
             connection,
             "runtime_installation_jobs",
         )
@@ -160,7 +161,7 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
         "created_at",
         "updated_at",
         "commit_started_at",
-    } <= set(runtime_installation_columns)
+    } <= set(llm_installation_columns)
     assert capture_review_columns["last_event_sequence"] == "0"
 
 
@@ -416,7 +417,7 @@ def test_audio_migrations_preserve_pdf_defaults_and_install_time_citation_trigge
             VALUES (
                 'audio-document', 'project', 'source.wav', 'audio-sha',
                 'source.wav', 0, 1, 'ready', '2026-07-19', '2026-07-19',
-                'audio', 1000, 'succeeded', 'succeeded'
+                'recording', 1000, 'succeeded', 'succeeded'
             )
             """
         )
@@ -456,7 +457,7 @@ def test_audio_migrations_preserve_pdf_defaults_and_install_time_citation_trigge
             "SELECT version FROM schema_migrations WHERE version IN (23, 24) ORDER BY version"
         ).fetchall()
 
-    assert pdf_document["source_kind"] == "document"
+    assert pdf_document["source_kind"] == "pdf"
     assert pdf_document["transcription_status"] == "not_applicable"
     assert pdf_chunk["locator_kind"] == "page"
     assert pdf_chunk["source_revision"] == 1
@@ -1515,3 +1516,121 @@ def test_migration_31_preserves_existing_source_without_provenance(
     with Database(fresh).connect() as connection:
         assert "extraction_provenance" in _columns(connection, "documents")
         assert "runtime_ingestion_id" in _columns(connection, "capture_review_sessions")
+
+
+def test_migration_32_classifies_sources_and_preserves_references(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = Settings(data_dir=tmp_path, api_token="test-token")
+    upload_dir = tmp_path / "uploads" / "p"
+    upload_dir.mkdir(parents=True)
+    pdf_content = upload_dir / "scan.bin"
+    pdf_content.write_bytes(b"%PDF-1.7\n")
+    cases = [
+        (f"scan{suffix}", "document", str(upload_dir / "missing"), expected)
+        for suffix, expected in [
+            (".pdf", "pdf"),
+            (".PDF", "pdf"),
+            (".jpg", "image"),
+            (".JPG", "image"),
+            (".jpeg", "image"),
+            (".JPEG", "image"),
+            (".png", "image"),
+            (".PNG", "image"),
+            (".webp", "image"),
+            (".WEBP", "image"),
+        ]
+    ] + [
+        # The stored file's suffix decided PDF versus image before migration 32 (upload
+        # preparation derives it from the content), so it wins over the uploaded name.
+        ("scan.png", "document", str(upload_dir / "stored.pdf"), "pdf"),
+        ("scan.pdf", "document", str(upload_dir / "stored.webp"), "image"),
+        ("notes", "document", str(upload_dir / "stored.JPG"), "image"),
+        ("unknown.bin", "document", str(upload_dir / "stored.pdf"), "pdf"),
+        # Neither name has a known suffix: only PDF bytes make it a PDF.
+        ("scan.bin", "document", str(pdf_content), "pdf"),
+        ("unknown.bin", "document", str(upload_dir / "missing"), "image"),
+        ("listen.wav", "audio", str(upload_dir / "missing"), "recording"),
+        ("listen.WAV", "audio", str(upload_dir / "missing"), "recording"),
+        ("listen.mp3", "audio", str(upload_dir / "missing"), "recording"),
+        ("listen.MP3", "audio", str(upload_dir / "missing"), "recording"),
+        ("listen.m4a", "audio", str(upload_dir / "missing"), "recording"),
+        ("listen.M4A", "audio", str(upload_dir / "missing"), "recording"),
+    ]
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            database_module,
+            "MIGRATIONS",
+            tuple(migration for migration in MIGRATIONS if migration[0] <= 31),
+        )
+        with Database(settings).connect() as connection:
+            connection.execute(
+                """INSERT INTO projects(id, name, created_at, updated_at)
+                   VALUES ('p', 'Project', '2026-01-01', '2026-01-01')"""
+            )
+            connection.executemany(
+                """INSERT INTO documents(
+                       id, project_id, filename, sha256, storage_path, page_count,
+                       has_text, status, created_at, source_kind
+                   ) VALUES (?, 'p', ?, 'digest', ?, 1, 1, 'ready', '2026-01-01', ?)""",
+                [
+                    (str(index), filename, path, old_kind)
+                    for index, (filename, old_kind, path, _) in enumerate(cases)
+                ],
+            )
+            connection.executemany(
+                """INSERT INTO document_chunks(
+                       id, project_id, document_id, page_number, chunk_index, text,
+                       source_excerpt, created_at, extraction_method
+                   ) VALUES (?, 'p', ?, 1, 0, 'text', '', '2026-01-01', 'none')""",
+                [(str(index), str(index)) for index in range(len(cases))],
+            )
+
+    def snapshot() -> tuple[dict[str, str], tuple[str, ...], str]:
+        with Database(settings).connect() as connection:
+            assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+            assert connection.execute("SELECT count(*) FROM projects").fetchone()[0] == 1
+            kinds: dict[str, str] = dict(connection.execute("SELECT id, source_kind FROM documents"))
+            chunk_documents = tuple(
+                row[0] for row in connection.execute(
+                    "SELECT document_id FROM document_chunks ORDER BY CAST(id AS INTEGER)"
+                )
+            )
+            applied_at = connection.execute(
+                "SELECT applied_at FROM schema_migrations WHERE version = 32"
+            ).fetchone()[0]
+        return kinds, chunk_documents, applied_at
+
+    migrated = snapshot()
+    assert migrated[0] == {str(index): case[3] for index, case in enumerate(cases)}
+    assert migrated[1] == tuple(str(index) for index in range(len(cases)))
+    assert snapshot() == migrated
+
+
+def test_fresh_database_persists_new_source_kinds(tmp_path: Path) -> None:
+    settings = Settings(data_dir=tmp_path, api_token="test-token")
+    with Database(settings).connect() as connection:
+        connection.execute(
+            """INSERT INTO projects(id, name, created_at, updated_at)
+               VALUES ('p', 'Project', '2026-01-01', '2026-01-01')"""
+        )
+        for kind in ("pdf", "image", "recording"):
+            document = insert_processing_document(
+                connection,
+                document_id=kind,
+                project_id="p",
+                filename="upload",
+                sha256="digest",
+                storage_path="path",
+                language_hint="auto",
+                page_count=0 if kind == "recording" else 1,
+                now="2026-01-01",
+                source_kind=kind,
+            )
+            assert document.source_kind == kind
+
+        assert {row[0] for row in connection.execute("SELECT source_kind FROM documents")} == {
+            "pdf", "image", "recording",
+        }
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []

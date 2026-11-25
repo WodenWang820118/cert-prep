@@ -668,13 +668,13 @@ def test_ollama_profile_apis_return_200(monkeypatch, tmp_path) -> None:
                 api_token="test-token",
                 llm_provider="ollama",
             ),
-            runtime_installation_async_jobs=False,
+            llm_installation_async_jobs=False,
         )
     )
 
     profiles_response = client.get("/llm/profiles", headers=AUTH_HEADERS)
     selection_response = client.get("/llm/profile-selection", headers=AUTH_HEADERS)
-    inventory_response = client.get("/runtime/machine-inventory", headers=AUTH_HEADERS)
+    inventory_response = client.get("/llm/machine-inventory", headers=AUTH_HEADERS)
 
     assert profiles_response.status_code == 200
     assert any(
@@ -695,7 +695,7 @@ def test_ollama_profile_selection_api_reports_disabled_fixed_raw_model(tmp_path)
                 llm_provider="ollama",
                 ollama_profile_enabled=False,
             ),
-            runtime_installation_async_jobs=False,
+            llm_installation_async_jobs=False,
         )
     )
 
@@ -756,7 +756,7 @@ def test_ollama_profile_inventory_is_deferred_until_used(monkeypatch, tmp_path) 
                 api_token="test-token",
                 llm_provider="ollama",
             ),
-            runtime_installation_async_jobs=False,
+            llm_installation_async_jobs=False,
         )
     )
 

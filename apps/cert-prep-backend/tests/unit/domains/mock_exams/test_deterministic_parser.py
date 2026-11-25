@@ -187,9 +187,9 @@ def test_formal_extractor_reads_actual_persisted_page_indices(tmp_path: Path) ->
         )
         connection.execute(
             "INSERT INTO documents(id, project_id, filename, sha256, storage_path, "
-            "page_count, has_text, status, created_at, updated_at) "
+            "page_count, has_text, status, created_at, updated_at, source_kind) "
             "VALUES ('document', 'project', 'test.pdf', 'hash', 'test.pdf', "
-            "16, 1, 'ready', '2026-01-01', '2026-01-01')"
+            "16, 1, 'ready', '2026-01-01', '2026-01-01', 'pdf')"
         )
         sync_document_chunks(
             connection,

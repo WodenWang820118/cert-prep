@@ -59,7 +59,7 @@ describe('DesktopRuntimeStore runtime update notice', () => {
 
     vi.advanceTimersByTime(RUNTIME_UPDATE_POLL_INTERVAL_MS);
     expect(store.runtimeUpdate()?.phase).toBe('succeeded');
-    expect(invoke).toHaveBeenCalledWith('desktop_runtime_status');
+    expect(invoke).toHaveBeenCalledWith('backend_runtime_status');
     expect(invoke).toHaveBeenCalledWith('capture_runtime_status');
 
     vi.advanceTimersByTime(RUNTIME_UPDATE_SUCCESS_VISIBLE_MS);

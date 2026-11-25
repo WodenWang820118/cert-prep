@@ -22,6 +22,7 @@ export const appDocument: DocumentRead = {
   id: 'document-1',
   project_id: appProject.id,
   filename: 'security.pdf',
+  source_kind: 'pdf',
   sha256: 'abc123',
   language_hint: 'en',
   page_count: 12,
@@ -45,6 +46,7 @@ export const secondAppDocument: DocumentRead = {
   id: 'document-2',
   project_id: secondAppProject.id,
   filename: 'network.pdf',
+  source_kind: 'pdf',
 };
 
 export const editableAppQuestion: QuestionDraftRead = {

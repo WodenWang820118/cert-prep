@@ -10,7 +10,7 @@ from conftest import minimal_audio, minimal_image, minimal_pdf
 @pytest.mark.parametrize("suffix", [".mp3", ".wav", ".m4a"])
 def test_prepare_source_validates_supported_audio_envelope(suffix: str) -> None:
     prepared = prepare_source(minimal_audio(suffix), max_pdf_pages=10, max_image_pixels=100, filename=f"lesson{suffix}")
-    assert prepared.kind == "audio"
+    assert prepared.kind == "recording"
     assert prepared.canonical_suffix == suffix
     assert prepared.duration_ms is not None
 

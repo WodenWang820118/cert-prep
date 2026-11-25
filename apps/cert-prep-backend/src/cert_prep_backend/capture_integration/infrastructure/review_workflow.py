@@ -13,6 +13,9 @@ from capture_runtime_client import (
     CaptureDocument,
     CaptureSourceKind,
 )
+from cert_prep_contracts.documents import SourceKind
+
+from cert_prep_backend.capture_integration.source_kind import to_capture_source_kind
 from cert_prep_backend.capture_integration.domain.review_session import (
     CaptureReviewSession,
     CaptureReviewStatus,
@@ -341,11 +344,10 @@ class CaptureReviewWorkflowAdapter:
         file_name: str,
         content: bytes,
         media_type: str,
-        source_kind: str,
+        source_kind: SourceKind,
         should_cancel: Callable[[], bool],
         on_runtime_started: Callable[[str], None],
     ) -> None:
-        runtime_kind = CaptureSourceKind.PDF if source_kind == "pdf" else CaptureSourceKind.IMAGE
         try:
             begin_review_capture(
                 self._db,
@@ -357,7 +359,7 @@ class CaptureReviewWorkflowAdapter:
                 file_name=file_name,
                 content=content,
                 media_type=media_type,
-                source_kind=runtime_kind,
+                source_kind=to_capture_source_kind(source_kind),
                 should_cancel=should_cancel,
                 on_runtime_started=on_runtime_started,
                 operations=self._operations,

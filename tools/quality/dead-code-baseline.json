@@ -13,9 +13,8 @@
   "default|types|apps/cert-prep/src/app/core/domain/api.contracts.ts|ProjectCreate",
   "default|types|apps/cert-prep/src/app/core/domain/api.contracts.ts|ProjectList",
   "default|types|apps/cert-prep/src/app/core/domain/api.contracts.ts|QuestionDraftList",
-  "default|types|apps/cert-prep/src/app/core/domain/api.contracts.ts|RuntimeRequirementsRead",
   "default|types|apps/cert-prep/src/app/core/domain/api.contracts.ts|WrongAnswerList",
   "production|dependencies|package.json|@angular-devkit/build-angular",
-  "python|method|apps/cert-prep-backend/src/cert_prep_backend/runtime_provisioning/domain/installation.py|wait_for_user",
-  "python|variable|apps/cert-prep-backend/src/cert_prep_backend/runtime_provisioning/application/ports.py|timeout"
+  "python|method|apps/cert-prep-backend/src/cert_prep_backend/llm_provisioning/domain/installation.py|wait_for_user",
+  "python|variable|apps/cert-prep-backend/src/cert_prep_backend/llm_provisioning/application/ports.py|timeout"
 ]

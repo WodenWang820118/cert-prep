@@ -176,7 +176,7 @@ test('captures generation readiness from the exact project response before uploa
     'provider_selection_reported',
   );
   assert.deepEqual(
-    readiness.runtime_requirements.map((item) => ({
+    readiness.llm_requirements.map((item) => ({
       kind: item.kind,
       available: item.available,
       version: item.version,
@@ -201,7 +201,7 @@ test('captures generation readiness from the exact project response before uploa
     page.getCalls.map(({ url }) => url),
     [
       `${API_BASE_URL}/llm/provider-selection`,
-      `${API_BASE_URL}/runtime/requirements`,
+      `${API_BASE_URL}/llm/requirements`,
     ],
   );
   for (const call of page.getCalls) {
@@ -262,19 +262,19 @@ test('readiness endpoints fail closed with fixed blockers', async (t) => {
       name: 'runtime request timeout',
       endpoint: 'requirements',
       route: () => Promise.reject(new Error('Timeout 30000ms exceeded')),
-      blocker: 'runtime_requirements_timeout',
+      blocker: 'llm_requirements_timeout',
     },
     {
       name: 'runtime HTTP failure',
       endpoint: 'requirements',
       route: () => apiResponse(302, { location: `https://${AUTH_TOKEN}` }),
-      blocker: 'runtime_requirements_http_error',
+      blocker: 'llm_requirements_http_error',
     },
     {
       name: 'runtime JSON failure',
       endpoint: 'requirements',
       route: () => apiResponse(200, null, true),
-      blocker: 'runtime_requirements_json_invalid',
+      blocker: 'llm_requirements_json_invalid',
     },
     {
       name: 'runtime malformed schema',
@@ -284,7 +284,7 @@ test('readiness endpoints fail closed with fixed blockers', async (t) => {
         delete (payload.items[0] as Record<string, unknown>).detail;
         return apiResponse(200, payload);
       },
-      blocker: 'runtime_requirements_schema_invalid',
+      blocker: 'llm_requirements_schema_invalid',
     },
   ];
 
@@ -294,7 +294,7 @@ test('readiness endpoints fail closed with fixed blockers', async (t) => {
       const path =
         item.endpoint === 'selection'
           ? '/llm/provider-selection'
-          : '/runtime/requirements';
+          : '/llm/requirements';
       page.routes.set(`${API_BASE_URL}${path}`, item.route);
       const run = smokeRun();
       await capture(run, page);
@@ -322,11 +322,11 @@ test('auto provider readiness accepts the resolved Ollama profile model', async 
       effective_model: 'cert-prep-qwen3.5-4b-study-8k',
       selection_reason: 'Selected Ollama from the local provider registry.',
       fallback_reason: null,
-      runtime_requirement_kind: 'ollama',
+      llm_engine_requirement_kind: 'ollama',
       model_requirement_kind: 'ollama_model',
     }),
   );
-  page.routes.set(`${API_BASE_URL}/runtime/requirements`, () =>
+  page.routes.set(`${API_BASE_URL}/llm/requirements`, () =>
     apiResponse(200, {
       items: [
         {
@@ -391,7 +391,7 @@ test('provider model and runtime availability drift fail closed', async (t) => {
     );
     const payload = runtimePayload();
     payload.items[1].version = 'unexpected:model';
-    page.routes.set(`${API_BASE_URL}/runtime/requirements`, () =>
+    page.routes.set(`${API_BASE_URL}/llm/requirements`, () =>
       apiResponse(200, payload),
     );
     const run = smokeRun();
@@ -407,7 +407,7 @@ test('provider model and runtime availability drift fail closed', async (t) => {
     const page = readyPage();
     const payload = runtimePayload();
     payload.items[0].available = false;
-    page.routes.set(`${API_BASE_URL}/runtime/requirements`, () =>
+    page.routes.set(`${API_BASE_URL}/llm/requirements`, () =>
       apiResponse(200, payload),
     );
     const run = smokeRun();
@@ -431,40 +431,40 @@ test('strict runtime schema, local path policy, and secret filtering block bad e
       mutate: (page) => {
         const payload = runtimePayload();
         payload.items[1] = { ...payload.items[0] };
-        page.routes.set(`${API_BASE_URL}/runtime/requirements`, () =>
+        page.routes.set(`${API_BASE_URL}/llm/requirements`, () =>
           apiResponse(200, payload),
         );
       },
-      blocker: 'runtime_requirements_schema_invalid',
+      blocker: 'llm_requirements_schema_invalid',
     },
     {
       name: 'unknown runtime kind',
       mutate: (page) => {
         const payload = runtimePayload();
         payload.items[0].kind = 'unknown';
-        page.routes.set(`${API_BASE_URL}/runtime/requirements`, () =>
+        page.routes.set(`${API_BASE_URL}/llm/requirements`, () =>
           apiResponse(200, payload),
         );
       },
-      blocker: 'runtime_requirements_schema_invalid',
+      blocker: 'llm_requirements_schema_invalid',
     },
     {
       name: 'nonboolean availability',
       mutate: (page) => {
         const payload = runtimePayload();
         payload.items[0].available = 'true';
-        page.routes.set(`${API_BASE_URL}/runtime/requirements`, () =>
+        page.routes.set(`${API_BASE_URL}/llm/requirements`, () =>
           apiResponse(200, payload),
         );
       },
-      blocker: 'runtime_requirements_schema_invalid',
+      blocker: 'llm_requirements_schema_invalid',
     },
     {
       name: 'missing selected model requirement',
       mutate: (page) => {
         const payload = runtimePayload();
         payload.items.pop();
-        page.routes.set(`${API_BASE_URL}/runtime/requirements`, () =>
+        page.routes.set(`${API_BASE_URL}/llm/requirements`, () =>
           apiResponse(200, payload),
         );
       },
@@ -475,7 +475,7 @@ test('strict runtime schema, local path policy, and secret filtering block bad e
       mutate: (page) => {
         const payload = runtimePayload();
         payload.items[0].installed_path = '\\\\server\\share\\flm.exe';
-        page.routes.set(`${API_BASE_URL}/runtime/requirements`, () =>
+        page.routes.set(`${API_BASE_URL}/llm/requirements`, () =>
           apiResponse(200, payload),
         );
       },
@@ -665,7 +665,7 @@ function readyPage(): FakePage {
   page.routes.set(`${API_BASE_URL}/llm/provider-selection`, () =>
     apiResponse(200, providerPayload()),
   );
-  page.routes.set(`${API_BASE_URL}/runtime/requirements`, () =>
+  page.routes.set(`${API_BASE_URL}/llm/requirements`, () =>
     apiResponse(200, runtimePayload()),
   );
   return page;
@@ -680,7 +680,7 @@ function providerPayload(): Record<string, unknown> {
     effective_model: 'qwen3.5:4b',
     selection_reason: 'Selected Ollama from the local provider registry.',
     fallback_reason: null,
-    runtime_requirement_kind: 'ollama',
+    llm_engine_requirement_kind: 'ollama',
     model_requirement_kind: 'ollama_model',
   };
 }

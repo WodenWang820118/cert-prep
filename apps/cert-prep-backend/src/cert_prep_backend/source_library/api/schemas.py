@@ -4,6 +4,8 @@ from dataclasses import asdict
 
 from pydantic import BaseModel
 
+from cert_prep_contracts.documents import SourceKind
+
 from cert_prep_backend.source_library.domain.document import DocumentChunk, DocumentStatus
 from cert_prep_backend.source_library.domain.exam_content import ContentProfileValue
 from cert_prep_backend.source_library.domain.statuses import ExtractionMethodValue
@@ -29,7 +31,7 @@ class DocumentRead(BaseModel):
     chunks_count: int
     created_at: str
     updated_at: str
-    source_kind: str = "document"
+    source_kind: SourceKind
     duration_ms: int | None = None
     transcription_status: str = "not_applicable"
     translation_status: str = "not_applicable"

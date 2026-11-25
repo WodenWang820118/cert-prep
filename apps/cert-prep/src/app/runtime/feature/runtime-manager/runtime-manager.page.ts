@@ -101,8 +101,8 @@ export class RuntimeManagerPage {
       : `Download ${this.health.configuredModelName()}`,
   );
 
-  protected readonly hasLlmRuntimeInstallation = computed(() => {
-    const kind = this.health.runtimeInstall()?.kind;
+  protected readonly hasLLMEngineInstallation = computed(() => {
+    const kind = this.health.llmEngineInstall()?.kind;
     return kind === 'ollama';
   });
 

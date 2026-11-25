@@ -4,17 +4,16 @@ from dataclasses import dataclass
 from io import BytesIO
 from itertools import chain
 from pathlib import Path
-from typing import Literal
 
 import av
 from PIL import Image, UnidentifiedImageError
 import pypdfium2 as pdfium
 
+from cert_prep_contracts.documents import SourceKind
 from cert_prep_contracts.transcription import MAX_AUDIO_DURATION_MS
 from cert_prep_backend.platform.errors import InvalidSourceError
 
 
-SourceKind = Literal["pdf", "image", "audio"]
 SUPPORTED_IMAGE_FORMATS = {"JPEG": ".jpg", "PNG": ".png", "WEBP": ".webp"}
 SUPPORTED_AUDIO_SUFFIXES = {".mp3", ".wav", ".m4a"}
 
@@ -51,7 +50,7 @@ def prepare_source(content: bytes, *, max_pdf_pages: int, max_image_pixels: int,
             raise InvalidSourceError("Uploaded PDF does not contain any pages.")
         if page_count > max_pdf_pages:
             raise InvalidSourceError(f"PDF has {page_count} pages; the limit is {max_pdf_pages}.")
-        return PreparedSource(content, "pdf", ".pdf", page_count)
+        return PreparedSource(content, SourceKind.PDF, ".pdf", page_count)
     return _prepare_image(content, max_image_pixels=max_image_pixels)
 
 
@@ -73,7 +72,7 @@ def _prepare_image(content: bytes, *, max_image_pixels: int) -> PreparedSource:
         raise
     except (OSError, UnidentifiedImageError, ValueError) as exc:
         raise InvalidSourceError("Uploaded file is not a readable PDF, PNG, JPEG, or WebP source.") from exc
-    return PreparedSource(content, "image", canonical_suffix, 1)
+    return PreparedSource(content, SourceKind.IMAGE, canonical_suffix, 1)
 
 
 def _has_pdf_header(content: bytes) -> bool:
@@ -115,7 +114,7 @@ def _prepare_audio(content: bytes, *, canonical_suffix: str) -> PreparedSource:
         raise InvalidSourceError("Uploaded audio does not contain decodable audio.")
     if duration_ms > MAX_AUDIO_DURATION_MS:
         raise InvalidSourceError("Audio duration exceeds the 90 minute limit.")
-    return PreparedSource(content, "audio", canonical_suffix, 0, duration_ms)
+    return PreparedSource(content, SourceKind.RECORDING, canonical_suffix, 0, duration_ms)
 
 
 def _declared_audio_duration_ms(container, audio_stream) -> int | None:

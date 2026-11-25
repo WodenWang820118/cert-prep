@@ -1,0 +1,125 @@
+"""Concrete Ollama installer construction; downstream contexts use structural ports."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from threading import Lock
+from typing import TYPE_CHECKING, TypeVar
+
+from cert_prep_backend.ai_providers.application.ports import MachineInventory
+from cert_prep_backend.ai_providers.application.use_cases import choose_ollama_profile
+from cert_prep_backend.ai_providers.domain.provider import (
+    LLMInstallationProvider,
+    provider_capability,
+)
+from cert_prep_backend.platform.config import Settings
+from cert_prep_backend.platform.errors import InstallerUnavailable
+from cert_prep_contracts.llm_installation import (
+    LLMInstallationStatus,
+    LLMInstallProgress,
+    LLMRequirementKind,
+    LLMRequirementSnapshot,
+)
+
+if TYPE_CHECKING:
+    from cert_prep_ollama.installers import OllamaInstaller
+    from cert_prep_ollama.profile_installer import OllamaProfileInstaller
+    from cert_prep_ollama.server_coordinator import OllamaServerCoordinator
+
+TInstaller = TypeVar("TInstaller")
+
+
+def configured_installer_choices(
+    settings: Settings,
+    provider: object,
+    machine: MachineInventory,
+    default_model: Callable[[], TInstaller],
+    *,
+    server: OllamaServerCoordinator | None = None,
+) -> tuple[list[OllamaInstaller], TInstaller | LazyOllamaProfileInstaller | OllamaProfileInstaller]:
+    from cert_prep_ollama.installers import OllamaInstaller
+
+    capability = provider_capability(provider, LLMInstallationProvider)
+    runtime_kind = capability.llm_engine_requirement_kind if capability is not None else None
+    runtimes = []
+    if runtime_kind == LLMRequirementKind.OLLAMA:
+        runtimes.append(OllamaInstaller(
+            ollama_host=settings.ollama_host,
+            llm_install_timeout_seconds=settings.llm_install_timeout_seconds,
+            server=server,
+        ))
+    model = default_model()
+    if runtime_kind == LLMRequirementKind.OLLAMA and settings.ollama_profile_enabled:
+        model = LazyOllamaProfileInstaller(settings, machine, server=server)
+    elif runtime_kind == LLMRequirementKind.OLLAMA:
+        selection = getattr(provider, "profile_selection", None)
+        if selection is not None:
+            from cert_prep_ollama.profile_installer import OllamaProfileInstaller
+
+            model = OllamaProfileInstaller(
+                selection.selected_profile,
+                host=settings.ollama_host,
+                timeout_seconds=settings.ollama_timeout_seconds,
+                llm_install_timeout_seconds=settings.llm_install_timeout_seconds,
+                server=server,
+            )
+    return runtimes, model
+
+
+class LazyOllamaProfileInstaller:
+    kind = LLMRequirementKind.OLLAMA_MODEL
+    provider = "ollama"
+
+    def __init__(
+        self,
+        settings: Settings,
+        machine_inventory: MachineInventory,
+        server: OllamaServerCoordinator | None = None,
+    ) -> None:
+        self._settings = settings
+        self._machine_inventory = machine_inventory
+        self._server = server
+        self._lock = Lock()
+        self._installer: OllamaProfileInstaller | None = None
+
+    @property
+    def model(self) -> str:
+        installer = self._installer
+        if installer is not None:
+            return installer.model
+        return f"ollama-profile:{self._settings.ollama_profile_id}"
+
+    def requirement(self) -> LLMRequirementSnapshot:
+        return self._delegate().requirement()
+
+    def validate_installable(self) -> None:
+        validate = getattr(self._delegate(), "validate_installable", None)
+        if callable(validate):
+            validate()
+
+    def install(
+        self, progress: Callable[[LLMInstallProgress], None]
+    ) -> LLMInstallationStatus:
+        return self._delegate().install(progress)
+
+    def _delegate(self) -> OllamaProfileInstaller:
+        installer = self._installer
+        if installer is not None:
+            return installer
+        with self._lock:
+            if self._installer is None:
+                from cert_prep_ollama.profile_installer import OllamaProfileInstaller
+
+                selection = choose_ollama_profile(
+                    self._settings, self._machine_inventory.inventory, provider_selected=True,
+                )
+                if selection is None:
+                    raise InstallerUnavailable("Ollama profile selection is not available.")
+                self._installer = OllamaProfileInstaller(
+                    selection.selected_profile,
+                    host=self._settings.ollama_host,
+                    timeout_seconds=self._settings.ollama_timeout_seconds,
+                    llm_install_timeout_seconds=self._settings.llm_install_timeout_seconds,
+                    server=self._server,
+                )
+            return self._installer

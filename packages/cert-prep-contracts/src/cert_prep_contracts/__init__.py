@@ -7,6 +7,7 @@ from cert_prep_contracts.documents import (
     DocumentOperationStatus,
     SourceDocumentStatus,
     SourceDocumentStatusValue,
+    SourceKind,
 )
 from cert_prep_contracts.hardware import (
     MachineAcceleratorSnapshot,
@@ -33,11 +34,11 @@ from cert_prep_contracts.llm_profiles import (
     OllamaProfileSelection,
     OllamaProfileSupportStatus,
 )
-from cert_prep_contracts.runtime import (
-    RuntimeInstallationStatus,
-    RuntimeInstallProgress,
-    RuntimeRequirementKind,
-    RuntimeRequirementSnapshot,
+from cert_prep_contracts.llm_installation import (
+    LLMInstallationStatus,
+    LLMInstallProgress,
+    LLMRequirementKind,
+    LLMRequirementSnapshot,
 )
 from cert_prep_contracts.transcription import (
     MAX_AUDIO_DURATION_MS,
@@ -69,11 +70,12 @@ __all__ = [
     "OllamaParameterValue",
     "OllamaProfileSelection",
     "OllamaProfileSupportStatus",
-    "RuntimeInstallationStatus",
-    "RuntimeInstallProgress",
-    "RuntimeRequirementKind",
-    "RuntimeRequirementSnapshot",
+    "LLMInstallationStatus",
+    "LLMInstallProgress",
+    "LLMRequirementKind",
+    "LLMRequirementSnapshot",
     "SourceDocumentStatus",
     "SourceDocumentStatusValue",
+    "SourceKind",
     "TranscriptSegment",
 ]

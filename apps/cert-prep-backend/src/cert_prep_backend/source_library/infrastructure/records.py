@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from sqlite3 import Row
 
+from cert_prep_contracts.documents import SourceKind
+
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.platform.errors import NotFoundError
 from cert_prep_backend.source_library.application.ports import StudyProjects
@@ -49,7 +51,7 @@ def document_from_row(row: Row) -> SourceDocument:
         chunks_count=row["chunks_count"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
-        source_kind=row["source_kind"],
+        source_kind=SourceKind(row["source_kind"]),
         duration_ms=row["duration_ms"],
         transcription_status=row["transcription_status"],
         translation_status=row["translation_status"],

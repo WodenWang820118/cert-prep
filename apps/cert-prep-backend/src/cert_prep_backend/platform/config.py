@@ -24,8 +24,8 @@ class Settings(BaseSettings):
     data_dir: Path = Field(default_factory=default_data_dir)
     database_name: str = "cert-prep.sqlite3"
     api_token: str = ""
-    max_upload_bytes: int = 20 * 1024 * 1024
-    max_audio_upload_bytes: int = 100 * 1024 * 1024
+    max_page_source_upload_bytes: int = 20 * 1024 * 1024
+    max_recording_upload_bytes: int = 100 * 1024 * 1024
     max_image_pixels: int = Field(default=50_000_000, ge=1)
     max_pdf_pages: int = 250
     max_page_text_chars: int = 20_000
@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     ollama_profile_enabled: bool = True
     ollama_profile_id: Literal["auto", "qwen3.5-4b-study-8k"] = "auto"
     ollama_profile_inventory_timeout_seconds: float = Field(default=5.0, ge=0.1)
-    runtime_install_timeout_seconds: float = 900.0
+    llm_install_timeout_seconds: float = 900.0
     capture_runtime_url: str | None = None
     capture_runtime_token: str | None = Field(default=None, repr=False)
     capture_runtime_version: str | None = None

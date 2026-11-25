@@ -15,8 +15,7 @@ This slice covers:
 - document upload/processing operations;
 - automatic draft-generation jobs;
 - manual draft-generation operations;
-- HTTP runtime installation jobs;
-- HTTP model-download jobs.
+- HTTP LLM installation jobs (Ollama and its model).
 
 Capture Workbench's existing replayable SSE remains the owner of capture event
 transport. Native Tauri-managed Python/Capture Runtime installation commands are
@@ -46,8 +45,7 @@ All endpoints require the same bearer authentication as the REST API, accept
 | `GET /projects/{project_id}/documents/{document_id}/document-operation/events` | `document-operation` | active document operation plus current document |
 | `GET /projects/{project_id}/documents/{document_id}/draft-jobs/events` | `draft-jobs` | `{ "items": DraftGenerationJobRead[] }` |
 | `GET /projects/{project_id}/documents/{document_id}/draft-operations/{operation_id}/events` | `draft-operation` | manual draft operation |
-| `GET /runtime/installations/{job_id}/events` | `runtime-installation` | runtime installation snapshot |
-| `GET /llm/model-downloads/{job_id}/events` | `model-download` | model download snapshot |
+| `GET /llm/installations/{job_id}/events` | `llm-installation` | LLM installation snapshot |
 
 Each connection emits monotonically increasing stream-local SSE `id` values;
 the optional `Last-Event-ID` seeds that sequence on reconnect. A newly

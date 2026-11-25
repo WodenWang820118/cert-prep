@@ -340,6 +340,7 @@ function documentRead(overrides: Partial<DocumentRead> = {}): DocumentRead {
     id: 'document-1',
     project_id: 'project-1',
     filename: 'jlpt-n1.pdf',
+    source_kind: 'pdf',
     sha256: 'document-sha',
     language_hint: 'ja',
     page_count: 46,

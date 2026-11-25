@@ -594,7 +594,7 @@ function runtimeRequirementAvailable(
   version: string | null,
   requireInstalledPath: boolean,
 ): boolean {
-  return snapshot.runtime_requirements.some(
+  return snapshot.llm_requirements.some(
     (requirement) =>
       requirement.kind === kind &&
       requirement.available === true &&

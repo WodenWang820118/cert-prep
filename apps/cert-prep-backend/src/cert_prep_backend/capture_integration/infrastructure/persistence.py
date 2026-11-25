@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 
 from capture_runtime_client import CaptureDocument
+from cert_prep_contracts.documents import SourceKind
+
 from cert_prep_backend.capture_integration.application.ports import CapturePublication
 from cert_prep_backend.capture_integration.infrastructure.host_models import CaptureReview
 from cert_prep_backend.capture_integration.infrastructure.mapping import (
@@ -19,7 +21,7 @@ def publish_capture_document(
     project_id: str,
     document_id: str,
     operation_id: str,
-    source_kind: str,
+    source_kind: SourceKind,
     expected_sha256: str,
     document: CaptureDocument,
     runtime_version: str,
@@ -37,7 +39,7 @@ def publish_capture_document(
         }
     )
 
-    if source_kind == "audio":
+    if source_kind == "recording":
         mapped = capture_document_to_audio_segments(document)
         warning = "; ".join(document.warnings) or None
         return publication.publish_audio_success(

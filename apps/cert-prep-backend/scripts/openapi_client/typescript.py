@@ -11,7 +11,9 @@ CLOSED_ENUM_SCHEMAS = frozenset(
         "DocumentOperationStatus",
         "DraftGenerationJobStatus",
         "ManualDraftOperationStatus",
-        "RuntimeInstallationStatus",
+        "LLMInstallationStatus",
+        "LLMRequirementKind",
+        "SourceKind",
     }
 )
 

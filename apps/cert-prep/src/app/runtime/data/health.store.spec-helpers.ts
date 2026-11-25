@@ -1,4 +1,4 @@
-import type { LLMHealthRead, ModelDownloadRead } from '../../core/domain';
+import type { LLMHealthRead, LLMInstallationRead } from '../../core/domain';
 import type { LLMProviderSelectionRead } from '../domain';
 
 export function providerSelection(
@@ -12,7 +12,7 @@ export function providerSelection(
     effective_model: 'qwen3.5:4b',
     selection_reason: 'Ollama is the selected local reasoning provider.',
     fallback_reason: null,
-    runtime_requirement_kind: 'ollama',
+    llm_engine_requirement_kind: 'ollama',
     model_requirement_kind: 'ollama_model',
     ...overrides,
   };
@@ -32,10 +32,11 @@ export function llmHealth(
 }
 
 export function modelDownload(
-  overrides: Partial<ModelDownloadRead> = {},
-): ModelDownloadRead {
+  overrides: Partial<LLMInstallationRead> = {},
+): LLMInstallationRead {
   return {
     id: 'job-1',
+    kind: 'ollama_model',
     provider: 'ollama',
     model: 'reasoner:7b',
     status: 'running',
@@ -47,5 +48,5 @@ export function modelDownload(
     created_at: '2026-06-11T00:00:00Z',
     updated_at: '2026-06-11T00:00:00Z',
     ...overrides,
-  } as ModelDownloadRead;
+  };
 }

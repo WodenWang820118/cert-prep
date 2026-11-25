@@ -65,7 +65,7 @@ practice, or review flows after a source has been captured.
   concurrency (default 2, configurable from 1 through 4), filters unsupported
   MIME/extension hints without discarding valid selections, and leaves content
   validation authoritative to the backend. Each settled request immediately
-  releases its slot to the next queued file; a slow audio upload or preflight
+  releases its slot to the next queued file; a slow recording upload or preflight
   must not create a batch barrier for unrelated PDF/image uploads. Users may
   append supported files while network uploads are active without replacing
   existing queued or in-flight items. Selected, queued, uploading, uploaded,

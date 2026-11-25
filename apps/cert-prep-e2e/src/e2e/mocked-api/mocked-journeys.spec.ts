@@ -178,6 +178,10 @@ test('keeps mixed PDF and image multipart filenames in upload order and the libr
     library.locator('option', { hasText: imageFilename }),
   ).toHaveCount(1);
   const imageDocument = api.uploadedDocuments()[1];
+  expect(api.uploadedDocuments().map((document) => document.source_kind)).toEqual([
+    'pdf',
+    'image',
+  ]);
   expect(imageDocument?.filename).toBe(imageFilename);
   await expect
     .poll(async () => (await capturedUploads(page))[1]?.bytes)

@@ -345,9 +345,9 @@ def _document(connection: Connection, project_id: str, document_id: str) -> None
         """
         INSERT INTO documents(
             id, project_id, filename, sha256, storage_path,
-            page_count, has_text, status, created_at, updated_at
+            page_count, has_text, status, created_at, updated_at, source_kind
         )
-        VALUES (?, ?, 'notes.pdf', 'hash', 'notes.pdf', 1, 1, 'ready', 't0', 't0')
+        VALUES (?, ?, 'notes.pdf', 'hash', 'notes.pdf', 1, 1, 'ready', 't0', 't0', 'pdf')
         """,
         (document_id, project_id),
     )

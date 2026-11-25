@@ -51,6 +51,7 @@ def _attach_pdf(db: Database, *, operation_id: str) -> str:
         "proj",
         operation_id,
         filename="source.pdf",
+        source_kind="pdf",
         sha256="sha",
         language_hint="auto",
         storage_path="C:/data/source.pdf",

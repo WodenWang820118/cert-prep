@@ -27,6 +27,7 @@ def _document(**changes: object) -> SourceDocument:
         id="document",
         project_id="project",
         filename="notes.pdf",
+        source_kind="pdf",
         sha256="abc",
         language_hint="auto",
         page_count=1,
@@ -153,8 +154,8 @@ def test_a_ready_pdf_exports_markdown_from_its_chunks() -> None:
 @pytest.mark.parametrize(
     ("document", "message"),
     [
-        (_document(filename="scan.png"), "PDF documents only"),
-        (_document(source_kind="audio", filename="talk.pdf"), "PDF documents only"),
+        (_document(filename="scan.png", source_kind="image"), "PDF documents only"),
+        (_document(source_kind="recording", filename="talk.pdf"), "PDF documents only"),
         (_document(status=SourceDocumentStatus.PROCESSING), "after document processing completes"),
     ],
 )
@@ -171,7 +172,7 @@ def test_markdown_needs_at_least_one_chunk() -> None:
 
 
 def test_a_verified_recording_is_played_with_its_media_type(tmp_path: Path) -> None:
-    documents = FakeDocuments(_document(source_kind="audio", filename="talk.m4a"), [])
+    documents = FakeDocuments(_document(source_kind="recording", filename="talk.m4a"), [])
 
     source = use_cases.open_audio_source(
         documents, FakeFiles(tmp_path / "abc.m4a", "abc"), "project", "document"
@@ -183,9 +184,9 @@ def test_a_verified_recording_is_played_with_its_media_type(tmp_path: Path) -> N
 @pytest.mark.parametrize(
     ("document", "path", "sha256", "message"),
     [
-        (_document(), "abc.m4a", "abc", "Only audio documents"),
-        (_document(source_kind="audio"), "abc.m4a", "changed", "failed integrity verification"),
-        (_document(source_kind="audio"), "abc.ogg", "abc", "failed integrity verification"),
+        (_document(), "abc.m4a", "abc", "Only recordings"),
+        (_document(source_kind="recording"), "abc.m4a", "changed", "failed integrity verification"),
+        (_document(source_kind="recording"), "abc.ogg", "abc", "failed integrity verification"),
     ],
 )
 def test_only_an_intact_recording_can_be_played(
@@ -208,7 +209,7 @@ class MissingFiles:
 
 
 def test_a_recording_whose_file_is_gone_is_unavailable() -> None:
-    documents = FakeDocuments(_document(source_kind="audio"), [])
+    documents = FakeDocuments(_document(source_kind="recording"), [])
 
     with pytest.raises(
         SourceDocumentUnavailable, match="stored audio source is unavailable"
@@ -219,7 +220,7 @@ def test_a_recording_whose_file_is_gone_is_unavailable() -> None:
 
 
 def test_a_transcript_edit_is_trimmed_and_never_empty() -> None:
-    documents = FakeDocuments(_document(source_kind="audio"), [_chunk()])
+    documents = FakeDocuments(_document(source_kind="recording"), [_chunk()])
 
     edited = use_cases.edit_chunk(documents, "project", "document", "chunk", "  新しい本文 \n")
 

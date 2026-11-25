@@ -5,12 +5,12 @@ describe('DocumentParsingMetricsService', () => {
   const metrics = new DocumentParsingMetricsService();
 
   it.each([
-    ['ja', 'Transcribing Japanese audio'],
-    ['en', 'Transcribing English audio'],
-    ['auto', 'Transcribing audio'],
+    ['ja', 'Transcribing Japanese recording'],
+    ['en', 'Transcribing English recording'],
+    ['auto', 'Transcribing recording'],
   ])('reports transcription progress for a %s language hint', (language_hint, label) => {
     const document = documentRead({
-      source_kind: 'audio',
+      source_kind: 'recording',
       page_count: 0,
       processed_page_count: 0,
       status: 'processing',
@@ -25,7 +25,7 @@ describe('DocumentParsingMetricsService', () => {
 
   it('reports translation progress after the English transcript is saved', () => {
     const document = documentRead({
-      source_kind: 'audio',
+      source_kind: 'recording',
       page_count: 0,
       status: 'processing',
       language_hint: 'en',
@@ -47,7 +47,7 @@ describe('DocumentParsingMetricsService', () => {
     'treats a usable %s transcript with failed translation as complete work',
     (language_hint, label) => {
       const document = documentRead({
-        source_kind: 'audio',
+        source_kind: 'recording',
         page_count: 0,
         status: 'ready',
         language_hint,
@@ -60,7 +60,7 @@ describe('DocumentParsingMetricsService', () => {
     },
   );
 
-  it('keeps page-based progress for non-audio documents', () => {
+  it('keeps page-based progress for page sources', () => {
     const document = documentRead({
       status: 'processing',
       page_count: 8,
@@ -77,6 +77,7 @@ function documentRead(overrides: Partial<DocumentRead> = {}): DocumentRead {
     id: 'document-1',
     project_id: 'project-1',
     filename: 'source.pdf',
+    source_kind: 'pdf',
     sha256: 'sha256',
     language_hint: 'ja',
     page_count: 8,

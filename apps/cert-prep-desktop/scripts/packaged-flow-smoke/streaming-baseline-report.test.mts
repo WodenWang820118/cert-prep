@@ -331,10 +331,10 @@ function productionFixture(): {
           effective_model: 'qwen3.5:4b',
           selection_reason: 'provider_selection_reported',
           fallback_reason: null,
-          runtime_requirement_kind: 'ollama',
+          llm_engine_requirement_kind: 'ollama',
           model_requirement_kind: 'ollama_model',
         },
-        runtime_requirements: [
+        llm_requirements: [
           {
             kind: 'ollama',
             available: true,

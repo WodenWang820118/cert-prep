@@ -11,11 +11,11 @@ import ollama
 
 from cert_prep_contracts.llm import ModelPullProgress
 from cert_prep_contracts.llm_profiles import OllamaModelProfile
-from cert_prep_contracts.runtime import (
-    RuntimeInstallationStatus,
-    RuntimeInstallProgress,
-    RuntimeRequirementKind,
-    RuntimeRequirementSnapshot,
+from cert_prep_contracts.llm_installation import (
+    LLMInstallationStatus,
+    LLMInstallProgress,
+    LLMRequirementKind,
+    LLMRequirementSnapshot,
 )
 from cert_prep_ollama.exceptions import OllamaInstallationUnavailable
 from cert_prep_ollama.modelfiles import parameters_from_profile
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 class OllamaProfileInstaller:
     """Installer and health snapshot for a selected cert-prep Ollama profile."""
 
-    kind = RuntimeRequirementKind.OLLAMA_MODEL
+    kind = LLMRequirementKind.OLLAMA_MODEL
     provider = "ollama"
 
     def __init__(
@@ -42,7 +42,7 @@ class OllamaProfileInstaller:
         *,
         host: str = DEFAULT_OLLAMA_HOST,
         timeout_seconds: float = 120.0,
-        runtime_install_timeout_seconds: float = 900.0,
+        llm_install_timeout_seconds: float = 900.0,
         client: object | None = None,
         ensure_server: bool = True,
         server: OllamaServerCoordinator | None = None,
@@ -51,18 +51,18 @@ class OllamaProfileInstaller:
         self.fallback_profiles: tuple[OllamaModelProfile, ...] = ()
         self.model = profile.local_model
         self.host = host
-        self._runtime_install_timeout_seconds = runtime_install_timeout_seconds
+        self._llm_install_timeout_seconds = llm_install_timeout_seconds
         self._client = client or ollama.Client(host=host, timeout=timeout_seconds)
         self._ensure_server = ensure_server
         self._server = server
 
-    def requirement(self) -> RuntimeRequirementSnapshot:
+    def requirement(self) -> LLMRequirementSnapshot:
         """Return selected profile availability without pulling or creating it."""
 
         try:
             model_names = self._installed_model_names()
         except OllamaInstallationUnavailable as exc:
-            return RuntimeRequirementSnapshot(
+            return LLMRequirementSnapshot(
                 kind=self.kind,
                 label="Ollama profile model",
                 available=False,
@@ -71,7 +71,7 @@ class OllamaProfileInstaller:
                 version=self.model,
             )
         available = self.model in model_names
-        return RuntimeRequirementSnapshot(
+        return LLMRequirementSnapshot(
             kind=self.kind,
             label="Ollama profile models",
             available=available,
@@ -91,8 +91,8 @@ class OllamaProfileInstaller:
 
     def install(
         self,
-        progress: Callable[[RuntimeInstallProgress], None],
-    ) -> RuntimeInstallationStatus:
+        progress: Callable[[LLMInstallProgress], None],
+    ) -> LLMInstallationStatus:
         """Pull the fixed base model and create its local study profile."""
 
         self._prepare_server()
@@ -111,7 +111,7 @@ class OllamaProfileInstaller:
             if model_progress.total is not None:
                 last_total = model_progress.total
             progress(
-                RuntimeInstallProgress(
+                LLMInstallProgress(
                     detail=model_progress.status or "model installation running",
                     completed=last_completed,
                     total=last_total,
@@ -124,7 +124,7 @@ class OllamaProfileInstaller:
         # first so ensure_running can restart before this count is held.
         with self._while_using_server():
             progress(
-                RuntimeInstallProgress(
+                LLMInstallProgress(
                     f"Pulling base model {self.profile.base_model}.",
                     phase="model_download",
                     cancellable=True,
@@ -138,7 +138,7 @@ class OllamaProfileInstaller:
                 )
 
             progress(
-                RuntimeInstallProgress(
+                LLMInstallProgress(
                     "Committing Ollama profile model.",
                     completed=last_completed,
                     total=last_total,
@@ -147,7 +147,7 @@ class OllamaProfileInstaller:
                 )
             )
             progress(
-                RuntimeInstallProgress(
+                LLMInstallProgress(
                     f"Creating profile model {self.model}.",
                     completed=last_completed,
                     total=last_total,
@@ -172,7 +172,7 @@ class OllamaProfileInstaller:
                 )
 
             progress(
-                RuntimeInstallProgress(
+                LLMInstallProgress(
                     "Verifying Ollama profile registration.",
                     completed=last_completed,
                     total=last_total,
@@ -187,7 +187,7 @@ class OllamaProfileInstaller:
                     code="model_missing",
                 )
             progress(
-                RuntimeInstallProgress(
+                LLMInstallProgress(
                     "Ollama profile registration verified.",
                     completed=last_completed,
                     total=last_total,
@@ -195,7 +195,7 @@ class OllamaProfileInstaller:
                     cancellable=False,
                 )
             )
-            return RuntimeInstallationStatus.SUCCEEDED
+            return LLMInstallationStatus.SUCCEEDED
 
     @contextmanager
     def _while_using_server(self) -> Iterator[None]:
@@ -223,7 +223,7 @@ class OllamaProfileInstaller:
         if not self._ensure_server:
             return
         if self._server is not None:
-            if self._server.ensure_running(timeout_seconds=self._runtime_install_timeout_seconds):
+            if self._server.ensure_running(timeout_seconds=self._llm_install_timeout_seconds):
                 return
             executable = resolve_ollama_executable()
             if executable is None:
@@ -236,7 +236,7 @@ class OllamaProfileInstaller:
         if ensure_ollama_server_running(
             self.host,
             executable=executable,
-            timeout_seconds=self._runtime_install_timeout_seconds,
+            timeout_seconds=self._llm_install_timeout_seconds,
         ):
             return
         if executable is None:

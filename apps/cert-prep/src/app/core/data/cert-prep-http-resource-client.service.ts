@@ -16,7 +16,7 @@ import type {
   PracticeSessionSummaryRead,
   ProjectRead,
   QuestionDraftRead,
-  RuntimeRequirementRead,
+  LLMRequirementRead,
   WrongAnswerRead,
   WrongAnswerSummaryRead,
 } from '../domain';
@@ -71,13 +71,13 @@ export class CertPrepHttpResourceClient {
     );
   }
 
-  runtimeRequirements(
+  llmRequirements(
     trigger?: CertPrepResourceTrigger,
-  ): CertPrepHttpResource<RuntimeRequirementRead[]> {
+  ): CertPrepHttpResource<LLMRequirementRead[]> {
     return this.collectionResource(
       () =>
-        this.gatedRequest(trigger, () => this.requests.runtimeRequirements()),
-      'runtime-requirements',
+        this.gatedRequest(trigger, () => this.requests.llmRequirements()),
+      'llm-requirements',
     );
   }
 

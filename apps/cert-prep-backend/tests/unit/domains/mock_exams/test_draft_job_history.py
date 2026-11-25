@@ -184,9 +184,9 @@ def _seed_document_chunk(
             """
             INSERT INTO documents(
                 id, project_id, filename, sha256, storage_path, page_count,
-                has_text, status, created_at, updated_at
+                has_text, status, created_at, updated_at, source_kind
             )
-            VALUES (?, 'project', ?, ?, ?, 1, 1, 'ready', '2026-07-14', '2026-07-14')
+            VALUES (?, 'project', ?, ?, ?, 1, 1, 'ready', '2026-07-14', '2026-07-14', 'pdf')
             """,
             (document_id, f"{document_id}.pdf", document_id, f"C:/{document_id}.pdf"),
         )

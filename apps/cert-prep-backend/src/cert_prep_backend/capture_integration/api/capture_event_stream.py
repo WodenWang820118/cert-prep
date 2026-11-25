@@ -14,6 +14,7 @@ from capture_runtime_client import (
     CaptureSourceKind,
     CaptureEventType,
 )
+from cert_prep_backend.capture_integration.source_kind import to_capture_source_kind
 from cert_prep_backend.api.errors import not_found_error
 from cert_prep_backend.capture_integration.application import use_cases as capture_reviews
 from cert_prep_backend.capture_integration.application.errors import CaptureEventStreamFailed
@@ -226,7 +227,7 @@ def _event_source_kind(
     kind = capture_reviews.capture_source_kind(
         documents, project_id=project_id, document_id=document_id
     )
-    return CaptureSourceKind.PDF if kind == "pdf" else CaptureSourceKind.IMAGE
+    return to_capture_source_kind(kind)
 
 
 def _terminal_host_event(

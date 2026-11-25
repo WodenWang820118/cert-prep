@@ -21,7 +21,7 @@ from cert_prep_contracts.llm import (
     LLMProviderName,
     LLMProviderPreference,
 )
-from cert_prep_contracts.runtime import RuntimeRequirementKind
+from cert_prep_contracts.llm_installation import LLMRequirementKind
 
 
 class MachineCpuRead(BaseModel):
@@ -143,8 +143,8 @@ class LLMProviderSelectionRead(BaseModel):
     effective_model: str
     selection_reason: str
     fallback_reason: str | None = None
-    runtime_requirement_kind: RuntimeRequirementKind | None = None
-    model_requirement_kind: RuntimeRequirementKind | None = None
+    llm_engine_requirement_kind: LLMRequirementKind | None = None
+    model_requirement_kind: LLMRequirementKind | None = None
 
 
 class OllamaModelProfileRead(BaseModel):

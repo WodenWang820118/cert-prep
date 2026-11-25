@@ -29,7 +29,7 @@ from cert_prep_contracts.llm import (
 )
 from cert_prep_backend.platform.errors import LanguageModelUnavailable
 from cert_prep_contracts.llm_profiles import OllamaProfileSelection
-from cert_prep_contracts.runtime import RuntimeRequirementKind
+from cert_prep_contracts.llm_installation import LLMRequirementKind
 from cert_prep_ollama.device_status import DeviceStatus
 from cert_prep_ollama.models import extract_model_names, pull_progress
 from cert_prep_ollama.server import ensure_ollama_server_running, resolve_ollama_executable
@@ -71,8 +71,8 @@ class OllamaProvider:
             _LOGGER.warning("Ollama CPU fallback: %s", self.execution_policy.warning)
 
     @property
-    def runtime_requirement_kind(self) -> RuntimeRequirementKind:
-        return RuntimeRequirementKind.OLLAMA
+    def llm_engine_requirement_kind(self) -> LLMRequirementKind:
+        return LLMRequirementKind.OLLAMA
 
     @property
     def starts_on_generation(self) -> bool:

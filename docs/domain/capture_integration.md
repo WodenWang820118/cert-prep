@@ -201,7 +201,7 @@ sequenceDiagram
 - Capture Runtime：anticorruption layer（D8）。`application` 不得 import `capture_runtime_client`。SDK 型別留在 infrastructure，以及 router 的回應模型。
 - 教材來源的不經檢閱匯入：`CaptureSourceExtraction` 呼叫 coordinator 與 `publish_capture_document`，不建立檢閱；教材來源只認得它的 port `SourceExtraction`。
 
-擷取整合不依賴練習與複習、執行環境（import-linter「Capture Integration, Practice and Runtime Provisioning do not depend on each other」）。
+擷取整合不依賴練習與複習、執行環境（import-linter「Capture Integration, Practice and LLM Provisioning do not depend on each other」）。
 
 ## 規則與資料來源
 

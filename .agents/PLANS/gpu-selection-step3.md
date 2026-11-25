@@ -273,7 +273,7 @@ Model it on `tests/unit/test_gpu_inventory_contract.py:22-65`.
 
 6. **Device chooser.** Status: done in this change (together with slice 5).
    - Depends on 4 and 5.
-   - Changes: `runtime-api-clients.service.ts`; a new `device-preference.store.ts`; the UI component.
+   - Changes: `llm-api-clients.service.ts`; a new `device-preference.store.ts`; the UI component.
    - Tests: store spec (PUT, then reload health and preference); e2e chooses CPU and asserts the PUT body and the CPU status.
    - Fetch the preference only on `/runtime`, or the full-journey `seenPaths` equality fails (`mocked-journeys.spec.ts:59`; `mock-api.ts:1020-1040`).
 

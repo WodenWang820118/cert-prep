@@ -60,7 +60,7 @@ export class SourceDocumentStatusComponent {
       case 'extraction_failed':
         return 'Source could not be read';
       case 'transcription_failed':
-        return 'Audio transcription failed';
+        return 'Recording transcription failed';
       default:
         return 'Source needs attention';
     }
@@ -106,7 +106,7 @@ export class SourceDocumentStatusComponent {
       document?.transcription_warning !== null &&
       document?.transcription_warning !== undefined
     ) {
-      return 'Some audio segments need a quick review before practice.';
+      return 'Some recording segments need a quick review before practice.';
     }
     if (document?.status === 'ready' && document.extraction_warnings) {
       return 'Check the extracted text before practice.';

@@ -155,7 +155,7 @@ function ocrDocumentRecord(): Record<string, unknown> {
     has_text: true,
     status: 'ready',
     extraction_method: 'text_recognition',
-    source_kind: 'document',
+    source_kind: 'pdf',
   };
 }
 

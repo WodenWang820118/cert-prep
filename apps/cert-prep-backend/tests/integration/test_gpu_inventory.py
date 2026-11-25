@@ -34,7 +34,7 @@ def test_machine_inventory_endpoint_preserves_native_gpu_evidence(
         ),
     )
     monkeypatch.setattr(machine_inventory, "collect_machine_inventory", lambda **kwargs: snapshot)
-    response = client.get("/runtime/machine-inventory?refresh=true", headers=auth_headers)
+    response = client.get("/llm/machine-inventory?refresh=true", headers=auth_headers)
     assert response.status_code == 200
     accelerator = response.json()["accelerators"][0]
     assert accelerator["classification"] == "integrated"

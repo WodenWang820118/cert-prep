@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import PurePath
 from typing import Final
 
+from cert_prep_contracts.documents import SourceKind as SourceKind
+
 from cert_prep_backend.source_library.domain.exam_content import ContentProfileValue
 from cert_prep_backend.source_library.domain.exceptions import SourceDocumentUnavailable
 from cert_prep_backend.source_library.domain.statuses import (
@@ -31,11 +33,13 @@ def language_hint_or_auto(language_hint: str) -> str:
     return language_hint if language_hint in LANGUAGE_HINTS else "auto"
 
 
-def upload_size_limit(filename: str | None, *, max_bytes: int, max_audio_bytes: int) -> int:
+def upload_size_limit(
+    filename: str | None, *, max_page_source_bytes: int, max_recording_bytes: int
+) -> int:
     """The size limit of an upload: a recording, judged by its file name, has its own."""
 
-    is_audio = PurePath(filename or "").suffix.lower() in AUDIO_MEDIA_TYPES
-    return max_audio_bytes if is_audio else max_bytes
+    is_recording = PurePath(filename or "").suffix.lower() in AUDIO_MEDIA_TYPES
+    return max_recording_bytes if is_recording else max_page_source_bytes
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,7 +99,7 @@ class SourceDocument:
     chunks_count: int
     created_at: str
     updated_at: str
-    source_kind: str = "document"
+    source_kind: SourceKind
     duration_ms: int | None = None
     transcription_status: str = "not_applicable"
     translation_status: str = "not_applicable"
@@ -108,7 +112,7 @@ class SourceDocument:
     def ensure_markdown_exportable(self) -> None:
         """Only a PDF whose processing has completed has a Markdown projection."""
 
-        if self.source_kind != "document" or PurePath(self.filename).suffix.lower() != ".pdf":
+        if self.source_kind != "pdf":
             raise SourceDocumentUnavailable(
                 MARKDOWN_UNAVAILABLE,
                 "Markdown projection is currently available for PDF documents only.",
@@ -136,9 +140,9 @@ class SourceDocument:
     def ensure_playable(self) -> None:
         """Only a recording has a source that can be played."""
 
-        if self.source_kind != "audio":
+        if self.source_kind != "recording":
             raise SourceDocumentUnavailable(
-                AUDIO_SOURCE_UNAVAILABLE, "Only audio documents have a playable source."
+                AUDIO_SOURCE_UNAVAILABLE, "Only recordings have a playable source."
             )
 
 

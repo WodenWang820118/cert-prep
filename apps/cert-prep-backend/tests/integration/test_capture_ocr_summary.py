@@ -487,7 +487,7 @@ def _app(tmp_path: Path, runtime: RecordingOcrRuntime):
         llm_provider=provider,
         capture_runtime_client=runtime,
         document_processing_async_jobs=False,
-        runtime_installation_async_jobs=False,
+        llm_installation_async_jobs=False,
         streaming_draft_generation_async_jobs=False,
     )
     provider.calls.clear()
@@ -523,6 +523,7 @@ def _create_capture_session(
         project_id=project_id,
         operation_id=operation_id,
         filename="private-source.pdf",
+        source_kind="pdf",
         sha256="a" * 64,
         language_hint="auto",
         storage_path="C:/private/private-source.pdf",

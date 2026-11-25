@@ -17,7 +17,7 @@ import {
   emptyWrongAnswerSummary,
 } from '../testing';
 import { DesktopRuntimeBridgeService } from '../../runtime/data/desktop-runtime-bridge.service';
-import type { DesktopRuntimeStatus } from '../../runtime/domain';
+import type { RuntimeStatus } from '../../runtime/domain';
 import { OperationStore } from '../data';
 import { ProjectStore } from '../../projects/data';
 import { WorkspaceFacade } from './workspace.facade';
@@ -171,13 +171,13 @@ describe('App runtime loading', () => {
             'Python backend runtime is required.',
           );
           expect(apiClient.health).toHaveBeenCalledTimes(1);
-          expect(apiClient.runtimeRequirements).toHaveBeenCalledTimes(1);
+          expect(apiClient.llmRequirements).toHaveBeenCalledTimes(1);
         });
       });
   });
 
   it('loads projects even when optional runtime health is temporarily unavailable', () => {
-    apiClient.runtimeRequirements.mockReturnValueOnce(
+    apiClient.llmRequirements.mockReturnValueOnce(
       throwError(() => new Error('runtime requirements unavailable')),
     );
 
@@ -604,9 +604,9 @@ function createApiClient() {
       .mockReturnValue(
         throwError(() => new Error('Device preference unavailable')),
       ),
-    runtimeRequirements: vi.fn().mockReturnValue(of({ items: [] })),
-    startRuntimeInstallation: vi.fn(),
-    getRuntimeInstallation: vi.fn(),
+    llmRequirements: vi.fn().mockReturnValue(of({ items: [] })),
+    startLlmInstallation: vi.fn(),
+    getLlmInstallation: vi.fn(),
     listProjects: vi.fn().mockReturnValue(of({ items: [appProject] })),
     listDocuments: vi.fn().mockReturnValue(of({ items: [appDocument] })),
     getDocument: vi.fn().mockReturnValue(of(appDocument)),
@@ -622,7 +622,7 @@ function createApiClient() {
   };
 }
 
-function missingPythonRuntimeStatus(): DesktopRuntimeStatus {
+function missingPythonRuntimeStatus(): RuntimeStatus {
   return {
     kind: 'python_backend',
     label: 'Python backend',

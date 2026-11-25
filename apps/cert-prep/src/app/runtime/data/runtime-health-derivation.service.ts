@@ -1,21 +1,21 @@
+import type { LLMRequirementKind } from '../../core/domain';
 import { Injectable } from '@angular/core';
 import type {
   LLMHealthRead,
-  RuntimeRequirementRead,
+  LLMRequirementRead,
 } from '../../core/domain';
 import {
   LLM_RUNTIME_MISSING_REASON_CODES,
 } from '../domain';
 import type {
   LLMProviderSelectionRead,
-  RuntimeKind,
 } from '../domain';
 
 @Injectable({ providedIn: 'root' })
 export class RuntimeHealthDerivationService {
   isModelMissing(
     health: LLMHealthRead | null,
-    requirements: readonly RuntimeRequirementRead[] = [],
+    requirements: readonly LLMRequirementRead[] = [],
   ): boolean {
     return (
       this.modelRequirementMissing(requirements, 'ollama_model') ||
@@ -25,7 +25,7 @@ export class RuntimeHealthDerivationService {
 
   isOllamaMissing(
     health: LLMHealthRead | null,
-    requirements: readonly RuntimeRequirementRead[],
+    requirements: readonly LLMRequirementRead[],
   ): boolean {
     return (
       this.unavailableReason(health) === 'ollama_missing' ||
@@ -35,11 +35,11 @@ export class RuntimeHealthDerivationService {
 
   isLlmRuntimeMissing(
     health: LLMHealthRead | null,
-    requirements: readonly RuntimeRequirementRead[],
+    requirements: readonly LLMRequirementRead[],
     selection: LLMProviderSelectionRead | null = null,
   ): boolean {
     const selectedKind = this.normalizedCode(
-      selection?.runtime_requirement_kind,
+      selection?.llm_engine_requirement_kind,
     );
     if (selectedKind === 'ollama') {
       return this.isOllamaMissing(health, requirements);
@@ -101,7 +101,7 @@ export class RuntimeHealthDerivationService {
     health: LLMHealthRead | null,
     selectionOrRequirements:
       | LLMProviderSelectionRead
-      | readonly RuntimeRequirementRead[]
+      | readonly LLMRequirementRead[]
       | null = null,
   ): boolean {
     const requirements = this.isRequirementList(selectionOrRequirements)
@@ -124,8 +124,8 @@ export class RuntimeHealthDerivationService {
   }
 
   private runtimeUnavailableReason(
-    requirements: readonly RuntimeRequirementRead[],
-    kind: RuntimeKind,
+    requirements: readonly LLMRequirementRead[],
+    kind: LLMRequirementKind,
   ): string {
     const requirement = requirements.find((item) => item.kind === kind);
     return this.normalizedCode(requirement?.unavailable_reason);
@@ -139,14 +139,14 @@ export class RuntimeHealthDerivationService {
   }
 
   private isRequirementList(
-    value: LLMProviderSelectionRead | readonly RuntimeRequirementRead[] | null,
-  ): value is readonly RuntimeRequirementRead[] {
+    value: LLMProviderSelectionRead | readonly LLMRequirementRead[] | null,
+  ): value is readonly LLMRequirementRead[] {
     return Array.isArray(value);
   }
 
   private modelRequirementMissing(
-    requirements: readonly RuntimeRequirementRead[],
-    kind: Extract<RuntimeKind, 'ollama_model'>,
+    requirements: readonly LLMRequirementRead[],
+    kind: Extract<LLMRequirementKind, 'ollama_model'>,
   ): boolean {
     const requirement = requirements.find((item) => item.kind === kind);
     return (

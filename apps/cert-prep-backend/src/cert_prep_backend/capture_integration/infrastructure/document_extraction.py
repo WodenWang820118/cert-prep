@@ -5,8 +5,11 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
-from capture_runtime_client import CaptureSourceKind, CaptureTransportError
+from capture_runtime_client import CaptureTransportError
 
+from cert_prep_contracts.documents import SourceKind
+
+from cert_prep_backend.capture_integration.source_kind import to_capture_source_kind
 from cert_prep_backend.capture_integration.application.messages import (
     REQUIREMENT_UNAVAILABLE_CODE,
     extraction_failure_message,
@@ -80,25 +83,22 @@ class CaptureSourceExtraction:
         file_name: str,
         content: bytes,
         canonical_suffix: str,
-        source_kind: str,
+        source_kind: SourceKind,
         sha256: str,
         language_hint: str,
         should_cancel: Callable[[], bool],
     ) -> SourceDocument:
-        is_audio = source_kind == "audio"
+        is_recording = source_kind == "recording"
         try:
             capture = self._coordinator.capture(
                 operation_id=operation_id,
                 file_name=file_name,
                 content=content,
                 media_type=_MEDIA_TYPES.get(canonical_suffix.lower(), "application/octet-stream"),
-                # Cert stores "audio"; Capture names that source kind "recording".
-                source_kind=CaptureSourceKind.RECORDING
-                if is_audio
-                else CaptureSourceKind(source_kind),
-                target_language="zh-Hant" if is_audio else None,
+                source_kind=to_capture_source_kind(source_kind),
+                target_language="zh-Hant" if is_recording else None,
                 should_cancel=should_cancel,
-                spoken_language=capture_spoken_language(language_hint) if is_audio else None,
+                spoken_language=capture_spoken_language(language_hint) if is_recording else None,
             )
         except CaptureTransportError as error:
             raise CaptureRuntimeUnavailable("Capture Runtime is unavailable.") from error

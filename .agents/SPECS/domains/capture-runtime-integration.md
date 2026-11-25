@@ -53,7 +53,7 @@ mixed-result arbitration or provider fallback.
   mismatch is rejected before commit. Durable provenance keeps allowlisted
   runtime/model/device/profile fields, never tokens, local paths or raw
   diagnostics. Host structuring state never becomes OCR provenance.
-- Audio requires the `speech-recognition` requirement and persists
+- A recording requires the `speech-recognition` requirement and persists
   time-located transcript segments.
 
 ## Compute preflight
@@ -73,10 +73,10 @@ host never retries on CPU.
 
 ## Single production path
 
-- PDF, image and audio uploads use `CertPrepCaptureCoordinator ->
+- PDF, image and recording uploads use `CertPrepCaptureCoordinator ->
   CaptureRuntimeClient`. The backend checks readiness before creating a
   capture and admits PDF/image only with a ready `text-recognition` requirement and
-  audio only with a ready `speech-recognition` requirement.
+  recordings only with a ready `speech-recognition` requirement.
 - Transfer and capture use only the v2 lifecycle: checksum-bound ordered
   ingestion chunks, finalize, start with idempotent uncertain-create recovery by
   client request id, and authenticated replayable SSE with `Last-Event-ID`.

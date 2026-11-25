@@ -16,23 +16,23 @@ from cert_prep_contracts import (
     OllamaModelProfile,
     OllamaProfileSelection,
     OllamaProfileSupportStatus,
-    RuntimeInstallationStatus,
-    RuntimeInstallProgress,
-    RuntimeRequirementKind,
-    RuntimeRequirementSnapshot,
+    LLMInstallationStatus,
+    LLMInstallProgress,
+    LLMRequirementKind,
+    LLMRequirementSnapshot,
 )
 
 
 def test_runtime_contracts_are_value_types() -> None:
-    requirement = RuntimeRequirementSnapshot(
-        kind=RuntimeRequirementKind.OLLAMA_MODEL,
+    requirement = LLMRequirementSnapshot(
+        kind=LLMRequirementKind.OLLAMA_MODEL,
         label="Reasoning model",
         available=False,
         detail="runtime missing",
         unavailable_reason="model_missing",
         bytes=100,
     )
-    progress = RuntimeInstallProgress(
+    progress = LLMInstallProgress(
         "downloading",
         completed=10,
         total=100,
@@ -42,9 +42,9 @@ def test_runtime_contracts_are_value_types() -> None:
 
     assert requirement.kind.value == "ollama_model"
     assert requirement.bytes == progress.total
-    assert RuntimeInstallationStatus.RUNNING.value == "running"
-    assert RuntimeInstallationStatus.CANCEL_REQUESTED.value == "cancel_requested"
-    assert RuntimeInstallationStatus.CANCELED.value == "canceled"
+    assert LLMInstallationStatus.RUNNING.value == "running"
+    assert LLMInstallationStatus.CANCEL_REQUESTED.value == "cancel_requested"
+    assert LLMInstallationStatus.CANCELED.value == "canceled"
     assert progress.phase == "downloading"
     assert progress.cancellable is True
 
@@ -63,8 +63,8 @@ def test_llm_runtime_policy_and_provider_selection_are_shared_value_types() -> N
         effective_model=DEFAULT_LLM_RUNTIME_POLICY.primary_model,
         selection_reason="selected local Ollama provider",
         fallback_reason=None,
-        runtime_requirement_kind=RuntimeRequirementKind.OLLAMA,
-        model_requirement_kind=RuntimeRequirementKind.OLLAMA_MODEL,
+        llm_engine_requirement_kind=LLMRequirementKind.OLLAMA,
+        model_requirement_kind=LLMRequirementKind.OLLAMA_MODEL,
     )
     attribution = GenerationAttribution("future-provider", "future-model")
 

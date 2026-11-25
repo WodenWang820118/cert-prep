@@ -31,7 +31,7 @@ export class SourceEvidencePreviewComponent {
   }
 
   protected segmentPlaybackLabel(chunk: ChunkRead): string {
-    return `Play audio from ${this.formatTimestamp(chunk.start_ms)}`;
+    return `Play recording from ${this.formatTimestamp(chunk.start_ms)}`;
   }
 
   protected playTranscriptChunk(chunk: ChunkRead): void {

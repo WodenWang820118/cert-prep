@@ -45,6 +45,7 @@ describe('WrongAnswerRetryComponent', () => {
     id: wrongAnswer.document_id ?? 'document-1',
     project_id: project.id,
     filename: 'security.pdf',
+    source_kind: 'pdf',
     sha256: 'abc123',
     language_hint: 'en',
     page_count: 10,

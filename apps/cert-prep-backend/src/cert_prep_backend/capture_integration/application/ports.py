@@ -7,6 +7,7 @@ from sqlite3 import Connection
 from typing import Protocol
 from uuid import UUID
 
+from cert_prep_contracts.documents import SourceKind
 from cert_prep_contracts.transcription import TranscriptSegment
 
 from cert_prep_backend.capture_integration.application.results import (
@@ -29,7 +30,7 @@ from cert_prep_backend.source_library.domain.operation import DocumentOperation
 class PreparedCaptureSource(Protocol):
     """The prepared-source attributes a capture review reads. It is not PreparedSource."""
 
-    kind: str
+    kind: SourceKind
     canonical_suffix: str
     page_count: int
 
@@ -72,6 +73,7 @@ class CaptureDocuments(Protocol):
         language_hint: str,
         storage_path: str,
         page_count: int,
+        source_kind: SourceKind,
     ) -> SourceDocument: ...
 
 
@@ -180,7 +182,7 @@ class CaptureReviewWorkflow(Protocol):
         file_name: str,
         content: bytes,
         media_type: str,
-        source_kind: str,
+        source_kind: SourceKind,
         should_cancel: Callable[[], bool],
         on_runtime_started: Callable[[str], None],
     ) -> None: ...

@@ -14,7 +14,7 @@ import type {
   PracticeSessionRead,
   ProjectRead,
   QuestionDraftRead,
-  RuntimeRequirementsRead,
+  LLMRequirementsRead,
   WrongAnswerExplanationRead,
   WrongAnswerRead,
   WrongAnswerSummaryRead,
@@ -492,17 +492,17 @@ export async function installMockCertPrepApi(
         effective_model: 'qwen3.5:4b',
         selection_reason: 'Deterministic browser-test provider.',
         fallback_reason: null,
-        runtime_requirement_kind: null,
+        llm_engine_requirement_kind: null,
         model_requirement_kind: null,
       } satisfies LLMProviderSelectionRead;
       await fulfillJson(route, 200, body);
       return;
     }
 
-    if (method === 'GET' && path === '/runtime/requirements') {
+    if (method === 'GET' && path === '/llm/requirements') {
       const body = {
         items: [],
-      } satisfies RuntimeRequirementsRead;
+      } satisfies LLMRequirementsRead;
       await fulfillJson(route, 200, body);
       return;
     }
@@ -913,8 +913,19 @@ function createAdditionalUploadDocument(
     id = `document-upload-${index}`;
   }
 
+  const extension = filename?.match(/\.([^.]+)$/u)?.[1]?.toLowerCase();
+  let sourceKind = baseDocument.source_kind ?? 'pdf';
+  if (extension === 'pdf') {
+    sourceKind = 'pdf';
+  } else if (extension && ['jpg', 'jpeg', 'png', 'webp'].includes(extension)) {
+    sourceKind = 'image';
+  } else if (extension && ['mp3', 'wav', 'm4a'].includes(extension)) {
+    sourceKind = 'recording';
+  }
+
   return {
     ...baseDocument,
+    source_kind: sourceKind,
     id,
     filename: filename ?? `${baseDocument.filename}-upload-${index}`,
     sha256: `${id}-sha`,
@@ -1130,7 +1141,7 @@ export function expectedSeenPaths(api: MockCertPrepApi): Set<string> {
     'GET /health',
     'GET /llm/health',
     'GET /llm/provider-selection',
-    'GET /runtime/requirements',
+    'GET /llm/requirements',
     'GET /projects',
     'POST /projects',
     `GET /projects/${api.project.id}/documents`,
@@ -1160,6 +1171,7 @@ function documentRead(
     id: 'document-1',
     project_id: projectId,
     filename: 'jlpt-n1.pdf',
+    source_kind: 'pdf',
     sha256: 'abc123',
     page_count: 2,
     has_text: true,

@@ -86,7 +86,7 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
         "auto",
         "cpu",
     ]
-    assert _enum_values(openapi, "RuntimeRequirementRead", "kind") == [
+    assert _enum_values(openapi, "LLMRequirementRead", "kind") == [
         "ollama",
         "ollama_model",
     ]
@@ -128,7 +128,7 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
         "succeeded",
         "failed",
     ]
-    assert _enum_values(openapi, "RuntimeInstallationRead", "status") == [
+    assert _enum_values(openapi, "LLMInstallationRead", "status") == [
         "queued",
         "running",
         "cancel_requested",
@@ -190,8 +190,7 @@ def test_document_operation_routes_and_upload_header_are_documented(tmp_path) ->
         "/projects/{project_id}/documents/{document_id}/document-operation/events",
         "/projects/{project_id}/documents/{document_id}/draft-jobs/events",
         "/projects/{project_id}/documents/{document_id}/draft-operations/{operation_id}/events",
-        "/runtime/installations/{job_id}/events",
-        "/llm/model-downloads/{job_id}/events",
+        "/llm/installations/{job_id}/events",
     ):
         assert "text/event-stream" in openapi["paths"][path]["get"]["responses"][
             "200"
@@ -338,8 +337,7 @@ def test_commit_started_at_is_optional_and_nullable_for_durable_jobs(tmp_path) -
 
     for schema_name in (
         "ManualDraftGenerationOperationRead",
-        "ModelDownloadRead",
-        "RuntimeInstallationRead",
+        "LLMInstallationRead",
     ):
         schema = openapi["components"]["schemas"][schema_name]
         assert "commit_started_at" not in schema.get("required", [])

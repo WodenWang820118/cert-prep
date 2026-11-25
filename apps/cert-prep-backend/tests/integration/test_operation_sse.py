@@ -12,15 +12,15 @@ from cert_prep_backend.ai_providers.infrastructure.machine_inventory import Olla
 from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.platform.sse import operation_snapshot_stream
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.runtime_provisioning.infrastructure.manager import RuntimeInstallationManager
+from cert_prep_backend.llm_provisioning.infrastructure.manager import LLMInstallationManager
 from cert_prep_backend.source_library.infrastructure import operations as document_operations
 from cert_prep_backend.platform.change_notifications import DatabaseChangeNotifier
 from cert_prep_backend.platform.database import Database
-from cert_prep_contracts.runtime import (
-    RuntimeInstallationStatus,
-    RuntimeInstallProgress,
-    RuntimeRequirementKind,
-    RuntimeRequirementSnapshot,
+from cert_prep_contracts.llm_installation import (
+    LLMInstallationStatus,
+    LLMInstallProgress,
+    LLMRequirementKind,
+    LLMRequirementSnapshot,
 )
 
 
@@ -128,13 +128,13 @@ def test_operation_snapshot_stream_observes_revision_before_initial_snapshot() -
 @pytest.mark.parametrize(
     ("kind", "event_name"),
     [
-        (RuntimeRequirementKind.OLLAMA, "runtime-installation"),
-        (RuntimeRequirementKind.OLLAMA_MODEL, "model-download"),
+        (LLMRequirementKind.OLLAMA, "llm-installation"),
+        (LLMRequirementKind.OLLAMA_MODEL, "llm-installation"),
     ],
 )
 def test_runtime_manager_db_commits_wake_operation_stream(
     tmp_path,
-    kind: RuntimeRequirementKind,
+    kind: LLMRequirementKind,
     event_name: str,
 ) -> None:
     notifier = DatabaseChangeNotifier()
@@ -147,11 +147,11 @@ def test_runtime_manager_db_commits_wake_operation_stream(
         provider = "test-installer"
         model = "test-model"
 
-        def __init__(self, installer_kind: RuntimeRequirementKind) -> None:
+        def __init__(self, installer_kind: LLMRequirementKind) -> None:
             self.kind = installer_kind
 
-        def requirement(self) -> RuntimeRequirementSnapshot:
-            return RuntimeRequirementSnapshot(
+        def requirement(self) -> LLMRequirementSnapshot:
+            return LLMRequirementSnapshot(
                 kind=self.kind,
                 label="Test runtime requirement",
                 available=False,
@@ -160,9 +160,9 @@ def test_runtime_manager_db_commits_wake_operation_stream(
                 bytes=2,
             )
 
-        def install(self, progress) -> RuntimeInstallationStatus:
+        def install(self, progress) -> LLMInstallationStatus:
             progress(
-                RuntimeInstallProgress(
+                LLMInstallProgress(
                     "Test installation is running.",
                     completed=1,
                     total=2,
@@ -172,9 +172,9 @@ def test_runtime_manager_db_commits_wake_operation_stream(
             )
             progress_emitted.set()
             release_install.wait(timeout=2)
-            return RuntimeInstallationStatus.SUCCEEDED
+            return LLMInstallationStatus.SUCCEEDED
 
-    manager = RuntimeInstallationManager(
+    manager = LLMInstallationManager(
         settings=settings,
         llm_provider=object(),
         machine_inventory=OllamaMachineInventory(settings),
@@ -191,9 +191,9 @@ def test_runtime_manager_db_commits_wake_operation_stream(
             event_name=event_name,
             is_terminal=lambda value: value["status"]
             in {
-                RuntimeInstallationStatus.CANCELED,
-                RuntimeInstallationStatus.SUCCEEDED,
-                RuntimeInstallationStatus.FAILED,
+                LLMInstallationStatus.CANCELED,
+                LLMInstallationStatus.SUCCEEDED,
+                LLMInstallationStatus.FAILED,
             },
             last_event_id=None,
         )
@@ -205,7 +205,7 @@ def test_runtime_manager_db_commits_wake_operation_stream(
         terminal = next(stream)
         assert f"event: {event_name}" in terminal
         terminal_payload = json.loads(terminal.split("data: ", 1)[1].strip())
-        assert terminal_payload["status"] == RuntimeInstallationStatus.SUCCEEDED
+        assert terminal_payload["status"] == LLMInstallationStatus.SUCCEEDED
         assert notifier.revision() >= 3
     finally:
         release_install.set()
@@ -283,6 +283,7 @@ def test_document_operation_events_active_route_does_not_expose_recovered_operat
             project_id=project_id,
             operation_id=operation_id,
             filename="restart.pdf",
+            source_kind="pdf",
             sha256="a" * 64,
             language_hint="en",
             storage_path=str(tmp_path / "restart.pdf"),
@@ -346,6 +347,7 @@ def test_document_operation_events_streams_an_active_operation(tmp_path) -> None
             project_id=project_id,
             operation_id=operation_id,
             filename="active.pdf",
+            source_kind="pdf",
             sha256="b" * 64,
             language_hint="en",
             storage_path=str(tmp_path / "active.pdf"),

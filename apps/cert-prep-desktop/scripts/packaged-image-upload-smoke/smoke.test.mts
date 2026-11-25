@@ -227,7 +227,7 @@ function ocrDocument(): Record<string, unknown> {
     project_id: 'project-1',
     filename: 'ocr_test_image.jpeg',
     sha256: 'a'.repeat(64),
-    source_kind: 'document',
+    source_kind: 'image',
     status: 'ready',
     page_count: 1,
     processed_page_count: 1,

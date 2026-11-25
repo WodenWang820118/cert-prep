@@ -2,18 +2,18 @@ import { computed, inject, Injectable, signal } from '@angular/core';
 import {
   HealthResponse,
   LLMHealthRead,
-  RuntimeRequirementRead,
+  LLMRequirementRead,
 } from '../../core/domain';
 import type {
   HealthSnapshot,
   LLMProviderSelectionRead,
 } from '../domain';
-import { RuntimeActionsStore } from './runtime-actions.store';
+import { LLMInstallationActionsStore } from './llm-installation-actions.store';
 import { RuntimeHealthDerivationService } from './runtime-health-derivation.service';
 
 @Injectable({ providedIn: 'root' })
 export class HealthStatusStore {
-  private readonly actions = inject(RuntimeActionsStore);
+  private readonly actions = inject(LLMInstallationActionsStore);
   private readonly runtimeHealth = inject(RuntimeHealthDerivationService);
   private healthSnapshotLoadCount = 0;
 
@@ -21,10 +21,10 @@ export class HealthStatusStore {
   readonly systemHealth = signal<HealthResponse | null>(null);
   readonly providerSelection = signal<LLMProviderSelectionRead | null>(null);
   readonly healthSnapshotLoading = signal(false);
-  readonly runtimeRequirements = signal<RuntimeRequirementRead[]>([]);
+  readonly llmRequirements = signal<LLMRequirementRead[]>([]);
 
   readonly isModelMissing = computed(() =>
-    this.runtimeHealth.isModelMissing(this.llmHealth(), this.runtimeRequirements()),
+    this.runtimeHealth.isModelMissing(this.llmHealth(), this.llmRequirements()),
   );
   readonly isConfiguredModelMissing = computed(() =>
     this.runtimeHealth.isConfiguredModelMissing(
@@ -35,13 +35,13 @@ export class HealthStatusStore {
   readonly isOllamaMissing = computed(() =>
     this.runtimeHealth.isOllamaMissing(
       this.llmHealth(),
-      this.runtimeRequirements(),
+      this.llmRequirements(),
     ),
   );
   readonly isLlmRuntimeMissing = computed(() =>
     this.runtimeHealth.isLlmRuntimeMissing(
       this.llmHealth(),
-      this.runtimeRequirements(),
+      this.llmRequirements(),
       this.providerSelection(),
     ),
   );
@@ -90,8 +90,8 @@ export class HealthStatusStore {
     if (snapshot.providerSelection !== undefined) {
       this.providerSelection.set(snapshot.providerSelection);
     }
-    if (snapshot.runtimeRequirements !== undefined) {
-      this.runtimeRequirements.set(snapshot.runtimeRequirements);
+    if (snapshot.llmRequirements !== undefined) {
+      this.llmRequirements.set(snapshot.llmRequirements);
     }
   }
 

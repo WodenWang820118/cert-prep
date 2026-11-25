@@ -11,11 +11,11 @@ from cert_prep_contracts.hardware import (
     MachineStorageSnapshot,
 )
 from cert_prep_contracts.llm import ModelPullProgress
-from cert_prep_contracts.runtime import (
-    RuntimeInstallationStatus,
-    RuntimeInstallProgress,
-    RuntimeRequirementKind,
-    RuntimeRequirementSnapshot,
+from cert_prep_contracts.llm_installation import (
+    LLMInstallationStatus,
+    LLMInstallProgress,
+    LLMRequirementKind,
+    LLMRequirementSnapshot,
 )
 
 
@@ -23,7 +23,7 @@ GIB = 1024 * 1024 * 1024
 
 
 class FakeProfileInstaller:
-    kind = RuntimeRequirementKind.OLLAMA_MODEL
+    kind = LLMRequirementKind.OLLAMA_MODEL
     provider = "ollama"
 
     def __init__(
@@ -36,8 +36,8 @@ class FakeProfileInstaller:
         self._events = events
         self._events.append(("init", profile.profile_id))
 
-    def requirement(self) -> RuntimeRequirementSnapshot:
-        return RuntimeRequirementSnapshot(
+    def requirement(self) -> LLMRequirementSnapshot:
+        return LLMRequirementSnapshot(
             kind=self.kind,
             label="Ollama profile model",
             available=False,
@@ -49,10 +49,10 @@ class FakeProfileInstaller:
     def validate_installable(self) -> None:
         return None
 
-    def install(self, progress) -> RuntimeInstallationStatus:
+    def install(self, progress) -> LLMInstallationStatus:
         self._events.append(("install", self.model))
-        progress(RuntimeInstallProgress("created profile model", completed=100, total=100))
-        return RuntimeInstallationStatus.SUCCEEDED
+        progress(LLMInstallProgress("created profile model", completed=100, total=100))
+        return LLMInstallationStatus.SUCCEEDED
 
 def _profile_inventory(
     *,

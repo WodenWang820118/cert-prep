@@ -7,6 +7,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
+from cert_prep_contracts.documents import SourceKind
+
 from cert_prep_backend.source_library.domain.document import (
     DocumentChunk,
     SourceDocument,
@@ -51,7 +53,7 @@ class DocumentRepository(Protocol):
         language_hint: str,
         storage_path: str,
         page_count: int,
-        source_kind: str = "document",
+        source_kind: SourceKind,
         duration_ms: int | None = None,
     ) -> SourceDocument:
         """Store a processing document and attach it to the upload that claimed the operation."""
@@ -129,7 +131,7 @@ class PreparedUpload(Protocol):
     """What the use cases read from a validated upload."""
 
     raw_bytes: bytes
-    kind: str
+    kind: SourceKind
     canonical_suffix: str
     page_count: int
     duration_ms: int | None
@@ -173,8 +175,8 @@ class SourceFileStore(Protocol):
 class SourceLimits(Protocol):
     """The size limits of a source, as the settings configure them."""
 
-    max_upload_bytes: int
-    max_audio_upload_bytes: int
+    max_page_source_upload_bytes: int
+    max_recording_upload_bytes: int
     max_pdf_pages: int
     max_image_pixels: int
 
@@ -241,7 +243,7 @@ class SourceExtraction(Protocol):
         file_name: str,
         content: bytes,
         canonical_suffix: str,
-        source_kind: str,
+        source_kind: SourceKind,
         sha256: str,
         language_hint: str,
         should_cancel: Callable[[], bool],

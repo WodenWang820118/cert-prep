@@ -17,7 +17,7 @@ from cert_prep_contracts.llm import (
     LLMExecutionMode,
     ModelPullProgress as _ModelPullProgress,
 )
-from cert_prep_contracts.runtime import RuntimeRequirementKind
+from cert_prep_contracts.llm_installation import LLMRequirementKind
 
 __all__ = [
     "DEFAULT_KEEP_ALIVE",
@@ -29,7 +29,7 @@ __all__ = [
     "ModelOnboardingProvider",
     "ProviderHealth",
     "ResourceReleasingProvider",
-    "RuntimeInstallationProvider",
+    "LLMInstallationProvider",
     "StartsOnGenerationProvider",
     "StreamingGenerationOptionsProvider",
     "StructuredJsonGenerationProvider",
@@ -196,11 +196,11 @@ class StartsOnGenerationProvider(Protocol):
 
 
 @runtime_checkable
-class RuntimeInstallationProvider(Protocol):
+class LLMInstallationProvider(Protocol):
     """Provider capability for declaring an installable local runtime."""
 
     @property
-    def runtime_requirement_kind(self) -> RuntimeRequirementKind | None:
+    def llm_engine_requirement_kind(self) -> LLMRequirementKind | None:
         """Return the provider runtime requirement, if it is locally installable."""
         pass
 

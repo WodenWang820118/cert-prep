@@ -80,7 +80,7 @@ describe('SourceAudioPreviewService', () => {
     expect(service.state()).toEqual({
       url: null,
       loading: false,
-      error: 'The source audio could not be loaded.',
+      error: 'The recording could not be loaded.',
     });
 
     service.retry();

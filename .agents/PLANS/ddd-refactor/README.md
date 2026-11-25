@@ -42,7 +42,7 @@ flowchart LR
     PROJ["學習專案<br/>Study Projects"]
     SRC["教材來源<br/>Source Library"]
     CAP["擷取整合<br/>Capture Integration"]
-    RUN["執行環境<br/>Runtime Provisioning"]
+    RUN["執行環境<br/>LLM Provisioning"]
   end
   subgraph 通用
     AI["AI 供應<br/>AI Providers"]
@@ -77,7 +77,7 @@ flowchart LR
 | 題目編寫   | `authoring`            | 解析、產生與編修題目草稿、產生工作                                    | `QuestionDraft`、`DraftGenerationJob`                  | `domains/mock_exams`（模型、repository、parser、streaming）                                  |
 | 練習與複習 | `practice`             | 練習、作答、錯題、解說                                                | `PracticeSession`、`PracticeAttempt`、`WrongAnswer`    | `domains/practice`、`routers/practice`；前端 `stores/practice`                               |
 | AI 供應    | `ai_providers`         | 選擇與呼叫 LLM、模型清單、假供應者                                    | `DraftGenerationProvider`（port）                      | `mock_exams` 的 provider*、ollama\_*、fake_provider；`packages/cert-prep-ollama`             |
-| 執行環境   | `runtime_provisioning` | 安裝與檢查 Ollama 執行環境與語言模型（Capture Runtime 由 Tauri 安裝） | `RuntimeInstallationJob`                               | `domains/runtime_installations`、`routers/runtime`；Tauri crate                              |
+| 執行環境   | `llm_provisioning`     | 安裝與檢查 Ollama 執行環境與語言模型（Capture Runtime 由 Tauri 安裝） | `LLMInstallationJob`                                   | `domains/runtime_installations`、`routers/runtime`；Tauri crate                              |
 | 平台       | `platform`             | 設定、錯誤型別、資料庫與 migration、SSE、作業事件、背景工作池         | —                                                      | `core/`、`persistence/`、`api/sse`、`operation_events`                                       |
 
 ## 4. 程式結構
@@ -91,7 +91,7 @@ apps/cert-prep-backend/src/cert_prep_backend/
   authoring/
   practice/
   ai_providers/
-  runtime_provisioning/
+  llm_provisioning/
   bootstrap/                create_app、依賴組裝（唯一可以 import 全部的地方）
 
 apps/cert-prep/src/app/

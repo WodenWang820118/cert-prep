@@ -8,7 +8,7 @@ import { namedSourceLanguage } from '../domain';
 @Injectable({ providedIn: 'root' })
 export class DocumentParsingMetricsService {
   progressPercent(document: DocumentRead | null): number {
-    if (document?.source_kind === 'audio') {
+    if (document?.source_kind === 'recording') {
       return this.audioProgressPercent(document);
     }
     if (document === null || document.page_count <= 0) {
@@ -25,7 +25,7 @@ export class DocumentParsingMetricsService {
     if (document === null) {
       return '0/0 pages';
     }
-    if (document.source_kind === 'audio') {
+    if (document.source_kind === 'recording') {
       return this.audioProgressLabel(document);
     }
     return `${this.completedPageCount(document)}/${document.page_count} pages`;
@@ -93,15 +93,15 @@ export class DocumentParsingMetricsService {
         : `${transcript} ready / translating to Traditional Chinese`;
     }
     if (document.status === 'cancel_requested') {
-      return 'Canceling audio processing';
+      return 'Canceling recording processing';
     }
     if (document.status === 'canceled') {
-      return 'Audio processing canceled';
+      return 'Recording processing canceled';
     }
     if (document.status === 'processing') {
-      return language ? `Transcribing ${language} audio` : 'Transcribing audio';
+      return language ? `Transcribing ${language} recording` : 'Transcribing recording';
     }
-    return 'Audio processing failed';
+    return 'Recording processing failed';
   }
 
   private formatElapsed(milliseconds: number): string {
