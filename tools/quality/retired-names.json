@@ -608,13 +608,808 @@
   {
     "name": "DesktopRuntimeInstallation.model",
     "match": "substring",
-    "replacement": "DesktopRuntimeInstallation.artifact",
+    "replacement": "RuntimeInstallation.artifact",
     "allowed": []
   },
   {
     "name": "DesktopRuntimeInstallation::model",
     "match": "substring",
-    "replacement": "DesktopRuntimeInstallation::artifact",
+    "replacement": "RuntimeInstallation::artifact",
     "allowed": []
+  },
+  {
+    "name": "desktop_runtime_status",
+    "match": "word",
+    "replacement": "backend_runtime_status",
+    "allowed": []
+  },
+  {
+    "name": "DesktopRuntimeStatus",
+    "match": "word",
+    "replacement": "RuntimeStatus",
+    "allowed": []
+  },
+  {
+    "name": "DesktopRuntimeInstallation",
+    "match": "word",
+    "replacement": "RuntimeInstallation",
+    "allowed": []
+  },
+  {
+    "name": "runtime_provisioning",
+    "match": "word",
+    "replacement": "llm_provisioning",
+    "allowed": []
+  },
+  {
+    "name": "cert_prep_contracts.runtime",
+    "match": "word",
+    "replacement": "cert_prep_contracts.llm_installation",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeRequirementKind",
+    "match": "word",
+    "replacement": "LLMRequirementKind",
+    "allowed": [
+      {
+        "glob": "packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json",
+        "reason": "Historical identifiers in retired vocabulary records."
+      }
+    ]
+  },
+  {
+    "name": "RuntimeRequirementSnapshot",
+    "match": "word",
+    "replacement": "LLMRequirementSnapshot",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeRequirementRead",
+    "match": "word",
+    "replacement": "LLMRequirementRead",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeRequirementsRead",
+    "match": "word",
+    "replacement": "LLMRequirementsRead",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeInstallProgress",
+    "match": "word",
+    "replacement": "LLMInstallProgress",
+    "allowed": []
+  },
+  {
+    "name": "cert_prep_contracts__runtime__RuntimeInstallationStatus",
+    "match": "word",
+    "replacement": "LLMInstallationStatus",
+    "allowed": [
+      {
+        "glob": "packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json",
+        "reason": "Historical identifiers in retired vocabulary records."
+      }
+    ]
+  },
+  {
+    "name": "RuntimeInstallationRead",
+    "match": "word",
+    "replacement": "LLMInstallationRead",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeInstallationEvent",
+    "match": "word",
+    "replacement": "LLMInstallationEvent",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeInstallationJob",
+    "match": "word",
+    "replacement": "LLMInstallationJob",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeInstallationPhase",
+    "match": "word",
+    "replacement": "LLMInstallationPhase",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeInstallationProgress",
+    "match": "word",
+    "replacement": "LLMInstallationProgress",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeInstallationSnapshot",
+    "match": "word",
+    "replacement": "LLMInstallationSnapshot",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeInstallationTarget",
+    "match": "word",
+    "replacement": "LLMInstallationTarget",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeInstallationCanceledError",
+    "match": "word",
+    "replacement": "LLMInstallationCanceledError",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeInstallationProvider",
+    "match": "word",
+    "replacement": "LLMInstallationProvider",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeInstaller",
+    "match": "word",
+    "replacement": "LLMInstaller",
+    "allowed": []
+  },
+  {
+    "name": "OllamaRuntimeInstaller",
+    "match": "word",
+    "replacement": "OllamaInstaller",
+    "allowed": []
+  },
+  {
+    "name": "ConfiguredRuntimeInstallers",
+    "match": "word",
+    "replacement": "ConfiguredLLMInstallers",
+    "allowed": []
+  },
+  {
+    "name": "ThreadRuntimeInstallationWork",
+    "match": "word",
+    "replacement": "ThreadLLMInstallationWork",
+    "allowed": []
+  },
+  {
+    "name": "/runtime/machine-inventory",
+    "match": "substring",
+    "replacement": "/llm/machine-inventory",
+    "allowed": []
+  },
+  {
+    "name": "/runtime/requirements",
+    "match": "substring",
+    "replacement": "/llm/requirements",
+    "allowed": [
+      {
+        "glob": "tools/capture-runtime-consumer-smoke.mts",
+        "reason": "Capture Runtime SDK uses the /v2/runtime route."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/unit/test_capture_runtime_v2_contract.py",
+        "reason": "Capture Runtime SDK uses the /v2/runtime route."
+      }
+    ]
+  },
+  {
+    "name": "/runtime/installations",
+    "match": "substring",
+    "replacement": "/llm/installations",
+    "allowed": [
+      {
+        "glob": "tools/capture-runtime-consumer-smoke.mts",
+        "reason": "Capture Runtime SDK uses the /v2/runtime route."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/unit/test_capture_runtime_v2_contract.py",
+        "reason": "Capture Runtime SDK uses the /v2/runtime route."
+      }
+    ]
+  },
+  {
+    "name": "/llm/model-downloads",
+    "match": "substring",
+    "replacement": "/llm/installations",
+    "allowed": []
+  },
+  {
+    "name": "model_download_router",
+    "match": "word",
+    "replacement": "llm_provisioning.api.router",
+    "allowed": []
+  },
+  {
+    "name": "ModelDownloadRead",
+    "match": "word",
+    "replacement": "LLMInstallationRead",
+    "allowed": []
+  },
+  {
+    "name": "ModelDownloadApiClient",
+    "match": "word",
+    "replacement": "LLMInstallationApiClient",
+    "allowed": []
+  },
+  {
+    "name": "ModelDownloadEvent",
+    "match": "word",
+    "replacement": "LLMInstallationEvent",
+    "allowed": []
+  },
+  {
+    "name": "model_download_events",
+    "match": "word",
+    "replacement": "llm_installation_events",
+    "allowed": []
+  },
+  {
+    "name": "runtime_installation_manager",
+    "match": "word",
+    "replacement": "llm_installation_manager",
+    "allowed": []
+  },
+  {
+    "name": "runtime_installation_async_jobs",
+    "match": "word",
+    "replacement": "llm_installation_async_jobs",
+    "allowed": []
+  },
+  {
+    "name": "runtime_requirement_kind",
+    "match": "word",
+    "replacement": "llm_engine_requirement_kind",
+    "allowed": []
+  },
+  {
+    "name": "runtime_install_timeout_seconds",
+    "match": "word",
+    "replacement": "llm_install_timeout_seconds",
+    "allowed": []
+  },
+  {
+    "name": "CERT_PREP_RUNTIME_INSTALL_TIMEOUT_SECONDS",
+    "match": "word",
+    "replacement": "CERT_PREP_LLM_INSTALL_TIMEOUT_SECONDS",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeApiClientsService",
+    "match": "word",
+    "replacement": "LLMApiClientsService",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeActionsStore",
+    "match": "word",
+    "replacement": "LLMInstallationActionsStore",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeJobViewService",
+    "match": "word",
+    "replacement": "LLMJobViewService",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeInstallationApiClient",
+    "match": "word",
+    "replacement": "LLMInstallationApiClient",
+    "allowed": []
+  },
+  {
+    "name": "runtime_installation_compat",
+    "match": "word",
+    "replacement": "llm_installation_compat",
+    "allowed": []
+  },
+  {
+    "name": "runtime_installers",
+    "match": "word",
+    "replacement": "llm_installers",
+    "allowed": []
+  },
+  {
+    "name": "runtime-provisioning.",
+    "match": "substring",
+    "replacement": "llm-provisioning.",
+    "allowed": [
+      {
+        "glob": "packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json",
+        "reason": "Historical identifiers in retired vocabulary records."
+      }
+    ]
+  },
+  {
+    "name": "RuntimeKind",
+    "match": "word",
+    "replacement": "LLMRequirementKind",
+    "allowed": []
+  },
+  {
+    "name": "start_model_download",
+    "match": "word",
+    "replacement": "start_llm_installation",
+    "allowed": []
+  },
+  {
+    "name": "startModelDownload",
+    "match": "word",
+    "replacement": "startLlmInstallation",
+    "allowed": []
+  },
+  {
+    "name": "startRuntimeInstallation",
+    "match": "word",
+    "replacement": "startLlmInstallation",
+    "allowed": []
+  },
+  {
+    "name": "get_runtime_installation",
+    "match": "word",
+    "replacement": "get_llm_installation",
+    "allowed": []
+  },
+  {
+    "name": "get_model_download",
+    "match": "word",
+    "replacement": "get_llm_installation",
+    "allowed": []
+  },
+  {
+    "name": "getModelDownload",
+    "match": "word",
+    "replacement": "getLlmInstallation",
+    "allowed": []
+  },
+  {
+    "name": "getRuntimeInstallation",
+    "match": "word",
+    "replacement": "getLlmInstallation",
+    "allowed": []
+  },
+  {
+    "name": "cancel_model_download",
+    "match": "word",
+    "replacement": "cancel_llm_installation",
+    "allowed": []
+  },
+  {
+    "name": "cancelRuntimeInstallation",
+    "match": "word",
+    "replacement": "cancelLlmInstallation",
+    "allowed": []
+  },
+  {
+    "name": "runtime_requirements",
+    "match": "word",
+    "replacement": "llm_requirements",
+    "allowed": []
+  },
+  {
+    "name": "runtimeRequirements",
+    "match": "word",
+    "replacement": "llmRequirements",
+    "allowed": []
+  },
+  {
+    "name": "runtime_installation_events",
+    "match": "word",
+    "replacement": "llm_installation_events",
+    "allowed": []
+  },
+  {
+    "name": "runtime-api-clients.service",
+    "match": "word",
+    "replacement": "llm-api-clients.service",
+    "allowed": []
+  },
+  {
+    "name": "runtime-actions.store",
+    "match": "word",
+    "replacement": "llm-installation-actions.store",
+    "allowed": []
+  },
+  {
+    "name": "runtime-job-view.service",
+    "match": "word",
+    "replacement": "llm-job-view.service",
+    "allowed": []
+  },
+  {
+    "name": "\"runtime-installation\"",
+    "match": "substring",
+    "replacement": "\"llm-installation\"",
+    "allowed": []
+  },
+  {
+    "name": "'runtime-installation'",
+    "match": "substring",
+    "replacement": "'llm-installation'",
+    "allowed": []
+  },
+  {
+    "name": "`runtime-installation`",
+    "match": "substring",
+    "replacement": "`llm-installation`",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeInstallationJobRepository",
+    "match": "word",
+    "replacement": "LLMInstallationJobRepository",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeInstallationWorker",
+    "match": "word",
+    "replacement": "LLMInstallationWorker",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeInstallationWork",
+    "match": "word",
+    "replacement": "LLMInstallationWork",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeInstallationJobs",
+    "match": "word",
+    "replacement": "LLMInstallationJobs",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeInstallers",
+    "match": "word",
+    "replacement": "LLMInstallers",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeInstallationManager",
+    "match": "word",
+    "replacement": "LLMInstallationManager",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeInstallationView",
+    "match": "word",
+    "replacement": "LLMInstallationView",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeJobRecord",
+    "match": "word",
+    "replacement": "LLMJobRecord",
+    "allowed": []
+  },
+  {
+    "name": "isRuntimeInstallationEventTerminal",
+    "match": "word",
+    "replacement": "isLLMInstallationEventTerminal",
+    "allowed": []
+  },
+  {
+    "name": "modelDownloadClient",
+    "match": "word",
+    "replacement": "llmInstallationClient",
+    "allowed": []
+  },
+  {
+    "name": "streamModelDownload",
+    "match": "word",
+    "replacement": "streamLlmInstallation",
+    "allowed": []
+  },
+  {
+    "name": "isModelDownloadEventTerminal",
+    "match": "word",
+    "replacement": "isLLMInstallationEventTerminal",
+    "allowed": []
+  },
+  {
+    "name": "build_runtime_installation",
+    "match": "word",
+    "replacement": "build_llm_installation",
+    "allowed": []
+  },
+  {
+    "name": "recover_runtime_installations",
+    "match": "word",
+    "replacement": "recover_llm_installations",
+    "allowed": []
+  },
+  {
+    "name": "stop_runtime_installations",
+    "match": "word",
+    "replacement": "stop_llm_installations",
+    "allowed": []
+  },
+  {
+    "name": "perform_runtime_installation",
+    "match": "word",
+    "replacement": "perform_llm_installation",
+    "allowed": []
+  },
+  {
+    "name": "runtime_characterization_support",
+    "match": "word",
+    "replacement": "llm_characterization_support",
+    "allowed": []
+  },
+  {
+    "name": "test_runtime_http_characterization",
+    "match": "word",
+    "replacement": "test_llm_http_characterization",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeActionContext",
+    "match": "word",
+    "replacement": "LLMInstallationActionContext",
+    "allowed": []
+  },
+  {
+    "name": "RuntimeInstallationViewContext",
+    "match": "word",
+    "replacement": "LLMInstallationViewContext",
+    "allowed": []
+  },
+  {
+    "name": "RUNTIME_KIND_LABELS",
+    "match": "word",
+    "replacement": "LLM_REQUIREMENT_LABELS",
+    "allowed": []
+  },
+  {
+    "name": "hasLlmRuntimeInstallation",
+    "match": "word",
+    "replacement": "hasLLMEngineInstallation",
+    "allowed": []
+  },
+  {
+    "name": "confirmRuntimeInstallation",
+    "match": "word",
+    "replacement": "confirmLLMEngineInstallation",
+    "allowed": []
+  },
+  {
+    "name": "runtimeInstallationClient",
+    "match": "word",
+    "replacement": "llmInstallationClient",
+    "allowed": []
+  },
+  {
+    "name": "streamRuntimeInstallation",
+    "match": "word",
+    "replacement": "streamLlmInstallation",
+    "allowed": []
+  },
+  {
+    "name": "runtime_installers.py",
+    "match": "word",
+    "replacement": "llm_installers.py",
+    "allowed": []
+  },
+  {
+    "name": "max_upload_bytes",
+    "match": "word",
+    "replacement": "max_page_source_upload_bytes",
+    "allowed": []
+  },
+  {
+    "name": "max_audio_upload_bytes",
+    "match": "word",
+    "replacement": "max_recording_upload_bytes",
+    "allowed": []
+  },
+  {
+    "name": "CERT_PREP_MAX_UPLOAD_BYTES",
+    "match": "word",
+    "replacement": "CERT_PREP_MAX_PAGE_SOURCE_UPLOAD_BYTES",
+    "allowed": []
+  },
+  {
+    "name": "CERT_PREP_MAX_AUDIO_UPLOAD_BYTES",
+    "match": "word",
+    "replacement": "CERT_PREP_MAX_RECORDING_UPLOAD_BYTES",
+    "allowed": []
+  },
+  {
+    "name": "CERT_MAX_AUDIO_UPLOAD_BYTES",
+    "match": "word",
+    "replacement": "CERT_MAX_RECORDING_UPLOAD_BYTES",
+    "allowed": []
+  },
+  {
+    "name": "source_kind = 'audio'",
+    "match": "substring",
+    "replacement": "recording",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve and rewrite historical source kinds."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration fixtures represent pre-upgrade databases."
+      }
+    ]
+  },
+  {
+    "name": "source_kind='audio'",
+    "match": "substring",
+    "replacement": "recording",
+    "allowed": []
+  },
+  {
+    "name": "source_kind=\"audio\"",
+    "match": "substring",
+    "replacement": "recording",
+    "allowed": []
+  },
+  {
+    "name": "source_kind: 'audio'",
+    "match": "substring",
+    "replacement": "recording",
+    "allowed": []
+  },
+  {
+    "name": "source_kind === 'audio'",
+    "match": "substring",
+    "replacement": "recording",
+    "allowed": []
+  },
+  {
+    "name": "source_kind !== 'audio'",
+    "match": "substring",
+    "replacement": "recording",
+    "allowed": []
+  },
+  {
+    "name": "source_kind == \"audio\"",
+    "match": "substring",
+    "replacement": "recording",
+    "allowed": []
+  },
+  {
+    "name": "source_kind != \"audio\"",
+    "match": "substring",
+    "replacement": "recording",
+    "allowed": []
+  },
+  {
+    "name": "source_kind\"] == \"audio\"",
+    "match": "substring",
+    "replacement": "recording",
+    "allowed": []
+  },
+  {
+    "name": "source_kind\"] != \"audio\"",
+    "match": "substring",
+    "replacement": "recording",
+    "allowed": []
+  },
+  {
+    "name": "\"source_kind\": \"audio\"",
+    "match": "substring",
+    "replacement": "recording",
+    "allowed": []
+  },
+  {
+    "name": "sourceKind: 'audio'",
+    "match": "substring",
+    "replacement": "recording",
+    "allowed": []
+  },
+  {
+    "name": "source_kind = 'document'",
+    "match": "substring",
+    "replacement": "pdf or image",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve and rewrite historical source kinds."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration fixtures represent pre-upgrade databases."
+      }
+    ]
+  },
+  {
+    "name": "source_kind='document'",
+    "match": "substring",
+    "replacement": "pdf or image",
+    "allowed": []
+  },
+  {
+    "name": "source_kind=\"document\"",
+    "match": "substring",
+    "replacement": "pdf or image",
+    "allowed": []
+  },
+  {
+    "name": "source_kind: 'document'",
+    "match": "substring",
+    "replacement": "pdf or image",
+    "allowed": []
+  },
+  {
+    "name": "source_kind === 'document'",
+    "match": "substring",
+    "replacement": "pdf or image",
+    "allowed": []
+  },
+  {
+    "name": "source_kind !== 'document'",
+    "match": "substring",
+    "replacement": "pdf or image",
+    "allowed": []
+  },
+  {
+    "name": "source_kind == \"document\"",
+    "match": "substring",
+    "replacement": "pdf or image",
+    "allowed": []
+  },
+  {
+    "name": "source_kind != \"document\"",
+    "match": "substring",
+    "replacement": "pdf or image",
+    "allowed": []
+  },
+  {
+    "name": "source_kind\"] == \"document\"",
+    "match": "substring",
+    "replacement": "pdf or image",
+    "allowed": []
+  },
+  {
+    "name": "source_kind\"] != \"document\"",
+    "match": "substring",
+    "replacement": "pdf or image",
+    "allowed": []
+  },
+  {
+    "name": "\"source_kind\": \"document\"",
+    "match": "substring",
+    "replacement": "pdf or image",
+    "allowed": []
+  },
+  {
+    "name": "sourceKind: 'document'",
+    "match": "substring",
+    "replacement": "pdf or image",
+    "allowed": []
+  },
+  {
+    "name": "source_kind IN ('audio', 'document')",
+    "match": "substring",
+    "replacement": "pdf, image, or recording",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve and rewrite historical source kinds."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration fixtures represent pre-upgrade databases."
+      }
+    ]
+  },
+  {
+    "name": "source_kind TEXT NOT NULL DEFAULT 'document'",
+    "match": "substring",
+    "replacement": "pdf, image, or recording",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve and rewrite historical source kinds."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration fixtures represent pre-upgrade databases."
+      }
+    ]
   }
 ]

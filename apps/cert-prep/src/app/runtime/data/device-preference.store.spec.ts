@@ -9,7 +9,7 @@ import type {
 import { DEVICE_COPY } from '../domain';
 import { DevicePreferenceStore } from './device-preference.store';
 import { HealthStore } from './health.store';
-import { RuntimeApiClientsService } from './runtime-api-clients.service';
+import { LLMApiClientsService } from './llm-api-clients.service';
 
 describe('DevicePreferenceStore', () => {
   let store: DevicePreferenceStore;
@@ -70,7 +70,7 @@ describe('DevicePreferenceStore', () => {
     TestBed.configureTestingModule({
       providers: [
         DevicePreferenceStore,
-        { provide: RuntimeApiClientsService, useValue: runtimeApi },
+        { provide: LLMApiClientsService, useValue: runtimeApi },
         { provide: HealthStore, useValue: health },
       ],
     });

@@ -10,6 +10,7 @@ from cert_prep_backend.ai_providers.api.schemas import (
     DevicePreferenceUpdate,
     LLMHealthRead,
     LLMProviderSelectionRead,
+    MachineInventoryRead,
     OllamaProfileSelectionRead,
     OllamaProfilesRead,
 )
@@ -44,6 +45,14 @@ def get_device_preferences(request: Request) -> DevicePreferenceRepository:
 
 def get_ollama_device_server(request: Request) -> OllamaDeviceServer:
     return request.app.state.ollama_server
+
+
+@router.get("/machine-inventory", response_model=MachineInventoryRead)
+def machine_inventory(
+    refresh: bool = False,
+    machine: MachineInventory = Depends(get_machine_inventory),
+):
+    return ai_providers.inspect_machine(machine, refresh=refresh)
 
 
 @router.get("/health", response_model=LLMHealthRead)

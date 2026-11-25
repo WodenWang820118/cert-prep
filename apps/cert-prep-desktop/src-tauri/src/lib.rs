@@ -14,8 +14,8 @@ mod runtime_update;
 use std::{fs, path::PathBuf, thread};
 use tauri::Manager;
 
-pub use backend::{build_backend_config, BackendConfig, BackendState, DesktopRuntimeStatus};
-pub use runtime_installation::DesktopRuntimeInstallation;
+pub use backend::{build_backend_config, BackendConfig, BackendState, RuntimeStatus};
+pub use runtime_installation::RuntimeInstallation;
 
 use backend::resource_path;
 use backend_process::external_backend_env;
@@ -75,7 +75,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::backend_config,
-            commands::desktop_runtime_status,
+            commands::backend_runtime_status,
             commands::start_python_runtime_installation,
             commands::get_python_runtime_installation,
             commands::capture_runtime_status,

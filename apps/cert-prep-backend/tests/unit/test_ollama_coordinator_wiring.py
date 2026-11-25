@@ -17,7 +17,7 @@ from cert_prep_backend.ai_providers.domain.device import (
 from cert_prep_backend.ai_providers.infrastructure import ollama_transport
 from cert_prep_backend.ai_providers.infrastructure.ollama_transport import OllamaProvider
 from cert_prep_backend.ai_providers.infrastructure.provider import provider_from_settings
-from cert_prep_backend.ai_providers.infrastructure.runtime_installers import (
+from cert_prep_backend.ai_providers.infrastructure.llm_installers import (
     LazyOllamaProfileInstaller,
     configured_installer_choices,
 )
@@ -31,7 +31,7 @@ from cert_prep_contracts.hardware import (
 )
 from cert_prep_contracts.llm_profiles import OllamaModelProfile
 from cert_prep_ollama.device_status import DeviceStatus
-from cert_prep_ollama.installers import OllamaRuntimeInstaller
+from cert_prep_ollama.installers import OllamaInstaller
 from cert_prep_ollama.profile_installer import OllamaProfileInstaller
 from cert_prep_ollama.server_coordinator import OllamaServerCoordinator
 
@@ -138,7 +138,7 @@ def test_generation_checks_the_model_inside_admission() -> None:
 
 def test_runtime_installer_uses_shared_coordinator() -> None:
     coordinator = _mock_coordinator()
-    installer = OllamaRuntimeInstaller(
+    installer = OllamaInstaller(
         ollama_host="http://127.0.0.1:11434",
         server=coordinator,
     )
@@ -197,7 +197,7 @@ def test_configured_installer_choices_propagates_coordinator() -> None:
         ollama_host="http://127.0.0.1:11434",
     )
     dummy_provider = MagicMock()
-    dummy_provider.runtime_requirement_kind = OllamaRuntimeInstaller.kind
+    dummy_provider.llm_engine_requirement_kind = OllamaInstaller.kind
     dummy_provider.profile_selection = None
 
     runtimes, model = configured_installer_choices(

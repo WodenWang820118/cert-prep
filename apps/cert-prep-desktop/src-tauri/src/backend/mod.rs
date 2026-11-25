@@ -5,7 +5,7 @@ mod readiness;
 mod shutdown;
 
 pub use configuration::{build_backend_config, BackendConfig};
-pub use readiness::DesktopRuntimeStatus;
+pub use readiness::RuntimeStatus;
 
 pub(crate) use paths::resource_path;
 

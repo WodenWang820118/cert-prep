@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
+from cert_prep_contracts.documents import SourceKind
+
 from cert_prep_backend.platform.errors import (
     CaptureRequirementUnavailable,
     CaptureRuntimeUnavailable,
@@ -303,7 +305,7 @@ class _SourceToExtract:
     """The source a processing run extracts: kept in memory when the run happens inside the
     request, read back from storage (and checked again) when it runs in the background."""
 
-    kind: str
+    kind: SourceKind
     canonical_suffix: str
     sha256: str
     file_name: str | None = None
@@ -350,8 +352,8 @@ async def import_document(
             upload,
             upload_size_limit(
                 filename,
-                max_bytes=limits.max_upload_bytes,
-                max_audio_bytes=limits.max_audio_upload_bytes,
+                max_page_source_bytes=limits.max_page_source_upload_bytes,
+                max_recording_bytes=limits.max_recording_upload_bytes,
             ),
         )
         prepared = await asyncio.to_thread(
@@ -378,7 +380,7 @@ async def import_document(
             language_hint=language_hint_or_auto(language_hint),
             storage_path=storage_path,
             page_count=prepared.page_count,
-            source_kind="audio" if prepared.kind == "audio" else "document",
+            source_kind=prepared.kind,
             duration_ms=prepared.duration_ms,
         )
         process = partial(
@@ -474,11 +476,7 @@ async def retry_document_processing(
     canonical_suffix = source_path.suffix.lower()
     if in_background:
         source = _SourceToExtract(
-            kind=(
-                "audio"
-                if document.source_kind == "audio"
-                else "pdf" if canonical_suffix == ".pdf" else "image"
-            ),
+            kind=document.source_kind,
             canonical_suffix=canonical_suffix,
             sha256=source_file.sha256,
             file_name=source_file.filename,
@@ -496,7 +494,7 @@ async def retry_document_processing(
             filename=source_file.filename,
         )
         source = _SourceToExtract(
-            kind=prepared.kind,
+            kind=document.source_kind,
             canonical_suffix=prepared.canonical_suffix,
             sha256=source_file.sha256,
             content=prepared.raw_bytes,

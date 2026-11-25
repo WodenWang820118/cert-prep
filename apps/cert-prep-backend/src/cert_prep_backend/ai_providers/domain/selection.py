@@ -7,7 +7,7 @@ from cert_prep_contracts.llm import (
     LLMProviderPreference,
     LLMProviderSelection,
 )
-from cert_prep_contracts.runtime import RuntimeRequirementKind
+from cert_prep_contracts.llm_installation import LLMRequirementKind
 
 
 def select_provider(
@@ -37,13 +37,13 @@ def select_provider(
             else "Selected Ollama from the local provider registry."
         ),
         fallback_reason=None,
-        runtime_requirement_kind=(
-            RuntimeRequirementKind.OLLAMA
+        llm_engine_requirement_kind=(
+            LLMRequirementKind.OLLAMA
             if selected == LLMProviderName.OLLAMA
             else None
         ),
         model_requirement_kind=(
-            RuntimeRequirementKind.OLLAMA_MODEL
+            LLMRequirementKind.OLLAMA_MODEL
             if selected == LLMProviderName.OLLAMA
             else None
         ),

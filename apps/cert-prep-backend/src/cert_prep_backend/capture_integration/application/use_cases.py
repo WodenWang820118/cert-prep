@@ -8,6 +8,8 @@ from pathlib import PurePath
 from typing import Literal
 from uuid import UUID
 
+from cert_prep_contracts.documents import SourceKind
+
 from cert_prep_backend.capture_integration.application.errors import (
     CaptureAudioRejected,
     CaptureCommitNotQueued,
@@ -184,7 +186,7 @@ def start_capture_review(
             max_image_pixels=max_image_pixels,
             filename=filename,
         )
-        if prepared.kind == "audio":
+        if prepared.kind == "recording":
             raise CaptureAudioRejected("Capture review supports PDF and image sources only.")
         digest = hashlib.sha256(content).hexdigest()
         storage_path = files.store(
@@ -201,6 +203,7 @@ def start_capture_review(
             language_hint="auto",
             storage_path=storage_path,
             page_count=prepared.page_count,
+            source_kind=prepared.kind,
         )
         session = sessions.create(
             project_id=project_id,
@@ -306,7 +309,7 @@ def extract_capture_for_review(
     document = documents.document(project_id, document_id)
     source_file = documents.source_file(project_id, document_id)
     suffix = PurePath(source_file.storage_path).suffix
-    source_kind = _source_kind(source_file.filename, suffix)
+    source_kind = document.source_kind
     try:
         workflow.begin_review(
             project_id=project_id,
@@ -960,11 +963,8 @@ def hold_capture_stream(
 
 def capture_source_kind(
     documents: CaptureDocuments, *, project_id: str, document_id: str
-) -> str:
-    """pdf or image from the stored suffix. A missing source propagates."""
-
-    source_file = documents.source_file(project_id, document_id)
-    return _source_kind(source_file.filename, PurePath(source_file.storage_path).suffix)
+) -> SourceKind:
+    return documents.document(project_id, document_id).source_kind
 
 
 def _stream_still_holding(
@@ -1066,11 +1066,6 @@ def _operation_is_running(
         return operations.operation(project_id, operation_id).status == "running"
     except Exception:
         return False
-
-
-def _source_kind(filename: str, canonical_suffix: str | None) -> str:
-    suffix = (canonical_suffix or PurePath(filename).suffix).lower()
-    return "pdf" if suffix == ".pdf" else "image"
 
 
 def _media_type(filename: str, canonical_suffix: str | None = None) -> str:

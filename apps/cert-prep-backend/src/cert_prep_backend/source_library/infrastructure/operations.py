@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from sqlite3 import Connection, Row
 from uuid import uuid4
 
+from cert_prep_contracts.documents import SourceKind
 from cert_prep_contracts.transcription import TranscriptSegment
 
 from cert_prep_backend.platform.database import Database, utc_now
@@ -174,7 +175,7 @@ def create_and_attach_document(
     storage_path: str,
     page_count: int,
     document_id: str | None = None,
-    source_kind: str = "document",
+    source_kind: SourceKind,
     duration_ms: int | None = None,
 ) -> SourceDocument:
     """Insert a document and attach it to the sole operation claimant atomically."""
@@ -523,7 +524,7 @@ def start_retry_operation(
                 translation_status = 'pending', configured_transcription_model = NULL,
                 effective_transcription_model = NULL, transcription_device = NULL,
                 transcription_warning = NULL
-            WHERE project_id = ? AND id = ? AND source_kind = 'audio'
+            WHERE project_id = ? AND id = ? AND source_kind = 'recording'
             """,
             (project_id, document_id),
         )
@@ -700,7 +701,7 @@ def _record_stopped_document(
     document = document_query(connection, project_id, document_id)
     if document is None:
         raise NotFoundError("Document not found.")
-    if document["source_kind"] == "audio":
+    if document["source_kind"] == "recording":
         if stopped.status is DocumentOperationStatus.CANCELED:
             _preserve_canceled_audio_state(
                 connection,
@@ -859,7 +860,7 @@ def _preserve_canceled_audio_state(
                 ELSE 'canceled'
             END,
             updated_at = ?
-        WHERE project_id = ? AND id = ? AND source_kind = 'audio'
+        WHERE project_id = ? AND id = ? AND source_kind = 'recording'
         """,
         (
             "canceled",
@@ -917,7 +918,7 @@ def _preserve_failed_audio_state(
                 ELSE 'failed'
             END,
             translation_status = 'failed', updated_at = ?
-        WHERE project_id = ? AND id = ? AND source_kind = 'audio'
+        WHERE project_id = ? AND id = ? AND source_kind = 'recording'
         """,
         (
             int(chunks_count > 0),

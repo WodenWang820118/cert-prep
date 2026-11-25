@@ -4,6 +4,9 @@ A failed run stores one of these, chosen by the source kind and Capture's failur
 runtime's own error text and requirement detail are logged, never stored or shown.
 """
 
+from cert_prep_contracts.documents import SourceKind
+
+
 PDF_OCR_UNAVAILABLE_MESSAGE = (
     "This PDF requires text recognition, which is unavailable in the installed "
     "Capture Runtime."
@@ -22,22 +25,22 @@ EXTRACTION_FAILED_MESSAGE = "Capture Runtime extraction failed."
 REQUIREMENT_UNAVAILABLE_CODE = "requirement_unavailable"
 
 
-def requirement_unavailable_message(source_kind: str) -> str:
+def requirement_unavailable_message(source_kind: SourceKind) -> str:
     """What Cert says when the requirement a source kind needs is not ready."""
 
     if source_kind == "pdf":
         return PDF_OCR_UNAVAILABLE_MESSAGE
-    if source_kind == "audio":
+    if source_kind == "recording":
         return SPEECH_RECOGNITION_UNAVAILABLE_MESSAGE
     return TEXT_RECOGNITION_UNAVAILABLE_MESSAGE
 
 
-def extraction_failure_message(source_kind: str, code: str | None) -> str:
+def extraction_failure_message(source_kind: SourceKind, code: str | None) -> str:
     """What Cert says when a capture of this source kind failed with Capture's failure code,
     or with none."""
 
     if code == REQUIREMENT_UNAVAILABLE_CODE:
         return requirement_unavailable_message(source_kind)
-    if source_kind == "audio":
+    if source_kind == "recording":
         return SPEECH_RECOGNITION_FAILED_MESSAGE
     return TEXT_RECOGNITION_FAILED_MESSAGE

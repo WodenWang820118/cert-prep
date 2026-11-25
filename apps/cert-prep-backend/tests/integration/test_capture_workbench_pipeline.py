@@ -160,6 +160,7 @@ def _attach_public_capture(
         operation_id=operation_id,
         document_id=document_id,
         filename="capture.pdf",
+        source_kind="pdf",
         sha256="a" * 64,
         language_hint="auto",
         storage_path=str(tmp_path / "capture.pdf"),
@@ -222,7 +223,7 @@ def test_public_capture_publication_rejects_noncanonical_write_provenance(
                 project_id=str(fixture["project_id"]),
                 document_id=str(fixture["document_id"]),
                 operation_id=str(fixture["operation_id"]),
-                source_kind="document",
+                source_kind="pdf",
                 expected_sha256="a" * 64,
                 document=document,
                 ocr_projection=projection,
@@ -254,7 +255,7 @@ def test_public_capture_publication_maps_exact_producer_engine_to_durable_method
             project_id=str(fixture["project_id"]),
             document_id=str(fixture["document_id"]),
             operation_id=str(fixture["operation_id"]),
-            source_kind="document",
+            source_kind="pdf",
             expected_sha256="a" * 64,
             document=document,
             ocr_projection=projection,
@@ -295,7 +296,7 @@ def test_public_capture_publication_rejects_projection_engine_mismatch(
                 project_id=str(fixture["project_id"]),
                 document_id=str(fixture["document_id"]),
                 operation_id=str(fixture["operation_id"]),
-                source_kind="document",
+                source_kind="pdf",
                 expected_sha256="a" * 64,
                 document=document,
                 ocr_projection=projection,
@@ -330,7 +331,7 @@ def test_public_capture_publication_rejects_page_provenance_mismatch_without_wri
                 project_id=str(fixture["project_id"]),
                 document_id=str(fixture["document_id"]),
                 operation_id=str(fixture["operation_id"]),
-                source_kind="document",
+                source_kind="pdf",
                 expected_sha256="a" * 64,
                 document=document,
                 ocr_projection=projection,
@@ -366,7 +367,7 @@ def test_public_capture_publication_rejects_unresolved_page_without_writes(
                 project_id=str(fixture["project_id"]),
                 document_id=str(fixture["document_id"]),
                 operation_id=str(fixture["operation_id"]),
-                source_kind="document",
+                source_kind="pdf",
                 expected_sha256="a" * 64,
                 document=document,
                 ocr_projection=projection,
@@ -400,7 +401,7 @@ def test_public_capture_publication_uses_projection_validation_for_embedded_mode
             project_id=str(fixture["project_id"]),
             document_id=str(fixture["document_id"]),
             operation_id=str(fixture["operation_id"]),
-            source_kind="document",
+            source_kind="pdf",
             expected_sha256="a" * 64,
             document=document,
             ocr_projection=projection,
@@ -438,6 +439,7 @@ def test_legacy_text_layer_rows_remain_read_compatible(tmp_path: Path) -> None:
                 operation_id=operation_id,
                 document_id=document_id,
                 filename=f"legacy-{method}.pdf",
+                source_kind="pdf",
                 sha256="a" * 64,
                 language_hint="auto",
                 storage_path=str(tmp_path / f"legacy-{method}.pdf"),
@@ -1141,7 +1143,7 @@ def test_image_upload_uses_the_same_capture_runtime_host_path(tmp_path: Path) ->
         assert response.status_code == 201
         document = response.json()
         assert document["status"] == "ready"
-        assert document["source_kind"] == "document"
+        assert document["source_kind"] == "image"
         assert document["extraction_method"] == "text_recognition"
         chunks = client.get(
             f"/projects/{project_id}/documents/{document['id']}/chunks",
@@ -1229,7 +1231,7 @@ def test_audio_upload_uses_capture_time_provenance_without_cert_whisper(
         assert response.status_code == 201
         document = response.json()
         assert document["status"] == "ready"
-        assert document["source_kind"] == "audio"
+        assert document["source_kind"] == "recording"
         assert document["transcription_status"] == "succeeded"
         assert document["translation_status"] == "succeeded"
         assert document["effective_transcription_model"] == "tea-asr-1.1-mini"
@@ -1243,8 +1245,8 @@ def test_audio_upload_uses_capture_time_provenance_without_cert_whisper(
         assert chunks[0]["end_ms"] == 900
         assert chunks[0]["text"] == "Audio source text"
         assert chunks[0]["translated_text"] == "Audio source text"
-        # Cert stores the source as "audio"; Capture received and answered a
-        # "recording" capture, and the persisted row keeps Cert's kind.
+        # Cert stores the source as "recording" and Capture receives and answers a
+        # "recording" capture: the kind maps one to one at the boundary.
         assert runtime.started_source_kinds == [CaptureSourceKind.RECORDING]
         assert runtime.started_media_types == [media_type]
         assert runtime.result_kinds == {"recording"}
@@ -1252,7 +1254,7 @@ def test_audio_upload_uses_capture_time_provenance_without_cert_whisper(
             f"/projects/{project_id}/documents/{document['id']}",
             headers=headers,
         ).json()
-        assert persisted["source_kind"] == "audio"
+        assert persisted["source_kind"] == "recording"
 
     assert runtime.deleted == ["capture-pipeline-1"]
 
@@ -2608,7 +2610,7 @@ def test_failed_capture_upload_finishes_claimed_operation(tmp_path: Path) -> Non
         data_dir=tmp_path,
         api_token=AUTH_TOKEN,
         llm_provider="fake",
-        max_upload_bytes=32,
+        max_page_source_upload_bytes=32,
     )
     app = create_app(
         settings=settings,

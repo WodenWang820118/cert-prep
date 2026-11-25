@@ -26,7 +26,7 @@ use crate::{
 const LOOPBACK_HOST: &str = "127.0.0.1";
 const DEFAULT_READY_TIMEOUT: Duration = Duration::from_secs(45);
 const DEFAULT_RETENTION_HOURS: &str = "24";
-const CERT_MAX_AUDIO_UPLOAD_BYTES: &str = "104857600";
+const CERT_MAX_RECORDING_UPLOAD_BYTES: &str = "104857600";
 const CERT_MAX_PDF_PAGES: &str = "250";
 const CERT_MAX_IMAGE_PIXELS: &str = "50000000";
 const ACCEPTANCE_ISOLATION_ENV: &str = "CERT_PREP_ACCEPTANCE_ISOLATION";
@@ -257,7 +257,7 @@ impl CaptureLaunchPolicy {
             ("CAPTURE_RETENTION_HOURS", DEFAULT_RETENTION_HOURS.into()),
             (
                 "CAPTURE_MAX_UPLOAD_BYTES",
-                CERT_MAX_AUDIO_UPLOAD_BYTES.into(),
+                CERT_MAX_RECORDING_UPLOAD_BYTES.into(),
             ),
             ("CAPTURE_MAX_PDF_PAGES", CERT_MAX_PDF_PAGES.into()),
             ("CAPTURE_MAX_IMAGE_PIXELS", CERT_MAX_IMAGE_PIXELS.into()),

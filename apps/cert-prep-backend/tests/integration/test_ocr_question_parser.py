@@ -23,9 +23,9 @@ def test_persisted_ocr_keeps_original_text_and_reading_instruction(tmp_path: Pat
         )
         connection.execute(
             "INSERT INTO documents(id, project_id, filename, sha256, storage_path, "
-            "page_count, has_text, status, created_at, updated_at) "
+            "page_count, has_text, status, created_at, updated_at, source_kind) "
             "VALUES ('document', 'project', 'test.pdf', 'hash', 'test.pdf', "
-            "1, 1, 'ready', '2026-01-01', '2026-01-01')"
+            "1, 1, 'ready', '2026-01-01', '2026-01-01', 'pdf')"
         )
         sync_document_chunks(
             connection, project_id="project", document_id="document",

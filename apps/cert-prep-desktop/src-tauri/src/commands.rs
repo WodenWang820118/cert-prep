@@ -1,6 +1,6 @@
 use crate::{
-    backend::{BackendConfig, BackendState, DesktopRuntimeStatus},
-    DesktopRuntimeInstallation,
+    backend::{BackendConfig, BackendState, RuntimeStatus},
+    RuntimeInstallation,
 };
 
 /// Returns the backend URL and token once the desktop runtime is ready.
@@ -15,9 +15,9 @@ pub(crate) fn backend_config(
 
 /// Reports the packaged Python backend runtime status for the desktop shell.
 #[tauri::command]
-pub(crate) fn desktop_runtime_status(
+pub(crate) fn backend_runtime_status(
     state: tauri::State<'_, BackendState>,
-) -> DesktopRuntimeStatus {
+) -> RuntimeStatus {
     state.status()
 }
 
@@ -25,7 +25,7 @@ pub(crate) fn desktop_runtime_status(
 #[tauri::command]
 pub(crate) fn start_python_runtime_installation(
     state: tauri::State<'_, BackendState>,
-) -> DesktopRuntimeInstallation {
+) -> RuntimeInstallation {
     state.start_installation()
 }
 
@@ -34,7 +34,7 @@ pub(crate) fn start_python_runtime_installation(
 pub(crate) fn get_python_runtime_installation(
     job_id: String,
     state: tauri::State<'_, BackendState>,
-) -> Result<DesktopRuntimeInstallation, String> {
+) -> Result<RuntimeInstallation, String> {
     state.get_installation(&job_id)
 }
 
@@ -42,7 +42,7 @@ pub(crate) fn get_python_runtime_installation(
 #[tauri::command]
 pub(crate) fn capture_runtime_status(
     state: tauri::State<'_, BackendState>,
-) -> DesktopRuntimeStatus {
+) -> RuntimeStatus {
     state.capture_runtime_status()
 }
 
@@ -50,7 +50,7 @@ pub(crate) fn capture_runtime_status(
 #[tauri::command]
 pub(crate) fn install_capture_runtime(
     state: tauri::State<'_, BackendState>,
-) -> DesktopRuntimeInstallation {
+) -> RuntimeInstallation {
     state.start_capture_runtime_installation()
 }
 
@@ -58,7 +58,7 @@ pub(crate) fn install_capture_runtime(
 #[tauri::command]
 pub(crate) fn start_capture_runtime(
     state: tauri::State<'_, BackendState>,
-) -> DesktopRuntimeInstallation {
+) -> RuntimeInstallation {
     state.start_installed_capture_runtime()
 }
 
@@ -67,7 +67,7 @@ pub(crate) fn start_capture_runtime(
 pub(crate) fn get_capture_runtime_installation(
     job_id: String,
     state: tauri::State<'_, BackendState>,
-) -> Result<DesktopRuntimeInstallation, String> {
+) -> Result<RuntimeInstallation, String> {
     state.get_capture_runtime_installation(&job_id)
 }
 

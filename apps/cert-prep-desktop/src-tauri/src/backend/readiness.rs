@@ -15,7 +15,7 @@ use super::BackendState;
 /// User-facing status for the packaged Python backend runtime.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DesktopRuntimeStatus {
+pub struct RuntimeStatus {
     pub kind: String,
     pub label: String,
     pub available: bool,
@@ -34,9 +34,9 @@ pub struct DesktopRuntimeStatus {
 }
 
 impl BackendState {
-    pub(crate) fn status(&self) -> DesktopRuntimeStatus {
+    pub(crate) fn status(&self) -> RuntimeStatus {
         if let Some(config) = self.backend_config() {
-            return DesktopRuntimeStatus {
+            return RuntimeStatus {
                 kind: PYTHON_RUNTIME_KIND.into(),
                 label: PYTHON_RUNTIME_LABEL.into(),
                 available: true,
@@ -58,7 +58,7 @@ impl BackendState {
         }
 
         if let Some(job) = self.active_job() {
-            return DesktopRuntimeStatus {
+            return RuntimeStatus {
                 kind: PYTHON_RUNTIME_KIND.into(),
                 label: PYTHON_RUNTIME_LABEL.into(),
                 available: false,
@@ -78,7 +78,7 @@ impl BackendState {
         }
 
         if let Some(entrypoint) = self.installed_entrypoint() {
-            return DesktopRuntimeStatus {
+            return RuntimeStatus {
                 kind: PYTHON_RUNTIME_KIND.into(),
                 label: PYTHON_RUNTIME_LABEL.into(),
                 available: true,
@@ -97,7 +97,7 @@ impl BackendState {
             };
         }
 
-        DesktopRuntimeStatus {
+        RuntimeStatus {
             kind: PYTHON_RUNTIME_KIND.into(),
             label: PYTHON_RUNTIME_LABEL.into(),
             available: false,
@@ -150,7 +150,7 @@ impl BackendState {
             .map(|runtime| runtime.as_ref().map(CaptureRuntimeState::connection))
     }
 
-    pub(crate) fn capture_runtime_status(&self) -> DesktopRuntimeStatus {
+    pub(crate) fn capture_runtime_status(&self) -> RuntimeStatus {
         match self.capture_runtime_connection() {
             Ok(Some(_)) => {
                 return capture_runtime_status(
@@ -270,8 +270,8 @@ fn capture_runtime_status(
     unavailable_reason: Option<String>,
     job: Option<RuntimeJob>,
     error: Option<String>,
-) -> DesktopRuntimeStatus {
-    DesktopRuntimeStatus {
+) -> RuntimeStatus {
+    RuntimeStatus {
         kind: "capture_runtime".into(),
         label: "Capture Runtime".into(),
         available,

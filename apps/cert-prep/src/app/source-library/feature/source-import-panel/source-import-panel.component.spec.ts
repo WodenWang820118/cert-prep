@@ -216,7 +216,7 @@ function audioDocument(id: string): DocumentRead {
   return {
     ...appDocument,
     id,
-    source_kind: 'audio',
+    source_kind: 'recording',
     chunks_count: 1,
     has_text: true,
   };

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from sqlite3 import Connection
 
+from cert_prep_contracts.documents import SourceKind
+
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.platform.errors import NotFoundError
 from cert_prep_backend.source_library.application.ports import StudyProjects
@@ -109,7 +111,7 @@ class SqliteDocumentRepository:
         language_hint: str,
         storage_path: str,
         page_count: int,
-        source_kind: str = "document",
+        source_kind: SourceKind,
         duration_ms: int | None = None,
     ) -> SourceDocument:
         ensure_project_exists(self._projects, project_id)

@@ -11,7 +11,7 @@ from cert_prep_backend.ai_providers.infrastructure.provider import (
 )
 from cert_prep_backend.ai_providers.domain.selection import select_provider
 from cert_prep_contracts.llm import LLMProviderName, LLMProviderPreference
-from cert_prep_contracts.runtime import RuntimeRequirementKind
+from cert_prep_contracts.llm_installation import LLMRequirementKind
 from llm_test_fakes import GIB, _profile_inventory
 
 
@@ -24,8 +24,8 @@ def test_auto_policy_selects_the_ollama_alpha_lane(tmp_path) -> None:
 
     assert selection.preference == LLMProviderPreference.AUTO
     assert selection.selected_provider == LLMProviderName.OLLAMA
-    assert selection.runtime_requirement_kind == RuntimeRequirementKind.OLLAMA
-    assert selection.model_requirement_kind == RuntimeRequirementKind.OLLAMA_MODEL
+    assert selection.llm_engine_requirement_kind == LLMRequirementKind.OLLAMA
+    assert selection.model_requirement_kind == LLMRequirementKind.OLLAMA_MODEL
     assert selection.fallback_reason is None
 
 
@@ -42,7 +42,7 @@ def test_explicit_fake_policy_keeps_provider_neutral_selection_shape(tmp_path) -
     assert selection.selected_provider == LLMProviderName.FAKE
     assert selection.effective_provider == LLMProviderName.FAKE
     assert selection.effective_model == "test-model"
-    assert selection.runtime_requirement_kind is None
+    assert selection.llm_engine_requirement_kind is None
     assert selection.model_requirement_kind is None
 
 
@@ -70,8 +70,8 @@ def _reconfigure_lazy_provider(lazy_provider, settings: Settings) -> None:
         lazy_provider._provider = None
         lazy_provider._provider_hint = selected_provider
         lazy_provider._model_hint = _provider_model_hint(settings, selected_provider)
-        lazy_provider._runtime_requirement_kind = (
-            RuntimeRequirementKind.OLLAMA
+        lazy_provider._llm_engine_requirement_kind = (
+            LLMRequirementKind.OLLAMA
             if selected_provider == "ollama"
             else None
         )
@@ -95,4 +95,4 @@ def test_lazy_provider_reconfigures_through_the_generic_factory_seam(tmp_path) -
 
     assert provider.provider == "ollama"
     assert provider.model
-    assert provider.runtime_requirement_kind == RuntimeRequirementKind.OLLAMA
+    assert provider.llm_engine_requirement_kind == LLMRequirementKind.OLLAMA

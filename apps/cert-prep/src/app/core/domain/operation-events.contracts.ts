@@ -3,8 +3,7 @@ import type {
   DocumentRead,
   DraftGenerationJobRead,
   ManualDraftGenerationOperationRead,
-  ModelDownloadRead,
-  RuntimeInstallationRead,
+  LLMInstallationRead,
 } from './api.contracts';
 
 export interface DocumentOperationEvent {
@@ -17,8 +16,7 @@ export interface DraftJobsEvent {
 }
 
 export type DraftOperationEvent = ManualDraftGenerationOperationRead;
-export type RuntimeInstallationEvent = RuntimeInstallationRead;
-export type ModelDownloadEvent = ModelDownloadRead;
+export type LLMInstallationEvent = LLMInstallationRead;
 
 export function isDocumentOperationEventTerminal(
   event: DocumentOperationEvent,
@@ -47,14 +45,8 @@ export function isDraftOperationEventTerminal(
   return ['canceled', 'succeeded', 'failed'].includes(event.status);
 }
 
-export function isRuntimeInstallationEventTerminal(
-  event: RuntimeInstallationEvent,
-): boolean {
-  return ['canceled', 'succeeded', 'failed'].includes(event.status);
-}
-
-export function isModelDownloadEventTerminal(
-  event: ModelDownloadEvent,
+export function isLLMInstallationEventTerminal(
+  event: LLMInstallationEvent,
 ): boolean {
   return ['canceled', 'succeeded', 'failed'].includes(event.status);
 }

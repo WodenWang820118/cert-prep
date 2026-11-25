@@ -5,6 +5,7 @@ import threading
 from collections.abc import Iterator
 from contextlib import closing, contextmanager
 from datetime import datetime, timezone
+from pathlib import Path, PurePath
 from typing import Final
 
 from cert_prep_backend.platform.config import Settings
@@ -1052,7 +1053,46 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
         ALTER TABLE capture_review_sessions ADD COLUMN runtime_ingestion_id TEXT;
         """,
     ),
+    (
+        32,
+        """
+        UPDATE documents
+        SET source_kind = CASE source_kind
+            WHEN 'audio' THEN 'recording'
+            ELSE legacy_page_source_kind(filename, storage_path)
+        END
+        WHERE source_kind IN ('audio', 'document');
+        """,
+    ),
 )
+
+
+def _legacy_page_source_kind(filename: str, storage_path: str, uploads_root: Path) -> str:
+    """Classify a legacy page source the way Cert told PDF from image before migration 32.
+
+    Extraction and retry decided from the stored file's suffix, which upload preparation
+    derives from the content (a PDF is stored as .pdf, an image under its detected format);
+    anything not stored as .pdf was sent to Capture as an image. The uploaded name's suffix
+    and the file's first bytes are fallbacks for rows whose stored name has neither.
+    """
+    for name in (storage_path, filename):
+        suffix = PurePath(name).suffix.lower()
+        if suffix == ".pdf":
+            return "pdf"
+        if suffix in {".jpg", ".jpeg", ".png", ".webp"}:
+            return "image"
+
+    # v31 stores no media type. For an unknown filename, only PDF bytes establish a PDF.
+    try:
+        source_path = Path(storage_path).resolve(strict=True)
+        source_path.relative_to(uploads_root.resolve())
+        if source_path.is_file():
+            with source_path.open("rb") as source:
+                if b"%PDF-" in source.read(1024):
+                    return "pdf"
+    except (OSError, ValueError, RuntimeError):
+        pass
+    return "image"
 
 
 # Migrations that rebuild a parent table (create, copy, drop, rename) run with foreign keys off,
@@ -1069,6 +1109,7 @@ class Database:
         change_notifier: DatabaseChangeNotifier | None = None,
     ) -> None:
         self.path = settings.database_path
+        self._uploads_root = settings.data_dir / "uploads"
         self.change_notifier = change_notifier
         self._lock = threading.Lock()
         self._migrated = False
@@ -1127,7 +1168,7 @@ class Database:
                         connection.execute("PRAGMA foreign_keys = OFF")
                         connection.execute("PRAGMA legacy_alter_table = ON")
                     try:
-                        if rebuilds_tables:
+                        if rebuilds_tables or version == 32:
                             connection.execute("BEGIN IMMEDIATE")
                             # A second Database instance may have migrated while we waited.
                             if connection.execute(
@@ -1135,7 +1176,17 @@ class Database:
                             ).fetchone() is not None:
                                 connection.commit()
                                 continue
-                            _run_table_rebuild(connection, sql)
+                            if rebuilds_tables:
+                                _run_table_rebuild(connection, sql)
+                            else:
+                                connection.create_function(
+                                    "legacy_page_source_kind",
+                                    2,
+                                    lambda name, path: _legacy_page_source_kind(
+                                        name, path, self._uploads_root
+                                    ),
+                                )
+                                connection.execute(sql)
                         else:
                             connection.executescript(f"BEGIN IMMEDIATE;\n{sql}")
                         connection.execute(

@@ -9,11 +9,11 @@ import subprocess
 from typing import TYPE_CHECKING
 
 from cert_prep_contracts.llm import ModelPullProgress
-from cert_prep_contracts.runtime import (
-    RuntimeInstallationStatus,
-    RuntimeInstallProgress,
-    RuntimeRequirementKind,
-    RuntimeRequirementSnapshot,
+from cert_prep_contracts.llm_installation import (
+    LLMInstallationStatus,
+    LLMInstallProgress,
+    LLMRequirementKind,
+    LLMRequirementSnapshot,
 )
 from cert_prep_ollama.exceptions import OllamaInstallationUnavailable
 from cert_prep_ollama.models import DEFAULT_OLLAMA_MODEL
@@ -23,36 +23,36 @@ if TYPE_CHECKING:
     from cert_prep_ollama.server_coordinator import OllamaServerCoordinator
 
 
-class OllamaRuntimeInstaller:
+class OllamaInstaller:
     """Installer and health snapshot for the Ollama executable runtime."""
 
-    kind = RuntimeRequirementKind.OLLAMA
+    kind = LLMRequirementKind.OLLAMA
     provider = "ollama"
     model = ""
 
     def __init__(
         self,
         ollama_host: str = "http://127.0.0.1:11434",
-        runtime_install_timeout_seconds: float = 900.0,
+        llm_install_timeout_seconds: float = 900.0,
         server: OllamaServerCoordinator | None = None,
     ) -> None:
         self._ollama_host = ollama_host
-        self._timeout = runtime_install_timeout_seconds
+        self._timeout = llm_install_timeout_seconds
         self._server = server
 
-    def requirement(self) -> RuntimeRequirementSnapshot:
+    def requirement(self) -> LLMRequirementSnapshot:
         """Return whether the Ollama executable can be resolved locally."""
 
         executable = resolve_ollama_executable()
         if executable is None:
-            return RuntimeRequirementSnapshot(
+            return LLMRequirementSnapshot(
                 kind=self.kind,
                 label="Ollama",
                 available=False,
                 detail="Ollama is not installed.",
                 unavailable_reason="ollama_missing",
             )
-        return RuntimeRequirementSnapshot(
+        return LLMRequirementSnapshot(
             kind=self.kind,
             label="Ollama",
             available=True,
@@ -62,11 +62,11 @@ class OllamaRuntimeInstaller:
         )
 
     def install(
-        self, progress: Callable[[RuntimeInstallProgress], None]
-    ) -> RuntimeInstallationStatus:
+        self, progress: Callable[[LLMInstallProgress], None]
+    ) -> LLMInstallationStatus:
         """Run the official Ollama Windows installer script."""
 
-        progress(RuntimeInstallProgress("Starting the Ollama Windows installer."))
+        progress(LLMInstallProgress("Starting the Ollama Windows installer."))
         if os.name != "nt":
             raise OllamaInstallationUnavailable(
                 "Ollama installer automation is only configured for Windows."
@@ -87,8 +87,8 @@ class OllamaRuntimeInstaller:
             raise OllamaInstallationUnavailable(output or "Ollama installer failed.")
         executable = resolve_ollama_executable()
         if executable is None:
-            return RuntimeInstallationStatus.WAITING_FOR_USER
-        progress(RuntimeInstallProgress("Starting the Ollama local API."))
+            return LLMInstallationStatus.WAITING_FOR_USER
+        progress(LLMInstallProgress("Starting the Ollama local API."))
         server_running = (
             self._server.ensure_running()
             if self._server is not None
@@ -98,13 +98,13 @@ class OllamaRuntimeInstaller:
             raise OllamaInstallationUnavailable(
                 "Ollama was installed, but the local API did not become reachable."
             )
-        return RuntimeInstallationStatus.SUCCEEDED
+        return LLMInstallationStatus.SUCCEEDED
 
 
 class OllamaModelInstaller:
     """Installer and health snapshot for the configured Ollama model."""
 
-    kind = RuntimeRequirementKind.OLLAMA_MODEL
+    kind = LLMRequirementKind.OLLAMA_MODEL
     provider = "ollama"
 
     def __init__(self, provider: object) -> None:
@@ -112,11 +112,11 @@ class OllamaModelInstaller:
         self.model = str(getattr(provider, "model", DEFAULT_OLLAMA_MODEL))
         self.provider = str(getattr(provider, "provider", "ollama"))
 
-    def requirement(self) -> RuntimeRequirementSnapshot:
+    def requirement(self) -> LLMRequirementSnapshot:
         """Return model availability without starting a download."""
 
         if not callable(getattr(self._provider, "pull_model", None)):
-            return RuntimeRequirementSnapshot(
+            return LLMRequirementSnapshot(
                 kind=self.kind,
                 label="Ollama model",
                 available=False,
@@ -130,7 +130,7 @@ class OllamaModelInstaller:
         detail = str(getattr(health, "detail", "Model health is unavailable."))
         if not available and unavailable_reason is None and "model" in detail.lower():
             unavailable_reason = "model_missing"
-        return RuntimeRequirementSnapshot(
+        return LLMRequirementSnapshot(
             kind=self.kind,
             label="Ollama model",
             available=available,
@@ -148,8 +148,8 @@ class OllamaModelInstaller:
             )
 
     def install(
-        self, progress: Callable[[RuntimeInstallProgress], None]
-    ) -> RuntimeInstallationStatus:
+        self, progress: Callable[[LLMInstallProgress], None]
+    ) -> LLMInstallationStatus:
         """Pull the configured model through the provider's download API."""
 
         pull = getattr(self._provider, "pull_model", None)
@@ -160,7 +160,7 @@ class OllamaModelInstaller:
 
         def record_model_progress(model_progress: ModelPullProgress) -> None:
             progress(
-                RuntimeInstallProgress(
+                LLMInstallProgress(
                     detail=model_progress.status or "model download running",
                     completed=model_progress.completed,
                     total=model_progress.total,
@@ -171,7 +171,7 @@ class OllamaModelInstaller:
             pull(record_model_progress)
         except Exception as exc:
             raise OllamaInstallationUnavailable(f"Ollama unavailable: {exc}") from exc
-        return RuntimeInstallationStatus.SUCCEEDED
+        return LLMInstallationStatus.SUCCEEDED
 
 
 def ollama_windows_install_command() -> list[str]:

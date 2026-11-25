@@ -9,17 +9,17 @@ from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.platform.config import DEFAULT_OLLAMA_MODEL, Settings
 from cert_prep_backend.ai_providers.infrastructure import machine_inventory as machine_inventory_module
 from cert_prep_ollama.profiles import DEFAULT_PROFILE_ID
-from cert_prep_backend.runtime_provisioning.application import use_cases as runtime_installations
-from cert_prep_backend.runtime_provisioning.application.ports import RuntimeInstallation
-from cert_prep_backend.runtime_provisioning.domain.installation import (
-    RuntimeInstallationJob,
-    RuntimeInstallationTarget,
+from cert_prep_backend.llm_provisioning.application import use_cases as llm_installations
+from cert_prep_backend.llm_provisioning.application.ports import LLMInstallation
+from cert_prep_backend.llm_provisioning.domain.installation import (
+    LLMInstallationJob,
+    LLMInstallationTarget,
 )
-from cert_prep_backend.runtime_provisioning.infrastructure.repository import (
-    RuntimeInstallationJobRepository,
+from cert_prep_backend.llm_provisioning.infrastructure.repository import (
+    LLMInstallationJobRepository,
 )
-from cert_prep_backend.runtime_provisioning.infrastructure.manager import ThreadRuntimeInstallationWork
-from cert_prep_contracts.runtime import RuntimeRequirementKind, RuntimeRequirementSnapshot
+from cert_prep_backend.llm_provisioning.infrastructure.manager import ThreadLLMInstallationWork
+from cert_prep_contracts.llm_installation import LLMRequirementKind, LLMRequirementSnapshot
 from llm_test_fakes import (
     BlockingDownloadProvider,
     FailingDownloadProvider,
@@ -41,33 +41,33 @@ class RecordingSelectedModelInstallers:
     @property
     def selected_model_kind(self):
         self.start_calls += 1
-        return RuntimeRequirementKind.OLLAMA
+        return LLMRequirementKind.OLLAMA
 
     def get(self, kind):
-        assert kind == RuntimeRequirementKind.OLLAMA
+        assert kind == LLMRequirementKind.OLLAMA
         return SimpleNamespace(
             kind=kind, provider="future-provider", model="future-model",
-            requirement=lambda: RuntimeRequirementSnapshot(
+            requirement=lambda: LLMRequirementSnapshot(
                 kind=kind, label="selected model", available=False, detail="missing",
                 unavailable_reason="model_missing",
             ),
         )
 
     def ordered(self):
-        return [self.get(RuntimeRequirementKind.OLLAMA)]
+        return [self.get(LLMRequirementKind.OLLAMA)]
 
 
 def test_model_download_uses_the_selected_model_installer(tmp_path) -> None:
     catalog = RecordingSelectedModelInstallers()
-    jobs = RuntimeInstallationJobRepository()
-    jobs.add(replace(RuntimeInstallationJob.queue(
+    jobs = LLMInstallationJobRepository()
+    jobs.add(replace(LLMInstallationJob.queue(
         id="selected-model-job",
-        target=RuntimeInstallationTarget(RuntimeRequirementKind.OLLAMA, "future-provider", "future-model"),
+        target=LLMInstallationTarget(LLMRequirementKind.OLLAMA, "future-provider", "future-model"),
         detail="selected model installation queued", total=None,
         now=datetime(2026, 7, 12, tzinfo=UTC),
     ), completed=0))
-    work = ThreadRuntimeInstallationWork(jobs.lock, async_jobs=False)
-    runtime = RuntimeInstallation(jobs, catalog, work, work.clock, work.new_id)
+    work = ThreadLLMInstallationWork(jobs.lock, async_jobs=False)
+    runtime = LLMInstallation(jobs, catalog, work, work.clock, work.new_id)
     client = TestClient(
         create_app(
             settings=Settings(
@@ -75,11 +75,11 @@ def test_model_download_uses_the_selected_model_installer(tmp_path) -> None:
                 api_token="test-token",
                 llm_provider="fake",
             ),
-            runtime_installation_manager=runtime,
+            llm_installation_manager=runtime,
         )
     )
 
-    response = client.post("/llm/model-downloads", headers=AUTH_HEADERS)
+    response = client.post("/llm/installations", headers=AUTH_HEADERS, json={"kind": "ollama_model"})
 
     assert response.status_code == 202
     assert response.json()["provider"] == "future-provider"
@@ -112,11 +112,11 @@ def test_model_download_installs_selected_ollama_profile(
                 api_token="test-token",
                 llm_provider="ollama",
             ),
-            runtime_installation_async_jobs=False,
+            llm_installation_async_jobs=False,
         )
     )
 
-    response = client.post("/llm/model-downloads", headers=AUTH_HEADERS)
+    response = client.post("/llm/installations", headers=AUTH_HEADERS, json={"kind": "ollama_model"})
 
     assert response.status_code == 202
     assert response.json()["model"] == "cert-prep-qwen3.5-4b-study-8k"
@@ -132,16 +132,17 @@ def test_model_download_starts_only_from_explicit_post(tmp_path) -> None:
         create_app(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
             llm_provider=provider,
-            runtime_installation_async_jobs=False,
+            llm_installation_async_jobs=False,
         )
     )
 
-    response = client.post("/llm/model-downloads", headers=AUTH_HEADERS)
+    response = client.post("/llm/installations", headers=AUTH_HEADERS, json={"kind": "ollama_model"})
 
     assert response.status_code == 202
     assert provider.pull_calls == 1
     assert response.json() == {
         "id": response.json()["id"],
+        "kind": "ollama_model",
         "provider": "ollama",
         "model": DEFAULT_OLLAMA_MODEL,
         "status": "succeeded",
@@ -167,11 +168,11 @@ def test_model_download_installs_fixed_raw_model_when_profile_disabled(tmp_path)
                 ollama_profile_enabled=False,
             ),
             llm_provider=provider,
-            runtime_installation_async_jobs=False,
+            llm_installation_async_jobs=False,
         )
     )
 
-    response = client.post("/llm/model-downloads", headers=AUTH_HEADERS)
+    response = client.post("/llm/installations", headers=AUTH_HEADERS, json={"kind": "ollama_model"})
 
     assert response.status_code == 202
     assert provider.pull_calls == 1
@@ -184,12 +185,12 @@ def test_model_download_poll_returns_job_status(tmp_path) -> None:
         create_app(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
             llm_provider=provider,
-            runtime_installation_async_jobs=False,
+            llm_installation_async_jobs=False,
         )
     )
-    started = client.post("/llm/model-downloads", headers=AUTH_HEADERS).json()
+    started = client.post("/llm/installations", headers=AUTH_HEADERS, json={"kind": "ollama_model"}).json()
 
-    response = client.get(f"/llm/model-downloads/{started['id']}", headers=AUTH_HEADERS)
+    response = client.get(f"/llm/installations/{started['id']}", headers=AUTH_HEADERS)
 
     assert response.status_code == 200
     assert response.json()["id"] == started["id"]
@@ -214,24 +215,24 @@ def test_model_download_reuses_existing_running_job(tmp_path, monkeypatch) -> No
             llm_provider=provider,
         )
     )
-    manager = client.app.state.runtime_installation_manager
-    original_start = runtime_installations.download_selected_model
+    manager = client.app.state.llm_installation_manager
+    original_start = llm_installations.download_selected_model
 
     def start_after_progress(runtime):
         snapshot = original_start(runtime)
         assert progress_emitted.wait(timeout=5)
-        return runtime_installations.view_runtime_installation(runtime, snapshot.id)
+        return llm_installations.view_llm_installation(runtime, snapshot.id)
 
-    monkeypatch.setattr(runtime_installations, "download_selected_model", start_after_progress)
+    monkeypatch.setattr(llm_installations, "download_selected_model", start_after_progress)
     try:
-        first = client.post("/llm/model-downloads", headers=AUTH_HEADERS)
-        second = client.post("/llm/model-downloads", headers=AUTH_HEADERS)
+        first = client.post("/llm/installations", headers=AUTH_HEADERS, json={"kind": "ollama_model"})
+        second = client.post("/llm/installations", headers=AUTH_HEADERS, json={"kind": "ollama_model"})
     finally:
         release_pull.set()
         for worker in manager.work.workers():
             worker.join(timeout=5)
             assert not worker.is_alive()
-        runtime_installations.stop_runtime_installations(manager)
+        llm_installations.stop_llm_installations(manager)
 
     assert first.status_code == 202
     assert second.status_code == 202
@@ -244,18 +245,18 @@ def test_model_download_records_provider_failure(tmp_path) -> None:
         create_app(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
             llm_provider=provider,
-            runtime_installation_async_jobs=False,
+            llm_installation_async_jobs=False,
         )
     )
 
-    response = client.post("/llm/model-downloads", headers=AUTH_HEADERS)
+    response = client.post("/llm/installations", headers=AUTH_HEADERS, json={"kind": "ollama_model"})
 
     assert response.status_code == 202
     assert response.json()["status"] == "failed"
     assert response.json()["detail"] == "Ollama unavailable: connection refused"
 
 def test_model_download_rejects_provider_without_pull_support(client, auth_headers) -> None:
-    response = client.post("/llm/model-downloads", headers=auth_headers)
+    response = client.post("/llm/installations", headers=auth_headers, json={"kind": "ollama_model"})
 
     assert response.status_code == 503
     assert response.json() == {
@@ -274,11 +275,11 @@ def test_model_download_runs_provider_neutral_onboarding_gate(tmp_path) -> None:
                 llm_provider="ollama",
             ),
             llm_provider=provider,
-            runtime_installation_async_jobs=False,
+            llm_installation_async_jobs=False,
         )
     )
 
-    response = client.post("/llm/model-downloads", headers=AUTH_HEADERS)
+    response = client.post("/llm/installations", headers=AUTH_HEADERS, json={"kind": "ollama_model"})
 
     assert response.status_code == 202
     assert response.json()["status"] == "succeeded"

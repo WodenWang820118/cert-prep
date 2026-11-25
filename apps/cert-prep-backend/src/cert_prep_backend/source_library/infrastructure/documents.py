@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from sqlite3 import Connection
 
+from cert_prep_contracts.documents import SourceKind
+
 from cert_prep_backend.platform.database import Database, utc_now
 from cert_prep_backend.source_library.domain.document import (
     NO_TEXT_DETECTED_MESSAGE,
@@ -27,7 +29,7 @@ def insert_processing_document(
     storage_path: str,
     page_count: int,
     now: str,
-    source_kind: str = "document",
+    source_kind: SourceKind,
     duration_ms: int | None = None,
 ) -> SourceDocument:
     """Insert processing metadata using the caller's transaction."""
@@ -43,8 +45,8 @@ def insert_processing_document(
         )
         VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'none', ?,
             'unknown', '', ?, ?, ?, ?,
-            CASE WHEN ? = 'audio' THEN 'pending' ELSE 'not_applicable' END,
-            CASE WHEN ? = 'audio' THEN 'pending' ELSE 'not_applicable' END)
+            CASE WHEN ? = 'recording' THEN 'pending' ELSE 'not_applicable' END,
+            CASE WHEN ? = 'recording' THEN 'pending' ELSE 'not_applicable' END)
         """,
         (
             document_id,

@@ -12,7 +12,7 @@ export type RuntimePhase =
 /**
  * Current desktop backend status returned by the Tauri command layer.
  */
-export interface DesktopRuntimeStatus {
+export interface RuntimeStatus {
   readonly kind: string;
   readonly label: string;
   readonly available: boolean;
@@ -33,7 +33,7 @@ export interface DesktopRuntimeStatus {
 /**
  * Runtime installation job snapshot returned by the Tauri command layer.
  */
-export interface DesktopRuntimeInstallation {
+export interface RuntimeInstallation {
   readonly id: string;
   readonly kind: string;
   readonly provider: string;

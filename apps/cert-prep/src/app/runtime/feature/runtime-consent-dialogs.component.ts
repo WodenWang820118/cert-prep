@@ -95,15 +95,15 @@ import { ActionButtonComponent } from '../../core/ui';
     </hlm-dialog>
 
     <hlm-dialog
-      [state]="health.runtimeInstallConsentVisible() ? 'open' : 'closed'"
-      [disableClose]="health.runtimeInstallStarting()"
+      [state]="health.llmEngineInstallConsentVisible() ? 'open' : 'closed'"
+      [disableClose]="health.llmEngineInstallStarting()"
       [closeOnOutsidePointerEvents]="false"
-      (closed)="health.setRuntimeInstallConsentVisible(false)"
+      (closed)="health.setLLMEngineInstallConsentVisible(false)"
     >
       <hlm-dialog-content
         *hlmDialogPortal="let ctx"
         class="w-[min(92vw,34rem)] max-w-none sm:max-w-none"
-        [showCloseButton]="!health.runtimeInstallStarting()"
+        [showCloseButton]="!health.llmEngineInstallStarting()"
       >
         <hlm-dialog-header
           ><h3 hlmDialogTitle class="text-lg font-semibold">Install Ollama</h3></hlm-dialog-header
@@ -120,15 +120,15 @@ import { ActionButtonComponent } from '../../core/ui';
             <app-action-button
               label="Cancel"
               variant="outline"
-              [disabled]="health.runtimeInstallStarting()"
-              (pressed)="health.cancelRuntimeInstallConsent()"
+              [disabled]="health.llmEngineInstallStarting()"
+              (pressed)="health.cancelLLMEngineInstallConsent()"
             />
             <app-action-button
               label="Install"
               icon="lucideDownload"
               variant="warn"
-              [loading]="health.runtimeInstallStarting()"
-              (pressed)="health.confirmRuntimeInstallation()"
+              [loading]="health.llmEngineInstallStarting()"
+              (pressed)="health.confirmLLMEngineInstallation()"
             />
           </div>
         </div>

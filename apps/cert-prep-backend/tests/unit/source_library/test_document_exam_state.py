@@ -19,6 +19,7 @@ def _document(**changes: object) -> SourceDocument:
         id="document",
         project_id="project",
         filename="notes.pdf",
+        source_kind="pdf",
         sha256="abc",
         language_hint="ja",
         page_count=1,

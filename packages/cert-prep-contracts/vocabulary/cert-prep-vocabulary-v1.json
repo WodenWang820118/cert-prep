@@ -45,6 +45,41 @@
       "retired": false
     },
     {
+      "id": "source-library.source-kind.document",
+      "label": "文件",
+      "codeName": "SourceKind.DOCUMENT",
+      "enum": { "enumId": "SourceKind", "value": "document" },
+      "retired": true
+    },
+    {
+      "id": "source-library.source-kind.audio",
+      "label": "音訊",
+      "codeName": "SourceKind.AUDIO",
+      "enum": { "enumId": "SourceKind", "value": "audio" },
+      "retired": true
+    },
+    {
+      "id": "source-library.source-kind.pdf",
+      "label": "PDF",
+      "codeName": "SourceKind.PDF",
+      "enum": { "enumId": "SourceKind", "value": "pdf" },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-kind.image",
+      "label": "圖片",
+      "codeName": "SourceKind.IMAGE",
+      "enum": { "enumId": "SourceKind", "value": "image" },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-kind.recording",
+      "label": "錄音",
+      "codeName": "SourceKind.RECORDING",
+      "enum": { "enumId": "SourceKind", "value": "recording" },
+      "retired": false
+    },
+    {
       "id": "source-library.document-status.processing",
       "label": "處理中",
       "codeName": "SourceDocumentStatus.PROCESSING",
@@ -406,6 +441,13 @@
       "label": "Ollama 執行環境",
       "codeName": "RuntimeRequirementKind.OLLAMA",
       "enum": { "enumId": "RuntimeRequirementKind", "value": "ollama" },
+      "retired": true
+    },
+    {
+      "id": "llm-provisioning.requirement-kind.ollama",
+      "label": "Ollama 執行環境",
+      "codeName": "LLMRequirementKind.OLLAMA",
+      "enum": { "enumId": "LLMRequirementKind", "value": "ollama" },
       "retired": false
     },
     {
@@ -413,6 +455,13 @@
       "label": "Ollama 模型",
       "codeName": "RuntimeRequirementKind.OLLAMA_MODEL",
       "enum": { "enumId": "RuntimeRequirementKind", "value": "ollama_model" },
+      "retired": true
+    },
+    {
+      "id": "llm-provisioning.requirement-kind.ollama-model",
+      "label": "Ollama 模型",
+      "codeName": "LLMRequirementKind.OLLAMA_MODEL",
+      "enum": { "enumId": "LLMRequirementKind", "value": "ollama_model" },
       "retired": false
     },
     {
@@ -421,6 +470,16 @@
       "codeName": "RuntimeInstallationStatus.QUEUED",
       "enum": {
         "enumId": "cert_prep_contracts__runtime__RuntimeInstallationStatus",
+        "value": "queued"
+      },
+      "retired": true
+    },
+    {
+      "id": "llm-provisioning.installation-status.queued",
+      "label": "排隊",
+      "codeName": "LLMInstallationStatus.QUEUED",
+      "enum": {
+        "enumId": "LLMInstallationStatus",
         "value": "queued"
       },
       "retired": false
@@ -433,6 +492,16 @@
         "enumId": "cert_prep_contracts__runtime__RuntimeInstallationStatus",
         "value": "running"
       },
+      "retired": true
+    },
+    {
+      "id": "llm-provisioning.installation-status.running",
+      "label": "執行中",
+      "codeName": "LLMInstallationStatus.RUNNING",
+      "enum": {
+        "enumId": "LLMInstallationStatus",
+        "value": "running"
+      },
       "retired": false
     },
     {
@@ -441,6 +510,16 @@
       "codeName": "RuntimeInstallationStatus.CANCEL_REQUESTED",
       "enum": {
         "enumId": "cert_prep_contracts__runtime__RuntimeInstallationStatus",
+        "value": "cancel_requested"
+      },
+      "retired": true
+    },
+    {
+      "id": "llm-provisioning.installation-status.cancel-requested",
+      "label": "要求取消",
+      "codeName": "LLMInstallationStatus.CANCEL_REQUESTED",
+      "enum": {
+        "enumId": "LLMInstallationStatus",
         "value": "cancel_requested"
       },
       "retired": false
@@ -453,6 +532,16 @@
         "enumId": "cert_prep_contracts__runtime__RuntimeInstallationStatus",
         "value": "canceled"
       },
+      "retired": true
+    },
+    {
+      "id": "llm-provisioning.installation-status.canceled",
+      "label": "已取消",
+      "codeName": "LLMInstallationStatus.CANCELED",
+      "enum": {
+        "enumId": "LLMInstallationStatus",
+        "value": "canceled"
+      },
       "retired": false
     },
     {
@@ -461,6 +550,16 @@
       "codeName": "RuntimeInstallationStatus.WAITING_FOR_USER",
       "enum": {
         "enumId": "cert_prep_contracts__runtime__RuntimeInstallationStatus",
+        "value": "waiting_for_user"
+      },
+      "retired": true
+    },
+    {
+      "id": "llm-provisioning.installation-status.waiting-for-user",
+      "label": "等待使用者",
+      "codeName": "LLMInstallationStatus.WAITING_FOR_USER",
+      "enum": {
+        "enumId": "LLMInstallationStatus",
         "value": "waiting_for_user"
       },
       "retired": false
@@ -473,6 +572,16 @@
         "enumId": "cert_prep_contracts__runtime__RuntimeInstallationStatus",
         "value": "succeeded"
       },
+      "retired": true
+    },
+    {
+      "id": "llm-provisioning.installation-status.succeeded",
+      "label": "成功",
+      "codeName": "LLMInstallationStatus.SUCCEEDED",
+      "enum": {
+        "enumId": "LLMInstallationStatus",
+        "value": "succeeded"
+      },
       "retired": false
     },
     {
@@ -481,6 +590,16 @@
       "codeName": "RuntimeInstallationStatus.FAILED",
       "enum": {
         "enumId": "cert_prep_contracts__runtime__RuntimeInstallationStatus",
+        "value": "failed"
+      },
+      "retired": true
+    },
+    {
+      "id": "llm-provisioning.installation-status.failed",
+      "label": "失敗",
+      "codeName": "LLMInstallationStatus.FAILED",
+      "enum": {
+        "enumId": "LLMInstallationStatus",
         "value": "failed"
       },
       "retired": false

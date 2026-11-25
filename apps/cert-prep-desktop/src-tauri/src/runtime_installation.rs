@@ -18,7 +18,7 @@ use crate::{
 /// Runtime installation job state returned to Angular during install polling.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DesktopRuntimeInstallation {
+pub struct RuntimeInstallation {
     pub id: String,
     pub kind: String,
     pub provider: String,
@@ -219,8 +219,8 @@ pub(crate) fn update_job(
     }
 }
 
-pub(crate) fn installation_from_job(job: RuntimeJob) -> DesktopRuntimeInstallation {
-    DesktopRuntimeInstallation {
+pub(crate) fn installation_from_job(job: RuntimeJob) -> RuntimeInstallation {
+    RuntimeInstallation {
         id: job.id,
         kind: job.kind,
         provider: job.provider,
@@ -235,9 +235,9 @@ pub(crate) fn installation_from_job(job: RuntimeJob) -> DesktopRuntimeInstallati
     }
 }
 
-pub(crate) fn completed_installation(detail: &str) -> DesktopRuntimeInstallation {
+pub(crate) fn completed_installation(detail: &str) -> RuntimeInstallation {
     let now = now_string();
-    DesktopRuntimeInstallation {
+    RuntimeInstallation {
         id: uuid::Uuid::new_v4().to_string(),
         kind: PYTHON_RUNTIME_KIND.into(),
         provider: "pyinstaller".into(),
@@ -252,8 +252,8 @@ pub(crate) fn completed_installation(detail: &str) -> DesktopRuntimeInstallation
     }
 }
 
-pub(crate) fn failed_installation(detail: &str) -> DesktopRuntimeInstallation {
-    DesktopRuntimeInstallation {
+pub(crate) fn failed_installation(detail: &str) -> RuntimeInstallation {
+    RuntimeInstallation {
         error: Some(detail.into()),
         status: "failed".into(),
         ..completed_installation(detail)

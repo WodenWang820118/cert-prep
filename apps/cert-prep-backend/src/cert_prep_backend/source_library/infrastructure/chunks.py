@@ -99,7 +99,7 @@ def update_chunk_text(
             """
             UPDATE documents
             SET translation_status = 'failed', updated_at = ?
-            WHERE project_id = ? AND id = ? AND source_kind = 'audio'
+            WHERE project_id = ? AND id = ? AND source_kind = 'recording'
             """,
             (utc_now(), project_id, document_id),
         )
@@ -214,7 +214,7 @@ def reconcile_document_translation_status(
         updated = connection.execute(
             """
             UPDATE documents SET translation_status = ?, updated_at = ?
-            WHERE project_id = ? AND id = ? AND source_kind = 'audio'
+            WHERE project_id = ? AND id = ? AND source_kind = 'recording'
             """,
             (status, utc_now(), project_id, document_id),
         )

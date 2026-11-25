@@ -8,10 +8,10 @@ import {
 } from '@angular/core';
 import { from, Subject } from 'rxjs';
 import { CertPrepHttpResourceClient } from '../../core/data';
-import type { RuntimeKind } from '../domain';
+import type { LLMRequirementKind } from '../../core/domain';
 import { HealthStatusStore } from './health-status.store';
-import { RuntimeActionsStore } from './runtime-actions.store';
-import { RuntimeApiClientsService } from './runtime-api-clients.service';
+import { LLMInstallationActionsStore } from './llm-installation-actions.store';
+import { LLMApiClientsService } from './llm-api-clients.service';
 import { OperationStore } from '../../core/data';
 
 @Injectable({ providedIn: 'root' })
@@ -19,8 +19,8 @@ export class HealthStore {
   private readonly operations = inject(OperationStore);
   private readonly resources = inject(CertPrepHttpResourceClient);
   private readonly status = inject(HealthStatusStore);
-  private readonly actions = inject(RuntimeActionsStore);
-  private readonly runtimeApi = inject(RuntimeApiClientsService);
+  private readonly actions = inject(LLMInstallationActionsStore);
+  private readonly runtimeApi = inject(LLMApiClientsService);
   private readonly healthRequested = signal(false);
   private readonly systemHealthResource = this.resources.health(() =>
     this.healthRequested(),
@@ -31,8 +31,8 @@ export class HealthStore {
   private readonly providerSelectionResource = this.resources.providerSelection(
     () => this.healthRequested(),
   );
-  private readonly runtimeRequirementsResource =
-    this.resources.runtimeRequirements(() => this.healthRequested());
+  private readonly llmRequirementsResource =
+    this.resources.llmRequirements(() => this.healthRequested());
   private healthReloadPending = false;
   private readonly healthRefreshFinished = new Subject<void>();
   // Emitted after all snapshot resources settle, including failed requests.
@@ -43,25 +43,25 @@ export class HealthStore {
   readonly systemHealth = this.status.systemHealth;
   readonly providerSelection = this.status.providerSelection;
   readonly healthSnapshotLoading = this.status.healthSnapshotLoading;
-  readonly runtimeRequirements = this.status.runtimeRequirements;
+  readonly llmRequirements = this.status.llmRequirements;
   readonly modelDownloadConsentVisible =
     this.actions.modelDownloadConsentVisible;
   readonly modelDownloadStarting = this.actions.modelDownloadStarting;
   readonly modelDownloadCanceling = this.actions.modelDownloadCanceling;
   readonly modelDownload = this.actions.modelDownload;
   readonly modelDownloadStreamError = this.actions.modelDownloadStreamError;
-  readonly runtimeInstallConsentKind = this.actions.runtimeInstallConsentKind;
-  readonly runtimeInstallStarting = this.actions.runtimeInstallStarting;
-  readonly runtimeInstallCanceling = this.actions.runtimeInstallCanceling;
-  readonly runtimeInstall = this.actions.runtimeInstall;
-  readonly runtimeInstallStreamError = this.actions.runtimeInstallStreamError;
+  readonly llmEngineInstallConsentKind = this.actions.llmEngineInstallConsentKind;
+  readonly llmEngineInstallStarting = this.actions.llmEngineInstallStarting;
+  readonly llmEngineInstallCanceling = this.actions.llmEngineInstallCanceling;
+  readonly llmEngineInstall = this.actions.llmEngineInstall;
+  readonly llmEngineInstallStreamError = this.actions.llmEngineInstallStreamError;
   readonly isModelMissing = this.status.isModelMissing;
   readonly isConfiguredModelMissing = this.status.isConfiguredModelMissing;
   readonly isModelDownloadActive = this.actions.isModelDownloadActive;
-  readonly isRuntimeInstallActive = this.actions.isRuntimeInstallActive;
+  readonly isLLMEngineInstallActive = this.actions.isLLMEngineInstallActive;
   readonly canCancelModelDownload = this.actions.canCancelModelDownload;
-  readonly canCancelRuntimeInstallation =
-    this.actions.canCancelRuntimeInstallation;
+  readonly canCancelLLMEngineInstallation =
+    this.actions.canCancelLLMEngineInstallation;
   readonly isOllamaMissing = this.status.isOllamaMissing;
   readonly isLlmRuntimeMissing = this.status.isLlmRuntimeMissing;
   readonly llmProviderLabel = this.status.llmProviderLabel;
@@ -75,7 +75,7 @@ export class HealthStore {
       this.providerSelection()?.model_requirement_kind;
     const requirementMissing =
       selectedModelMissing !== null && selectedModelMissing !== undefined
-        ? this.runtimeRequirements().some(
+        ? this.llmRequirements().some(
             (item) =>
               item.kind === selectedModelMissing && item.available === false,
           )
@@ -91,11 +91,11 @@ export class HealthStore {
     () =>
       this.providerAllows('ollama') &&
       this.isOllamaMissing() &&
-      !this.isRuntimeInstallActive(),
+      !this.isLLMEngineInstallActive(),
   );
 
-  readonly runtimeInstallConsentVisible =
-    this.actions.runtimeInstallConsentVisible;
+  readonly llmEngineInstallConsentVisible =
+    this.actions.llmEngineInstallConsentVisible;
 
   load(): void {
     if (!this.healthReloadPending) this.status.beginHealthSnapshotLoad();
@@ -133,28 +133,28 @@ export class HealthStore {
     this.actions.cancelModelDownloadConsent();
   }
   confirmModelDownload(): void {
-    this.actions.confirmModelDownload(this.runtimeActionContext());
+    this.actions.confirmModelDownload(this.llmInstallationActionContext());
   }
 
-  openRuntimeInstallConsent(kind: RuntimeKind): void {
-    this.actions.openRuntimeInstallConsent(kind, this.canInstallRuntime(kind));
+  openLLMEngineInstallConsent(kind: LLMRequirementKind): void {
+    this.actions.openLLMEngineInstallConsent(kind, this.canInstallLLMEngine(kind));
   }
 
   openOllamaInstallConsent(): void {
-    this.openRuntimeInstallConsent('ollama');
+    this.openLLMEngineInstallConsent('ollama');
   }
-  refreshRuntimeRequirements(): void {
-    this.runtimeRequirementsResource.reload();
+  refreshLLMRequirements(): void {
+    this.llmRequirementsResource.reload();
   }
 
-  loadRuntimeRequirementsForUpload(): void {
+  loadLLMRequirementsForUpload(): void {
     from(
-      this.runtimeApi.runtimeInstallationClient().runtimeRequirements(),
+      this.runtimeApi.llmInstallationClient().llmRequirements(),
     ).subscribe({
       next: (response) => {
-        this.runtimeRequirementsResource.set(response.items);
+        this.llmRequirementsResource.set(response.items);
         this.status.applyHealthSnapshot({
-          runtimeRequirements: response.items,
+          llmRequirements: response.items,
         });
       },
       error: () =>
@@ -164,42 +164,42 @@ export class HealthStore {
     });
   }
 
-  setRuntimeInstallConsentVisible(visible: boolean): void {
-    this.actions.setRuntimeInstallConsentVisible(visible);
+  setLLMEngineInstallConsentVisible(visible: boolean): void {
+    this.actions.setLLMEngineInstallConsentVisible(visible);
   }
-  cancelRuntimeInstallConsent(): void {
-    this.actions.cancelRuntimeInstallConsent();
+  cancelLLMEngineInstallConsent(): void {
+    this.actions.cancelLLMEngineInstallConsent();
   }
-  confirmRuntimeInstallation(): void {
-    this.actions.confirmRuntimeInstallation(this.runtimeActionContext());
+  confirmLLMEngineInstallation(): void {
+    this.actions.confirmLLMEngineInstallation(this.llmInstallationActionContext());
   }
-  refreshRuntimeInstallation(): void {
-    this.actions.refreshRuntimeInstallation(this.runtimeActionContext());
+  refreshLLMEngineInstallation(): void {
+    this.actions.refreshLLMEngineInstallation(this.llmInstallationActionContext());
   }
   refreshModelDownload(): void {
-    this.actions.refreshModelDownload(this.runtimeActionContext());
+    this.actions.refreshModelDownload(this.llmInstallationActionContext());
   }
   cancelModelDownload(): void {
-    this.actions.cancelModelDownload(this.runtimeActionContext());
+    this.actions.cancelModelDownload(this.llmInstallationActionContext());
   }
-  cancelRuntimeInstallation(): void {
-    this.actions.cancelRuntimeInstallation(this.runtimeActionContext());
+  cancelLLMEngineInstallation(): void {
+    this.actions.cancelLLMEngineInstallation(this.llmInstallationActionContext());
   }
 
-  private runtimeActionContext() {
+  private llmInstallationActionContext() {
     return {
       canDownloadModel: () => this.canDownloadModel(),
-      canInstallRuntime: (kind: RuntimeKind) => this.canInstallRuntime(kind),
+      canInstallLLMEngine: (kind: LLMRequirementKind) => this.canInstallLLMEngine(kind),
       configuredModelName: () => this.configuredModelName(),
-      refreshHealthAfterRuntimeChange: (): void => this.load(),
+      refreshHealthAfterLLMInstallation: (): void => this.load(),
     };
   }
 
-  private canInstallRuntime(kind: RuntimeKind): boolean {
-    if (this.isRuntimeInstallActive()) return false;
+  private canInstallLLMEngine(kind: LLMRequirementKind): boolean {
+    if (this.isLLMEngineInstallActive()) return false;
     return (
       kind === 'ollama' &&
-      (this.isOllamaMissing() || this.runtimeInstallConsentKind() === kind)
+      (this.isOllamaMissing() || this.llmEngineInstallConsentKind() === kind)
     );
   }
 
@@ -215,7 +215,7 @@ export class HealthStore {
     this.systemHealthResource.reload();
     this.llmHealthResource.reload();
     this.providerSelectionResource.reload();
-    this.runtimeRequirementsResource.reload();
+    this.llmRequirementsResource.reload();
   }
 
   private syncHealthResources(): void {
@@ -232,16 +232,16 @@ export class HealthStore {
       if (value !== null)
         this.status.applyHealthSnapshot({ providerSelection: value });
     }
-    if (this.isResolved(this.runtimeRequirementsResource.status())) {
+    if (this.isResolved(this.llmRequirementsResource.status())) {
       this.status.applyHealthSnapshot({
-        runtimeRequirements: this.runtimeRequirementsResource.value(),
+        llmRequirements: this.llmRequirementsResource.value(),
       });
     }
     const healthResources = [
       this.systemHealthResource,
       this.llmHealthResource,
       this.providerSelectionResource,
-      this.runtimeRequirementsResource,
+      this.llmRequirementsResource,
     ];
     if (
       this.healthReloadPending &&

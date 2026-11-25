@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { JsonResponse, JsonTransport } from './api-client.mts';
+import type { JsonRequestOptions, JsonResponse, JsonTransport } from './api-client.mts';
 import {
   runCancelableOperationScenario,
   type CancelableOperationScenario,
@@ -11,6 +11,7 @@ interface ScriptedRequest {
   readonly method: 'GET' | 'POST' | 'DELETE';
   readonly path: string;
   readonly response: JsonResponse;
+  readonly data?: unknown;
 }
 
 class ScriptedTransport implements JsonTransport {
@@ -24,11 +25,13 @@ class ScriptedTransport implements JsonTransport {
   async request(
     method: 'GET' | 'POST' | 'DELETE',
     path: string,
+    options?: JsonRequestOptions,
   ): Promise<JsonResponse> {
     const request = this.#requests[this.#index];
     assert.ok(request, `Unexpected ${method} ${path}.`);
     assert.equal(method, request.method);
     assert.equal(path, request.path);
+    assert.deepEqual(options?.data, request.data);
     this.#index += 1;
     return request.response;
   }
@@ -107,8 +110,9 @@ test('proves canceled state before starting the non-cancellable commit probe', a
   let transport: ScriptedTransport | null = null;
   const scenario: CancelableOperationScenario = {
     kind: 'model',
-    startPath: '/llm/model-downloads',
-    operationPath: (operationId) => `/llm/model-downloads/${operationId}`,
+    startPath: '/llm/installations',
+    startData: { kind: 'ollama_model' },
+    operationPath: (operationId) => `/llm/installations/${operationId}`,
     provider: 'ollama',
     model: 'qwen3.5:4b',
     timeoutMs: 1_000,
@@ -157,8 +161,9 @@ test('proves canceled state before starting the non-cancellable commit probe', a
 test('consumes an already completed runtime commit transition before rejecting cancel', async () => {
   const scenario: CancelableOperationScenario = {
     kind: 'runtime',
-    startPath: '/runtime/installations/ollama',
-    operationPath: (operationId) => `/runtime/installations/${operationId}`,
+    startPath: '/llm/installations',
+    startData: { kind: 'ollama' },
+    operationPath: (operationId) => `/llm/installations/${operationId}`,
     operationKind: 'ollama',
     provider: 'ollama',
     model: 'fixture-runtime-model',
@@ -200,8 +205,9 @@ test('consumes an already completed runtime commit transition before rejecting c
 test('rejects model scope drift on the durable commit response', async () => {
   const scenario: CancelableOperationScenario = {
     kind: 'model',
-    startPath: '/llm/model-downloads',
-    operationPath: (operationId) => `/llm/model-downloads/${operationId}`,
+    startPath: '/llm/installations',
+    startData: { kind: 'ollama_model' },
+    operationPath: (operationId) => `/llm/installations/${operationId}`,
     provider: 'ollama',
     model: 'qwen3.5:4b',
     timeoutMs: 1_000,
@@ -276,6 +282,7 @@ function successfulRequests(
     {
       method: 'POST',
       path: scenario.startPath,
+      data: scenario.startData,
       response: {
         status: 202,
         body: operation(
@@ -321,6 +328,7 @@ function successfulRequests(
     {
       method: 'POST',
       path: scenario.startPath,
+      data: scenario.startData,
       response: {
         status: 202,
         body: operation(

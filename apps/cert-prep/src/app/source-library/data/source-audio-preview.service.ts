@@ -73,13 +73,13 @@ export class SourceAudioPreviewService {
           this.requestState.set({
             url: null,
             loading: false,
-            error: 'The source audio could not be loaded.',
+            error: 'The recording could not be loaded.',
           });
         } else if (typeof URL.createObjectURL !== 'function') {
           this.requestState.set({
             url: null,
             loading: false,
-            error: 'Audio playback is unavailable in this environment.',
+            error: 'Recording playback is unavailable in this environment.',
           });
         } else {
           try {
@@ -94,7 +94,7 @@ export class SourceAudioPreviewService {
             this.requestState.set({
               url: null,
               loading: false,
-              error: 'Audio playback is unavailable in this environment.',
+              error: 'Recording playback is unavailable in this environment.',
             });
           }
         }

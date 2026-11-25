@@ -10,7 +10,7 @@ import {
   exactOllamaHealth,
   exactOllamaTags,
   exactProviderSelection,
-  exactOllamaRuntimeRequirement,
+  exactOllamaLLMRequirement,
   waitForExactDocumentDrafts,
 } from './resilience-runner.mts';
 
@@ -22,7 +22,7 @@ test('remaining provider selection accepts only exact raw Ollama 4b scope', asyn
       effective_provider: 'ollama',
       configured_model: 'qwen3.5:4b',
       effective_model: 'qwen3.5:4b',
-      runtime_requirement_kind: 'ollama',
+      llm_engine_requirement_kind: 'ollama',
       model_requirement_kind: 'ollama_model',
     }),
   ]);
@@ -40,7 +40,7 @@ test('remaining provider selection accepts only exact raw Ollama 4b scope', asyn
       effective_provider: 'fake',
       configured_model: 'qwen3.5:4b',
       effective_model: 'qwen3.5:4b',
-      runtime_requirement_kind: 'fake_runtime',
+      llm_engine_requirement_kind: 'fake_runtime',
       model_requirement_kind: 'fake_model',
     }),
   ]);
@@ -57,7 +57,7 @@ test('Ollama requirement must transition from missing to a canonical run-local p
     const installed = join(appData, 'runtimes', 'ollama');
     mkdirSync(join(appData, 'runtimes'), { recursive: true });
     const transport = new ScriptedTransport([
-      response('/runtime/requirements', {
+      response('/llm/requirements', {
         items: [
           {
             kind: 'ollama',
@@ -67,7 +67,7 @@ test('Ollama requirement must transition from missing to a canonical run-local p
           },
         ],
       }),
-      response('/runtime/requirements', {
+      response('/llm/requirements', {
         items: [
           {
             kind: 'ollama',
@@ -79,16 +79,16 @@ test('Ollama requirement must transition from missing to a canonical run-local p
       }),
     ]);
 
-    const missing = await exactOllamaRuntimeRequirement(transport, false, appData);
+    const missing = await exactOllamaLLMRequirement(transport, false, appData);
     assert.equal(missing.available, false);
     assert.equal(missing.installTargetPathRelative, 'runtimes/ollama');
     mkdirSync(installed);
-    const ready = await exactOllamaRuntimeRequirement(transport, true, appData);
+    const ready = await exactOllamaLLMRequirement(transport, true, appData);
     assert.equal(ready.available, true);
     assert.equal(ready.installedPathRelative, 'runtimes/ollama');
 
     const staleMissing = new ScriptedTransport([
-      response('/runtime/requirements', {
+      response('/llm/requirements', {
         items: [
           {
             kind: 'ollama',
@@ -100,12 +100,12 @@ test('Ollama requirement must transition from missing to a canonical run-local p
       }),
     ]);
     await assert.rejects(
-      exactOllamaRuntimeRequirement(staleMissing, false, appData),
+      exactOllamaLLMRequirement(staleMissing, false, appData),
       /missing runtime target already existed/,
     );
 
     const outsideMissing = new ScriptedTransport([
-      response('/runtime/requirements', {
+      response('/llm/requirements', {
         items: [
           {
             kind: 'ollama',
@@ -117,12 +117,12 @@ test('Ollama requirement must transition from missing to a canonical run-local p
       }),
     ]);
     await assert.rejects(
-      exactOllamaRuntimeRequirement(outsideMissing, false, appData),
+      exactOllamaLLMRequirement(outsideMissing, false, appData),
       /missing runtime target was not contained/,
     );
 
     const unhealthyMissing = new ScriptedTransport([
-      response('/runtime/requirements', {
+      response('/llm/requirements', {
         items: [
           {
             kind: 'ollama',
@@ -134,14 +134,14 @@ test('Ollama requirement must transition from missing to a canonical run-local p
       }),
     ]);
     await assert.rejects(
-      exactOllamaRuntimeRequirement(unhealthyMissing, false, appData),
+      exactOllamaLLMRequirement(unhealthyMissing, false, appData),
       /not a clean missing prerequisite/,
     );
 
     const outside = join(workspace, 'outside-runtime');
     mkdirSync(outside);
     const drift = new ScriptedTransport([
-      response('/runtime/requirements', {
+      response('/llm/requirements', {
         items: [
           {
             kind: 'ollama',
@@ -153,7 +153,7 @@ test('Ollama requirement must transition from missing to a canonical run-local p
       }),
     ]);
     await assert.rejects(
-      exactOllamaRuntimeRequirement(drift, true, appData),
+      exactOllamaLLMRequirement(drift, true, appData),
       /not contained by this acceptance app-data/,
     );
 
@@ -167,7 +167,7 @@ test('Ollama requirement must transition from missing to a canonical run-local p
       process.platform === 'win32' ? 'junction' : 'dir',
     );
     const linkedMissing = new ScriptedTransport([
-      response('/runtime/requirements', {
+      response('/llm/requirements', {
         items: [
           {
             kind: 'ollama',
@@ -179,11 +179,11 @@ test('Ollama requirement must transition from missing to a canonical run-local p
       }),
     ]);
     await assert.rejects(
-      exactOllamaRuntimeRequirement(linkedMissing, false, appData),
+      exactOllamaLLMRequirement(linkedMissing, false, appData),
       /target ancestor was unsafe/,
     );
     const reparseDrift = new ScriptedTransport([
-      response('/runtime/requirements', {
+      response('/llm/requirements', {
         items: [
           {
             kind: 'ollama',
@@ -195,7 +195,7 @@ test('Ollama requirement must transition from missing to a canonical run-local p
       }),
     ]);
     await assert.rejects(
-      exactOllamaRuntimeRequirement(reparseDrift, true, appData),
+      exactOllamaLLMRequirement(reparseDrift, true, appData),
       /installed path was not canonical/,
     );
   } finally {

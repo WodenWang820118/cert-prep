@@ -697,15 +697,15 @@ function validateRuntimeTransition(
   immediate: Record<string, unknown>,
   afterWindow: Record<string, unknown>,
 ): void {
-  const targetBefore = validateUnavailableRuntimeRequirement(
+  const targetBefore = validateUnavailableLLMRequirement(
     proof.requirementBefore,
     'requirementBefore',
   );
-  const targetImmediate = validateUnavailableRuntimeRequirement(
+  const targetImmediate = validateUnavailableLLMRequirement(
     immediate,
     'canceledState.immediate',
   );
-  const targetAfterWindow = validateUnavailableRuntimeRequirement(
+  const targetAfterWindow = validateUnavailableLLMRequirement(
     afterWindow,
     'canceledState.afterWindow',
   );
@@ -736,7 +736,7 @@ function validateRuntimeTransition(
   }
 }
 
-function validateUnavailableRuntimeRequirement(
+function validateUnavailableLLMRequirement(
   raw: unknown,
   field: string,
 ): string {

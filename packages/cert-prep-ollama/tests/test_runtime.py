@@ -7,11 +7,11 @@ import subprocess
 import pytest
 
 from cert_prep_contracts.llm import ModelPullProgress
-from cert_prep_contracts.runtime import RuntimeInstallationStatus, RuntimeRequirementKind
+from cert_prep_contracts.llm_installation import LLMInstallationStatus, LLMRequirementKind
 from cert_prep_ollama import installers as installer_module
 from cert_prep_ollama import server as server_module
 from cert_prep_ollama.exceptions import OllamaInstallationUnavailable
-from cert_prep_ollama.installers import OllamaModelInstaller, OllamaRuntimeInstaller
+from cert_prep_ollama.installers import OllamaModelInstaller, OllamaInstaller
 from cert_prep_ollama.models import (
     extract_model_names,
     pull_progress,
@@ -64,9 +64,9 @@ def test_ollama_server_bind_host_uses_url_authority() -> None:
 def test_ollama_runtime_requirement_reports_missing_executable(monkeypatch) -> None:
     monkeypatch.setattr(installer_module, "resolve_ollama_executable", lambda: None)
 
-    requirement = OllamaRuntimeInstaller().requirement()
+    requirement = OllamaInstaller().requirement()
 
-    assert requirement.kind == RuntimeRequirementKind.OLLAMA
+    assert requirement.kind == LLMRequirementKind.OLLAMA
     assert requirement.available is False
     assert requirement.unavailable_reason == "ollama_missing"
 
@@ -97,11 +97,11 @@ def test_ollama_runtime_install_uses_winget_and_starts_api(monkeypatch) -> None:
         lambda host, *, executable=None: started.append((host, executable)) or True,
     )
 
-    status = OllamaRuntimeInstaller(
+    status = OllamaInstaller(
         ollama_host="http://127.0.0.1:11434",
     ).install(lambda _progress: None)
 
-    assert status == RuntimeInstallationStatus.SUCCEEDED
+    assert status == LLMInstallationStatus.SUCCEEDED
     assert commands == [
         [
             "C:/Windows/System32/winget.exe",
@@ -145,9 +145,9 @@ def test_ollama_runtime_install_falls_back_to_official_script_without_winget(
         lambda _host, *, executable=None: True,
     )
 
-    status = OllamaRuntimeInstaller().install(lambda _progress: None)
+    status = OllamaInstaller().install(lambda _progress: None)
 
-    assert status == RuntimeInstallationStatus.SUCCEEDED
+    assert status == LLMInstallationStatus.SUCCEEDED
     assert commands == [
         [
             "powershell.exe",
@@ -173,7 +173,7 @@ def test_ollama_runtime_install_raises_provider_error_on_command_failure(monkeyp
     monkeypatch.setattr(installer_module.subprocess, "run", fake_run)
 
     with pytest.raises(OllamaInstallationUnavailable, match="winget failed"):
-        OllamaRuntimeInstaller().install(lambda _progress: None)
+        OllamaInstaller().install(lambda _progress: None)
 
 
 def test_ollama_model_installer_rejects_unsupported_provider() -> None:
@@ -181,7 +181,7 @@ def test_ollama_model_installer_rejects_unsupported_provider() -> None:
 
     requirement = installer.requirement()
 
-    assert requirement.kind == RuntimeRequirementKind.OLLAMA_MODEL
+    assert requirement.kind == LLMRequirementKind.OLLAMA_MODEL
     assert requirement.available is False
     assert requirement.unavailable_reason == "unsupported_provider"
     with pytest.raises(OllamaInstallationUnavailable, match="does not support model downloads"):
@@ -202,5 +202,5 @@ def test_ollama_model_installer_forwards_pull_progress() -> None:
         lambda item: progress.append((item.detail, item.completed, item.total))
     )
 
-    assert status == RuntimeInstallationStatus.SUCCEEDED
+    assert status == LLMInstallationStatus.SUCCEEDED
     assert progress == [("pulling manifest", 128, 256)]

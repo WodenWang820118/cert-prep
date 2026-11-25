@@ -16,7 +16,7 @@ from cert_prep_ollama.exceptions import OllamaError, OllamaInstallationUnavailab
 from cert_prep_ollama.inventory import collect_machine_inventory
 from cert_prep_ollama.installers import (
     OllamaModelInstaller,
-    OllamaRuntimeInstaller,
+    OllamaInstaller,
     ollama_windows_install_command,
 )
 from cert_prep_ollama.modelfiles import (
@@ -82,7 +82,7 @@ __all__ = [
     "OllamaLogParser",
     "OllamaModelInstaller",
     "OllamaProfileInstaller",
-    "OllamaRuntimeInstaller",
+    "OllamaInstaller",
     "OllamaServerCoordinator",
     "OllamaInstallationUnavailable",
     "RunnerDevice",

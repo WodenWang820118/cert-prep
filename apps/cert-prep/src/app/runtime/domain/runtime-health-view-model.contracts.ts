@@ -42,7 +42,7 @@ export interface RuntimeHealthViewModel {
   readonly model: RuntimeStatusSectionView;
 }
 
-export interface DesktopRuntimeStatusView {
+export interface RuntimeStatusView {
   readonly status: string;
   readonly detail: string;
   readonly running: boolean;
@@ -56,7 +56,7 @@ export interface RuntimeHealthViewState {
   readonly backendReady: boolean;
   readonly pythonRuntimeMissing: boolean;
   readonly pythonInstallActive: boolean;
-  readonly desktopStatus: DesktopRuntimeStatusView;
+  readonly desktopStatus: RuntimeStatusView;
   readonly desktopInstallDetail: string | null;
   readonly systemHealth: HealthResponse | null;
   readonly llmHealth: LLMHealthRead | null;

@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import type {
-  DesktopRuntimeInstallation,
-  DesktopRuntimeStatus,
+  RuntimeInstallation,
+  RuntimeStatus,
   RuntimePhase,
   RuntimeUpdateNotice,
 } from '../domain';
@@ -12,7 +12,7 @@ import { RUNTIME_UPDATE_COPY } from '../domain';
  */
 @Injectable({ providedIn: 'root' })
 export class DesktopRuntimeViewService {
-  browserStatus(): DesktopRuntimeStatus {
+  browserStatus(): RuntimeStatus {
     return {
       kind: 'developer_backend',
       label: 'Developer backend',
@@ -32,7 +32,7 @@ export class DesktopRuntimeViewService {
     };
   }
 
-  browserCaptureRuntimeStatus(): DesktopRuntimeStatus {
+  browserCaptureRuntimeStatus(): RuntimeStatus {
     return {
       kind: 'capture_runtime',
       label: 'Capture Runtime',
@@ -52,7 +52,7 @@ export class DesktopRuntimeViewService {
     };
   }
 
-  pendingCaptureRuntimeStatus(): DesktopRuntimeStatus {
+  pendingCaptureRuntimeStatus(): RuntimeStatus {
     return {
       kind: 'capture_runtime',
       label: 'Capture Runtime',
@@ -74,8 +74,8 @@ export class DesktopRuntimeViewService {
 
   failedInstallation(
     message: string,
-    current: DesktopRuntimeInstallation | null,
-  ): DesktopRuntimeInstallation {
+    current: RuntimeInstallation | null,
+  ): RuntimeInstallation {
     return {
       id: current?.id ?? '',
       kind: 'python_backend',
@@ -93,8 +93,8 @@ export class DesktopRuntimeViewService {
 
   failedCaptureRuntimeInstallation(
     message: string,
-    current: DesktopRuntimeInstallation | null,
-  ): DesktopRuntimeInstallation {
+    current: RuntimeInstallation | null,
+  ): RuntimeInstallation {
     return {
       id: current?.id ?? '',
       kind: 'capture_runtime',
@@ -110,7 +110,7 @@ export class DesktopRuntimeViewService {
     };
   }
 
-  captureRuntimeArtifact(status: DesktopRuntimeStatus | null): string {
+  captureRuntimeArtifact(status: RuntimeStatus | null): string {
     const version = status?.version?.trim();
     return version === undefined || version.length === 0
       ? 'capture-runtime'
@@ -118,7 +118,7 @@ export class DesktopRuntimeViewService {
   }
 
   progressFrom(
-    value: DesktopRuntimeInstallation | DesktopRuntimeStatus | null,
+    value: RuntimeInstallation | RuntimeStatus | null,
   ): number | null {
     if (
       value === null ||

@@ -107,7 +107,7 @@ def test_every_api_enum_value_of_a_modelled_context_maps_to_one_concept(tmp_path
     ) == [], "these concepts map to values the API no longer has; retire them"
 
 
-def test_runtime_installation_status_enum_is_mapped_for_both_read_dtos(tmp_path: Path) -> None:
+def test_llm_installation_status_enum_is_mapped(tmp_path: Path) -> None:
     schemas = (
         create_app(settings=Settings(data_dir=tmp_path, api_token="t", llm_provider="fake"))
         .openapi()["components"]["schemas"]
@@ -124,11 +124,8 @@ def test_runtime_installation_status_enum_is_mapped_for_both_read_dtos(tmp_path:
                         return item["$ref"].split("/")[-1]
         raise AssertionError(f"Could not resolve $ref from status property of {schema_name}")
 
-    installation_status_id = _resolve_status_enum_id("RuntimeInstallationRead")
-    model_download_status_id = _resolve_status_enum_id("ModelDownloadRead")
-
-    assert installation_status_id == "cert_prep_contracts__runtime__RuntimeInstallationStatus"
-    assert model_download_status_id == "cert_prep_contracts__runtime__RuntimeInstallationStatus"
+    installation_status_id = _resolve_status_enum_id("LLMInstallationRead")
+    assert installation_status_id == "LLMInstallationStatus"
 
     enum_schema = schemas[installation_status_id]
     assert "enum" in enum_schema

@@ -12,7 +12,7 @@ from cert_prep_backend.ai_providers.infrastructure.ollama_transport import Ollam
 from cert_prep_backend.platform.config import Settings
 from cert_prep_contracts.hardware import MachineInventorySnapshot
 from cert_prep_contracts.llm import LLMProviderName, LLMProviderPreference
-from cert_prep_contracts.runtime import RuntimeRequirementKind
+from cert_prep_contracts.llm_installation import LLMRequirementKind
 from cert_prep_ollama.profiles import select_ollama_execution_policy
 
 if TYPE_CHECKING:
@@ -71,13 +71,13 @@ class LazyLLMProvider:
         *,
         provider: str,
         model: str,
-        runtime_requirement_kind: RuntimeRequirementKind | None = None,
+        llm_engine_requirement_kind: LLMRequirementKind | None = None,
         starts_on_generation: bool = False,
     ) -> None:
         self._factory = factory
         self._provider_hint = provider
         self._model_hint = model
-        self._runtime_requirement_kind = runtime_requirement_kind
+        self._llm_engine_requirement_kind = llm_engine_requirement_kind
         self._starts_on_generation = starts_on_generation
         self._lock = Lock()
         self._provider: object | None = None
@@ -97,11 +97,11 @@ class LazyLLMProvider:
         return str(getattr(resolved, "model", self._model_hint))
 
     @property
-    def runtime_requirement_kind(self) -> RuntimeRequirementKind | None:
+    def llm_engine_requirement_kind(self) -> LLMRequirementKind | None:
         resolved = self._provider
         if resolved is None:
-            return self._runtime_requirement_kind
-        return getattr(resolved, "runtime_requirement_kind", None)
+            return self._llm_engine_requirement_kind
+        return getattr(resolved, "llm_engine_requirement_kind", None)
 
     @property
     def starts_on_generation(self) -> bool:
@@ -166,8 +166,8 @@ def lazy_provider_from_settings(
         lambda: provider_from_settings(settings, server=server),
         provider=selected_provider,
         model=_provider_model_hint(settings, selected_provider),
-        runtime_requirement_kind=(
-            RuntimeRequirementKind.OLLAMA if selected_provider == "ollama" else None
+        llm_engine_requirement_kind=(
+            LLMRequirementKind.OLLAMA if selected_provider == "ollama" else None
         ),
         starts_on_generation=False,
     )

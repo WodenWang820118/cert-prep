@@ -1,15 +1,14 @@
 import type {
   HealthResponse,
   LLMHealthRead,
-  ModelDownloadRead,
-  RuntimeInstallationRead,
-  RuntimeRequirementRead,
+  LLMInstallationRead,
+  LLMRequirementRead,
+  LLMRequirementKind,
 } from '../../core/domain';
 import type { LLMProviderSelectionRead as GeneratedLLMProviderSelectionRead } from '../../core/domain';
 import type { Observable } from 'rxjs';
 import type {
-  ModelDownloadEvent,
-  RuntimeInstallationEvent,
+  LLMInstallationEvent,
 } from '../../core/domain';
 
 /**
@@ -25,13 +24,6 @@ export type DownloadPhase =
   | 'failed';
 
 /**
- * Runtime requirement kinds the Angular health UI knows how to present.
- */
-export type RuntimeKind =
-  | 'ollama'
-  | 'ollama_model';
-
-/**
  * Backend-owned provider selection generated from the shared OpenAPI contract.
  */
 export type LLMProviderSelectionRead = GeneratedLLMProviderSelectionRead;
@@ -44,7 +36,7 @@ export interface HealthSnapshot {
   readonly system?: HealthResponse;
   readonly llm?: LLMHealthRead;
   readonly providerSelection?: LLMProviderSelectionRead;
-  readonly runtimeRequirements: RuntimeRequirementRead[];
+  readonly llmRequirements: LLMRequirementRead[];
 }
 
 /**
@@ -55,31 +47,21 @@ export interface LLMProviderSelectionApiClient {
 }
 
 /**
- * Minimal model-download API surface used by the Angular health workflow.
+ * Minimal LLM installation API surface used by the Angular health workflow.
  */
-export interface ModelDownloadApiClient {
-  startModelDownload(): Observable<ModelDownloadRead>;
-  getModelDownload(jobId: string): Observable<ModelDownloadRead>;
-  cancelModelDownload(jobId: string): Observable<ModelDownloadRead>;
-  streamModelDownload(jobId: string): Observable<ModelDownloadEvent>;
+export interface LLMInstallationApiClient {
+  llmRequirements(): Observable<{ items: LLMRequirementRead[] }>;
+  startLlmInstallation(kind: LLMRequirementKind): Observable<LLMInstallationRead>;
+  getLlmInstallation(jobId: string): Observable<LLMInstallationRead>;
+  cancelLlmInstallation(jobId: string): Observable<LLMInstallationRead>;
+  streamLlmInstallation(jobId: string): Observable<LLMInstallationEvent>;
 }
 
-/**
- * Minimal runtime-installation API surface used by the Angular health workflow.
- */
-export interface RuntimeInstallationApiClient {
-  runtimeRequirements(): Observable<{ items: RuntimeRequirementRead[] }>;
-  startRuntimeInstallation(kind: string): Observable<RuntimeInstallationRead>;
-  getRuntimeInstallation(jobId: string): Observable<RuntimeInstallationRead>;
-  cancelRuntimeInstallation(jobId: string): Observable<RuntimeInstallationRead>;
-  streamRuntimeInstallation(jobId: string): Observable<RuntimeInstallationEvent>;
-}
-
-export interface RuntimeActionContext {
+export interface LLMInstallationActionContext {
   readonly canDownloadModel: () => boolean;
-  readonly canInstallRuntime: (kind: RuntimeKind) => boolean;
+  readonly canInstallLLMEngine: (kind: LLMRequirementKind) => boolean;
   readonly configuredModelName: () => string;
-  readonly refreshHealthAfterRuntimeChange: () => void;
+  readonly refreshHealthAfterLLMInstallation: () => void;
 }
 
 /**
@@ -97,11 +79,11 @@ export interface ModelDownloadView {
 }
 
 /**
- * View model for one runtime-installation job.
+ * View model for one LLM installation job.
  */
-export interface RuntimeInstallationView {
+export interface LLMInstallationView {
   readonly jobId: string | null;
-  readonly kind: RuntimeKind;
+  readonly kind: LLMRequirementKind;
   readonly label: string;
   readonly phase: DownloadPhase;
   readonly status: string;
@@ -112,7 +94,7 @@ export interface RuntimeInstallationView {
 }
 
 /** Canonical runtime job payload narrowed defensively at the UI boundary. */
-export type RuntimeJobRecord = Record<string, unknown>;
+export type LLMJobRecord = Record<string, unknown>;
 
 /**
  * Existing UI state needed to preserve job identity while mapping a model
@@ -127,6 +109,6 @@ export interface ModelDownloadViewContext {
  * Existing UI state needed to preserve job identity while mapping a runtime
  * installation response.
  */
-export interface RuntimeInstallationViewContext {
+export interface LLMInstallationViewContext {
   readonly currentJobId: string | null;
 }

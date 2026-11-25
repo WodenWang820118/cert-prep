@@ -39,7 +39,7 @@ describe('SourceEvidencePreviewComponent', () => {
 
   it('emits transcript actions from typed inputs and one action output', () => {
     const fixture = createFixture({
-      document: { ...appDocument, source_kind: 'audio' },
+      document: { ...appDocument, source_kind: 'recording' },
       chunks: [
         chunkRead({
           locator_kind: 'time',
@@ -76,17 +76,17 @@ describe('SourceEvidencePreviewComponent', () => {
 
   it('offers an audio retry when the authenticated preview fails', () => {
     const fixture = createFixture({
-      document: { ...appDocument, source_kind: 'audio' },
+      document: { ...appDocument, source_kind: 'recording' },
       chunks: [chunkRead({ locator_kind: 'time', start_ms: 0, end_ms: 1_000 })],
       audio: {
         url: null,
         loading: false,
-        error: 'The source audio could not be loaded.',
+        error: 'The recording could not be loaded.',
       },
     });
     const actions: SourceImportAction[] = [];
     fixture.componentInstance.action.subscribe((action) => actions.push(action));
-    buttonByText(fixture.nativeElement, 'Retry audio playback').click();
+    buttonByText(fixture.nativeElement, 'Retry recording playback').click();
 
     expect(actions).toEqual([{ type: 'retry-audio' }]);
   });

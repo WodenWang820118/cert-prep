@@ -8,6 +8,9 @@ from dataclasses import dataclass, replace
 
 import pytest
 
+from cert_prep_contracts.documents import SourceKind
+
+from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.errors import (
     DocumentOperationConflictError,
     DocumentProcessingCanceledError,
@@ -39,6 +42,7 @@ def _document(**changes: object) -> SourceDocument:
         id="document",
         project_id="project",
         filename="notes.pdf",
+        source_kind="pdf",
         sha256="abc",
         language_hint="ja",
         page_count=1,
@@ -123,7 +127,7 @@ class FakeDocuments:
 @dataclass(frozen=True)
 class Prepared:
     raw_bytes: bytes
-    kind: str = "pdf"
+    kind: SourceKind = "pdf"
     canonical_suffix: str = ".pdf"
     page_count: int = 1
     duration_ms: int | None = None
@@ -175,8 +179,8 @@ class FakeDrafting:
 
 @dataclass(frozen=True)
 class Limits:
-    max_upload_bytes: int = 64
-    max_audio_upload_bytes: int = 128
+    max_page_source_upload_bytes: int = 64
+    max_recording_upload_bytes: int = 128
     max_pdf_pages: int = 10
     max_image_pixels: int = 1000
 
@@ -216,6 +220,18 @@ def _parts() -> tuple[FakeOperations, FakeDocuments, FakeDrafting]:
     return operations, FakeDocuments(operations), FakeDrafting()
 
 
+def test_settings_read_the_upload_limits_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CERT_PREP_MAX_PAGE_SOURCE_UPLOAD_BYTES", "64")
+    monkeypatch.setenv("CERT_PREP_MAX_RECORDING_UPLOAD_BYTES", "128")
+
+    settings = Settings()
+
+    assert settings.max_page_source_upload_bytes == 64
+    assert settings.max_recording_upload_bytes == 128
+
+
 def test_an_upload_is_read_until_it_passes_its_limit() -> None:
     assert asyncio.run(use_cases.receive_upload(FakeUpload(b"12345"), 5)) == b"12345"
     with pytest.raises(SourceTooLarge, match="the limit is 4 bytes"):
@@ -223,9 +239,9 @@ def test_an_upload_is_read_until_it_passes_its_limit() -> None:
 
 
 def test_a_recording_has_its_own_size_limit_and_unknown_hints_become_auto() -> None:
-    assert upload_size_limit("talk.M4A", max_bytes=1, max_audio_bytes=9) == 9
-    assert upload_size_limit("notes.pdf", max_bytes=1, max_audio_bytes=9) == 1
-    assert upload_size_limit(None, max_bytes=1, max_audio_bytes=9) == 1
+    assert upload_size_limit("talk.M4A", max_page_source_bytes=1, max_recording_bytes=9) == 9
+    assert upload_size_limit("notes.pdf", max_page_source_bytes=1, max_recording_bytes=9) == 1
+    assert upload_size_limit(None, max_page_source_bytes=1, max_recording_bytes=9) == 1
     assert language_hint_or_auto("ja") == "ja"
     assert language_hint_or_auto("klingon") == "auto"
 

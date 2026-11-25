@@ -11,7 +11,7 @@ and practice.
 
 - Backend code is split into bounded contexts directly under
   `cert_prep_backend/` (`projects`, `source_library`, `capture_integration`,
-  `authoring`, `practice`, `ai_providers`, `runtime_provisioning`), each with
+  `authoring`, `practice`, `ai_providers`, `llm_provisioning`), each with
   `domain`, `application`, `infrastructure` and `api` layers, plus `platform`
   (settings, errors, database and migrations, SSE, background work) and
   `bootstrap` (app assembly). The plan, rules and decisions are in

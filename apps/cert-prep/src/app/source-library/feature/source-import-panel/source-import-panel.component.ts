@@ -118,7 +118,7 @@ export class SourceImportPanelComponent {
       const document = this.sourceImport.activeDocument();
       this.audioPreview.load(
         projectId,
-        document?.source_kind === 'audio' && document.chunks_count > 0
+        document?.source_kind === 'recording' && document.chunks_count > 0
           ? document.id
           : null,
       );

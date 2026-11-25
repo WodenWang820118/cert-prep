@@ -90,19 +90,19 @@
       <app-runtime-status-row [section]="viewModel().ollama">
         <ng-container actions>
           @if (desktopRuntime.isBackendReady() && health.canInstallOllama()) {
-          <app-action-button label="Install Ollama" icon="lucideDownload" variant="outline-warn" [disabled]="health.runtimeInstallStarting()" (pressed)="health.openOllamaInstallConsent()" />
-          } @if (hasLlmRuntimeInstallation()) {
-          <app-action-button label="Refresh install" icon="lucideRefreshCw" variant="outline" [disabled]="health.runtimeInstallStarting()" (pressed)="health.refreshRuntimeInstallation()" />
-          } @if (hasLlmRuntimeInstallation() &&
-          health.canCancelRuntimeInstallation()) {
-          <app-action-button label="Cancel install" icon="lucideX" variant="outline-danger" [loading]="health.runtimeInstallCanceling()" (pressed)="health.cancelRuntimeInstallation()" />
+          <app-action-button label="Install Ollama" icon="lucideDownload" variant="outline-warn" [disabled]="health.llmEngineInstallStarting()" (pressed)="health.openOllamaInstallConsent()" />
+          } @if (hasLLMEngineInstallation()) {
+          <app-action-button label="Refresh install" icon="lucideRefreshCw" variant="outline" [disabled]="health.llmEngineInstallStarting()" (pressed)="health.refreshLLMEngineInstallation()" />
+          } @if (hasLLMEngineInstallation() &&
+          health.canCancelLLMEngineInstallation()) {
+          <app-action-button label="Cancel install" icon="lucideX" variant="outline-danger" [loading]="health.llmEngineInstallCanceling()" (pressed)="health.cancelLLMEngineInstallation()" />
           }
         </ng-container>
-        @if (hasLlmRuntimeInstallation()) { @if (health.runtimeInstall(); as
+        @if (hasLLMEngineInstallation()) { @if (health.llmEngineInstall(); as
         install) {
         <div progress class="grid gap-2 sm:col-span-2" aria-live="polite">
           <p class="m-0 text-sm text-muted-foreground">{{ install.message }}</p>
-          @if (health.runtimeInstallStreamError(); as streamError) {
+          @if (health.llmEngineInstallStreamError(); as streamError) {
           <p class="m-0 text-sm text-red-500" role="status" aria-live="polite">
             {{ streamError }}
           </p>

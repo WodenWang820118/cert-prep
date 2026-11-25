@@ -16,7 +16,7 @@ export interface OcrDocumentRecordIdentity {
   readonly hasText: true;
   readonly status: string;
   readonly extractionMethod: typeof OCR_EXTRACTION_METHOD;
-  readonly sourceKind: 'document';
+  readonly sourceKind: 'pdf' | 'image';
 }
 
 export interface OcrPageRecordIdentity {
@@ -122,9 +122,10 @@ export function buildOcrPageRecordEvidence(
       `OCR page-record evidence document.extraction_method expected ${OCR_EXTRACTION_METHOD} but received ${String(input.document.extraction_method)}.`,
     );
   }
-  if (input.document.source_kind !== 'document') {
+  const sourceKind = input.document.source_kind;
+  if (sourceKind !== 'pdf' && sourceKind !== 'image') {
     throw new Error(
-      `OCR page-record evidence document.source_kind expected document but received ${String(input.document.source_kind)}.`,
+      `OCR page-record evidence document.source_kind expected pdf or image but received ${String(sourceKind)}.`,
     );
   }
 
@@ -143,7 +144,7 @@ export function buildOcrPageRecordEvidence(
     hasText: true,
     status,
     extractionMethod: OCR_EXTRACTION_METHOD,
-    sourceKind: 'document',
+    sourceKind,
   };
 
   if (chunksCount !== input.chunks.length) {

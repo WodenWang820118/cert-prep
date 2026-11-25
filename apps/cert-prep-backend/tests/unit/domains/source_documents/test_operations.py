@@ -142,6 +142,7 @@ def test_cancel_before_attach_is_terminal_and_creates_no_document(tmp_path: Path
             operation_id="upload",
             document_id="document",
             filename="source.pdf",
+            source_kind="pdf",
             sha256="sha",
             language_hint="auto",
             storage_path="C:/data/source.pdf",
@@ -694,6 +695,7 @@ def _attach(db: Database, *, operation_id: str, document_id: str) -> None:
         operation_id=operation_id,
         document_id=document_id,
         filename="source.pdf",
+        source_kind="pdf",
         sha256="sha",
         language_hint="auto",
         storage_path="C:/data/source.pdf",
@@ -718,7 +720,7 @@ def _attach_audio(db: Database, *, operation_id: str, document_id: str) -> None:
         language_hint="ja",
         storage_path="C:/data/source.wav",
         page_count=0,
-        source_kind="audio",
+        source_kind="recording",
         duration_ms=1000,
     )
 

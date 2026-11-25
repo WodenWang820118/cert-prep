@@ -1,8 +1,8 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { catchError, from, map, Observable, of, Subscription, tap, timer } from 'rxjs';
 import type {
-  DesktopRuntimeInstallation,
-  DesktopRuntimeStatus,
+  RuntimeInstallation,
+  RuntimeStatus,
   RuntimeUpdateNotice,
 } from '../domain';
 import { DesktopRuntimeBridgeService } from './desktop-runtime-bridge.service';
@@ -29,11 +29,11 @@ export class DesktopRuntimeStore {
   private readonly desktop = this.bridge.isDesktop();
 
   readonly isDesktop = signal(this.desktop);
-  readonly status = signal<DesktopRuntimeStatus>(this.view.browserStatus());
-  readonly installation = signal<DesktopRuntimeInstallation | null>(null);
+  readonly status = signal<RuntimeStatus>(this.view.browserStatus());
+  readonly installation = signal<RuntimeInstallation | null>(null);
   readonly installStarting = signal(false);
   readonly installConsentVisible = signal(false);
-  readonly captureRuntimeStatus = signal<DesktopRuntimeStatus>(
+  readonly captureRuntimeStatus = signal<RuntimeStatus>(
     this.desktop
       ? this.view.pendingCaptureRuntimeStatus()
       : this.view.browserCaptureRuntimeStatus(),
@@ -43,7 +43,7 @@ export class DesktopRuntimeStore {
    * resolves. Browser development mode has no native command to await.
    */
   readonly captureRuntimeStatusLoaded = signal(!this.desktop);
-  readonly captureRuntimeInstallation = signal<DesktopRuntimeInstallation | null>(
+  readonly captureRuntimeInstallation = signal<RuntimeInstallation | null>(
     null,
   );
   readonly captureRuntimeInstallStarting = signal(false);
@@ -137,13 +137,13 @@ export class DesktopRuntimeStore {
     this.runtimeUpdate.set(null);
   }
 
-  load(): Observable<DesktopRuntimeStatus | null> {
+  load(): Observable<RuntimeStatus | null> {
     if (!this.isDesktop()) {
       this.status.set(this.view.browserStatus());
       return of(this.status());
     }
 
-    return from(this.bridge.invoke<DesktopRuntimeStatus>('desktop_runtime_status')).pipe(
+    return from(this.bridge.invoke<RuntimeStatus>('backend_runtime_status')).pipe(
       tap((status) => this.status.set(status)),
       map((status) => status),
       catchError((error: unknown) => {
@@ -153,7 +153,7 @@ export class DesktopRuntimeStore {
     );
   }
 
-  loadCaptureRuntime(): Observable<DesktopRuntimeStatus | null> {
+  loadCaptureRuntime(): Observable<RuntimeStatus | null> {
     if (!this.isDesktop()) {
       this.captureRuntimeStatus.set(this.view.browserCaptureRuntimeStatus());
       this.captureRuntimeStatusLoaded.set(true);
@@ -161,7 +161,7 @@ export class DesktopRuntimeStore {
     }
 
     return from(
-      this.bridge.invoke<DesktopRuntimeStatus>('capture_runtime_status'),
+      this.bridge.invoke<RuntimeStatus>('capture_runtime_status'),
     ).pipe(
       tap((status) => {
         this.captureRuntimeStatus.set(status);
@@ -232,7 +232,7 @@ export class DesktopRuntimeStore {
     });
 
     from(this.bridge
-      .invoke<DesktopRuntimeInstallation>('start_python_runtime_installation'))
+      .invoke<RuntimeInstallation>('start_python_runtime_installation'))
       .pipe(
         tap((response) => {
           this.installation.set(response);
@@ -262,7 +262,7 @@ export class DesktopRuntimeStore {
 
     this.clearInstallPollTimer();
     from(this.bridge
-      .invoke<DesktopRuntimeInstallation>('get_python_runtime_installation', {
+      .invoke<RuntimeInstallation>('get_python_runtime_installation', {
         jobId: current.id,
       }))
       .pipe(
@@ -280,7 +280,7 @@ export class DesktopRuntimeStore {
       .subscribe();
   }
 
-  private continueInstallation(installation: DesktopRuntimeInstallation): void {
+  private continueInstallation(installation: RuntimeInstallation): void {
     const phase = this.view.phase(installation.status);
     if (phase === 'succeeded') {
       this.load().subscribe();
@@ -330,7 +330,7 @@ export class DesktopRuntimeStore {
       updatedAt: '',
       error: null,
     });
-    from(this.bridge.invoke<DesktopRuntimeInstallation>(command))
+    from(this.bridge.invoke<RuntimeInstallation>(command))
       .pipe(
         tap((response) => {
           this.captureRuntimeInstallation.set(response);
@@ -355,7 +355,7 @@ export class DesktopRuntimeStore {
   }
 
   private continueCaptureRuntimeInstallation(
-    installation: DesktopRuntimeInstallation,
+    installation: RuntimeInstallation,
   ): void {
     const phase = this.view.phase(installation.status);
     if (phase === 'succeeded') {
@@ -385,7 +385,7 @@ export class DesktopRuntimeStore {
     }
     this.clearCaptureRuntimePollTimer();
     from(
-      this.bridge.invoke<DesktopRuntimeInstallation>(
+      this.bridge.invoke<RuntimeInstallation>(
         'get_capture_runtime_installation',
         { jobId: current.id },
       ),

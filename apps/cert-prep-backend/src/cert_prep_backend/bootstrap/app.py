@@ -18,17 +18,17 @@ from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from cert_prep_backend import __version__
-from cert_prep_backend.ai_providers.infrastructure.runtime_installers import configured_installer_choices
+from cert_prep_backend.ai_providers.infrastructure.llm_installers import configured_installer_choices
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.database import Database
-from cert_prep_backend.runtime_provisioning.application.ports import RuntimeInstallation, RuntimeInstaller
-from cert_prep_backend.runtime_provisioning.infrastructure.installers import (
-    ConfiguredRuntimeInstallers,
+from cert_prep_backend.llm_provisioning.application.ports import LLMInstallation, LLMInstaller
+from cert_prep_backend.llm_provisioning.infrastructure.installers import (
+    ConfiguredLLMInstallers,
     LLMModelInstaller,
 )
-from cert_prep_backend.runtime_provisioning.infrastructure.manager import ThreadRuntimeInstallationWork
-from cert_prep_backend.runtime_provisioning.infrastructure.repository import (
-    RuntimeInstallationJobRepository,
+from cert_prep_backend.llm_provisioning.infrastructure.manager import ThreadLLMInstallationWork
+from cert_prep_backend.llm_provisioning.infrastructure.repository import (
+    LLMInstallationJobRepository,
 )
 from cert_prep_backend.api.auth import require_bearer_auth
 from cert_prep_backend.platform.change_notifications import DatabaseChangeNotifier
@@ -82,7 +82,7 @@ from cert_prep_backend.authoring.infrastructure.streaming import (
     StreamingDraftGenerationManager,
     StreamingDraftGenerationWork,
 )
-from cert_prep_backend.runtime_provisioning.application import use_cases as runtime_installations
+from cert_prep_backend.llm_provisioning.application import use_cases as llm_installations
 from cert_prep_backend.source_library.application import use_cases as source_library
 from cert_prep_backend.source_library.infrastructure.storage import LocalSourceFileStore
 from cert_prep_backend.source_library.infrastructure.worker_pool import PoolDocumentWork
@@ -98,10 +98,9 @@ from cert_prep_backend.source_library.api import (
     router as documents,
 )
 from cert_prep_backend.ai_providers.api import router as llm
-from cert_prep_backend.runtime_provisioning.api import model_download_router as model_downloads
-from cert_prep_backend.runtime_provisioning.api import router as runtime
-from cert_prep_backend.runtime_provisioning.api import (
-    operation_events as runtime_installation_events,
+from cert_prep_backend.llm_provisioning.api import router as llm_provisioning
+from cert_prep_backend.llm_provisioning.api import (
+    operation_events as llm_installation_events,
 )
 from cert_prep_backend.authoring.api import router as drafts
 from cert_prep_backend.authoring.api import operation_events as draft_generation_events
@@ -144,8 +143,8 @@ logger = logging.getLogger(__name__)
 def create_app(
     settings: Settings | None = None,
     llm_provider: LLMProvider | None = None,
-    runtime_installation_manager: RuntimeInstallation | None = None,
-    runtime_installation_async_jobs: bool = True,
+    llm_installation_manager: LLMInstallation | None = None,
+    llm_installation_async_jobs: bool = True,
     document_processing_async_jobs: bool = True,
     streaming_draft_generation_async_jobs: bool = True,
     capture_runtime_client: CaptureRuntimeClient | None = None,
@@ -170,7 +169,7 @@ def create_app(
                     ",".join(close_result.unresolved_operation_ids),
                     extra={"operation_ids": close_result.unresolved_operation_ids},
                 )
-            runtime_installations.stop_runtime_installations(app.state.runtime_installation_manager)
+            llm_installations.stop_llm_installations(app.state.llm_installation_manager)
             app.state.streaming_draft_generation_manager.close()
             llm_provider_close = getattr(app.state.llm_provider, "close", None)
             if callable(llm_provider_close):
@@ -288,7 +287,7 @@ def create_app(
         else None
     )
     app.state.document_processing_async_jobs = document_processing_async_jobs
-    app.state.runtime_installation_async_jobs = runtime_installation_async_jobs
+    app.state.llm_installation_async_jobs = llm_installation_async_jobs
     reading_lexicon = SudachiReadingLexicon() if app_settings.reading_solver_enabled else None
     app.state.draft_sources = SourceLibraryDraftSources(app.state.document_repository)
     app.state.streaming_draft_generation_manager = StreamingDraftGenerationManager(
@@ -319,18 +318,18 @@ def create_app(
         settings=app_settings,
     )
     app.state.machine_inventory = OllamaMachineInventory(app_settings)
-    if runtime_installation_manager:
-        app.state.runtime_installation_manager = runtime_installation_manager
+    if llm_installation_manager:
+        app.state.llm_installation_manager = llm_installation_manager
     else:
-        app.state.runtime_installation_manager = build_runtime_installation(
+        app.state.llm_installation_manager = build_llm_installation(
             settings=app_settings,
             llm_provider=app.state.llm_provider,
             machine_inventory=app.state.machine_inventory,
             db=app.state.database,
-            async_jobs=runtime_installation_async_jobs,
+            async_jobs=llm_installation_async_jobs,
             server=app.state.ollama_server,
         )
-        runtime_installations.recover_runtime_installations(app.state.runtime_installation_manager)
+        llm_installations.recover_llm_installations(app.state.llm_installation_manager)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=app_settings.allowed_origins,
@@ -399,14 +398,13 @@ def create_app(
     app.include_router(drafts.drafts_router, dependencies=protected_dependencies)
     app.include_router(practice.router, dependencies=protected_dependencies)
     app.include_router(llm.router, dependencies=protected_dependencies)
-    app.include_router(model_downloads.router, dependencies=protected_dependencies)
-    app.include_router(runtime.router, dependencies=protected_dependencies)
+    app.include_router(llm_provisioning.router, dependencies=protected_dependencies)
     app.include_router(capture_runtime.router, dependencies=protected_dependencies)
     app.include_router(capture_workbench.router, dependencies=protected_dependencies)
     # The operation event streams keep their place at the end of the API (D6).
     app.include_router(document_operation_events.router, dependencies=protected_dependencies)
     app.include_router(draft_generation_events.router, dependencies=protected_dependencies)
-    app.include_router(runtime_installation_events.router, dependencies=protected_dependencies)
+    app.include_router(llm_installation_events.router, dependencies=protected_dependencies)
 
     return app
 
@@ -469,16 +467,16 @@ def _default_error_code(status_code: int) -> str:
             return "request_error"
 
 
-def build_runtime_installation(
+def build_llm_installation(
     *,
     settings: Settings,
     llm_provider: object,
     machine_inventory: MachineInventory,
     db: Database | None = None,
     async_jobs: bool = True,
-    installers: list[RuntimeInstaller] | None = None,
+    installers: list[LLMInstaller] | None = None,
     server: OllamaServerCoordinator | None = None,
-) -> RuntimeInstallation:
+) -> LLMInstallation:
     """Bootstrap concrete provider adapters into runtime-owned application ports."""
     runtimes, model = configured_installer_choices(
         settings,
@@ -487,8 +485,8 @@ def build_runtime_installation(
         lambda: LLMModelInstaller(llm_provider),
         server=server,
     )
-    catalog = ConfiguredRuntimeInstallers([*runtimes, model], model.kind, installers)
+    catalog = ConfiguredLLMInstallers([*runtimes, model], model.kind, installers)
     lock = RLock()
-    work = ThreadRuntimeInstallationWork(lock, async_jobs=async_jobs)
-    jobs = RuntimeInstallationJobRepository(db=db, lock=lock, on_evict=work.forget)
-    return RuntimeInstallation(jobs, catalog, work, work.clock, work.new_id)
+    work = ThreadLLMInstallationWork(lock, async_jobs=async_jobs)
+    jobs = LLMInstallationJobRepository(db=db, lock=lock, on_evict=work.forget)
+    return LLMInstallation(jobs, catalog, work, work.clock, work.new_id)

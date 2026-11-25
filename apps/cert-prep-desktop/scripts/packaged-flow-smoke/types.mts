@@ -174,11 +174,11 @@ export interface LlmProviderSelectionSnapshot {
   effective_model: string | null;
   selection_reason: string | null;
   fallback_reason: string | null;
-  runtime_requirement_kind: string | null;
+  llm_engine_requirement_kind: string | null;
   model_requirement_kind: string | null;
 }
 
-export interface RuntimeRequirementSnapshot {
+export interface LLMRequirementSnapshot {
   kind: string | null;
   available: boolean | null;
   version: string | null;
@@ -189,7 +189,7 @@ export interface GenerationReadinessSnapshot {
   captured_at: string;
   ready: boolean;
   provider_selection: LlmProviderSelectionSnapshot | null;
-  runtime_requirements: RuntimeRequirementSnapshot[];
+  llm_requirements: LLMRequirementSnapshot[];
   blockers: string[];
 }
 

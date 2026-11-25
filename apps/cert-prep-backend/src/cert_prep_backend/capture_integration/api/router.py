@@ -29,12 +29,12 @@ from capture_runtime_client import (
     CaptureEngine,
     OperationFailure,
     CaptureOperation,
-    CaptureSourceKind,
     PartialCapture,
     RawCaptureSegment,
     RawCapture,
     CaptureStatus,
 )
+from cert_prep_backend.capture_integration.source_kind import to_capture_source_kind
 from cert_prep_backend.platform.dependencies import (
     get_database,
     get_settings,
@@ -298,7 +298,7 @@ async def create_capture(
     if not claim.acquired:
         raise HTTPException(status_code=409, detail="Document operation id is already in use.")
     try:
-        content = await source_library.receive_upload(file, settings.max_upload_bytes)
+        content = await source_library.receive_upload(file, settings.max_page_source_upload_bytes)
     except Exception as error:
         capture_reviews.abandon_capture_upload(
             sessions,
@@ -950,11 +950,7 @@ def _operation_from_document(
     return CaptureReviewOperationRead(
         capture_id=capture_id,
         ingestion_id=ingestion_id or capture_id,
-        kind=(
-            CaptureSourceKind.PDF
-            if media_type == "application/pdf"
-            else CaptureSourceKind.IMAGE
-        ),
+        kind=to_capture_source_kind(document.source_kind),
         status=status_value,
         progress=progress,
         partial_revision=0,

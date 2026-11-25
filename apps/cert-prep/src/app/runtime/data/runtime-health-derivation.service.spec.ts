@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import type { LLMHealthRead } from '../../core/domain';
+import type { LLMHealthRead, LLMRequirementRead } from '../../core/domain';
 import { RuntimeHealthDerivationService } from './runtime-health-derivation.service';
 
 describe('RuntimeHealthDerivationService', () => {
@@ -29,7 +29,7 @@ describe('RuntimeHealthDerivationService', () => {
   });
 
   it('derives a missing Ollama runtime from canonical requirements', () => {
-    const requirements = [
+    const requirements: LLMRequirementRead[] = [
       {
         kind: 'ollama',
         label: 'Ollama',
@@ -44,7 +44,7 @@ describe('RuntimeHealthDerivationService', () => {
   });
 
   it('uses the Ollama model requirement after the runtime is available', () => {
-    const requirements = [
+    const requirements: LLMRequirementRead[] = [
       {
         kind: 'ollama',
         label: 'Ollama',

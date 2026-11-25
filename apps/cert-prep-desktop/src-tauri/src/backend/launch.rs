@@ -16,7 +16,7 @@ use crate::{
     },
     runtime_slots::{CAPTURE_RUNTIME_SLOT, PYTHON_BACKEND_SLOT},
     runtime_update::{BACKEND_UPDATE_KIND, CAPTURE_UPDATE_KIND},
-    DesktopRuntimeInstallation,
+    RuntimeInstallation,
 };
 
 use super::{BackendRuntimeInner, BackendState, StartupRuntimeRefresh};
@@ -54,7 +54,7 @@ impl BackendState {
         Ok(CaptureJobClaim::Claimed)
     }
 
-    pub(crate) fn start_capture_runtime_installation(&self) -> DesktopRuntimeInstallation {
+    pub(crate) fn start_capture_runtime_installation(&self) -> RuntimeInstallation {
         if self.inner.closing.load(Ordering::SeqCst) {
             return failed_capture_installation(
                 "Cert Prep is closing; Capture Runtime was not installed.",
@@ -82,7 +82,7 @@ impl BackendState {
         installation_from_job(job)
     }
 
-    pub(crate) fn start_installed_capture_runtime(&self) -> DesktopRuntimeInstallation {
+    pub(crate) fn start_installed_capture_runtime(&self) -> RuntimeInstallation {
         if self.inner.closing.load(Ordering::SeqCst) {
             return failed_capture_installation(
                 "Cert Prep is closing; Capture Runtime was not started.",
@@ -136,7 +136,7 @@ impl BackendState {
     pub(crate) fn get_capture_runtime_installation(
         &self,
         job_id: &str,
-    ) -> Result<DesktopRuntimeInstallation, String> {
+    ) -> Result<RuntimeInstallation, String> {
         let job = self
             .inner
             .capture_job
@@ -251,7 +251,7 @@ impl BackendState {
         launch_backend_entrypoint(&self.inner, &entrypoint, capture_connection.as_ref(), false)
     }
 
-    pub(crate) fn start_installation(&self) -> DesktopRuntimeInstallation {
+    pub(crate) fn start_installation(&self) -> RuntimeInstallation {
         // The startup probe may finish after the window has begun closing. Do
         // not create a late worker that could outlive the desktop shell and
         // race the process cleanup path.
@@ -282,7 +282,7 @@ impl BackendState {
     pub(crate) fn get_installation(
         &self,
         job_id: &str,
-    ) -> Result<DesktopRuntimeInstallation, String> {
+    ) -> Result<RuntimeInstallation, String> {
         let job = self
             .inner
             .job
@@ -301,9 +301,9 @@ impl BackendState {
     }
 }
 
-fn completed_capture_installation(detail: &str) -> DesktopRuntimeInstallation {
+fn completed_capture_installation(detail: &str) -> RuntimeInstallation {
     let now = installation_timestamp();
-    DesktopRuntimeInstallation {
+    RuntimeInstallation {
         id: uuid::Uuid::new_v4().to_string(),
         kind: "capture_runtime".into(),
         provider: "bundled-release".into(),
@@ -318,8 +318,8 @@ fn completed_capture_installation(detail: &str) -> DesktopRuntimeInstallation {
     }
 }
 
-fn failed_capture_installation(detail: &str) -> DesktopRuntimeInstallation {
-    DesktopRuntimeInstallation {
+fn failed_capture_installation(detail: &str) -> RuntimeInstallation {
+    RuntimeInstallation {
         error: Some(detail.into()),
         status: "failed".into(),
         ..completed_capture_installation(detail)

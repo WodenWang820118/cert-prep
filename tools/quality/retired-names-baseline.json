@@ -1,4 +1,5 @@
 [
+  "[\"/runtime/machine-inventory\",\".agents/PLANS/ddd-refactor/decisions.md\"]",
   "[\"EXAM_FAILED\",\"packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json\"]",
   "[\"OCR_FAILED\",\"packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json\"]",
   "[\"OCR_FAILED\",\"packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json\"]#2",
@@ -26,6 +27,7 @@
   "[\"exam_failed\",\"packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json\"]",
   "[\"first_chunk_ms\",\"apps/cert-prep-backend/src/cert_prep_backend/platform/database.py\"]",
   "[\"first_chunk_ms\",\"apps/cert-prep-backend/tests/integration/test_database_migrations.py\"]",
+  "[\"model_download_router\",\".agents/PLANS/ddd-refactor/decisions.md\"]",
   "[\"ocr_duration_ms\",\"apps/cert-prep-backend/src/cert_prep_backend/platform/database.py\"]",
   "[\"ocr_duration_ms\",\"apps/cert-prep-backend/tests/integration/test_database_migrations.py\"]",
   "[\"ocr_engine_duration_ms\",\"apps/cert-prep-backend/src/cert_prep_backend/platform/database.py\"]",
@@ -49,6 +51,8 @@
   "[\"parse_wall_duration_ms\",\"apps/cert-prep-backend/tests/integration/test_database_migrations.py\"]",
   "[\"render_duration_ms\",\"apps/cert-prep-backend/src/cert_prep_backend/platform/database.py\"]",
   "[\"render_duration_ms\",\"apps/cert-prep-backend/tests/integration/test_database_migrations.py\"]",
+  "[\"runtime_provisioning\",\".agents/PLANS/ddd-refactor/decisions.md\"]",
+  "[\"runtime_provisioning\",\".agents/PLANS/ddd-refactor/decisions.md\"]#2",
   "[\"windowsml-dml\",\"apps/cert-prep-backend/src/cert_prep_backend/platform/database.py\"]",
   "[\"windowsml-dml\",\"apps/cert-prep-backend/tests/integration/test_database_migrations.py\"]",
   "[\"windowsml-ocr\",\"packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json\"]",

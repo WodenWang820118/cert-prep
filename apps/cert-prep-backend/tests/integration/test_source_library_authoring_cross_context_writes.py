@@ -235,6 +235,7 @@ def test_source_library_refuses_work_for_a_missing_project(tmp_path: Path) -> No
             "missing",
             "upload",
             filename="source.pdf",
+            source_kind="pdf",
             sha256="sha",
             language_hint="auto",
             storage_path="C:/data/source.pdf",
@@ -457,6 +458,7 @@ def _attach_pdf(db: Database, *, operation_id: str) -> str:
         "proj",
         operation_id,
         filename="source.pdf",
+        source_kind="pdf",
         sha256="sha",
         language_hint="auto",
         storage_path="C:/data/source.pdf",
@@ -475,7 +477,7 @@ def _attach_audio(db: Database, *, operation_id: str) -> str:
         language_hint="ja",
         storage_path="C:/data/source.wav",
         page_count=0,
-        source_kind="audio",
+        source_kind="recording",
         duration_ms=1000,
     )
     return document.id
@@ -489,9 +491,9 @@ def _ready_document(
             """
             INSERT INTO documents(
                 id, project_id, filename, sha256, storage_path,
-                page_count, has_text, status, created_at, updated_at
+                page_count, has_text, status, created_at, updated_at, source_kind
             )
-            VALUES (?, 'proj', 'notes.pdf', 'hash', 'notes.pdf', 1, ?, ?, 't0', 't0')
+            VALUES (?, 'proj', 'notes.pdf', 'hash', 'notes.pdf', 1, ?, ?, 't0', 't0', 'pdf')
             """,
             (document_id, has_text, status),
         )

@@ -343,16 +343,17 @@ export async function executeRemainingResilienceScenarios(
   const selection = await exactProviderSelection(transport);
 
   const runtime = await captureTimedProof(now, async () => {
-    const requirementBefore = await exactOllamaRuntimeRequirement(
+    const requirementBefore = await exactOllamaLLMRequirement(
       transport,
       false,
       run.options.appDataDir,
     );
     const proof = await runCancelableOperationScenario(transport, {
       kind: 'runtime',
-      startPath: `/runtime/installations/${OLLAMA_RUNTIME_KIND}`,
+      startPath: '/llm/installations',
+      startData: { kind: 'ollama' },
       operationPath: (operationId) =>
-        `/runtime/installations/${encoded(operationId)}`,
+        `/llm/installations/${encoded(operationId)}`,
       operationKind: OLLAMA_RUNTIME_KIND,
       provider: OLLAMA_RUNTIME_PROVIDER,
       model: OLLAMA_RUNTIME_MODEL,
@@ -362,13 +363,13 @@ export async function executeRemainingResilienceScenarios(
           options.latePublishObservationWindowMs,
           wait,
           () =>
-            exactOllamaRuntimeRequirement(transport, false, run.options.appDataDir),
+            exactOllamaLLMRequirement(transport, false, run.options.appDataDir),
         ),
     });
     await waitForOperationSuccess(
       transport,
       operationIdFromCommitProof(proof, 'runtime'),
-      (operationId) => `/runtime/installations/${encoded(operationId)}`,
+      (operationId) => `/llm/installations/${encoded(operationId)}`,
       {
         kind: OLLAMA_RUNTIME_KIND,
         provider: OLLAMA_RUNTIME_PROVIDER,
@@ -377,7 +378,7 @@ export async function executeRemainingResilienceScenarios(
       options.timeoutMs,
       'runtime',
     );
-    const requirementAfter = await exactOllamaRuntimeRequirement(
+    const requirementAfter = await exactOllamaLLMRequirement(
       transport,
       true,
       run.options.appDataDir,
@@ -412,9 +413,10 @@ export async function executeRemainingResilienceScenarios(
     const healthBefore = await exactOllamaHealth(transport, false);
     const proof = await runCancelableOperationScenario(transport, {
       kind: 'model',
-      startPath: '/llm/model-downloads',
+      startPath: '/llm/installations',
+      startData: { kind: 'ollama_model' },
       operationPath: (operationId) =>
-        `/llm/model-downloads/${encoded(operationId)}`,
+        `/llm/installations/${encoded(operationId)}`,
       provider: selection.provider,
       model: selection.model,
       timeoutMs: options.timeoutMs,
@@ -435,7 +437,7 @@ export async function executeRemainingResilienceScenarios(
     await waitForOperationSuccess(
       transport,
       operationIdFromCommitProof(proof, 'model'),
-      (operationId) => `/llm/model-downloads/${encoded(operationId)}`,
+      (operationId) => `/llm/installations/${encoded(operationId)}`,
       { provider: selection.provider, model: selection.model },
       options.timeoutMs,
       'model',
@@ -561,7 +563,7 @@ export async function exactProviderSelection(
   const provider = stringField(body.effective_provider, 'effective provider');
   const model = stringField(body.effective_model, 'effective model');
   const runtimeKind = stringField(
-    body.runtime_requirement_kind,
+    body.llm_engine_requirement_kind,
     'runtime requirement kind',
   );
   const modelKind = stringField(
@@ -587,13 +589,13 @@ export async function exactProviderSelection(
   };
 }
 
-export async function exactOllamaRuntimeRequirement(
+export async function exactOllamaLLMRequirement(
   transport: JsonTransport,
   expectedAvailable: boolean,
   appDataDir: string | undefined,
 ): Promise<Record<string, unknown>> {
   const body = requireJsonObject(
-    await transport.request('GET', '/runtime/requirements'),
+    await transport.request('GET', '/llm/requirements'),
     [200],
     'Ollama runtime requirement',
   );

@@ -11,7 +11,7 @@ import type {
   GenerationReadinessSnapshot,
   LlmProviderSelectionSnapshot,
   ProjectApiRef,
-  RuntimeRequirementSnapshot,
+  LLMRequirementSnapshot,
   SmokeRunState,
 } from './types.mts';
 
@@ -41,15 +41,15 @@ interface ProjectResponseListener {
   dispose(): void;
 }
 
-type EndpointName = 'provider_selection' | 'runtime_requirements';
+type EndpointName = 'provider_selection' | 'llm_requirements';
 
 interface EndpointResult {
   readonly payload: unknown | null;
   readonly blocker: string | null;
 }
 
-interface SanitizedRuntimeRequirements {
-  readonly requirements: RuntimeRequirementSnapshot[];
+interface SanitizedLLMRequirements {
+  readonly requirements: LLMRequirementSnapshot[];
 }
 
 export function unavailableGenerationReadinessSnapshot(
@@ -60,7 +60,7 @@ export function unavailableGenerationReadinessSnapshot(
     captured_at: now().toISOString(),
     ready: false,
     provider_selection: null,
-    runtime_requirements: [],
+    llm_requirements: [],
     blockers: [blocker],
   };
 }
@@ -359,8 +359,8 @@ async function generationReadinessFromProjectApi(
     getReadinessJson(
       page,
       projectApi,
-      '/runtime/requirements',
-      'runtime_requirements',
+      '/llm/requirements',
+      'llm_requirements',
       requestTimeoutMs,
     ),
   ]);
@@ -375,7 +375,7 @@ async function generationReadinessFromProjectApi(
       );
   const sanitizedRequirements = requirementsResult.blocker
     ? null
-    : sanitizeRuntimeRequirements(
+    : sanitizeLLMRequirements(
         requirementsResult.payload,
         projectApi.authorization,
         installedPathExists,
@@ -384,7 +384,7 @@ async function generationReadinessFromProjectApi(
     blockers.push('provider_selection_schema_invalid');
   }
   if (!requirementsResult.blocker && !sanitizedRequirements) {
-    blockers.push('runtime_requirements_schema_invalid');
+    blockers.push('llm_requirements_schema_invalid');
   }
   const requirements = sanitizedRequirements?.requirements ?? [];
   if (providerSelection && sanitizedRequirements) {
@@ -400,7 +400,7 @@ async function generationReadinessFromProjectApi(
     captured_at: capturedAt,
     ready: blockers.length === 0,
     provider_selection: providerSelection,
-    runtime_requirements: requirements,
+    llm_requirements: requirements,
     blockers,
   };
 }
@@ -577,10 +577,10 @@ function sanitizeProviderSelection(
     payload.fallback_reason,
     forbiddenValues,
   );
-  const runtimeRequirementKind = nullableRuntimeKind(
-    payload.runtime_requirement_kind,
+  const llmEngineRequirementKind = nullableLLMRequirementKind(
+    payload.llm_engine_requirement_kind,
   );
-  const modelRequirementKind = nullableRuntimeKind(
+  const modelRequirementKind = nullableLLMRequirementKind(
     payload.model_requirement_kind,
   );
   if (
@@ -591,7 +591,7 @@ function sanitizeProviderSelection(
     !effectiveModel ||
     !selectionReason ||
     fallbackReason === undefined ||
-    runtimeRequirementKind === undefined ||
+    llmEngineRequirementKind === undefined ||
     modelRequirementKind === undefined
   ) {
     return null;
@@ -605,22 +605,22 @@ function sanitizeProviderSelection(
     selection_reason: 'provider_selection_reported',
     fallback_reason:
       fallbackReason === null ? null : 'provider_fallback_reported',
-    runtime_requirement_kind: runtimeRequirementKind,
+    llm_engine_requirement_kind: llmEngineRequirementKind,
     model_requirement_kind: modelRequirementKind,
   };
 }
 
-function sanitizeRuntimeRequirements(
+function sanitizeLLMRequirements(
   payload: unknown,
   authorization: string,
   installedPathVerifier: (path: string) => boolean,
-): SanitizedRuntimeRequirements | null {
+): SanitizedLLMRequirements | null {
   if (!isRecord(payload) || !Array.isArray(payload.items)) {
     return null;
   }
   const forbiddenValues = authorizationSensitiveValues(authorization);
   const kinds = new Set<string>();
-  const requirements: RuntimeRequirementSnapshot[] = [];
+  const requirements: LLMRequirementSnapshot[] = [];
   for (const item of payload.items) {
     if (!isRecord(item)) {
       return null;
@@ -665,7 +665,7 @@ function sanitizeRuntimeRequirements(
 function addReadinessBlockers(
   blockers: string[],
   selection: LlmProviderSelectionSnapshot,
-  requirements: readonly RuntimeRequirementSnapshot[],
+  requirements: readonly LLMRequirementSnapshot[],
   expectedPreference: string,
   expectedModel: string,
 ): void {
@@ -680,13 +680,13 @@ function addReadinessBlockers(
   }
   if (selection.effective_provider === 'ollama') {
     if (
-      selection.runtime_requirement_kind !== 'ollama' ||
+      selection.llm_engine_requirement_kind !== 'ollama' ||
       selection.model_requirement_kind !== 'ollama_model'
     ) {
       blockers.push('provider_requirement_kind_mismatch');
     }
   } else if (
-    selection.runtime_requirement_kind !== null ||
+    selection.llm_engine_requirement_kind !== null ||
     selection.model_requirement_kind !== null
   ) {
     blockers.push('provider_requirement_kind_mismatch');
@@ -695,7 +695,7 @@ function addReadinessBlockers(
     addRequirementBlockers(
       blockers,
       requirements,
-      selection.runtime_requirement_kind,
+      selection.llm_engine_requirement_kind,
       'selected_runtime',
       true,
       null,
@@ -713,7 +713,7 @@ function addReadinessBlockers(
 
 function addRequirementBlockers(
   blockers: string[],
-  requirements: readonly RuntimeRequirementSnapshot[],
+  requirements: readonly LLMRequirementSnapshot[],
   kind: string | null,
   prefix: 'selected_runtime' | 'selected_model',
   requireInstalledPath: boolean,
@@ -745,7 +745,7 @@ function failedSnapshot(
     captured_at: capturedAt,
     ready: false,
     provider_selection: null,
-    runtime_requirements: [],
+    llm_requirements: [],
     blockers: [blocker],
   };
 }
@@ -826,7 +826,7 @@ function nullableNonNegativeInteger(value: unknown): number | null | undefined {
     : undefined;
 }
 
-function nullableRuntimeKind(value: unknown): string | null | undefined {
+function nullableLLMRequirementKind(value: unknown): string | null | undefined {
   if (value === null || value === undefined) {
     return null;
   }

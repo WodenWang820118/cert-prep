@@ -363,6 +363,7 @@ function documentRead(id: string, filename: string): DocumentRead {
     id,
     project_id: 'project-1',
     filename,
+    source_kind: 'pdf',
     sha256: id,
     language_hint: 'en',
     page_count: 10,

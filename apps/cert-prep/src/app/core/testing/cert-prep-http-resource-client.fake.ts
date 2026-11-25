@@ -39,7 +39,7 @@ export function createCertPrepHttpResourceClientFake(api: FakeApi): CertPrepHttp
     health: (trigger: CertPrepResourceTrigger | undefined) => fakeResource(gated(trigger), null, () => invoke('health')),
     llmHealth: (trigger: CertPrepResourceTrigger | undefined) => fakeResource(gated(trigger), null, () => invoke('llmHealth')),
     providerSelection: (trigger: CertPrepResourceTrigger | undefined) => fakeResource(gated(trigger), null, () => invoke('llmProviderSelection')),
-    runtimeRequirements: (trigger: CertPrepResourceTrigger | undefined) => fakeResource(gated(trigger), [], () => invoke('runtimeRequirements').pipe(mapItems(items))),
+    llmRequirements: (trigger: CertPrepResourceTrigger | undefined) => fakeResource(gated(trigger), [], () => invoke('llmRequirements').pipe(mapItems(items))),
     documents: (projectId: CertPrepResourceKey) => fakeResource(key(projectId), [], (id) => invoke('listDocuments', id).pipe(mapItems(items))),
     document: (projectId: CertPrepResourceKey, documentId: CertPrepResourceKey) => fakeResource(() => {
       const project = projectId(); const document = documentId();

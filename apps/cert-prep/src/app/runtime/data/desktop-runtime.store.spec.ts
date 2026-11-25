@@ -2,8 +2,8 @@ import { TestBed } from '@angular/core/testing';
 import { of, Subject } from 'rxjs';
 import { CAPTURE_RUNTIME_VERSION } from '@cert-prep/capture-runtime-version';
 import type {
-  DesktopRuntimeInstallation,
-  DesktopRuntimeStatus,
+  RuntimeInstallation,
+  RuntimeStatus,
 } from '../domain';
 import { CertPrepRuntimeConfig } from '../../core/data';
 import { DesktopRuntimeBridgeService } from './desktop-runtime-bridge.service';
@@ -52,7 +52,7 @@ describe('DesktopRuntimeStore', () => {
 
   it('keeps the desktop Capture Runtime fail-closed while its native status command is pending', () => {
     desktop = true;
-    const pending = new Subject<DesktopRuntimeStatus>();
+    const pending = new Subject<RuntimeStatus>();
     invoke.mockReturnValue(pending);
     const store = TestBed.inject(DesktopRuntimeStore);
 
@@ -97,7 +97,7 @@ describe('DesktopRuntimeStore', () => {
     expect(store.isCaptureRuntimeReady()).toBe(false);
     expect(store.canStartCaptureRuntime()).toBe(true);
     expect(invalidateBackendConfig).not.toHaveBeenCalled();
-    expect(invoke).not.toHaveBeenCalledWith('desktop_runtime_status');
+    expect(invoke).not.toHaveBeenCalledWith('backend_runtime_status');
   });
 
   it('invalidates cached backend config exactly once after a start job succeeds', () => {
@@ -108,7 +108,7 @@ describe('DesktopRuntimeStore', () => {
       if (command === 'capture_runtime_status') {
         return of(captureStatus);
       }
-      if (command === 'desktop_runtime_status') {
+      if (command === 'backend_runtime_status') {
         return of({
           ...captureRuntimeStatus('running'),
           kind: 'python_backend',
@@ -134,7 +134,7 @@ describe('DesktopRuntimeStore', () => {
     expect(store.captureRuntimeStatus().status).toBe('running');
     expect(store.isCaptureRuntimeReady()).toBe(true);
     expect(invalidateBackendConfig).toHaveBeenCalledTimes(1);
-    expect(invoke).toHaveBeenCalledWith('desktop_runtime_status');
+    expect(invoke).toHaveBeenCalledWith('backend_runtime_status');
   });
 
   it('keeps a starting Capture Runtime job active and rejects duplicate starts', () => {
@@ -188,7 +188,7 @@ describe('DesktopRuntimeStore', () => {
 
 function captureRuntimeStatus(
   status: 'missing' | 'installed' | 'running',
-): DesktopRuntimeStatus {
+): RuntimeStatus {
   const running = status === 'running';
   const available = status !== 'missing';
   return {
@@ -213,7 +213,7 @@ function captureRuntimeStatus(
 function captureRuntimeInstallation(
   id: string,
   status: 'queued' | 'starting' | 'succeeded',
-): DesktopRuntimeInstallation {
+): RuntimeInstallation {
   return {
     id,
     kind: 'capture_runtime',
