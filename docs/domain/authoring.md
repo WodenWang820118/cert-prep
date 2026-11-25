@@ -129,7 +129,7 @@ stateDiagram-v2
 | 可練習的題目     | `source_questions`                 | 專案的題目，依 id；一份教材則依來源順序                            |
 | 查看一題題目     | `find_question`                | 專案裡這一題目前的題目；沒有時是 None                                    |
 | 查看這些題目     | `questions_for`                | 這些 id 目前的題目；沒有題目的 id 不在結果裡                             |
-| 手寫題目         | `write_question`                        | 寫一題題目，可以引用一份教材的一個段落                                   |
+| 手寫題目         | `write_question`                        | 寫一題題目，可以引用一份教材的一個段落；有引用時在儲存題目的同一個交易記錄該教材的題目數，狀態、失敗訊息與 `updated_at` 不變 |
 | 編修題目         | `edit_question`                         | 修正題目；只改有給的欄位                                                 |
 | 為教材產生題目   | `generate_source_questions`           | 立即用整份教材的段落產生題目，略過重複的，並記錄教材的題目數             |
 | 列出產生工作     | `list_generation_jobs`               | 教材各段落的產生工作與狀態                                               |
@@ -163,6 +163,8 @@ sequenceDiagram
 ```
 
 提交題目的交易以 `BEGIN IMMEDIATE` 開始：寫入題目、數出教材的題目數，再經 port `SourceQuestionCount` 請教材來源記錄題目數與教材狀態（工作用 `record_import_question_count`，手動作業用 `record_question_count`），最後把工作或作業標為成功。`bootstrap/authoring_links.py` 的 `bind_source_question_count` 把這個交易的連線交給教材來源的 repository，任何一步失敗時全部復原。以前這是題目編寫自己的一個 SQL 更新，題目數在同一句裡數；現在數和寫在同一個寫入鎖裡，結果相同。
+
+手寫一題在儲存題目的同一個交易裡記錄題目數：`create_question` 以 `BEGIN IMMEDIATE` 寫入題目後，有引用教材時經 `BindSourceQuestionCount` 呼叫 `record_authored_question_count`，只寫題目數，狀態、失敗訊息與 `updated_at` 不變。`question_repository`（`bootstrap/authoring_links.py`）把 `bind_source_question_count` 交給 `SqliteQuestionRepository`。題目不屬於任何教材時不記錄。
 
 `create_app` 建立 `QuestionJobScheduler`（接上 `bind_source_question_count`、`authoring_projects` 與 `authoring_sources`）、`SqliteQuestionRepository`、`SqliteQuestionGenerationJobRepository`、`QuestionJobWork`、`SourceLibraryQuestionSources`、`ProviderQuestionWriting`、`ImportedSourceQuestionGeneration`，放在 `app.state.question_repository`、`question_generation_job_repository`、`question_generation_work`、`question_sources`、`question_writing`、`imported_question_generation`；題目編寫對專案與教材的檢查分別經 port `StudyProjects`、`ProjectSources` 與 `QuestionSources`，不直接引用其他上下文的 infrastructure；router 只依 `application/ports.py` 的 port 呼叫用例。
 
@@ -227,7 +229,7 @@ flowchart TD
 
 ## 與其他上下文的關係
 
-- 教材來源：為教材產生題目時，經 `source_library.application` 的 `list_chunks` 與 `view_source` 讀段落與教材。背景工作與手動作業提交題目時，經 port `SourceQuestionCount` 在同一個交易裡呼叫教材來源的 `record_import_question_count`、`record_question_count`。`SourceLibraryQuestionSources` 更新題目數與背景產生讀段落仍直接呼叫教材來源的儲存函式（已知例外，C5 第三部分改經教材來源的用例：https://github.com/gx-capture/capture-workbench/issues/200）。
+- 教材來源：為教材產生題目時，經 `source_library.application` 的 `list_chunks` 與 `view_source` 讀段落與教材。背景工作與手動作業提交題目時，經 port `SourceQuestionCount` 在同一個交易裡呼叫教材來源的 `record_import_question_count`、`record_question_count`。手寫一題時，同一個 port 的 `record_authored_question_count` 在儲存題目的交易裡只寫題目數，狀態、失敗訊息與 `updated_at` 不變。`SourceLibraryQuestionSources` 讀段落與更新題目數經教材來源的用例 `list_chunks`、`view_chunk`、`record_question_count`、`record_import_question_count`，不直接呼叫教材來源的儲存函式。
 - 教材來源：教材的作業失敗、取消或重試時，教材來源經它的 port `SourceQuestionJobs` 呼叫 `discard_unfinished_generation_jobs`；`bootstrap/source_library_links.py` 把作業交易的連線交給 `SqliteQuestionGenerationJobRepository`，工作和教材的重設一起寫入或一起復原。
 - AI 供應：`question_writer_for` 依設定的供應者挑選題目編寫器；Ollama 經 JSON 對話寫題目；背景產生使用背景產生參數、產生歸屬與釋放資源（見 [ai_providers.md](ai_providers.md)）。
 - 學習專案：確認專案存在仍直接呼叫 `projects.infrastructure`（已知例外，C5 處理）。

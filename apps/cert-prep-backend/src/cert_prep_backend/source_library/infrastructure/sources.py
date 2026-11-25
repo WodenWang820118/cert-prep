@@ -182,3 +182,30 @@ def set_question_count(
             "source_id": source_id,
         },
     )
+
+
+def set_authored_question_count(
+    connection: Connection,
+    *,
+    project_id: str,
+    source_id: str,
+    question_count: int,
+) -> None:
+    """Store the count only; status, failure message and `updated_at` stay.
+
+    A hand-written question changes how many questions the source has, and nothing else
+    about the source.
+    """
+
+    connection.execute(
+        """
+        UPDATE sources
+        SET question_count = :question_count
+        WHERE project_id = :project_id AND id = :source_id
+        """,
+        {
+            "question_count": question_count,
+            "project_id": project_id,
+            "source_id": source_id,
+        },
+    )

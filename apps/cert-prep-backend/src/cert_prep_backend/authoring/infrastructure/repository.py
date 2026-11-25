@@ -27,6 +27,7 @@ def create_question(
     *,
     projects: StudyProjects,
     sources: QuestionSources,
+    question_count: BindSourceQuestionCount,
 ) -> Question:
     if not projects.exists(project_id):
         raise NotFoundError("Project not found.")
@@ -37,6 +38,8 @@ def create_question(
     question_id = str(uuid4())
     now = utc_now()
     with db.connect() as connection:
+        # The inserted question and the source's question count commit together.
+        connection.execute("BEGIN IMMEDIATE")
         connection.execute(
             """
             INSERT INTO questions(
@@ -69,6 +72,12 @@ def create_question(
                 now,
             ),
         )
+        if payload.source_id is not None:
+            question_count(connection).record_authored_question_count(
+                project_id,
+                payload.source_id,
+                _source_question_count(connection, project_id, payload.source_id),
+            )
         row = _question_query(connection, project_id, question_id)
     if row is None:
         raise NotFoundError("Question not found.")
@@ -580,6 +589,7 @@ class SqliteQuestionRepository:
         *,
         projects: StudyProjects,
         sources: QuestionSources,
+        question_count: BindSourceQuestionCount,
     ) -> None:
         # A caller's connection joins that transaction for reads. Practice passes the
         # connection of its unit of work; the write methods still open their own.
@@ -587,13 +597,19 @@ class SqliteQuestionRepository:
         self._connection = connection
         self._projects = projects
         self._sources = sources
+        self._question_count = question_count
 
     def questions_of(self, project_id: str) -> list[Question]:
         return list_questions(self._db, project_id, projects=self._projects)
 
     def write(self, project_id: str, authored_question: NewQuestion) -> Question:
         return create_question(
-            self._db, project_id, authored_question, projects=self._projects, sources=self._sources
+            self._db,
+            project_id,
+            authored_question,
+            projects=self._projects,
+            sources=self._sources,
+            question_count=self._question_count,
         )
 
     def edit(self, project_id: str, question_id: str, edit: QuestionEdit) -> Question:

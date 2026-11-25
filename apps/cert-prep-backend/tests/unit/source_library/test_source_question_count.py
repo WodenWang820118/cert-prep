@@ -44,6 +44,7 @@ class RecordingSources:
     def __init__(self, source: Source | None) -> None:
         self._source = source
         self.recorded: list[tuple[str, str, str, int]] = []
+        self.authored_counts: list[tuple[str, str, int]] = []
 
     def source(self, project_id: str, source_id: str) -> Source:
         if self._source is None:
@@ -54,6 +55,11 @@ class RecordingSources:
         self, project_id: str, source_id: str, *, status: str, question_count: int
     ) -> None:
         self.recorded.append((project_id, source_id, status, question_count))
+
+    def record_authored_question_count(
+        self, project_id: str, source_id: str, *, question_count: int
+    ) -> None:
+        self.authored_counts.append((project_id, source_id, question_count))
 
 
 @pytest.mark.parametrize(
@@ -97,4 +103,28 @@ def test_a_missing_source_records_nothing() -> None:
     with pytest.raises(NotFoundError, match="^Document not found.$"):
         use_cases.record_import_question_count(sources, "project", "document", 1)
 
+    assert sources.recorded == []
+
+
+def test_an_authored_question_count_leaves_the_source_status_unwritten() -> None:
+    sources = RecordingSources(
+        _source(
+            status=SourceStatus.EXTRACTION_FAILED,
+            failure_message="The chart scan stopped early.",
+        )
+    )
+
+    use_cases.record_authored_question_count(sources, "project", "document", 5)
+
+    assert sources.authored_counts == [("project", "document", 5)]
+    assert sources.recorded == []
+
+
+def test_a_missing_source_records_no_authored_question_count() -> None:
+    sources = RecordingSources(None)
+
+    with pytest.raises(NotFoundError, match="^Document not found.$"):
+        use_cases.record_authored_question_count(sources, "project", "document", 1)
+
+    assert sources.authored_counts == []
     assert sources.recorded == []

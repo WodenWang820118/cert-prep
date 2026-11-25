@@ -81,7 +81,7 @@ class FakeWriting:
         return [_suggestion("One?"), _suggestion("Two?")]
 
 
-def test_generating_questions_twice_records_the_sources_total() -> None:
+def test_generating_questions_twice_records_every_question_of_the_source() -> None:
     questions, sources, writing = FakeQuestions(keep=1), FakeSources([CHUNK]), FakeWriting()
 
     def generate():

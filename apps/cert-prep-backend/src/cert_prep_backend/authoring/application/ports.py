@@ -77,9 +77,12 @@ class QuestionGenerationJobRepository(Protocol):
 
 
 class SourceQuestionCount(Protocol):
-    """A source's count of questions and the status that follows from it. Source Library
-    owns sources (D17). The count is always every question the source has, not the number
-    a writer just added."""
+    """A source's count of every question it has. Source Library owns sources (D17).
+
+    The count is every question the source has, not the number a writer just added. Writing
+    questions for a source, and writing them during import, also record the status that follows.
+    A question written by hand stores the count only.
+    """
 
     def record_question_count(self, project_id: str, source_id: str, count: int) -> None: ...
 
@@ -88,13 +91,26 @@ class SourceQuestionCount(Protocol):
         imported; a source without text or chunks is marked no_text_detected."""
         ...
 
+    def record_authored_question_count(
+        self, project_id: str, source_id: str, count: int
+    ) -> None:
+        """Store the count only; status, failure message and `updated_at` stay."""
+        ...
 
-class QuestionSources(SourceQuestionCount, Protocol):
-    """A source's chunks in Source Library, and its count of questions."""
+
+class QuestionSources(Protocol):
+    """A source's chunks in Source Library, and the question count recorded with its status."""
 
     def chunks_of(self, project_id: str, source_id: str) -> list[SourceChunk]: ...
 
     def chunk(self, project_id: str, source_id: str, chunk_id: str) -> SourceChunk: ...
+
+    def record_question_count(self, project_id: str, source_id: str, count: int) -> None: ...
+
+    def record_import_question_count(self, project_id: str, source_id: str, count: int) -> None:
+        """Record the source's question count after questions were written while it was
+        imported; a source without text or chunks is marked no_text_detected."""
+        ...
 
 
 class QuestionWriting(Protocol):

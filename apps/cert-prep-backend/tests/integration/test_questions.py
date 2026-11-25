@@ -135,7 +135,7 @@ def test_generation_preserves_existing_source_questions(
     )
 
 
-def test_generating_twice_leaves_the_sources_total_question_count(
+def test_generating_twice_counts_every_question_of_the_source(
     tmp_path, auth_headers
 ) -> None:
     client = TestClient(
@@ -190,9 +190,76 @@ def test_generating_twice_leaves_the_sources_total_question_count(
         # The count is every question of the source, the one written by hand included, not
         # the number this run added.
         assert question_count() == source_questions()
-    # The second run finds its question already there and adds none; the total stays.
+    # The second run finds its question already there and adds none; the question count stays.
     assert added == [1, 0]
     assert question_count() == 2
+
+
+def test_a_hand_written_question_updates_the_source_question_count_immediately(
+    client: TestClient, auth_headers
+) -> None:
+    project = client.post("/projects", headers=auth_headers, json={"name": "Harbor Charts"})
+    assert project.status_code == 201
+    project_id = project.json()["id"]
+    uploaded = client.post(
+        f"/projects/{project_id}/sources",
+        headers=auth_headers,
+        files={
+            "file": (
+                "harbor-notes.pdf",
+                minimal_pdf("A red buoy marks the channel edge."),
+                "application/pdf",
+            )
+        },
+    )
+    assert uploaded.status_code == 201
+    source_id = uploaded.json()["id"]
+    with client.app.state.database.connect() as connection:
+        connection.execute(
+            """
+            UPDATE sources
+            SET status = 'extraction_failed',
+                failure_message = 'The chart scan stopped early.'
+            WHERE project_id = ? AND id = ?
+            """,
+            (project_id, source_id),
+        )
+    chunk = client.get(
+        f"/projects/{project_id}/sources/{source_id}/chunks",
+        headers=auth_headers,
+    ).json()["items"][0]
+
+    def source_body() -> dict:
+        response = client.get(
+            f"/projects/{project_id}/sources/{source_id}", headers=auth_headers
+        )
+        assert response.status_code == 200
+        return response.json()
+
+    before = source_body()
+    assert before["question_count"] == 0
+    assert before["status"] == "extraction_failed"
+    assert before["failure_message"] == "The chart scan stopped early."
+
+    created = client.post(
+        f"/projects/{project_id}/questions",
+        headers=auth_headers,
+        json={
+            "source_id": source_id,
+            "chunk_id": chunk["id"],
+            "question": "Which buoy marks the channel?",
+            "choices": ["The red buoy", "The green buoy"],
+            "answer": "The red buoy",
+            "rationale": "The chart names the red buoy.",
+            "citation_page": chunk["page_number"],
+            "source_excerpt": chunk["source_excerpt"],
+        },
+    )
+    assert created.status_code == 201
+
+    after_add = source_body()
+    assert after_add["question_count"] == 1
+    assert {**after_add, "question_count": 0} == before
 
 
 def test_create_question_rejects_partial_source_reference(

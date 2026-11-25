@@ -85,7 +85,7 @@
 | 預設題目編寫器 | `PlaceholderQuestionWriter`      | 假供應者用的固定題目，讓 app 與測試不需要模型也能跑             |
 | 產生工作         | `QuestionGenerationJob`          | 匯入教材後，為一個段落產生題目的背景工作（每個段落與策略一個）  |
 | 背景題目工作排程 | `QuestionJobScheduler`、`QuestionJobWork` | 擷取後安排及執行題目產生工作；工作本身不串流 |
-| 教材題目數 | `SourceQuestionCount`、`question_count` | 記錄教材題目數與狀態的介面，以及 API 的題目數欄位；題目數一律是教材所有題目的總數 |
+| 教材題目數 | `SourceQuestionCount`、`question_count` | 記錄教材題目數的介面（產生與匯入時也記錄狀態；手寫一題只記錄題目數，狀態、失敗訊息與 `updated_at` 不變），以及 API 的題目數欄位；題目數是該教材所有的題目 |
 | 產生工作狀態     | `QuestionGenerationJobStatus`    | 等待、執行中、要求取消、已取消、成功、因模型或供應者跳過、失敗  |
 | 手動產生作業     | `ManualQuestionGeneration`        | 學習者要求為整份教材產生題目；同一份教材同時只有一個進行中      |
 | 手動產生作業狀態 | `ManualQuestionGenerationStatus`  | 排隊、執行中、要求取消、已取消、成功、失敗                      |

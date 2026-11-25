@@ -18,6 +18,7 @@ from sqlite3 import Connection
 import pytest
 
 from cert_prep_backend.authoring.domain.models import QuestionSuggestion
+from cert_prep_backend.authoring.domain.question import NewQuestion
 from cert_prep_backend.authoring.infrastructure import question_generation_jobs
 from cert_prep_backend.authoring.infrastructure import manual_operations
 from cert_prep_backend.authoring.infrastructure import repository as questions_repository
@@ -25,6 +26,7 @@ from cert_prep_backend.authoring.infrastructure.sources import SourceLibraryQues
 from cert_prep_backend.bootstrap.authoring_links import (
     authoring_sources,
     bind_source_question_count,
+    question_repository,
 )
 from cert_prep_backend.bootstrap.source_library_links import (
     source_operation_repository,
@@ -170,6 +172,19 @@ def test_a_source_that_ends_without_text_gets_the_no_text_reason_and_keeps_its_w
     assert warned["status"] == "no_text_detected"
     assert warned["extraction_warnings"] == "page 2 is blank"
     assert warned["failure_message"] == NO_TEXT_DETECTED_MESSAGE
+
+
+def test_an_authored_question_count_needs_the_transaction_of_its_question(
+    tmp_path: Path,
+) -> None:
+    db = _database(tmp_path)
+    _ready_source(db, "reef", status="ready")
+    before = dict(_source_row(db, "reef"))
+
+    with pytest.raises(RuntimeError, match="joins the transaction that stores the question"):
+        _sources(db).record_authored_question_count("proj", "reef", question_count=3)
+
+    assert dict(_source_row(db, "reef")) == before
 
 
 def test_the_job_cleanup_rolls_back_with_the_run_it_belongs_to(tmp_path: Path) -> None:
@@ -430,6 +445,106 @@ def test_the_source_question_count_rolls_back_with_the_question_commit(
     assert source["question_count"] == 0
     assert source["updated_at"] == "t0"
     assert questions_repository.list_questions(db, "proj", projects=authoring_projects(db)) == []
+
+
+def test_a_hand_written_question_stores_the_source_question_count(tmp_path: Path) -> None:
+    db = _database(tmp_path)
+    _ready_source(db, "cove", status="extraction_failed")
+    with db.connect() as connection:
+        connection.execute(
+            """
+            UPDATE sources
+            SET failure_message = 'The lantern scan stopped early.'
+            WHERE id = 'cove'
+            """
+        )
+        _question(connection, "earlier-lantern", "cove")
+    before = dict(_source_row(db, "cove"))
+
+    written = question_repository(db).write(
+        "proj",
+        NewQuestion(
+            question="Which lantern marks the cove?",
+            choices=("The red lantern", "The green lantern"),
+            answer="The red lantern",
+            rationale="The chart names the red lantern.",
+            source_id="cove",
+            chunk_id="cove-chunk",
+        ),
+    )
+
+    assert written.question == "Which lantern marks the cove?"
+    after = dict(_source_row(db, "cove"))
+    assert after["question_count"] == 2
+    before["question_count"] = 2
+    assert after == before
+
+
+def test_a_question_without_a_source_stores_no_question_count(tmp_path: Path) -> None:
+    db = _database(tmp_path)
+    _ready_source(db, "cove", status="extraction_failed")
+    before = dict(_source_row(db, "cove"))
+
+    def refuse(_connection: Connection) -> object:
+        raise RuntimeError("The cove count must stay unwritten.")
+
+    written = questions_repository.create_question(
+        db,
+        "proj",
+        NewQuestion(question="Which lantern marks the cove?"),
+        projects=authoring_projects(db),
+        sources=SourceLibraryQuestionSources(source_repository(db)),
+        question_count=refuse,
+    )
+
+    assert written.source_id is None
+    assert dict(_source_row(db, "cove")) == before
+    assert (
+        questions_repository.list_questions(db, "proj", projects=authoring_projects(db))
+        == [written]
+    )
+
+
+def test_a_failed_question_count_does_not_store_the_hand_written_question(
+    tmp_path: Path,
+) -> None:
+    db = _database(tmp_path)
+    _ready_source(db, "cove", status="extraction_failed")
+    with db.connect() as connection:
+        connection.execute(
+            """
+            UPDATE sources
+            SET failure_message = 'The lantern scan stopped early.'
+            WHERE id = 'cove'
+            """
+        )
+    before = dict(_source_row(db, "cove"))
+
+    class Raiser:
+        def record_authored_question_count(
+            self, project_id: str, source_id: str, count: int
+        ) -> None:
+            raise RuntimeError("The cove count could not be stored.")
+
+    def bind(_connection: Connection) -> Raiser:
+        return Raiser()
+
+    with pytest.raises(RuntimeError, match="The cove count could not be stored."):
+        questions_repository.create_question(
+            db,
+            "proj",
+            NewQuestion(
+                question="Which lantern marks the cove?",
+                source_id="cove",
+                chunk_id="cove-chunk",
+            ),
+            projects=authoring_projects(db),
+            sources=SourceLibraryQuestionSources(source_repository(db)),
+            question_count=bind,
+        )
+
+    assert questions_repository.list_questions(db, "proj", projects=authoring_projects(db)) == []
+    assert dict(_source_row(db, "cove")) == before
 
 
 def _operations(db: Database) -> SqliteSourceOperationRepository:
