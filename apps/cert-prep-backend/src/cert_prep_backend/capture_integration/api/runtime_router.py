@@ -18,12 +18,12 @@ from capture_runtime_client import (
     RuntimeInstallation,
     RuntimeInstallations,
     RuntimeRequirements,
+    RuntimeReady,
 )
 from cert_prep_backend.api.errors import api_error
 from cert_prep_backend.capture_integration.application import use_cases as capture_reviews
 from cert_prep_backend.capture_integration.application.errors import CaptureRuntimeSetupRejected
 from cert_prep_backend.capture_integration.application.ports import CaptureRuntimeSetup
-from cert_prep_backend.capture_integration.infrastructure.host_models import RuntimeReady
 
 
 router = APIRouter(prefix="/capture-runtime", tags=["capture-runtime"])

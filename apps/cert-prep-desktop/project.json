@@ -58,7 +58,7 @@
         "command": "corepack pnpm exec tauri build --config apps/cert-prep-desktop/src-tauri/tauri.conf.json"
       }
     },
-    "build-capture": {
+    "build-windows-x64": {
       "executor": "nx:run-commands",
       "dependsOn": ["cert-prep:build", "prepare-runtime-resources"],
       "outputs": ["{projectRoot}/src-tauri/target"],
@@ -66,7 +66,7 @@
         "command": "corepack pnpm exec tauri build --target x86_64-pc-windows-msvc --ci --config apps/cert-prep-desktop/src-tauri/tauri.conf.json"
       }
     },
-    "build-capture-dev": {
+    "build-windows-x64-dev": {
       "executor": "nx:run-commands",
       "dependsOn": ["cert-prep:build", "prepare-runtime-resources-dev"],
       "outputs": ["{projectRoot}/src-tauri/target"],
@@ -131,7 +131,7 @@
     "package-qa": {
       "cache": false,
       "executor": "nx:run-commands",
-      "dependsOn": ["build-capture"],
+      "dependsOn": ["build-windows-x64"],
       "outputs": ["{workspaceRoot}/tmp/cert-prep-desktop/package-qa"],
       "options": {
         "command": "node apps/cert-prep-desktop/scripts/package-qa.mts"

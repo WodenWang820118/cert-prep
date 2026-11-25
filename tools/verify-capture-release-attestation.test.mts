@@ -88,7 +88,7 @@ async function withRelease(
       await writeFile(join(directory, name), content);
       digests[name] = sha256(content);
     }
-    const manifest = join(directory, 'capture-release-manifest-v1.json');
+    const manifest = join(directory, manifestOverrides.schemaVersion === '2' ? 'capture-release-manifest-v2.json' : 'capture-release-manifest-v1.json');
     const manifestBody = JSON.stringify({
       schemaVersion: '1',
       status: 'released',
@@ -291,4 +291,32 @@ test('parses repeated assets and rejects unknown or path-like arguments', async 
     ),
     /Asset must be a plain file name/u,
   );
+});
+
+for (const invalid of [false, true]) {
+  test(`v2 release assets ${invalid ? 'reject tampered bytes' : 'verify under their own manifest name'}`, async () => {
+    await withRelease(async (fixture) => {
+      const { gh } = fakeGh(new Map([[fixture.manifestSha256, [FULL]]]));
+      if (invalid) {
+        await writeFile(join(fixture.directory, RUNTIME), 'tampered');
+        await assert.rejects(verifyCaptureReleaseAttestation(options(fixture.directory, fixture.manifest, [RUNTIME]), gh), /does not match/u);
+      } else {
+        const result = await verifyCaptureReleaseAttestation(options(fixture.directory, fixture.manifest, [RUNTIME]), gh);
+        assert.equal(result[0]?.evidence, 'release-manifest');
+      }
+    }, { schemaVersion: '2', runtimeAssets: undefined, releaseAssets: [{ path: `runtime/${RUNTIME}`, sha256: sha256('runtime-bytes') }] });
+  });
+}
+
+test('rejects a v2 schema under the v1 filename', async () => {
+  await withRelease(async (fixture) => {
+    const manifest = JSON.parse(await import('node:fs/promises').then(({ readFile }) => readFile(fixture.manifest, 'utf8'))) as Record<string, unknown>;
+    manifest.schemaVersion = '2';
+    manifest.releaseAssets = manifest.runtimeAssets;
+    delete manifest.runtimeAssets;
+    const bytes = JSON.stringify(manifest);
+    await writeFile(fixture.manifest, bytes);
+    const { gh } = fakeGh(new Map([[sha256(bytes), [FULL]]]));
+    await assert.rejects(verifyCaptureReleaseAttestation(options(fixture.directory, fixture.manifest, [RUNTIME]), gh), /filename/u);
+  });
 });

@@ -116,7 +116,7 @@ def capture_document_to_pdf_extraction(
         else document.extraction_engine.device
     )
     page_count = (
-        int(getattr(ocr_projection, "page_count"))
+        int(getattr(ocr_projection, "processed_page_count"))
         if ocr_projection is not None
         else max(pages)
     )
@@ -155,7 +155,7 @@ def capture_document_to_audio_segments(
 
 
 def _ocr_only_extraction_method(document: CaptureDocument) -> str:
-    if document.extraction_engine.engine != "windowsml-ocr":
+    if document.extraction_engine.engine != "text-recognition":
         raise ValueError(
             "Capture document extraction provenance violates the OCR-only contract."
         )

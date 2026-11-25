@@ -26,7 +26,7 @@ export class CaptureRuntimePreflightStore {
     () => this.ready()?.ocrCompute ?? null,
   );
   readonly gpuAccelerationMessage = computed(() =>
-    this.ocrCompute()?.mode === 'gpu-dml' ? GPU_ACCELERATION_MESSAGE : null,
+    this.ocrCompute()?.mode === 'gpu' ? GPU_ACCELERATION_MESSAGE : null,
   );
   readonly cpuFallbackNotice = computed(() => {
     const preflight = this.ocrCompute();

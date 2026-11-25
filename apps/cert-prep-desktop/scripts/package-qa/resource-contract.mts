@@ -80,11 +80,6 @@ export function validatePackagedResourceContract({
       throw new Error(`Packaged runtime resource is missing: ${required}`);
     }
   }
-  if (names.has('windowsml-ocr-runtime-manifest.json')) {
-    throw new Error(
-      'cert-prep-owned WindowsML OCR runtime manifest must not be bundled.',
-    );
-  }
   const bundledZipNames = [...names].filter((name) => name.endsWith('.zip'));
   if (
     bundledZipNames.length !== 1 ||

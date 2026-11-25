@@ -42,7 +42,7 @@ Capture Runtime from the Capture Workbench page when they want to capture.
   shows `Install Capture Runtime`, then `Start Capture Runtime`, before it
   registers a capture client. Once started it refreshes the cached backend
   configuration and configures the host-managed OCR-only flow.
-- Engines are not bundled. After start, `windowsml-ocr` and
+- Engines are not bundled. After start, `text-recognition` and
   `speech-recognition` install from the runtime's release catalog on request,
   are verified, and live in the machine-wide Capture engine cache, so a
   reinstall or another Capture host reuses them. Runtime slots never touch that
@@ -73,7 +73,7 @@ Capture Runtime from the Capture Workbench page when they want to capture.
   after a rollback-capable owned-backend restart.
 - The capture page shows that Capture Runtime is unavailable with a clear
   action and does not construct a usable capture client first.
-- Every PDF/image dispatch requires a ready `windowsml-ocr` requirement and
+- Every PDF/image dispatch requires a ready `text-recognition` requirement and
   persists only `windowsml_ocr`; a missing or non-ready requirement is rejected
   before ingestion.
 

@@ -18,7 +18,7 @@ from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.ai_providers.infrastructure import machine_inventory
 from cert_prep_backend.capture_integration.infrastructure.client import (
-    CaptureStreamingResult,
+    CaptureResult,
     CaptureUpload,
 )
 from capture_runtime_client import (
@@ -110,7 +110,7 @@ class TypedPullSessionRuntimeMixin:
             {
                 "sessionId": f"session-{capture_id}",
                 "captureId": capture_id,
-                "rawSourceSha256": raw.source.sha256,
+                "sourceSha256": raw.source.sha256,
                 "contractSetSha256": "c" * 64,
                 "targetLanguage": getattr(request, "target_language", None),
                 "providerCapability": request.provider_capability.model_dump(
@@ -127,7 +127,7 @@ class TypedPullSessionRuntimeMixin:
         )
         return self._pull_session
 
-    def pull_structuring_batch(self, capture_id: str, batch_index: int) -> StructuringBatch:
+    def get_structuring_batch(self, capture_id: str, batch_index: int) -> StructuringBatch:
         raw = self._pull_raw_capture()
         session = self._pull_session
         segment = raw.segments[batch_index]
@@ -252,11 +252,10 @@ class TypedPullSessionRuntimeMixin:
                 "sourceText": raw.source_text,
                 "targetText": target_text,
                 "extractionEngine": raw.extraction_engine.model_dump(mode="json", by_alias=True),
-                "structuringEngine": {
-                    "engine": "cert-prep-typed-pull-test",
-                    "model": "typed-pull-session-test",
-                    "digest": "sha256:" + "f" * 64,
-                },
+                # The runtime derives the result engine from the opened session.
+                "structuringEngine": self._pull_session.provider_capability.provider.model_dump(
+                    mode="json", by_alias=True
+                ),
                 "warnings": raw.warnings,
                 "createdAt": raw.created_at,
                 "completedAt": raw.created_at,
@@ -287,7 +286,7 @@ class TestCaptureRuntimeClient(TypedPullSessionRuntimeMixin):
         target_language: str | None = None,
     ) -> CaptureOperation:
         del client_request_id, target_language
-        is_audio = source_kind is CaptureSourceKind.AUDIO
+        is_audio = source_kind is CaptureSourceKind.RECORDING
         source_pages = _fake_source_pages(upload.content, source_kind)
         source_text = "\n".join(source_pages)
         segments = [
@@ -313,7 +312,7 @@ class TestCaptureRuntimeClient(TypedPullSessionRuntimeMixin):
                 "segments": segments,
                 "sourceText": source_text,
                 "extractionEngine": {
-                    "engine": "speech-recognition" if is_audio else "windowsml-ocr",
+                    "engine": "speech-recognition" if is_audio else "text-recognition",
                     "model": f"capture-runtime@{CAPTURE_RUNTIME_VERSION}",
                     "digest": f"sha256:{'a' * 64}",
                     "device": "test",
@@ -349,10 +348,10 @@ class TestCaptureRuntimeClient(TypedPullSessionRuntimeMixin):
         assert self._raw is not None
         return self._raw
 
-    def get_result(self, _capture_id: str) -> CaptureStreamingResult:
+    def get_result(self, _capture_id: str) -> CaptureResult:
         assert self._raw is not None
         assert self._result is not None
-        return CaptureStreamingResult(
+        return CaptureResult(
             operation=self._operation(status="completed"),
             raw=self._raw,
             result=self._result,
@@ -379,7 +378,7 @@ class TestCaptureRuntimeClient(TypedPullSessionRuntimeMixin):
             "protocolVersion": "2",
             "captureId": "test-capture",
             "ingestionId": "test-ingestion",
-            "kind": "audio" if self._raw.segments[0].locator.kind == "time" else "pdf",
+            "kind": "recording" if self._raw.segments[0].locator.kind == "time" else "pdf",
             "status": status,
             "progress": 1 if status in {"completed", "cancelled"} else 0.5,
             "partialRevision": 1,
@@ -419,7 +418,7 @@ def _test_ocr_projection(raw: RawCapture, capture_id: str) -> object:
             ),
             provenance=SimpleNamespace(
                 status=SimpleNamespace(value="resolved"),
-                engine="windowsml-ocr",
+                engine="text-recognition",
                 model="capture-ocr-test",
                 model_digest="sha256:" + "b" * 64,
                 device=raw.extraction_engine.device or "test-device",
@@ -437,9 +436,9 @@ def _test_ocr_projection(raw: RawCapture, capture_id: str) -> object:
         status=SimpleNamespace(value="completed"),
         source=raw.source,
         pages=pages,
-        page_count=len(pages),
+        processed_page_count=len(pages),
         runtime_version=CAPTURE_RUNTIME_VERSION,
-        contract_sha256="d" * 64,
+        contract_set_sha256="d" * 64,
         provenance=provenance,
         warnings=[],
         failure=None,
@@ -455,7 +454,12 @@ def _test_runtime_ready() -> RuntimeReady:
             "runtimeVersion": CAPTURE_RUNTIME_VERSION,
             "captureDocumentSchemaVersion": "2",
             "capabilities": {
-                "captureKinds": ["pdf", "image", "audio"],
+                "maxChunkBytes": 1_048_576,
+                "checkpointIntervalMs": 250,
+                "heartbeatIntervalMs": 1000,
+                "stallTimeoutMs": 30_000,
+                "supportsProgressiveRecording": True,
+                "captureKinds": ["pdf", "image", "recording"],
                 "structuringModes": ["runtime", "host"],
                 "supportsCancellation": True,
                 "supportsRawDiagnostics": True,
@@ -467,8 +471,8 @@ def _test_runtime_ready() -> RuntimeReady:
                 "service": "capture-runtime",
                 "runtimeVersion": CAPTURE_RUNTIME_VERSION,
                 "contractSetVersion": "2",
-                "contractSha256": "a" * 64,
-                "mode": "gpu-dml",
+                "contractSetSha256": "a" * 64,
+                "mode": "gpu",
                 "adapterClass": "dedicated",
                 "reasonCode": None,
                 "userNoticeRequired": False,
@@ -484,8 +488,8 @@ def _test_runtime_requirements(status: str) -> RuntimeRequirements:
         {
             "items": [
                 {
-                    "requirementId": "windowsml-ocr",
-                    "kind": "ocr",
+                    "requirementId": "text-recognition",
+                    "kind": "text-recognition",
                     "displayName": "WindowsML OCR",
                     "status": status,
                     "requiredFor": ["pdf", "image"],
@@ -493,10 +497,10 @@ def _test_runtime_requirements(status: str) -> RuntimeRequirements:
                 },
                 {
                     "requirementId": "speech-recognition",
-                    "kind": "speech-to-text",
+                    "kind": "speech-recognition",
                     "displayName": "Speech recognition",
                     "status": status,
-                    "requiredFor": ["audio"],
+                    "requiredFor": ["recording"],
                     "installStrategy": "test",
                 },
             ]
@@ -560,7 +564,7 @@ def _fake_source_pages(content: bytes, source_kind: CaptureSourceKind) -> list[s
             ]
         finally:
             document.close()
-    if source_kind is CaptureSourceKind.AUDIO:
+    if source_kind is CaptureSourceKind.RECORDING:
         return ["Captured source text"]
     return ["Captured source text"]
 

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
-  existsSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -47,10 +46,6 @@ test('resources bundle the backend and published Capture Runtime contract only',
   assert.equal(capture.runtimeVersion, CAPTURE_RUNTIME_VERSION);
   assert.equal(capture.apiVersion, '2.0');
   assert.equal(capture.captureDocumentSchemaVersion, '2');
-  assert.equal(
-    existsSync(join(outputDir, 'windowsml-ocr-runtime-manifest.json')),
-    false,
-  );
   assert.deepEqual(
     readJson(join(outputDir, capture.schemaFileName)),
     canonicalCaptureDocumentSchema(),

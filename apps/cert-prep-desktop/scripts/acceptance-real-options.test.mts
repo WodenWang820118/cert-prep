@@ -258,7 +258,7 @@ test('downloaded runtime provenance is bound to installed core and catalog worke
         runtimeVersion: '0.4.1',
         requirements: [
           {
-            requirementId: 'windowsml-ocr',
+            requirementId: 'text-recognition',
             artifacts: [
               {
                 fileName: workerName,

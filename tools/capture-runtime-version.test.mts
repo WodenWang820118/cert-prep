@@ -43,7 +43,7 @@ const CONTRACT_FIXTURE = JSON.stringify({
   contractSetVersion: '2',
   schemas: [
     {
-      name: 'CaptureOcrProjectionV3',
+      name: 'CaptureOcrProjection',
       schema: {
         properties: {
           apiVersion: { const: '2.0' },
@@ -56,7 +56,7 @@ const CONTRACT_FIXTURE = JSON.stringify({
       },
     },
     {
-      name: 'OcrComputePreflightV2',
+      name: 'OcrComputePreflight',
       schema: {
         properties: {
           apiVersion: { const: '2.0' },
@@ -112,11 +112,9 @@ function validEntries(): CaptureRuntimeConsumerInventoryEntry[] {
           ? '2.0'
           : field.kind === 'documentSchemaVersion'
             ? '2'
-            : field.kind === 'runtimeReadyIdentity'
-              ? 'api=2.0;document=2;contractSet=2'
-              : field.kind === 'preflightIdentity'
-                ? 'api=2.0;contractSet=2'
-                : 'structural',
+            : field.kind === 'preflightIdentity'
+              ? 'api=2.0;contractSet=2'
+              : 'structural',
   }));
 }
 
@@ -270,7 +268,7 @@ test('the contract parser rejects duplicate required schemas and a wrong identit
     (schema) => schema.name === 'RuntimeReady',
   );
   const projection = duplicate.schemas.find(
-    (schema) => schema.name === 'CaptureOcrProjectionV3',
+    (schema) => schema.name === 'CaptureOcrProjection',
   );
   assert.ok(runtimeReady);
   assert.ok(projection);
@@ -292,7 +290,7 @@ test('the contract parser rejects duplicate required schemas and a wrong identit
   );
   assert.ok(
     duplicateReport.errors.some((error) =>
-      error.includes('duplicate CaptureOcrProjectionV3'),
+      error.includes('duplicate CaptureOcrProjection'),
     ),
   );
 
@@ -400,7 +398,7 @@ test('the inventory rejects a missing projection schema and a corrupted contract
   assert.ok(report.errors.some((error) => error.includes('contract-set')));
   assert.ok(
     report.errors.some((error) =>
-      error.includes('missing CaptureOcrProjectionV3'),
+      error.includes('missing CaptureOcrProjection'),
     ),
   );
   assert.deepEqual(Buffer.from(source.bytes), originalBytes);
@@ -428,7 +426,7 @@ test('a producer contract that pins another version in a schema is mixed', () =>
     }[];
   };
   const preflight = fixture.schemas.find(
-    (schema) => schema.name === 'OcrComputePreflightV2',
+    (schema) => schema.name === 'OcrComputePreflight',
   );
   assert.ok(preflight);
   preflight.schema.properties.runtimeVersion = { const: '99.0.0' };
@@ -508,7 +506,7 @@ test('a canonical snapshot reads the same inventory and survives workspace mutat
       CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS.length,
     );
     assert.equal(CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS.length, 25);
-    assert.equal(CAPTURE_RUNTIME_CONSUMER_INVENTORY_FIELDS.length, 28);
+    assert.equal(CAPTURE_RUNTIME_CONSUMER_INVENTORY_FIELDS.length, 27);
     assert.equal(repeatedSnapshot.aggregateSha256, snapshot.aggregateSha256);
     assert.deepEqual(repeatedSnapshot.files, snapshot.files);
     assert.deepEqual(snapshotInput.entries, diskInput.entries);
@@ -1056,7 +1054,7 @@ test('the reader validates generated identity and backend launch forwarding from
     writeFileSync(
       generatedPath,
       generated.replace(
-        /(RuntimeReady:\s*\{[\s\S]*?"apiVersion":\s*)"2\.0"/u,
+        /(OcrComputePreflight:\s*\{[\s\S]*?"apiVersion"\??:\s*)"2\.0"/u,
         '$1"9.0"',
       ),
     );
@@ -1069,7 +1067,7 @@ test('the reader validates generated identity and backend launch forwarding from
     assert.equal(report.status, 'blocked');
     assert.ok(
       report.errors.some((error) =>
-        error.includes('generated.ts:RuntimeReady is stale or mixed'),
+        error.includes('generated.ts:OcrComputePreflight is stale or mixed'),
       ),
     );
   });

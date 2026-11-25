@@ -10,9 +10,9 @@ from fastapi import Request
 
 from capture_runtime_client import (
     CaptureEvent,
-    CaptureFailure,
+    OperationFailure,
     CaptureSourceKind,
-    StreamingEventType,
+    CaptureEventType,
 )
 from cert_prep_backend.api.errors import not_found_error
 from cert_prep_backend.capture_integration.application import use_cases as capture_reviews
@@ -235,18 +235,18 @@ def _terminal_host_event(
 ) -> CaptureEvent:
     status_value = session.status
     event_type = {
-        CaptureReviewStatus.COMPLETED: StreamingEventType.COMPLETED,
-        CaptureReviewStatus.CANCELED: StreamingEventType.CANCELLED,
-        CaptureReviewStatus.FAILED: StreamingEventType.FAILED,
+        CaptureReviewStatus.COMPLETED: CaptureEventType.COMPLETED,
+        CaptureReviewStatus.CANCELED: CaptureEventType.CANCELLED,
+        CaptureReviewStatus.FAILED: CaptureEventType.FAILED,
     }[status_value]
     failure = (
-        CaptureFailure(
+        OperationFailure(
             code="host_capture_failed",
             message="Cert Prep capture processing failed.",
             stage="host",
             retryable=False,
         )
-        if event_type is StreamingEventType.FAILED
+        if event_type is CaptureEventType.FAILED
         else None
     )
     sequence = max(1, int(session.last_event_sequence))

@@ -146,12 +146,10 @@ export function requireExpectedOcrImageDocument(
       `Packaged OCR image document source_kind expected document but received ${String(payload.source_kind)}.`,
     );
   }
-  if (
-    typeof payload.ocr_device !== 'string' ||
-    payload.ocr_device.trim().length === 0
-  ) {
+  // Capture 0.11.0 reports text recognition on DirectML or CPU.
+  if (payload.ocr_device !== 'directml' && payload.ocr_device !== 'cpu') {
     throw new Error(
-      'Packaged OCR image document did not report the OCR device that processed the JPEG.',
+      `Packaged OCR image document OCR device expected directml or cpu but received ${String(payload.ocr_device)}.`,
     );
   }
   if (

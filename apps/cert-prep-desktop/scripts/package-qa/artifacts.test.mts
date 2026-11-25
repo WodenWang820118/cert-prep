@@ -121,15 +121,6 @@ test('packaged resource contract contains only backend and Capture Runtime asset
     tauriConfig: fixture.tauriConfig,
   });
   assert.equal(report.package.resource_contract.capture_runtime_bundled, true);
-
-  writeFileSync(
-    join(fixture.resourceRoot, 'windowsml-ocr-runtime-manifest.json'),
-    'legacy',
-  );
-  assert.throws(
-    () => validatePackagedResourceContract(fixture),
-    /cert-prep-owned WindowsML OCR runtime manifest must not be bundled/,
-  );
 });
 
 function createResourceFixture(): {

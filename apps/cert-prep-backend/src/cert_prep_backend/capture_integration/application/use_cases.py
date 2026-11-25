@@ -133,7 +133,7 @@ _OCR_OPEN_STATUSES = frozenset(
         CaptureReviewStatus.FAILED,
     }
 )
-_OCR_EARLY_STATUSES = frozenset({"created", "waiting_input", "extracting"})
+_OCR_EARLY_STATUSES = frozenset({"waiting_input", "extracting"})
 _OCR_PUBLISHED_STATUSES = frozenset({"awaiting_structuring", "failed"})
 
 

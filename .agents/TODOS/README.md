@@ -15,9 +15,9 @@ the `cross-repo` label.
 - Capture Runtime consumer: producer-owned runtime sessions, after Capture
   wires its restart reconciliation ("Option W") [#246](https://github.com/gx-capture/capture-workbench/issues/246); OCR performance
   baseline per compute mode [#261](https://github.com/gx-capture/capture-workbench/issues/261).
-- Packaged Capture Workbench smoke: past the OCR preflight step; successful
-  packaged transcription through the Build page's source-library import
-  [#259](https://github.com/gx-capture/capture-workbench/issues/259).
+- Packaged Capture Workbench smoke: installed-app run of the implemented order;
+  successful packaged transcription through the Build page's source-library
+  import [#259](https://github.com/gx-capture/capture-workbench/issues/259).
 - Public Alpha `0.1.0-alpha.1`: one publishing `release-alpha.yml` run
   [#260](https://github.com/gx-capture/capture-workbench/issues/260).
 - GPU selection step 3 (device override, observed device in the API status,

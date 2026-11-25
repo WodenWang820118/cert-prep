@@ -18,7 +18,7 @@ from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeCompatibilityError,
     CaptureRuntimeError,
     CaptureRuntimeProtocolError,
-    CaptureStreamingResult,
+    CaptureResult,
     CaptureUpload,
 )
 from capture_runtime_client import (
@@ -33,13 +33,13 @@ from capture_runtime_client import (
     StructuringBatchStatus,
     StructuringSession,
     StructuringSessionStatus,
-    StreamingCaptureStatus,
+    CaptureStatus,
     RuntimeRequirementStatus,
     RuntimeRequirements,
-    CaptureStreamingResult as RuntimeStreamingResult,
+    CaptureResult as RuntimeCaptureResult,
 )
 from cert_prep_backend.capture_integration.infrastructure.host_models import (
-    OcrComputePreflightV2,
+    OcrComputePreflight,
     RuntimeReady,
 )
 from cert_prep_backend.capture_integration.infrastructure.coordinator import (
@@ -98,7 +98,7 @@ def _raw_payload() -> dict[str, object]:
         ],
         "sourceText": "Visible source text",
         "extractionEngine": {
-            "engine": "windowsml-ocr",
+            "engine": "text-recognition",
             "model": "ocr-v1",
             "digest": f"sha256:{'b' * 64}",
             "device": "igpu",
@@ -158,7 +158,12 @@ def _ready_payload(*, schema_version: str = "2") -> dict[str, object]:
         "runtimeVersion": CAPTURE_RUNTIME_VERSION,
         "captureDocumentSchemaVersion": schema_version,
         "capabilities": {
-            "captureKinds": ["pdf", "image", "audio"],
+            "maxChunkBytes": 1_048_576,
+            "checkpointIntervalMs": 250,
+            "heartbeatIntervalMs": 1000,
+            "stallTimeoutMs": 30_000,
+            "supportsProgressiveRecording": True,
+            "captureKinds": ["pdf", "image", "recording"],
             "structuringModes": ["runtime", "host"],
             "supportsCancellation": True,
             "supportsRawDiagnostics": True,
@@ -183,7 +188,6 @@ def _negotiated_handler(
             return httpx.Response(
                 200,
                 json={
-                    "catalogVersion": "2",
                     "runtimeVersion": CAPTURE_RUNTIME_VERSION,
                     "contractSetVersion": "2",
                     "surfaces": [{"id": "v2"}],
@@ -204,8 +208,8 @@ def _negotiated_handler(
                 200,
                 json={
                     "protocolVersion": "2",
-                    "captureKinds": ["pdf", "image", "audio"],
-                    "supportsProgressiveAudio": True,
+                    "captureKinds": ["pdf", "image", "recording"],
+                    "supportsProgressiveRecording": True,
                     "maxChunkBytes": 1_048_576,
                     "checkpointIntervalMs": 500,
                     "heartbeatIntervalMs": 1_000,
@@ -307,7 +311,7 @@ class PullSessionRuntime:
             {
                 "sessionId": "session-1",
                 "captureId": capture_id,
-                "rawSourceSha256": self.raw.source.sha256,
+                "sourceSha256": self.raw.source.sha256,
                 "contractSetSha256": "c" * 64,
                 "targetLanguage": request.target_language,
                 "providerCapability": request.provider_capability.model_dump(
@@ -324,7 +328,7 @@ class PullSessionRuntime:
         )
         return self._session
 
-    def pull_structuring_batch(self, capture_id: str, batch_index: int) -> StructuringBatch:
+    def get_structuring_batch(self, capture_id: str, batch_index: int) -> StructuringBatch:
         assert self._session is not None
         self.pull_calls.append(batch_index)
         segment = self.raw.segments[batch_index]
@@ -349,7 +353,7 @@ class PullSessionRuntime:
                     "additionalProperties": False,
                 },
                 "numCtx": 8_192,
-                "numPredict": 4_096,
+                "numPredict": 512 + batch_index * 256,
                 "batchDigest": f"{batch_index + 1:064x}",
                 "status": StructuringBatchStatus.READY,
             }
@@ -391,7 +395,7 @@ class PullSessionRuntime:
             self._document = self._reconstruct_document()
         return self._session
 
-    def get_result(self, capture_id: str) -> RuntimeStreamingResult:
+    def get_result(self, capture_id: str) -> RuntimeCaptureResult:
         assert self._session is not None
         assert self._document is not None
         operation = CaptureOperation.model_validate(
@@ -401,7 +405,7 @@ class PullSessionRuntime:
                 "source": self.raw.source.model_dump(mode="json", by_alias=True),
             }
         )
-        return RuntimeStreamingResult(operation=operation, raw=self.raw, result=self._document)
+        return RuntimeCaptureResult(operation=operation, raw=self.raw, result=self._document)
 
     def get_ocr(self, capture_id: str) -> object:
         return _test_ocr_projection(self.raw, capture_id)
@@ -459,6 +463,8 @@ class PullSessionRuntime:
 def _valid_batch_candidate(call: dict[str, object]) -> str:
     messages = call["messages"]
     assert isinstance(messages, list)
+    if len(messages) == 1:  # The Ollama model load before device verification.
+        return "{}"
     prompt = json.loads(messages[1]["content"])
     blocks = []
     for segment in prompt["rawSegments"]:
@@ -528,6 +534,12 @@ def test_capture_adapter_projects_ocr_without_llm_when_no_target_language_is_req
     assert candidate.blocks[0].type == "paragraph"
     assert candidate.blocks[0].target_text == candidate.blocks[0].source_text
     assert candidate.structuring_engine.model == "capture-document-pass-through-v1"
+    request = adapter._runtime_client.open_calls[0]["request"]
+    assert request.profile_id == "qwen3.5-4b-structure-v1"
+    assert set(request.model_dump(by_alias=True)) == {
+        "protocolVersion", "targetLanguage", "profileId", "providerCapability", "schemaDialect"
+    }
+    assert set(request.provider_capability.model_dump(by_alias=True)) == {"provider", "schemaDialect"}
 
 
 def test_capture_adapter_does_not_repair_invalid_provider_json() -> None:
@@ -574,7 +586,7 @@ def test_capture_adapter_batches_by_token_budget_and_preserves_global_order() ->
         assert isinstance(messages, list)
         prompt = json.loads(messages[1]["content"])
         supplied_ids.extend(segment["segmentId"] for segment in prompt["rawSegments"])
-        assert call["num_ctx"] <= 4_096
+        assert call["num_ctx"] == 4_096
         assert call["num_predict"] <= 1_024
     assert supplied_ids == [segment.segment_id for segment in raw.segments]
     assert [block.order for block in document.blocks] == list(range(5))
@@ -667,7 +679,7 @@ def test_capture_adapter_observes_cancellation_between_provider_batches() -> Non
 def test_capture_adapter_observes_deadline_after_an_in_flight_batch_returns() -> None:
     provider = RecordingStructuredProvider(_valid_batch_candidate)
     raw = RawCapture.model_validate(_raw_payload())
-    ticks = iter([0.0, 0.0, 2.0])
+    ticks = iter([0.0, 0.0, 0.0, 2.0])
     adapter = CertPrepCaptureStructuringAdapter(
         provider, PullSessionRuntime(raw), clock=lambda: NOW
     )
@@ -737,8 +749,10 @@ def test_capture_adapter_reuses_existing_ollama_client_and_model() -> None:
     assert factory_calls == 1
     assert result.blocks[0].target_text == "Visible target text"
     assert result.raw_segments == raw.segments
-    assert len(ollama_client.chat_calls) == 1
-    call = ollama_client.chat_calls[0]
+    # The first call loads the model before the device is verified.
+    assert len(ollama_client.chat_calls) == 2
+    assert ollama_client.chat_calls[0]["options"]["num_predict"] == 1
+    call = ollama_client.chat_calls[1]
     assert call["model"] == "cert-prep-qwen"
     assert call["think"] is False
     assert call["format"]["title"] == "CaptureBlockBatch"
@@ -918,15 +932,15 @@ class RecordingCaptureRuntime:
         self.document = CaptureDocument.model_validate(_document_payload())
         ready = _ready_payload()
         ready["runtimeVersion"] = runtime_version
-        ready["capabilities"]["captureKinds"] = capture_kinds or ["pdf", "image", "audio"]
+        ready["capabilities"]["captureKinds"] = capture_kinds or ["pdf", "image", "recording"]
         ready["ocrCompute"] = {
             "apiVersion": "2.0",
             "schemaVersion": "1",
             "service": "capture-runtime",
             "runtimeVersion": CAPTURE_RUNTIME_VERSION,
             "contractSetVersion": "2",
-            "contractSha256": "a" * 64,
-            "mode": "gpu-dml",
+            "contractSetSha256": "a" * 64,
+            "mode": "gpu",
             "adapterClass": "dedicated",
             "reasonCode": None,
             "userNoticeRequired": False,
@@ -942,8 +956,8 @@ class RecordingCaptureRuntime:
             {
                 "items": [
                     {
-                        "requirementId": "windowsml-ocr",
-                        "kind": "ocr",
+                        "requirementId": "text-recognition",
+                        "kind": "text-recognition",
                         "displayName": "WindowsML OCR",
                         "status": requirement_status.value,
                         "requiredFor": ["pdf", "image"],
@@ -952,10 +966,10 @@ class RecordingCaptureRuntime:
                     },
                     {
                         "requirementId": "speech-recognition",
-                        "kind": "speech-to-text",
+                        "kind": "speech-recognition",
                         "displayName": "Speech recognition",
                         "status": requirement_status.value,
-                        "requiredFor": ["audio"],
+                        "requiredFor": ["recording"],
                         "installStrategy": "unavailable",
                         "detail": detail,
                     },
@@ -1052,7 +1066,7 @@ class RecordingCaptureRuntime:
         )
 
     def get_result(self, _capture_id):
-        return CaptureStreamingResult(
+        return CaptureResult(
             operation=_operation(status="completed"),
             raw=self.raw,
             result=self.document,
@@ -1220,7 +1234,7 @@ def test_capture_coordinator_uses_host_provider_then_fetches_validated_result() 
             "WindowsML OCR is unavailable. No downloadable model is published for this runtime release.",
         ),
         (
-            CaptureSourceKind.AUDIO,
+            CaptureSourceKind.RECORDING,
             "sample.wav",
             "audio/wav",
             "Speech recognition is unavailable. No downloadable model is published for this runtime release.",
@@ -1251,7 +1265,7 @@ def test_capture_coordinator_rejects_nonready_source_requirement_before_dispatch
             content=b"source bytes",
             media_type=media_type,
             source_kind=source_kind,
-            target_language="zh-Hant" if source_kind is CaptureSourceKind.AUDIO else None,
+            target_language="zh-Hant" if source_kind is CaptureSourceKind.RECORDING else None,
             should_cancel=lambda: False,
         )
 
@@ -1290,10 +1304,10 @@ def test_capture_coordinator_rejects_unsupported_source_kind_before_requirement_
 @pytest.mark.parametrize(
     ("mode", "adapter_class", "reason_code"),
     [
-        ("gpu-dml", "dedicated", None),
-        ("gpu-dml", "integrated", None),
+        ("gpu", "dedicated", None),
+        ("gpu", "integrated", None),
         ("cpu-fallback", "integrated", "no_compatible_gpu"),
-        ("cpu-fallback", "unknown", "dml_provider_unavailable"),
+        ("cpu-fallback", "unknown", "gpu_provider_unavailable"),
     ],
 )
 def test_capture_coordinator_accepts_only_the_runtime_ocr_compute_decision(
@@ -1304,14 +1318,14 @@ def test_capture_coordinator_accepts_only_the_runtime_ocr_compute_decision(
     runtime = RecordingCaptureRuntime()
     runtime.ready = runtime.ready.model_copy(
         update={
-            "ocr_compute": OcrComputePreflightV2.model_validate(
+            "ocr_compute": OcrComputePreflight.model_validate(
                 {
                     "apiVersion": "2.0",
                     "schemaVersion": "1",
                     "service": "capture-runtime",
                     "runtimeVersion": CAPTURE_RUNTIME_VERSION,
                     "contractSetVersion": "2",
-                    "contractSha256": "a" * 64,
+                    "contractSetSha256": "a" * 64,
                     "mode": mode,
                     "adapterClass": adapter_class,
                     "reasonCode": reason_code,
@@ -1336,7 +1350,7 @@ def test_capture_coordinator_accepts_only_the_runtime_ocr_compute_decision(
         should_cancel=lambda: False,
     )
 
-    assert operation.status is StreamingCaptureStatus.AWAITING_STRUCTURING
+    assert operation.status is CaptureStatus.AWAITING_STRUCTURING
     assert runtime.creates == 1
 
 
@@ -1345,7 +1359,7 @@ def test_capture_coordinator_accepts_only_the_runtime_ocr_compute_decision(
     [
         None,
         SimpleNamespace(
-            mode="gpu-dml",
+            mode="gpu",
             adapter_class="dedicated",
             reason_code="no_compatible_gpu",
             user_notice_required=True,
@@ -1637,7 +1651,7 @@ def test_capture_document_mapping_uses_runtime_ocr_projection_text_and_device() 
     document = CaptureDocument.model_validate(_document_payload())
     projection = _test_ocr_projection(raw, "capture-1")
     projection.pages[0].text = "Canonical Paddle OCR text"
-    projection.provenance.device = "windowsml-dml"
+    projection.provenance.device = "directml"
 
     extraction = capture_document_to_pdf_extraction(
         document,
@@ -1648,7 +1662,7 @@ def test_capture_document_mapping_uses_runtime_ocr_projection_text_and_device() 
     assert extraction.processed_page_count == 1
     assert extraction.pages[0].raw_text == "Canonical Paddle OCR text"
     assert extraction.pages[0].text == "Visible target text"
-    assert extraction.ocr_device == "windowsml-dml"
+    assert extraction.ocr_device == "directml"
 
 
 def test_coordinator_rejects_incomplete_runtime_ocr_projection() -> None:
@@ -1665,7 +1679,7 @@ def test_coordinator_rejects_incomplete_runtime_ocr_projection() -> None:
         )
     )
     projection = _test_ocr_projection(raw, "capture-1")
-    projection.page_count = 2
+    projection.processed_page_count = 2
     runtime.get_ocr = lambda _capture_id: projection
 
     coordinator = CertPrepCaptureCoordinator(
@@ -1720,3 +1734,110 @@ def test_coordinator_accepts_sdk_ocr_string_status_values() -> None:
     )
 
     assert result.ocr_projection is projection
+
+
+@pytest.mark.parametrize("host_cap", [4096, 16384])
+def test_ollama_identity_is_verified_before_open_and_context_stays_fixed(host_cap: int) -> None:
+    class VerifiedProvider(RecordingStructuredProvider):
+        provider = "ollama"
+        model = "qwen3.5:4b"
+
+        def health(self):
+            assert self.calls  # A model load precedes device verification.
+            return SimpleNamespace(device=SimpleNamespace(
+                server=SimpleNamespace(value="owned"),
+                verification=SimpleNamespace(value="verified"),
+                observed=SimpleNamespace(
+                    backend=SimpleNamespace(value="cuda"), adapter_name="RTX 4060"
+                ),
+            ))
+
+    provider = VerifiedProvider(_valid_batch_candidate)
+    raw = _raw_with_segments(count=3)
+    runtime = PullSessionRuntime(raw)
+    adapter = CertPrepCaptureStructuringAdapter(provider, runtime, num_ctx=host_cap)
+    document = adapter.structure(
+        raw, capture_id="capture-1", operation_id="operation-1", target_language="zh-TW"
+    )
+    opened = runtime.open_calls[0]
+    assert opened["capture_id"] == "capture-1"
+    assert opened["idempotency_key"] == "operation-1"
+    request = opened["request"]
+    assert request.profile_id == "qwen3.5-4b-structure-v1"
+    assert request.provider_capability.provider.device == "cuda"
+    assert request.provider_capability.provider.device_name == "RTX 4060"
+    assert document.structuring_engine.model_dump() == (
+        request.provider_capability.provider.model_dump()
+    )
+    assert {call["num_ctx"] for call in provider.calls} == {min(host_cap, 8192)}
+    assert [call["num_predict"] for call in provider.calls[1:]] == [512, 768, 1024]
+
+
+class _SessionContextRuntime(PullSessionRuntime):
+    """Plans each batch with the context length the test chooses."""
+
+    def __init__(self, raw: RawCapture, num_ctx_by_batch: Callable[[int], int]) -> None:
+        super().__init__(raw)
+        self._num_ctx_by_batch = num_ctx_by_batch
+
+    def get_structuring_batch(self, capture_id: str, batch_index: int) -> StructuringBatch:
+        batch = super().get_structuring_batch(capture_id, batch_index)
+        return batch.model_copy(update={"num_ctx": self._num_ctx_by_batch(batch_index)})
+
+
+@pytest.mark.parametrize("host_cap", [2048, 16384])
+def test_structuring_accepts_any_constant_session_context(host_cap: int) -> None:
+    provider = RecordingStructuredProvider(_valid_batch_candidate)
+    raw = _raw_with_segments(count=3)
+    runtime = _SessionContextRuntime(raw, lambda _batch_index: 4096)
+    adapter = CertPrepCaptureStructuringAdapter(provider, runtime, num_ctx=host_cap)
+
+    adapter.structure(
+        raw, capture_id="capture-1", operation_id="operation-1", target_language="zh-TW"
+    )
+
+    assert runtime.pull_calls == [0, 1, 2]
+    assert [call["num_ctx"] for call in provider.calls] == [min(host_cap, 4096)] * 3
+
+
+def test_structuring_rejects_a_session_context_change_mid_session() -> None:
+    provider = RecordingStructuredProvider(_valid_batch_candidate)
+    raw = _raw_with_segments(count=3)
+    runtime = _SessionContextRuntime(
+        raw, lambda batch_index: 8192 if batch_index == 0 else 4096
+    )
+    adapter = CertPrepCaptureStructuringAdapter(provider, runtime)
+
+    with pytest.raises(ValueError, match="Capture Runtime changed the session context budget"):
+        adapter.structure(
+            raw, capture_id="capture-1", operation_id="operation-1", target_language="zh-TW"
+        )
+    assert len(provider.calls) == 1
+
+
+def test_structuring_replay_resumes_without_regenerating_accepted_batches() -> None:
+    class ResumedRuntime(PullSessionRuntime):
+        def open_structuring_session(self, capture_id, request, *, idempotency_key):
+            super().open_structuring_session(
+                capture_id, request, idempotency_key=idempotency_key
+            )
+            batch = self.get_structuring_batch(capture_id, 0)
+            from capture_runtime_client import SubmitStructuringBatch
+            return self.submit_structuring_batch(
+                capture_id, 0,
+                SubmitStructuringBatch(batch_digest=batch.batch_digest, blocks=[{
+                    "sourceSegmentId": self.raw.segments[0].segment_id,
+                    "type": "paragraph", "targetText": "Already accepted",
+                }]),
+                idempotency_key="accepted-batch",
+            )
+
+    raw = _raw_with_segments(count=3)
+    runtime = ResumedRuntime(raw)
+    provider = RecordingStructuredProvider(_valid_batch_candidate)
+    document = CertPrepCaptureStructuringAdapter(provider, runtime).structure(
+        raw, capture_id="capture-1", operation_id="operation-1", target_language="zh-TW"
+    )
+    assert len(provider.calls) == 2
+    assert document.blocks[0].target_text == "Already accepted"
+    assert runtime.pull_calls == [0, 1, 2]

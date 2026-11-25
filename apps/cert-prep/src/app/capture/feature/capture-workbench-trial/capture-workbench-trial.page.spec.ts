@@ -33,7 +33,7 @@ describe('CaptureWorkbenchTrialPage', () => {
     };
     refreshUploadedDocument = vi.fn();
     loadLatestDocument = vi.fn();
-    preflightStore = fakePreflightStore('gpu-dml');
+    preflightStore = fakePreflightStore('gpu');
     TestBed.configureTestingModule({
       imports: [CaptureWorkbenchTrialPage],
       providers: [
@@ -99,6 +99,8 @@ describe('CaptureWorkbenchTrialPage', () => {
       hostStructuringOwner: 'component',
       hostManagedHandshake: true,
       showRuntimeSetup: false,
+      reviewBeforeCommit: true,
+      reviewEditable: true,
     });
     expect(
       fixture.nativeElement.querySelector('capture-workbench')
@@ -309,6 +311,7 @@ describe('CaptureWorkbenchTrialPage', () => {
         source: { fileName: 'scan.pdf', bytes: 4 },
         schemaVersion: '2',
         blocks: [],
+        structuringEngine: { device: null, deviceName: null },
       },
     } as unknown as CaptureCompletedEvent);
     fixture.detectChanges();
@@ -332,6 +335,25 @@ describe('CaptureWorkbenchTrialPage', () => {
     expect(createObjectUrl).toHaveBeenCalledWith(expect.any(Blob));
     expect(anchorClick).toHaveBeenCalled();
     expect(revokeObjectUrl).toHaveBeenCalledWith('blob:markdown');
+  });
+
+  it.each([
+    ['cuda', 'NVIDIA GeForce RTX 4060', 'cuda (NVIDIA GeForce RTX 4060)'],
+    ['cpu', null, 'cpu'],
+    [null, undefined, 'Unknown'],
+  ])('shows structuring device %s and nullable adapter %s', (device, deviceName, expected) => {
+    const fixture = TestBed.createComponent(CaptureWorkbenchTrialPage);
+    const page = fixture.componentInstance as unknown as {
+      lastCompleted: { set(value: CaptureCompletedEvent): void };
+    };
+    page.lastCompleted.set({ taskId: 'task-device', document: {
+      source: { fileName: 'scan.pdf', bytes: 4 }, schemaVersion: '2', blocks: [],
+      structuringEngine: { device, deviceName },
+    } } as unknown as CaptureCompletedEvent);
+    fixture.detectChanges();
+    const deviceText = fixture.nativeElement.querySelector('[data-testid="structuring-device"]')
+      .textContent.replace(/\s+/g, ' ').trim();
+    expect(deviceText).toBe(expected);
   });
 
   it('refreshes the saved document after Capture Workbench completion', () => {
@@ -386,7 +408,7 @@ function captureRuntimeStatus(status: 'missing' | 'running') {
 }
 
 function fakePreflightStore(
-  mode: 'gpu-dml' | 'cpu-fallback' | 'error',
+  mode: 'gpu' | 'cpu-fallback' | 'error',
 ) {
   const isError = mode === 'error';
   return {
@@ -395,7 +417,7 @@ function fakePreflightStore(
     isLoading: signal(false),
     error: signal(isError ? 'Capture Runtime authentication failed.' : null),
     gpuAccelerationMessage: signal(
-      mode === 'gpu-dml' ? 'OCR acceleration enabled (DirectML).' : null,
+      mode === 'gpu' ? 'OCR acceleration enabled (DirectML).' : null,
     ),
     cpuFallbackNotice: signal(
       mode === 'cpu-fallback'

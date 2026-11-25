@@ -201,7 +201,7 @@ function normalizeCaptureEvent(
     !safeNonNegativeInteger(sequence) ||
     captureId !== expectedCaptureId ||
     value['eventId'] !== `${captureId}/${sequence}` ||
-    !['pdf', 'image', 'audio'].includes(String(value['kind'])) ||
+    !['pdf', 'image', 'recording'].includes(String(value['kind'])) ||
     typeof eventType !== 'string' ||
     !STREAMING_EVENT_TYPES.has(eventType) ||
     !nonEmptyString(value['stage']) ||

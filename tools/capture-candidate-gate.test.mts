@@ -960,7 +960,7 @@ test('wrong contract identity is rejected by complete inventory after byte bindi
       contractSetVersion: '9',
       schemas: [
         {
-          name: 'CaptureOcrProjectionV3',
+          name: 'CaptureOcrProjection',
           schema: {
             properties: {
               apiVersion: { const: '9.0' },
@@ -970,7 +970,7 @@ test('wrong contract identity is rejected by complete inventory after byte bindi
           },
         },
         {
-          name: 'OcrComputePreflightV2',
+          name: 'OcrComputePreflight',
           schema: {
             properties: {
               apiVersion: { const: '9.0' },
@@ -996,7 +996,7 @@ test('wrong contract identity is rejected by complete inventory after byte bindi
         {
           method: 'GET',
           path: '/v2/captures/{capture_id}/ocr',
-          responseSchema: 'CaptureOcrProjectionV3',
+          responseSchema: 'CaptureOcrProjection',
         },
       ],
     };
@@ -1045,7 +1045,7 @@ test('wrong projection schema identity is rejected from candidate contract bytes
       }[];
     };
     const projection = contract.schemas.find(
-      (schema) => schema.name === 'CaptureOcrProjectionV3',
+      (schema) => schema.name === 'CaptureOcrProjection',
     );
     assert.ok(projection);
     projection.schema.properties.schemaVersion.const = '9';
@@ -1055,7 +1055,7 @@ test('wrong projection schema identity is rejected from candidate contract bytes
         ...fixture.input,
         releaseVersion: CAPTURE_RUNTIME_VERSION,
       }),
-      /Candidate CaptureOcrProjectionV3 schema version must be 3/u,
+      /Candidate CaptureOcrProjection schema version must be 3/u,
     );
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
@@ -1178,7 +1178,7 @@ async function createCandidateFixture(input: {
       runtimeVersion: input.candidateVersion,
       requirements: [
         {
-          requirementId: 'windowsml-ocr',
+          requirementId: 'text-recognition',
           artifacts: [
             {
               fileName: workerName,
@@ -1196,7 +1196,7 @@ async function createCandidateFixture(input: {
       contractSetVersion: '2',
       schemas: [
         {
-          name: 'CaptureOcrProjectionV3',
+          name: 'CaptureOcrProjection',
           schema: {
             properties: {
               apiVersion: { const: '2.0' },
@@ -1209,7 +1209,7 @@ async function createCandidateFixture(input: {
           },
         },
         {
-          name: 'OcrComputePreflightV2',
+          name: 'OcrComputePreflight',
           schema: {
             properties: {
               apiVersion: { const: '2.0' },
@@ -1241,7 +1241,7 @@ async function createCandidateFixture(input: {
         {
           method: 'GET',
           path: '/v2/captures/{capture_id}/ocr',
-          responseSchema: 'CaptureOcrProjectionV3',
+          responseSchema: 'CaptureOcrProjection',
         },
       ],
     }),
@@ -1338,7 +1338,7 @@ async function createCombinedCandidateFixture(): Promise<CombinedCandidateFixtur
   const contractBytes = Buffer.from(
     JSON.stringify({
       contractSetVersion: '2',
-      schemas: [{ name: 'CaptureOcrProjectionV3', schema: {} }],
+      schemas: [{ name: 'CaptureOcrProjection', schema: {} }],
     }),
   );
   const contractSetSha256 = sha256(contractBytes);
@@ -1534,4 +1534,52 @@ async function refreshCombinedCandidateManifest(
     runtimeCandidateId: String(manifest.runtimeCandidateId),
     contractSetSha256: String(manifest.contractSetSha256),
   };
+}
+
+for (const field of [undefined, 'schemaVersion', 'candidateId', 'sourceCommit', 'candidateManifestSha256', 'contractSetSha256', 'captureDocumentSchemaSha256'] as const) {
+  test(`candidate summary binds ${field ?? 'the complete artifact receipt'}`, async () => {
+    const fixture = await createCombinedCandidateFixture();
+    try {
+      const manifest = JSON.parse(await readFile(fixture.manifestPath, 'utf8')) as Record<string, unknown>;
+      const summary: Record<string, unknown> = {
+        schemaVersion: '1', candidateId: manifest.candidateId, sourceCommit: manifest.sourceCommit,
+        candidateManifestSha256: fixture.input.candidateManifestSha256,
+        contractSetSha256: manifest.contractSetSha256,
+        captureDocumentSchemaSha256: sha256(await readFile(join(fixture.root, 'runtime/capture-document-v2.schema.json'))),
+      };
+      if (field) summary[field] = field === 'schemaVersion' ? '2' : '0'.repeat(64);
+      await writeFile(join(fixture.root, 'candidate-verification-summary.json'), JSON.stringify(summary));
+      await rm(join(fixture.root, 'release-ledger.json'));
+      if (field) await assert.rejects(verifyCandidateArtifactReceipt(fixture.input), /verification summary/u);
+      else {
+        const receipt = await verifyCandidateArtifactReceipt(fixture.input);
+        await reverifyCandidateArtifactReceipt(receipt);
+        await writeFile(join(fixture.root, 'contracts/contract-set.json'), '{}');
+        await assert.rejects(reverifyCandidateArtifactReceipt(receipt));
+      }
+    } finally { await rm(fixture.root, { recursive: true, force: true }); }
+  });
+}
+test('a 0.11.0 candidate refuses a release ledger left beside its verification summary', async () => {
+  const fixture = await createCombinedCandidateFixture();
+  try {
+    const input = await refreshCombinedCandidateManifest(fixture, (manifest) => { manifest.releaseVersion = '0.11.0'; });
+    const manifest = JSON.parse(await readFile(fixture.manifestPath, 'utf8')) as Record<string, unknown>;
+    await writeFile(join(fixture.root, 'candidate-verification-summary.json'), JSON.stringify({
+      schemaVersion: '1', candidateId: manifest.candidateId, sourceCommit: manifest.sourceCommit,
+      candidateManifestSha256: input.candidateManifestSha256,
+      contractSetSha256: manifest.contractSetSha256,
+      captureDocumentSchemaSha256: sha256(await readFile(join(fixture.root, 'runtime/capture-document-v2.schema.json'))),
+    }));
+    await assert.rejects(verifyCandidateArtifactReceipt(input), /release ledger is not allowed beside a verification summary/u);
+  } finally { await rm(fixture.root, { recursive: true, force: true }); }
+});
+for (const version of ['0.11.0', '0.11.1', '1.0.0']) {
+  test(`candidate ${version} refuses a legacy-only ledger`, async () => {
+    const fixture = await createCombinedCandidateFixture();
+    try {
+      const input = await refreshCombinedCandidateManifest(fixture, (manifest) => { manifest.releaseVersion = version; });
+      await assert.rejects(verifyCandidateArtifactReceipt(input), /candidate-verification-summary/u);
+    } finally { await rm(fixture.root, { recursive: true, force: true }); }
+  });
 }

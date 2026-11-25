@@ -481,7 +481,7 @@ async function loadCatalogWorker(
     ? parsed.requirements
     : [];
   const ocrRequirement = requirements.find(
-    (value) => isRecord(value) && value.requirementId === 'windowsml-ocr',
+    (value) => isRecord(value) && value.requirementId === 'text-recognition',
   );
   const artifacts =
     isRecord(ocrRequirement) && Array.isArray(ocrRequirement.artifacts)
@@ -500,7 +500,7 @@ async function loadCatalogWorker(
     artifact.bytes <= 0
   ) {
     throw new Error(
-      'Capture Runtime engine catalog has no valid WindowsML OCR worker.',
+      'Capture Runtime engine catalog has no valid text recognition worker.',
     );
   }
   const workerPath = join(root, expectedName);

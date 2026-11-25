@@ -534,9 +534,102 @@ test('candidate build verifies the staged Capture release attestation with the e
     step,
     /--signer-workflow gx-capture\/capture-workbench\/\.github\/workflows\/_publish-github-release\.yml /,
   );
-  assert.match(step, /capture-release-manifest-v1\.json/);
+  assert.match(step, /--release-manifest \(Join-Path \$attested \$manifestName\)/);
   assert.match(step, /if \(\$LASTEXITCODE -ne 0\) \{ throw/);
 });
+
+function releaseManifestSelection(): string {
+  const body = jobBody('build-candidate');
+  const step = body.slice(
+    body.indexOf('- name: Verify the staged Capture Runtime release attestation'),
+    body.indexOf('- name: Run the Capture Runtime consumer smoke'),
+  );
+  const lines = step.split('\n').map((line) => line.trim());
+  const start = lines.findIndex((line) => line.startsWith('if ($version -notmatch'));
+  const end = lines.findIndex((line) => line.startsWith('$manifestName = '));
+  assert.ok(start >= 0 && end > start, 'manifest selection lines not found');
+  return lines.slice(start, end + 1).join('\n');
+}
+
+function selectReleaseManifest(
+  version: string,
+  assetNames: readonly string[],
+  selection = releaseManifestSelection(),
+) {
+  const assets = JSON.stringify({ assets: assetNames.map((name) => ({ name })) });
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    // Stands in for the gh CLI. It answers only the exact asset query for this
+    // release's tag and repository, token by token, so a wrong query fails.
+    'function gh {',
+    `  $expected = @('release', 'view', 'v${version}', '-R', 'gx-capture/capture-workbench', '--json', 'assets')`,
+    "  $call = \"unexpected gh call: $(($args | ForEach-Object { \"[$_]\" }) -join ' ')\"",
+    '  if ($args.Count -ne $expected.Count) { throw $call }',
+    '  for ($i = 0; $i -lt $expected.Count; $i++) {',
+    '    if ([string]$args[$i] -cne $expected[$i]) { throw $call }',
+    '  }',
+    '  $global:LASTEXITCODE = 0',
+    `  '${assets}'`,
+    '}',
+    `$version = '${version}'`,
+    selection,
+    'Write-Output $manifestName',
+  ].join('\n');
+  return runPowerShell(script);
+}
+
+test(
+  'candidate build takes the one release manifest the Capture release carries',
+  { skip: process.platform !== 'win32' },
+  () => {
+    const v1 = selectReleaseManifest('0.10.0', [
+      'capture-runtime-0.10.0.zip',
+      'capture-release-manifest-v1.json',
+    ]);
+    assert.equal(v1.status, 0, v1.stderr);
+    assert.equal(v1.stdout.trim(), 'capture-release-manifest-v1.json');
+
+    const v2 = selectReleaseManifest('0.11.0-rc.1', [
+      'capture-release-manifest-v2.json',
+      'capture-release-manifest-v2.json.sha256',
+      'capture-runtime-0.11.0-rc.1.zip',
+    ]);
+    assert.equal(v2.status, 0, v2.stderr);
+    assert.equal(v2.stdout.trim(), 'capture-release-manifest-v2.json');
+
+    for (const assets of [
+      ['capture-release-manifest-v1.json', 'capture-release-manifest-v2.json'],
+      ['capture-runtime-0.11.0.zip'],
+      [],
+    ]) {
+      const result = selectReleaseManifest('0.11.0', assets);
+      assert.notEqual(result.status, 0, `accepted ${JSON.stringify(assets)}`);
+      assert.match(
+        result.stderr + result.stdout,
+        /exactly one release manifest/,
+      );
+    }
+
+    for (const [from, to] of [
+      ['-R gx-capture/capture-workbench', '-R gx-capture/other'],
+      // Two tokens merged into one join to the same text but are one argument.
+      ['gh release view "v$version"', `gh 'release view' "v$version"`],
+    ]) {
+      const selection = releaseManifestSelection();
+      assert.ok(selection.includes(from), `selection lacks ${from}`);
+      const wrongQuery = selectReleaseManifest(
+        '0.11.0',
+        ['capture-release-manifest-v2.json'],
+        selection.replace(from, to),
+      );
+      assert.notEqual(wrongQuery.status, 0, `accepted ${to}`);
+      assert.match(
+        wrongQuery.stderr + wrongQuery.stdout,
+        /unexpected gh call/,
+      );
+    }
+  },
+);
 
 test('clean-install canonicalizes candidate identities through Get-CanonicalCandidateId', () => {
   assert.match(

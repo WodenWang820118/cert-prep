@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from typing import NoReturn
 
-from capture_runtime_client import StreamingCaptureStatus, StreamingEventType
+from capture_runtime_client import CaptureStatus, CaptureEventType
 
 from cert_prep_backend.capture_integration.application.errors import (
     CaptureEventStreamFailed,
@@ -36,14 +36,13 @@ from cert_prep_backend.capture_integration.infrastructure.review import reviewed
 # Identity (`is`) and membership (`in`) stay distinct. A string equal to a status value
 # is a member of the enum set and is not the enum member.
 _CAPTURE_STATUSES = {
-    "created": StreamingCaptureStatus.CREATED,
-    "waiting_input": StreamingCaptureStatus.WAITING_INPUT,
-    "extracting": StreamingCaptureStatus.EXTRACTING,
-    "awaiting_structuring": StreamingCaptureStatus.AWAITING_STRUCTURING,
-    "structuring": StreamingCaptureStatus.STRUCTURING,
-    "completed": StreamingCaptureStatus.COMPLETED,
-    "failed": StreamingCaptureStatus.FAILED,
-    "cancelled": StreamingCaptureStatus.CANCELLED,
+    "waiting_input": CaptureStatus.WAITING_INPUT,
+    "extracting": CaptureStatus.EXTRACTING,
+    "awaiting_structuring": CaptureStatus.AWAITING_STRUCTURING,
+    "structuring": CaptureStatus.STRUCTURING,
+    "completed": CaptureStatus.COMPLETED,
+    "failed": CaptureStatus.FAILED,
+    "cancelled": CaptureStatus.CANCELLED,
 }
 
 
@@ -177,13 +176,13 @@ class CoordinatorCaptureRuntime:
 
     def event_is_terminal(self, event: object) -> bool:
         return event.event_type in {
-            StreamingEventType.COMPLETED,
-            StreamingEventType.FAILED,
-            StreamingEventType.CANCELLED,
+            CaptureEventType.COMPLETED,
+            CaptureEventType.FAILED,
+            CaptureEventType.CANCELLED,
         }
 
     def event_awaits_structuring(self, event: object) -> bool:
-        return event.stage == StreamingCaptureStatus.AWAITING_STRUCTURING.value
+        return event.stage == CaptureStatus.AWAITING_STRUCTURING.value
 
 
 def _raise_ocr_failure(error: BaseException) -> NoReturn:

@@ -20,7 +20,7 @@
     "build:frontend": "corepack pnpm nx run cert-prep:build",
     "build:backend": "corepack pnpm nx run cert-prep-backend:build-backend-runtime",
     "build:tauri": "corepack pnpm nx run cert-prep-desktop:build",
-    "build:tauri:win": "corepack pnpm nx run cert-prep-desktop:build-capture",
+    "build:windows-x64": "corepack pnpm nx run cert-prep-desktop:build-windows-x64",
     "package:qa": "corepack pnpm nx run cert-prep-desktop:package-qa"
   },
   "private": true,

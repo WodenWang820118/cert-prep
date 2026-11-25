@@ -20,11 +20,11 @@ export interface CertPrepCaptureEventStreamInit extends RequestInit {
 
 export type UnknownRecord = Record<string, unknown>;
 
-export type OcrComputeMode = 'gpu-dml' | 'cpu-fallback';
+export type OcrComputeMode = 'gpu' | 'cpu-fallback';
 export type OcrAdapterClass = 'dedicated' | 'integrated' | 'unknown';
 export type OcrComputeReasonCode =
   | 'no_compatible_gpu'
-  | 'dml_provider_unavailable';
+  | 'gpu_provider_unavailable';
 export type OcrComputeNoticeCode = 'ocr_cpu_fallback';
 
 export interface OcrComputePreflight {
@@ -33,7 +33,7 @@ export interface OcrComputePreflight {
   readonly service: 'capture-runtime';
   readonly runtimeVersion: NonNullable<RuntimeReady['ocrCompute']>['runtimeVersion'];
   readonly contractSetVersion: '2';
-  readonly contractSha256: string;
+  readonly contractSetSha256: string;
   readonly workerSha256: string | null;
   readonly mode: OcrComputeMode;
   readonly adapterClass: OcrAdapterClass;

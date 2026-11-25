@@ -6,7 +6,7 @@
   "implicitDependencies": ["cert-prep"],
   "tags": ["scope:cert", "type:e2e"],
   "targets": {
-    "e2e-local-package": {
+    "e2e-mocked-api": {
       "executor": "nx:run-commands",
       "dependsOn": [],
       "options": {
@@ -29,8 +29,8 @@
     },
     "e2e": {
       "executor": "nx:run-commands",
-      "dependsOn": ["e2e-local-package"],
-      "options": { "command": "node -e \"process.stdout.write('cert-prep-e2e local-package suite completed\\n')\"" }
+      "dependsOn": ["e2e-mocked-api"],
+      "options": { "command": "node -e \"process.stdout.write('cert-prep-e2e mocked API suite completed\\n')\"" }
     }
   }
 }

@@ -13,13 +13,22 @@ Its unit tests run in `cert-prep-desktop:package-qa-test`.
 
 ## Current state
 
-The harness still follows the flow from before the OCR compute preflight and
-stops at that step. Updating it is open work in
+The harness starts Capture Runtime and waits for the native Start to succeed,
+then checks that the restarted backend answers with new credentials and the
+old ones are rejected. While OCR is not installed it runs the
+dependency-negative cases, then installs the OCR requirement, reloads so the
+OCR preflight admits imports, and only then waits for the picker and runs the
+scanned-PDF flow. This order has not been verified on an installed app yet;
+that run is open work in
 [capture-workbench-cert-prep-pdf.md](../TODOS/capture-workbench-cert-prep-pdf.md).
 The trial page offers PDF and image only; a successful packaged transcription
 belongs to the Build page's source-library import path, not to this smoke.
 The real OCR proof on the packaged app is `cert-prep-desktop:acceptance-real`
 ([acceptance spec](cert-prep-pdf-image-acceptance.md)).
+`acceptance-real` covers JPEG and scanned PDF text recognition.
+`acceptance-real-recorded` records the same OCR journey; speech recognition and
+Cert-owned Ollama require separate installed-app journeys with actual device
+evidence.
 
 ## Inputs
 
@@ -59,11 +68,11 @@ The real OCR proof on the packaged app is `cert-prep-desktop:acceptance-real`
   process, listener or backend restart. `Start Capture Runtime` starts the
   owned sidecar, restarts the owned backend with fresh configuration, and makes
   the prior backend authorization unusable.
-- The harness installs `windowsml-ocr`; only then is the PDF picker enabled.
+- The harness installs `text-recognition`; only then is the PDF picker enabled.
   Every page must be processed by the runtime OCR; embedded extraction and LLM
   route selection are not valid paths.
 - The UI review edit, confirmation, durable ready document and Markdown
-  download succeed. An authenticated request proves raw engine `windowsml-ocr`
+  download succeed. An authenticated request proves raw engine `text-recognition`
   and a recognized OCR device; the document and every page report
   `windowsml_ocr`.
 - Normal close leaves owned processes and listener ports at zero. Relaunching

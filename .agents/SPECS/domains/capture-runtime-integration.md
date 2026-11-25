@@ -38,10 +38,10 @@ mixed-result arbitration or provider fallback.
 ## OCR-only source admission and durable mapping
 
 - Every new PDF page and image goes through the runtime's raster OCR
-  (`windowsml-ocr` requirement). Cert never reads an embedded PDF text layer,
+  (`text-recognition` requirement). Cert never reads an embedded PDF text layer,
   arbitrates a mixed result, writes `direct_pdf`, or calls a second OCR route.
 - `capture_integration/infrastructure/mapping.py` accepts exactly the producer
-  engine `windowsml-ocr` and writes the durable discriminator `windowsml_ocr` on
+  engine `text-recognition` and writes the durable discriminator `windowsml_ocr` on
   the document and every page and chunk. Neither value is inferred from a
   substring.
 - Existing `direct_pdf`, `embedded` and `mixed` rows are legacy read-only data:
@@ -58,11 +58,15 @@ mixed-result arbitration or provider fallback.
 ## Compute preflight
 
 Before a PDF or image upload the backend coordinator requires the runtime's
-`ocrCompute` preflight (`OcrComputePreflightV2` in `RuntimeReady`) and checks it
-is self-consistent: `gpu-dml` carries no reason or notice; `cpu-fallback`
-carries `no_compatible_gpu` or `dml_provider_unavailable`, a required notice and
+`ocrCompute` preflight (`OcrComputePreflight` in `RuntimeReady`) and checks it
+is self-consistent: `gpu` carries no reason or notice; `cpu-fallback`
+carries `no_compatible_gpu` or `gpu_provider_unavailable`, a required notice and
 `ocr_cpu_fallback`. A missing or inconsistent preflight is an incompatible
-runtime. Cert never probes hardware, ranks adapters or changes the selected
+runtime, unless the OCR requirement is not ready: the runtime reports no
+preflight until its OCR worker is installed, so the backend then reads the
+requirements and fails with the existing dependency error (the PDF or image
+OCR-unavailable message). A ready requirement, or a requirements
+read that fails, leaves the compatibility error. Cert never probes hardware, ranks adapters or changes the selected
 plan. A DirectML failure after a GPU plan was selected fails the capture; the
 host never retries on CPU.
 
@@ -70,7 +74,7 @@ host never retries on CPU.
 
 - PDF, image and audio uploads use `CertPrepCaptureCoordinator ->
   CaptureRuntimeClient`. The backend checks readiness before creating a
-  capture and admits PDF/image only with a ready `windowsml-ocr` requirement and
+  capture and admits PDF/image only with a ready `text-recognition` requirement and
   audio only with a ready `speech-recognition` requirement.
 - Transfer and capture use only the v2 lifecycle: checksum-bound ordered
   ingestion chunks, finalize, start with idempotent uncertain-create recovery by
@@ -180,3 +184,8 @@ Cert Prep Tauri bundle, not the Capture Workbench app, is the consumer artifact.
 Real OCR on the packaged app is `cert-prep-desktop:acceptance-real`
 ([acceptance spec](../cert-prep-pdf-image-acceptance.md)); deterministic
 fixtures and protocol fakes prove only the host protocol.
+
+`acceptance-real` covers JPEG and scanned PDF text recognition.
+`acceptance-real-recorded` records the same OCR journey; speech recognition and
+Cert-owned Ollama require separate installed-app journeys with actual device
+evidence.

@@ -6,7 +6,12 @@ import { CAPTURE_RUNTIME_VERSION } from '../../../../tools/capture-runtime-versi
 import type { ProjectApiRef } from '../packaged-flow-smoke/types.mts';
 import { isRecord } from '../packaged-flow-smoke/text-utils.mts';
 
-const PDF_OCR_ERROR = 'Source extraction failed.';
+// The display name the backend still gives the OCR requirement in its stored
+// error messages (`capture_integration/application/messages.py` and the
+// coordinator's source requirements); both expectations below derive from it.
+const BACKEND_OCR_DISPLAY_NAME = 'WindowsML OCR';
+const PDF_OCR_ERROR = `This PDF requires ${BACKEND_OCR_DISPLAY_NAME}, which is unavailable in the installed Capture Runtime.`;
+const IMAGE_OCR_ERROR = new RegExp(`^${BACKEND_OCR_DISPLAY_NAME} is unavailable\\. .+$`);
 
 export interface PublishedRuntimeNegativeCaseEvidence {
   readonly case: 'image' | 'audio' | 'scanned-pdf' | 'mixed-pdf';
@@ -58,7 +63,7 @@ export async function assertPublishedCaptureSurface(page: Page): Promise<void> {
   }
   if (
     (await page
-      .getByRole('button', { name: /Install (WindowsML|Speech recognition)/i })
+      .getByRole('button', { name: /Install (Text recognition|Speech recognition)/i })
       .count()) !== 0
   ) {
     throw new Error(
@@ -74,17 +79,17 @@ export async function runPublishedRuntimeNegativeDataCases(
   const cases: NegativeCaseDefinition[] = [
     {
       case: 'image',
-      operationId: 'packaged-0-3-9-image',
-      fileName: 'runtime-0-3-9-image.png',
+      operationId: 'packaged-negative-image',
+      fileName: 'runtime-negative-image.png',
       mediaType: 'image/png',
       content: minimalPng(),
       expectedDocumentStatus: 'ocr_failed',
-      expectedError: /^WindowsML OCR is unavailable\. .+$/,
+      expectedError: IMAGE_OCR_ERROR,
     },
     {
       case: 'audio',
-      operationId: 'packaged-0-3-9-audio',
-      fileName: 'runtime-0-3-9-audio.wav',
+      operationId: 'packaged-negative-audio',
+      fileName: 'runtime-negative-audio.wav',
       mediaType: 'audio/wav',
       content: minimalWav(),
       expectedDocumentStatus: 'transcription_failed',
@@ -92,8 +97,8 @@ export async function runPublishedRuntimeNegativeDataCases(
     },
     {
       case: 'scanned-pdf',
-      operationId: 'packaged-0-3-9-scanned-pdf',
-      fileName: 'runtime-0-3-9-scanned.pdf',
+      operationId: 'packaged-negative-scanned-pdf',
+      fileName: 'runtime-negative-scanned.pdf',
       mediaType: 'application/pdf',
       content: imageOnlyPdf(),
       expectedDocumentStatus: 'ocr_failed',
@@ -101,8 +106,8 @@ export async function runPublishedRuntimeNegativeDataCases(
     },
     {
       case: 'mixed-pdf',
-      operationId: 'packaged-0-3-9-mixed-pdf',
-      fileName: 'runtime-0-3-9-mixed.pdf',
+      operationId: 'packaged-negative-mixed-pdf',
+      fileName: 'runtime-negative-mixed.pdf',
       mediaType: 'application/pdf',
       content: mixedTextAndImagePdf(),
       expectedDocumentStatus: 'ocr_failed',

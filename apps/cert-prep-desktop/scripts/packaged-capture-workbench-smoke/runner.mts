@@ -21,6 +21,7 @@ import {
 import {
   ensureCaptureRuntimeRequirement,
   installPythonRuntimeIfNeeded,
+  waitForCaptureRuntimeStart,
 } from '../packaged-flow-smoke/runtime-install-flow.mts';
 import {
   activePage,
@@ -252,13 +253,23 @@ async function runLazyCaptureJourney(
     backendConfigurationChanged: true,
     priorBackendAccessRejected: true,
   });
-  await ensureCaptureRuntimeRequirement(run, 'windowsml-ocr');
-  const capture = await runCaptureDocumentFlow(run, fixturePath, fixtureName);
+  // The dependency-negative cases need a running runtime without OCR or
+  // speech recognition, so they run before the OCR requirement is installed.
   const negativeCases = await runPublishedRuntimeNegativeDataCases(
     firstPage,
     firstRotation.api,
   );
   log(run, `Published ${CAPTURE_RUNTIME_VERSION} negative data contract passed`);
+  await ensureCaptureRuntimeRequirement(run, 'text-recognition');
+  // The installation does not reload the page's OCR preflight; reconnect
+  // through a reload so the picker gate sees the installed worker.
+  run.projectApi = await captureProjectApiAfterRestart(
+    firstPage,
+    firstRotation.api.projectId,
+    120_000,
+  );
+  await waitForCaptureWorkbenchReady(run);
+  const capture = await runCaptureDocumentFlow(run, fixturePath, fixtureName);
   firstSecurity.assertClean();
   await screenshot(run, 'capture-workbench-completed');
 
@@ -313,6 +324,7 @@ async function runLazyCaptureJourney(
     relaunchSecurity,
     relaunchedApi,
   );
+  await waitForCaptureWorkbenchReady(run);
   await verifyPersistedDocument(run, capture.documentId, secondRotation.api);
   await relaunchedPage
     .getByRole('link', { name: 'Build', exact: true })
@@ -367,7 +379,11 @@ async function startCaptureRuntimeAndRotateBackend(
   await page
     .getByRole('button', { name: 'Start Capture Runtime', exact: true })
     .click();
-  await waitForCaptureWorkbenchReady(run);
+  // Native Start keeps the old backend serving until its replacement is
+  // ready, so wait for Start to succeed before reading the API. Do not wait
+  // for the picker: the page renders it only once the OCR preflight admits
+  // imports, which needs the OCR requirement installed.
+  await waitForCaptureRuntimeStart(run);
   const nextApi = await captureProjectApiAfterRestart(
     page,
     priorApi.projectId,
@@ -381,6 +397,11 @@ async function startCaptureRuntimeAndRotateBackend(
       'Capture Runtime Start did not rotate backend connection data.',
     );
   }
+  if (!(await replacementRejectsPriorCredentials(page, priorApi, nextApi))) {
+    throw new Error(
+      'The restarted backend did not answer the prior credentials with HTTP 401.',
+    );
+  }
   if (!(await priorBackendAccessRejected(page, priorApi))) {
     throw new Error(
       'Prior backend access remained valid after Capture Runtime Start.',
@@ -388,7 +409,6 @@ async function startCaptureRuntimeAndRotateBackend(
   }
   run.projectApi = nextApi;
   security.completeTransition(nextApi);
-  await waitForCaptureWorkbenchReady(run);
   const owned = await waitForOwnedRuntimePhase(
     run,
     isOwnedBackendAndCaptureRunning,
@@ -415,7 +435,7 @@ async function runCaptureDocumentFlow(
   const input = page.locator('capture-workbench input[type="file"]');
   await input.waitFor({ state: 'attached', timeout: 30_000 });
   if (!(await input.isEnabled())) {
-    throw new Error('PDF picker remained disabled after PaddleOCR installation.');
+    throw new Error('PDF picker remained disabled after text recognition installation.');
   }
   const captureResponse = page.waitForResponse(
     (response) => {
@@ -465,11 +485,11 @@ async function runCaptureDocumentFlow(
     'extraction engine',
   );
   if (
-    extraction.engine !== 'windowsml-ocr' ||
-    !['windowsml-dml', 'cpu'].includes(String(extraction.device))
+    extraction.engine !== 'text-recognition' ||
+    !['directml', 'cpu'].includes(String(extraction.device))
   ) {
     throw new Error(
-      'Raw Capture provenance was not PaddleOCR extraction.',
+      'Raw Capture provenance was not text recognition on DirectML or CPU.',
     );
   }
 
@@ -587,6 +607,25 @@ async function waitForCaptureWorkbenchReady(run: SmokeRunState): Promise<void> {
     .waitFor({ state: 'attached', timeout: 30_000 });
 }
 
+/** The replacement backend must refuse the token it replaced. */
+async function replacementRejectsPriorCredentials(
+  page: Page,
+  priorApi: ProjectApiRef,
+  nextApi: ProjectApiRef,
+): Promise<boolean> {
+  try {
+    const response = await page.request.get(`${nextApi.apiBaseUrl}/projects`, {
+      headers: { Authorization: priorApi.authorization },
+      failOnStatusCode: false,
+      timeout: 5_000,
+    });
+    return response.status() === 401;
+  } catch {
+    return false;
+  }
+}
+
+/** Separate evidence that the prior endpoint no longer serves the old token. */
 async function priorBackendAccessRejected(
   page: Page,
   priorApi: ProjectApiRef,

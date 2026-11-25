@@ -17,7 +17,7 @@ export const CAPTURE_RUNTIME_MANIFEST_VERSION = '1';
 export const CAPTURE_RUNTIME_FILE =
   'capture-runtime-x86_64-pc-windows-msvc.exe';
 export const CAPTURE_DOCUMENT_SCHEMA_SHA256 =
-  '5452631ce9d8eea48851a819530d94920a39f41350d5575df0f8f97f82171774';
+  '7d2262f13489df24eab83f8c3b5a5b5b7f5e8f7af0f521ac1b247ae86df9b493';
 export const CAPTURE_RUNTIME_MAX_BYTES = 512 * 1024 * 1024;
 export const DEFAULT_OUTPUT =
   'tmp/cert-prep-desktop/package-qa/package-qa.json';

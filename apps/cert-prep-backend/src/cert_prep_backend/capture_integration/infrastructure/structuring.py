@@ -41,7 +41,12 @@ from cert_prep_backend.ai_providers.domain.provider import (
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
-_PROVIDER_CAPABILITY = "capture-runtime-host-structuring-v2"
+_PLANNING_PROFILE = "qwen3.5-4b-structure-v1"
+# Capture plans every batch of a structuring session with one context length
+# (8192 since 0.11.0). Loading the model for the identity check with the same
+# value spares Ollama a reload at the first batch; if Capture ever uses another
+# value, the session check below accepts it and the first batch reloads once.
+_EXPECTED_SESSION_NUM_CTX = 8192
 _IDEMPOTENCY_NAMESPACE = UUID("b76c9346-c90d-4705-889f-c7a0ae4bf0f2")
 _IDENTITY_STRUCTURING_ENGINE = CaptureEngine(
     engine="cert-prep-host",
@@ -125,17 +130,22 @@ class CertPrepCaptureStructuringAdapter:
             )
         self._checkpoint(should_cancel, deadline, monotonic_clock)
 
-        engine = _engine_identity(provider) if provider is not None else _IDENTITY_STRUCTURING_ENGINE
+        engine = (
+            _resolve_engine_identity(
+                provider, num_ctx=min(self._num_ctx, _EXPECTED_SESSION_NUM_CTX)
+            )
+            if provider is not None
+            else _IDENTITY_STRUCTURING_ENGINE
+        )
+        self._checkpoint(should_cancel, deadline, monotonic_clock)
         request = OpenStructuringSession(
-            capture_id=capture_id,
+            profile_id=_PLANNING_PROFILE,
             target_language=target_language,
             provider_capability=StructuringProviderCapability(
                 provider=engine,
-                capability=_PROVIDER_CAPABILITY,
                 schema_dialect=_SCHEMA_DIALECT,
             ),
             schema_dialect=_SCHEMA_DIALECT,
-            client_request_id=operation_id,
         )
         session = self._runtime_client.open_structuring_session(
             capture_id,
@@ -145,14 +155,27 @@ class CertPrepCaptureStructuringAdapter:
         if session.capture_id != capture_id:
             raise ValueError("Capture Runtime structuring session identity does not match capture")
 
+        engine_payload = engine.model_dump(mode="json", by_alias=True)
+        if (
+            session.provider_capability.provider.model_dump(mode="json", by_alias=True)
+            != engine_payload
+        ):
+            raise ValueError("Capture Runtime opened a different provider identity")
         segments_by_id = {segment.segment_id: segment for segment in raw.segments}
         overrides = dict(review_overrides or {})
         next_batch = session.next_batch_index
+        # Capture keeps one context length per session, so Ollama loads the model
+        # once; a batch that changes it would reload the model mid-session.
+        session_num_ctx: int | None = None
         while next_batch < session.batch_count:
             self._checkpoint(should_cancel, deadline, monotonic_clock)
-            batch = self._runtime_client.pull_structuring_batch(capture_id, next_batch)
+            batch = self._runtime_client.get_structuring_batch(capture_id, next_batch)
             if batch.capture_id != capture_id or batch.batch_index != next_batch:
                 raise ValueError("Capture Runtime returned a mismatched structuring batch")
+            if session_num_ctx is None:
+                session_num_ctx = batch.num_ctx
+            elif batch.num_ctx != session_num_ctx:
+                raise ValueError("Capture Runtime changed the session context budget")
             semantic = self._semantic_submission(
                 batch,
                 provider,
@@ -160,6 +183,19 @@ class CertPrepCaptureStructuringAdapter:
                 target_language=target_language,
                 review_overrides=overrides,
             )
+            if provider is not None and provider.provider == "ollama":
+                health = getattr(provider, "health", None)
+                snapshot = health().device if callable(health) else None
+                observed = getattr(snapshot, "observed", None)
+                backend = getattr(observed, "backend", None)
+                actual_device = getattr(backend, "value", None)
+                actual_name = (
+                    getattr(observed, "adapter_name", None) if actual_device != "cpu" else None
+                )
+                if getattr(getattr(snapshot, "server", None), "value", None) == "external":
+                    actual_device, actual_name = None, None
+                if (actual_device, actual_name) != (engine.device, engine.device_name):
+                    raise ProviderUnavailableError("Ollama device changed during structuring.")
             self._checkpoint(should_cancel, deadline, monotonic_clock)
             session = self._runtime_client.submit_structuring_batch(
                 capture_id,
@@ -177,6 +213,11 @@ class CertPrepCaptureStructuringAdapter:
         result = self._runtime_client.get_result(capture_id)
         if result.operation.status.value != "completed":
             raise ValueError("Capture Runtime did not attach a completed structuring result")
+        if (
+            result.result.structuring_engine.model_dump(mode="json", by_alias=True)
+            != engine_payload
+        ):
+            raise ValueError("Capture Runtime changed the session provider identity")
         return result.result
 
     def _semantic_submission(
@@ -194,7 +235,9 @@ class CertPrepCaptureStructuringAdapter:
                     "sourceSegmentId": segment_id,
                     "type": (
                         "transcript"
-                        if getattr(getattr(segments_by_id[segment_id], "locator", None), "kind", None)
+                        if getattr(
+                            getattr(segments_by_id[segment_id], "locator", None), "kind", None
+                        )
                         == "time"
                         else "paragraph"
                     ),
@@ -298,6 +341,40 @@ def _engine_identity(provider: StructuredJsonGenerationProvider) -> CaptureEngin
         model=provider.model,
         digest=f"sha256:{digest}",
     )
+
+
+def _resolve_engine_identity(
+    provider: StructuredJsonGenerationProvider, *, num_ctx: int
+) -> CaptureEngine:
+    engine = _engine_identity(provider)
+    if provider.provider != "ollama":
+        return engine
+    health = getattr(provider, "health", None)
+    if not callable(health):
+        raise ProviderUnavailableError("Ollama device verification requires provider health.")
+    # Loading through the provider runs its coordinator's verification and any
+    # corrective restart before the durable session records provider identity.
+    for _ in range(2):
+        provider.generate_structured_json(
+            messages=[{"role": "user", "content": "Return {}."}],
+            json_schema={"type": "object", "properties": {}, "additionalProperties": False},
+            num_ctx=num_ctx,
+            num_predict=1,
+        )
+        device = health().device
+        if device is None or device.server.value == "external":
+            return engine
+        if device.verification.value == "verified" and device.observed is not None:
+            observed = device.observed
+            backend = observed.backend
+            if backend is not None:
+                return engine.model_copy(
+                    update={
+                        "device": backend.value,
+                        "device_name": observed.adapter_name if backend.value != "cpu" else None,
+                    }
+                )
+    raise ProviderUnavailableError("Ollama execution device could not be verified.")
 
 
 def _batch_idempotency_key(operation_id: str, batch_index: int) -> str:

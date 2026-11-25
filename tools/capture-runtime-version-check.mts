@@ -87,7 +87,6 @@ export const CAPTURE_RUNTIME_CONSUMER_INVENTORY_FIELDS = [
   { key: 'cert.installScript', kind: 'structural' },
   { key: 'cert.consumerSmoke', kind: 'structural' },
   { key: 'cert.frontendCompatibility', kind: 'structural' },
-  { key: 'cert.generated.runtimeReady', kind: 'runtimeReadyIdentity' },
   { key: 'cert.generated.ocrPreflight', kind: 'preflightIdentity' },
 ] as const;
 
@@ -310,7 +309,6 @@ function identityTuple(
   values: {
     readonly runtimeVersion: string | undefined;
     readonly apiVersion: string | undefined;
-    readonly documentSchemaVersion?: string | undefined;
     readonly contractSetVersion: string | undefined;
   },
   allowMissingRuntime = false,
@@ -320,9 +318,6 @@ function identityTuple(
       ? []
       : [['runtime', values.runtimeVersion] as const]),
     ['api', values.apiVersion],
-    ...(values.documentSchemaVersion === undefined
-      ? []
-      : [['document', values.documentSchemaVersion] as const]),
     ['contractSet', values.contractSetVersion],
   ] as const;
   return (allowMissingRuntime || values.runtimeVersion !== undefined) &&
@@ -418,7 +413,6 @@ function generatedIdentity(
     {
       runtimeVersion: values.get('runtimeVersion'),
       apiVersion: values.get('apiVersion'),
-      documentSchemaVersion: values.get('captureDocumentSchemaVersion'),
       contractSetVersion: values.get('contractSetVersion'),
     },
     true,
@@ -800,27 +794,11 @@ function readCaptureRuntimeConsumerInventoryFromSource(
         'assertCaptureRuntimeCompatible',
       ),
       field(
-        'cert.generated.runtimeReady',
-        `${generated}:RuntimeReady`,
-        generatedIdentity(
-          generatedContent,
-          'RuntimeReady',
-          generated,
-          sourceErrors,
-          [
-            'runtimeVersion',
-            'apiVersion',
-            'captureDocumentSchemaVersion',
-            'contractSetVersion',
-          ],
-        ),
-      ),
-      field(
         'cert.generated.ocrPreflight',
-        `${generated}:OcrComputePreflightV2`,
+        `${generated}:OcrComputePreflight`,
         generatedIdentity(
           generatedContent,
-          'OcrComputePreflightV2',
+          'OcrComputePreflight',
           generated,
           sourceErrors,
           ['runtimeVersion', 'apiVersion', 'contractSetVersion'],
@@ -893,8 +871,8 @@ function parseContractIdentity(bytes: Uint8Array): ParsedContractIdentity {
     return matches.length === 1 ? matches[0] : undefined;
   };
   const runtimeReady = schemaByName('RuntimeReady');
-  const preflight = schemaByName('OcrComputePreflightV2');
-  const projection = schemaByName('CaptureOcrProjectionV3');
+  const preflight = schemaByName('OcrComputePreflight');
+  const projection = schemaByName('CaptureOcrProjection');
   return {
     schemaNames,
     duplicateSchemaNames,
@@ -982,8 +960,8 @@ export function inspectCaptureRuntimeConsumerInventory(
   }
   for (const requiredSchema of [
     'RuntimeReady',
-    'OcrComputePreflightV2',
-    'CaptureOcrProjectionV3',
+    'OcrComputePreflight',
+    'CaptureOcrProjection',
   ]) {
     if (!parsedContract.schemaNames.includes(requiredSchema)) {
       errors.push(`producer contract-set is missing ${requiredSchema}.`);
@@ -1107,29 +1085,18 @@ export function inspectCaptureRuntimeConsumerInventory(
           ? CAPTURE_RUNTIME_API_VERSION_FLOOR
           : definition.kind === 'documentSchemaVersion'
             ? CAPTURE_DOCUMENT_SCHEMA_VERSION_FLOOR
-            : definition.kind === 'runtimeReadyIdentity'
+            : definition.kind === 'preflightIdentity'
               ? identityTuple(
                   {
-                    runtimeVersion: undefined,
+                    // The producer pins runtimeVersion in the producer preflight
+                    // schema; the generated view must mirror the contract.
+                    runtimeVersion: parsedContract.preflightRuntimeVersion,
                     apiVersion: CAPTURE_RUNTIME_API_VERSION_FLOOR,
-                    documentSchemaVersion:
-                      CAPTURE_DOCUMENT_SCHEMA_VERSION_FLOOR,
                     contractSetVersion: CAPTURE_RUNTIME_CONTRACT_SET_VERSION,
                   },
                   true,
                 )
-              : definition.kind === 'preflightIdentity'
-                ? identityTuple(
-                    {
-                      // The producer pins runtimeVersion in the producer preflight
-                      // schema; the generated view must mirror the contract.
-                      runtimeVersion: parsedContract.preflightRuntimeVersion,
-                      apiVersion: CAPTURE_RUNTIME_API_VERSION_FLOOR,
-                      contractSetVersion: CAPTURE_RUNTIME_CONTRACT_SET_VERSION,
-                    },
-                    true,
-                  )
-                : 'structural';
+              : 'structural';
     if (expected === undefined) {
       errors.push(
         `${entry.source} cannot be validated because producer runtime identity is missing.`,

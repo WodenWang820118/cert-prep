@@ -46,8 +46,8 @@ class CaptureOcrPageSummaryRead(_OcrSummaryModel):
 class CaptureOcrResolvedProvenanceRead(_OcrSummaryModel):
     status: Literal["resolved"]
     runtime_version: str = Field(min_length=1, max_length=64)
-    contract_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    engine: Literal["windowsml-ocr"]
+    contract_set_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    engine: Literal["text-recognition"]
     model: str = Field(min_length=1, max_length=512)
     model_digest: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
     device: str = Field(min_length=1, max_length=512)
@@ -58,7 +58,7 @@ class CaptureOcrResolvedProvenanceRead(_OcrSummaryModel):
 class CaptureOcrUnavailableProvenanceRead(_OcrSummaryModel):
     status: Literal["unavailable"]
     runtime_version: str = Field(min_length=1, max_length=64)
-    contract_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    contract_set_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     profile_id: str = Field(min_length=1, max_length=512)
     profile_spec_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     reason: Literal[
@@ -136,19 +136,19 @@ def build_ocr_summary(
         _ensure_same_source(operation_source, projection_source)
 
     runtime_version = _required_string(projection, "runtime_version")
-    contract_sha256 = _required_string(projection, "contract_sha256")
-    if not _SHA256.fullmatch(contract_sha256):
+    contract_set_sha256 = _required_string(projection, "contract_set_sha256")
+    if not _SHA256.fullmatch(contract_set_sha256):
         raise OcrSummaryValidationError("OCR contract identity is invalid.")
 
     provenance = _map_provenance(
         _required_field(projection, "provenance"),
         runtime_version=runtime_version,
-        contract_sha256=contract_sha256,
+        contract_set_sha256=contract_set_sha256,
     )
     pages_value = _required_field(projection, "pages")
     if not isinstance(pages_value, list):
         raise OcrSummaryValidationError("OCR pages are invalid.")
-    page_count = _required_int(projection, "page_count")
+    page_count = _required_int(projection, "processed_page_count")
     if page_count != len(pages_value):
         raise OcrSummaryValidationError("OCR page count is inconsistent.")
 
@@ -158,7 +158,7 @@ def build_ocr_summary(
             expected_page=index,
             expected_provenance=provenance,
             runtime_version=runtime_version,
-            contract_sha256=contract_sha256,
+            contract_set_sha256=contract_set_sha256,
         )
         for index, page in enumerate(pages_value, start=1)
     ]
@@ -200,14 +200,14 @@ def validate_ocr_projection_provenance(
     engine string to authenticate projection evidence.
     """
 
-    if expected_engine != "windowsml-ocr":
+    if expected_engine != "text-recognition":
         raise OcrSummaryValidationError("Document extraction provenance is not canonical OCR.")
     runtime_version = _required_string(projection, "runtime_version")
-    contract_sha256 = _required_string(projection, "contract_sha256")
+    contract_set_sha256 = _required_string(projection, "contract_set_sha256")
     expected = _map_provenance(
         _required_field(projection, "provenance"),
         runtime_version=runtime_version,
-        contract_sha256=contract_sha256,
+        contract_set_sha256=contract_set_sha256,
     )
     if not isinstance(expected.root, CaptureOcrResolvedProvenanceRead):
         raise OcrSummaryValidationError("Resolved OCR provenance is required for publication.")
@@ -221,7 +221,7 @@ def validate_ocr_projection_provenance(
         page_provenance = _map_provenance(
             _required_field(page, "provenance"),
             runtime_version=runtime_version,
-            contract_sha256=contract_sha256,
+            contract_set_sha256=contract_set_sha256,
         )
         if page_provenance != expected:
             raise OcrSummaryValidationError("OCR page provenance does not match the projection.")
@@ -233,7 +233,7 @@ def _map_page(
     expected_page: int,
     expected_provenance: CaptureOcrProvenanceRead,
     runtime_version: str,
-    contract_sha256: str,
+    contract_set_sha256: str,
 ) -> CaptureOcrPageSummaryRead:
     page_number = _required_int(page, "page")
     if page_number != expected_page:
@@ -259,7 +259,7 @@ def _map_page(
     page_provenance = _map_provenance(
         _required_field(page, "provenance"),
         runtime_version=runtime_version,
-        contract_sha256=contract_sha256,
+        contract_set_sha256=contract_set_sha256,
     )
     if page_provenance != expected_provenance:
         raise OcrSummaryValidationError("OCR page provenance is inconsistent.")
@@ -298,7 +298,7 @@ def _map_provenance(
     value: object,
     *,
     runtime_version: str,
-    contract_sha256: str,
+    contract_set_sha256: str,
 ) -> CaptureOcrProvenanceRead:
     status = _enum_string(_required_field(value, "status"))
     profile_id = _required_string(value, "profile_id")
@@ -308,13 +308,13 @@ def _map_provenance(
     if status == "resolved":
         engine = _required_string(value, "engine")
         model_digest = _required_string(value, "model_digest")
-        if engine != "windowsml-ocr" or not _MODEL_DIGEST.fullmatch(model_digest):
+        if engine != "text-recognition" or not _MODEL_DIGEST.fullmatch(model_digest):
             raise OcrSummaryValidationError("Resolved OCR provenance is invalid.")
         payload: CaptureOcrProvenancePayload = CaptureOcrResolvedProvenanceRead(
             status="resolved",
             runtime_version=runtime_version,
-            contract_sha256=contract_sha256,
-            engine="windowsml-ocr",
+            contract_set_sha256=contract_set_sha256,
+            engine="text-recognition",
             model=_required_string(value, "model"),
             model_digest=model_digest,
             device=_required_string(value, "device"),
@@ -333,7 +333,7 @@ def _map_provenance(
         payload = CaptureOcrUnavailableProvenanceRead(
             status="unavailable",
             runtime_version=runtime_version,
-            contract_sha256=contract_sha256,
+            contract_set_sha256=contract_set_sha256,
             profile_id=profile_id,
             profile_spec_sha256=profile_spec_sha256,
             reason=reason,

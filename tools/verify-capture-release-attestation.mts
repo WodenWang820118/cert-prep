@@ -2,8 +2,11 @@
  * Verifies downloaded Capture Runtime release assets against GitHub artifact
  * attestations before a desktop release bundles them.
  *
- * The full Capture release attests `capture-release-manifest-v1.json`, which
- * lists the SHA-256 of every runtime and desktop asset. This script verifies
+ * The full Capture release attests its release manifest, which lists the
+ * SHA-256 of every runtime and desktop asset: `capture-release-manifest-v1.json`
+ * (`runtimeAssets`) or, from 0.11.0 on, `capture-release-manifest-v2.json`
+ * (`releaseAssets`); the file name must match the manifest's `schemaVersion`.
+ * This script verifies
  * that manifest's attestation, requires the exact signer workflow (gh's
  * `--signer-workflow` is only a prefix match), then checks each downloaded
  * asset against the manifest. An asset the manifest does not list must carry
@@ -211,11 +214,12 @@ function verifyAttestation(
 function attestedDigests(manifest: unknown, tag: string): Map<string, string> {
   if (
     !isRecord(manifest) ||
-    manifest.schemaVersion !== '1' ||
+    (manifest.schemaVersion !== '1' && manifest.schemaVersion !== '2') ||
     manifest.status !== 'released' ||
     manifest.releaseTag !== tag ||
     manifest.releaseVersion !== tag.slice(1) ||
-    !Array.isArray(manifest.runtimeAssets) ||
+    !Array.isArray(manifest.schemaVersion === '1' ? manifest.runtimeAssets : manifest.releaseAssets) ||
+    Object.hasOwn(manifest, manifest.schemaVersion === '1' ? 'releaseAssets' : 'runtimeAssets') ||
     !isRecord(manifest.components)
   ) {
     throw new Error(
@@ -236,7 +240,7 @@ function attestedDigests(manifest: unknown, tag: string): Map<string, string> {
       throw new Error(`Capture release manifest lists ${name} twice.`);
     digests.set(name, sha256);
   };
-  for (const entry of manifest.runtimeAssets) {
+  for (const entry of (manifest.schemaVersion === '1' ? manifest.runtimeAssets : manifest.releaseAssets) as unknown[]) {
     if (!isRecord(entry) || typeof entry.path !== 'string')
       throw new Error('Capture release manifest has an invalid asset entry.');
     const match = /^(?:runtime|desktop)\/([^/]+)$/u.exec(entry.path);
@@ -264,8 +268,12 @@ export async function verifyCaptureReleaseAttestation(
     options.repo,
     options.signerWorkflow,
   );
+  const manifest: unknown = JSON.parse(await readFile(options.releaseManifest, 'utf8'));
+  if (!isRecord(manifest) || basename(options.releaseManifest) !== `capture-release-manifest-v${String(manifest.schemaVersion)}.json`) {
+    throw new Error('Capture release manifest filename does not match its schema version.');
+  }
   const digests = attestedDigests(
-    JSON.parse(await readFile(options.releaseManifest, 'utf8')),
+    manifest,
     options.tag,
   );
   const verified: VerifiedAsset[] = [];

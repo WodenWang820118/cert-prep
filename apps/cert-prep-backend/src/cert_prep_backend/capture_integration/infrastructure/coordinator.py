@@ -23,8 +23,8 @@ from capture_runtime_client import (
     RawCapture,
     RuntimeRequirementStatus,
     RuntimeRequirement,
-    StreamingCaptureStatus,
-    StreamingEventType,
+    CaptureStatus,
+    CaptureEventType,
 )
 from cert_prep_backend.capture_integration.application.messages import (
     PDF_OCR_UNAVAILABLE_MESSAGE,
@@ -33,7 +33,7 @@ from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeClient,
     CaptureRuntimeCompatibilityError,
     CaptureRuntimeProtocolError,
-    CaptureStreamingResult,
+    CaptureResult,
     CaptureUpload,
 )
 from cert_prep_backend.capture_integration.infrastructure.review import reviewed_text_overrides
@@ -50,19 +50,19 @@ _SOURCE_REQUIREMENTS: dict[
     CaptureSourceKind,
     tuple[CaptureRequirementId, str],
 ] = {
-    CaptureSourceKind.PDF: ("windowsml-ocr", "WindowsML OCR"),
-    CaptureSourceKind.IMAGE: ("windowsml-ocr", "WindowsML OCR"),
-    CaptureSourceKind.AUDIO: ("speech-recognition", "Speech recognition"),
+    CaptureSourceKind.PDF: ("text-recognition", "WindowsML OCR"),
+    CaptureSourceKind.IMAGE: ("text-recognition", "WindowsML OCR"),
+    CaptureSourceKind.RECORDING: ("speech-recognition", "Speech recognition"),
 }
 _TERMINAL_STATUSES = {
-    StreamingCaptureStatus.COMPLETED,
-    StreamingCaptureStatus.FAILED,
-    StreamingCaptureStatus.CANCELLED,
+    CaptureStatus.COMPLETED,
+    CaptureStatus.FAILED,
+    CaptureStatus.CANCELLED,
 }
 _TERMINAL_EVENTS = {
-    StreamingEventType.COMPLETED,
-    StreamingEventType.FAILED,
-    StreamingEventType.CANCELLED,
+    CaptureEventType.COMPLETED,
+    CaptureEventType.FAILED,
+    CaptureEventType.CANCELLED,
 }
 
 
@@ -203,13 +203,26 @@ class CertPrepCaptureCoordinator:
     ) -> CaptureOperation:
         kind = CaptureSourceKind(source_kind)
         ready = self._client.handshake()
-        capture_kinds = ready.capabilities.get("captureKinds", [])
+        capture_kinds = ready.capabilities.capture_kinds
         if not isinstance(capture_kinds, list) or kind.value not in capture_kinds:
             raise CaptureRuntimeCompatibilityError(
                 f"Capture Runtime does not support {kind.value.upper()} capture."
             )
         ready = self._refresh_missing_ocr_preflight(kind, ready)
-        self._assert_ocr_compute_preflight(kind, ready)
+        try:
+            self._assert_ocr_compute_preflight(kind, ready)
+        except CaptureRuntimeCompatibilityError as preflight_error:
+            # Capture 0.11.0 reports no OCR compute preflight until its OCR
+            # worker is installed. Name the missing requirement when that is
+            # the cause; a ready requirement leaves the compatibility error,
+            # and so does a requirements read that fails.
+            try:
+                self._assert_source_requirement_ready(kind)
+            except CaptureRuntimeRequirementUnavailableError:
+                raise
+            except Exception as requirements_error:
+                raise preflight_error from requirements_error
+            raise
         self._assert_source_requirement_ready(kind)
         if should_cancel():
             raise CaptureRuntimeCanceledError("Document processing was cancelled.")
@@ -314,7 +327,7 @@ class CertPrepCaptureCoordinator:
             self._cancel(capture_id)
             raise CaptureRuntimeCanceledError("Document processing was cancelled.")
         result = self._client.get_result(capture_id)
-        if result.operation.status is not StreamingCaptureStatus.COMPLETED:
+        if result.operation.status is not CaptureStatus.COMPLETED:
             raise CaptureRuntimeProtocolError(
                 "Capture Runtime result is not attached to a completed operation"
             )
@@ -390,7 +403,7 @@ class CertPrepCaptureCoordinator:
     def get_raw(self, capture_id: str) -> RawCapture:
         return self._client.get_raw(capture_id)
 
-    def get_result(self, capture_id: str) -> CaptureStreamingResult:
+    def get_result(self, capture_id: str) -> CaptureResult:
         return self._client.get_result(capture_id)
 
     def cancel(self, capture_id: str) -> CaptureOperation:
@@ -471,7 +484,7 @@ class CertPrepCaptureCoordinator:
         reason = _status_value(getattr(preflight, "reason_code", None))
         notice_required = getattr(preflight, "user_notice_required", None)
         notice_code = _status_value(getattr(preflight, "notice_code", None))
-        if mode == "gpu-dml":
+        if mode == "gpu":
             if reason is not None or notice_required is not False or notice_code is not None:
                 raise CaptureRuntimeCompatibilityError(
                     "Capture Runtime returned an invalid GPU-DML OCR compute preflight."
@@ -479,7 +492,7 @@ class CertPrepCaptureCoordinator:
             return
         if mode == "cpu-fallback":
             if (
-                reason not in {"no_compatible_gpu", "dml_provider_unavailable"}
+                reason not in {"no_compatible_gpu", "gpu_provider_unavailable"}
                 or notice_required is not True
                 or notice_code != "ocr_cpu_fallback"
             ):
@@ -512,13 +525,13 @@ class CertPrepCaptureCoordinator:
         operation = self._wait_for_status(
             operation,
             stop_statuses={
-                StreamingCaptureStatus.AWAITING_STRUCTURING,
+                CaptureStatus.AWAITING_STRUCTURING,
                 *_TERMINAL_STATUSES,
             },
             deadline=deadline,
             should_cancel=should_cancel,
         )
-        if operation.status is StreamingCaptureStatus.COMPLETED:
+        if operation.status is CaptureStatus.COMPLETED:
             raise CaptureRuntimeJobError(operation)
         self._raise_for_terminal(operation)
         return operation
@@ -527,7 +540,7 @@ class CertPrepCaptureCoordinator:
         self,
         operation: CaptureOperation,
         *,
-        stop_statuses: set[StreamingCaptureStatus],
+        stop_statuses: set[CaptureStatus],
         deadline: float,
         should_cancel: Callable[[], bool],
     ) -> CaptureOperation:
@@ -555,9 +568,9 @@ class CertPrepCaptureCoordinator:
                 last_sequence = event.sequence
                 terminal_event_seen = event.event_type in _TERMINAL_EVENTS
                 if (
-                    event.event_type is StreamingEventType.RESYNC_REQUIRED
+                    event.event_type is CaptureEventType.RESYNC_REQUIRED
                     or event.event_type in _TERMINAL_EVENTS
-                    or event.stage == StreamingCaptureStatus.AWAITING_STRUCTURING.value
+                    or event.stage == CaptureStatus.AWAITING_STRUCTURING.value
                 ):
                     break
         except (httpx.TransportError, CaptureTransportError) as error:
@@ -608,7 +621,7 @@ class CertPrepCaptureCoordinator:
         capture_id: str,
         *,
         observed_sequence: int,
-        stop_statuses: set[StreamingCaptureStatus],
+        stop_statuses: set[CaptureStatus],
         deadline: float,
         should_cancel: Callable[[], bool],
     ) -> CaptureOperation:
@@ -747,13 +760,13 @@ class CertPrepCaptureCoordinator:
 
     @staticmethod
     def _is_awaiting_structuring(operation: CaptureOperation) -> bool:
-        return operation.status is StreamingCaptureStatus.AWAITING_STRUCTURING
+        return operation.status is CaptureStatus.AWAITING_STRUCTURING
 
     @staticmethod
     def _raise_for_terminal(operation: CaptureOperation) -> None:
-        if operation.status is StreamingCaptureStatus.CANCELLED:
+        if operation.status is CaptureStatus.CANCELLED:
             raise CaptureRuntimeCanceledError("Capture Runtime operation was cancelled.")
-        if operation.status is StreamingCaptureStatus.FAILED:
+        if operation.status is CaptureStatus.FAILED:
             raise CaptureRuntimeJobError(operation)
 
 
@@ -806,7 +819,7 @@ def _validate_ocr_projection(
         raise CaptureRuntimeProtocolError(
             "Capture Runtime OCR projection source digest does not match."
         )
-    page_count = getattr(projection, "page_count", None)
+    page_count = getattr(projection, "processed_page_count", None)
     pages = getattr(projection, "pages", None)
     if not isinstance(page_count, int) or page_count < 1 or not isinstance(pages, list):
         raise CaptureRuntimeProtocolError(
@@ -853,7 +866,7 @@ def _resolved_ocr_provenance(provenance: object) -> bool:
     status = _status_value(getattr(provenance, "status", None))
     return (
         status == "resolved"
-        and getattr(provenance, "engine", None) == "windowsml-ocr"
+        and getattr(provenance, "engine", None) == "text-recognition"
         and bool(str(getattr(provenance, "model", "")).strip())
         and bool(str(getattr(provenance, "model_digest", "")).strip())
         and bool(str(getattr(provenance, "device", "")).strip())
