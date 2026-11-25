@@ -223,7 +223,7 @@ test('release identity accepts an exact model-enabled candidate', async () => {
   }
 });
 
-test('candidate artifact receipt verifies the complete producer manifest and ledger', async () => {
+test('candidate artifact receipt verifies the complete producer manifest and verification summary', async () => {
   const fixture = await createCombinedCandidateFixture();
   try {
     const receipt = await verifyCandidateArtifactReceipt(fixture.input);
@@ -304,15 +304,18 @@ test('candidate artifact receipt rejects a consistently substituted runtime sche
       `${candidateManifestSha256}  candidate-manifest.json\n`,
     );
 
-    const ledgerPath = join(fixture.root, 'release-ledger.json');
-    const ledger = JSON.parse(await readFile(ledgerPath, 'utf8')) as Record<
+    const summaryPath = join(
+      fixture.root,
+      'candidate-verification-summary.json',
+    );
+    const summary = JSON.parse(await readFile(summaryPath, 'utf8')) as Record<
       string,
       unknown
     >;
-    ledger.candidateId = manifest.candidateId;
-    ledger.candidateManifestSha256 = candidateManifestSha256;
-    ledger.schemaSha256 = substitutedSchemaSha256;
-    await writeFile(ledgerPath, JSON.stringify(ledger));
+    summary.candidateId = manifest.candidateId;
+    summary.candidateManifestSha256 = candidateManifestSha256;
+    summary.captureDocumentSchemaSha256 = substitutedSchemaSha256;
+    await writeFile(summaryPath, JSON.stringify(summary));
 
     await assert.rejects(
       verifyCandidateArtifactReceipt({
@@ -363,24 +366,6 @@ test('candidate artifact receipt rejects stale same-version bytes, size, and has
     await assert.rejects(
       reverifyCandidateArtifactReceipt(receipt),
       /changed or mismatched/u,
-    );
-  } finally {
-    await rm(fixture.root, { recursive: true, force: true });
-  }
-});
-
-test('candidate artifact receipt rejects an omitted release-ledger entry', async () => {
-  const fixture = await createCombinedCandidateFixture();
-  try {
-    const ledgerPath = join(fixture.root, 'release-ledger.json');
-    const ledger = JSON.parse(await readFile(ledgerPath, 'utf8')) as {
-      artifacts: unknown[];
-    };
-    ledger.artifacts = ledger.artifacts.slice(1);
-    await writeFile(ledgerPath, JSON.stringify(ledger));
-    await assert.rejects(
-      verifyCandidateArtifactReceipt(fixture.input),
-      /artifact inventory is incomplete/u,
     );
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
@@ -1445,33 +1430,18 @@ async function createCombinedCandidateFixture(): Promise<CombinedCandidateFixtur
     join(root, 'candidate-manifest.json.sha256'),
     `${candidateManifestSha256}  candidate-manifest.json\n`,
   );
-  const ledger = {
+  const summary = {
+    schemaVersion: '1',
     candidateId,
     sourceCommit,
-    releaseMode: 'model-enabled',
     candidateManifestSha256,
-    version: releaseVersion,
-    schemaSha256: sha256(schemaBytes),
-    artifacts: [
-      ...packageEntries.map(([path, bytes]) => ({
-        registry: 'npm',
-        name: basename(path),
-        sha256: sha256(bytes),
-      })),
-      ...pythonEntries.map(([path, bytes]) => ({
-        registry: 'pypi',
-        name: basename(path),
-        sha256: sha256(bytes),
-      })),
-      ...crateEntries.map(([path, bytes]) => ({
-        registry: 'crates.io',
-        name: basename(path),
-        sha256: sha256(bytes),
-      })),
-    ],
-    status: 'candidate-verified',
+    contractSetSha256,
+    captureDocumentSchemaSha256: sha256(schemaBytes),
   };
-  await writeFile(join(root, 'release-ledger.json'), JSON.stringify(ledger));
+  await writeFile(
+    join(root, 'candidate-verification-summary.json'),
+    JSON.stringify(summary),
+  );
   return {
     root,
     manifestPath,
@@ -1512,17 +1482,16 @@ async function refreshCombinedCandidateManifest(
     join(fixture.root, 'candidate-manifest.json.sha256'),
     `${candidateManifestSha256}  candidate-manifest.json\n`,
   );
-  const ledgerPath = join(fixture.root, 'release-ledger.json');
-  const ledger = JSON.parse(await readFile(ledgerPath, 'utf8')) as Record<
+  const summaryPath = join(fixture.root, 'candidate-verification-summary.json');
+  const summary = JSON.parse(await readFile(summaryPath, 'utf8')) as Record<
     string,
     unknown
   >;
-  ledger.candidateId = manifest.candidateId;
-  ledger.candidateManifestSha256 = candidateManifestSha256;
-  ledger.sourceCommit = manifest.sourceCommit;
-  ledger.releaseMode = manifest.releaseMode;
-  ledger.version = manifest.releaseVersion;
-  await writeFile(ledgerPath, JSON.stringify(ledger));
+  summary.candidateId = manifest.candidateId;
+  summary.candidateManifestSha256 = candidateManifestSha256;
+  summary.sourceCommit = manifest.sourceCommit;
+  summary.contractSetSha256 = manifest.contractSetSha256;
+  await writeFile(summaryPath, JSON.stringify(summary));
   return {
     ...fixture.input,
     candidateId: String(manifest.candidateId),
@@ -1549,7 +1518,6 @@ for (const field of [undefined, 'schemaVersion', 'candidateId', 'sourceCommit', 
       };
       if (field) summary[field] = field === 'schemaVersion' ? '2' : '0'.repeat(64);
       await writeFile(join(fixture.root, 'candidate-verification-summary.json'), JSON.stringify(summary));
-      await rm(join(fixture.root, 'release-ledger.json'));
       if (field) await assert.rejects(verifyCandidateArtifactReceipt(fixture.input), /verification summary/u);
       else {
         const receipt = await verifyCandidateArtifactReceipt(fixture.input);
@@ -1560,26 +1528,36 @@ for (const field of [undefined, 'schemaVersion', 'candidateId', 'sourceCommit', 
     } finally { await rm(fixture.root, { recursive: true, force: true }); }
   });
 }
-test('a 0.11.0 candidate refuses a release ledger left beside its verification summary', async () => {
+test('a candidate refuses a release ledger beside its verification summary', async () => {
   const fixture = await createCombinedCandidateFixture();
   try {
-    const input = await refreshCombinedCandidateManifest(fixture, (manifest) => { manifest.releaseVersion = '0.11.0'; });
-    const manifest = JSON.parse(await readFile(fixture.manifestPath, 'utf8')) as Record<string, unknown>;
-    await writeFile(join(fixture.root, 'candidate-verification-summary.json'), JSON.stringify({
-      schemaVersion: '1', candidateId: manifest.candidateId, sourceCommit: manifest.sourceCommit,
-      candidateManifestSha256: input.candidateManifestSha256,
-      contractSetSha256: manifest.contractSetSha256,
-      captureDocumentSchemaSha256: sha256(await readFile(join(fixture.root, 'runtime/capture-document-v2.schema.json'))),
-    }));
-    await assert.rejects(verifyCandidateArtifactReceipt(input), /release ledger is not allowed beside a verification summary/u);
-  } finally { await rm(fixture.root, { recursive: true, force: true }); }
+    await writeFile(join(fixture.root, 'release-ledger.json'), '{}');
+    await assert.rejects(
+      verifyCandidateArtifactReceipt(fixture.input),
+      /Candidate release ledger is not allowed; the verification summary is the only receipt/u,
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
 });
-for (const version of ['0.11.0', '0.11.1', '1.0.0']) {
-  test(`candidate ${version} refuses a legacy-only ledger`, async () => {
+for (const version of ['0.10.0', CAPTURE_RUNTIME_VERSION]) {
+  test(`a ${version} candidate with only a release ledger is refused`, async () => {
     const fixture = await createCombinedCandidateFixture();
     try {
-      const input = await refreshCombinedCandidateManifest(fixture, (manifest) => { manifest.releaseVersion = version; });
-      await assert.rejects(verifyCandidateArtifactReceipt(input), /candidate-verification-summary/u);
-    } finally { await rm(fixture.root, { recursive: true, force: true }); }
+      const input = await refreshCombinedCandidateManifest(
+        fixture,
+        (manifest) => {
+          manifest.releaseVersion = version;
+        },
+      );
+      await rm(join(fixture.root, 'candidate-verification-summary.json'));
+      await writeFile(join(fixture.root, 'release-ledger.json'), '{}');
+      await assert.rejects(
+        verifyCandidateArtifactReceipt(input),
+        /candidate-verification-summary/u,
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
   });
 }
