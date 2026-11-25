@@ -18,9 +18,12 @@ then checks that the restarted backend answers with new credentials and the
 old ones are rejected. While OCR is not installed it runs the
 dependency-negative cases, then installs the OCR requirement, reloads so the
 OCR preflight admits imports, and only then waits for the picker and runs the
-scanned-PDF flow. This order has not been verified on an installed app yet;
-that run is open work in
-[packaged-capture-smoke.md](../TODOS/packaged-capture-smoke.md).
+scanned-PDF flow. This order passed on an installed app on 2026-11-25
+(NSIS build installed for the current user, published Capture Runtime 0.11.0,
+text recognition on DirectML). `--out-dir` must lie under
+`tmp/cert-prep-desktop` of the workspace, and `--app-data-dir` must be a
+direct child of it; keep both names short for Windows MAX_PATH. Open work is
+in [packaged-capture-smoke.md](../TODOS/packaged-capture-smoke.md).
 The Capture Workbench page offers PDF and image only; a successful packaged transcription
 belongs to the Questions page's source-library import path, not to this smoke.
 The real OCR proof on the packaged app is `cert-prep-desktop:acceptance-real`
