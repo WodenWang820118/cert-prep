@@ -1,9 +1,8 @@
 """Question Authoring's writes to Source Library: a source's count of questions and its status.
 
 Question Authoring defines the port. The adapter calls Source Library's use cases on the
-connection that commits the questions (BEGIN IMMEDIATE), so the source's question count and status is
-written in the same transaction as the questions and the job or operation that wrote them, as
-the UPDATE in Question Authoring's own SQL used to be.
+connection that commits the questions (BEGIN IMMEDIATE). The source's question count and status
+are written in the same transaction as the questions and any associated job or operation.
 """
 
 from __future__ import annotations

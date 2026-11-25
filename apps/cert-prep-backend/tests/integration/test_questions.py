@@ -7,9 +7,8 @@ from cert_prep_backend.authoring.domain.models import (
     AnswerKeySource,
     QuestionSuggestion,
 )
-from cert_prep_backend.authoring.infrastructure import repository as questions_repository
-from cert_prep_backend.bootstrap.study_projects import authoring_projects
-from cert_prep_backend.platform.errors import NotFoundError, LanguageModelUnavailable
+from cert_prep_backend.bootstrap.authoring_links import question_repository
+from cert_prep_backend.platform.errors import LanguageModelUnavailable
 from cert_prep_backend.ai_providers.domain.provider import ProviderHealth
 from cert_prep_backend.authoring.api.schemas import QuestionGenerateRequest
 
@@ -195,6 +194,31 @@ def test_generating_twice_counts_every_question_of_the_source(
     assert question_count() == 2
 
 
+def test_import_time_generation_records_every_question_of_the_source(tmp_path, auth_headers) -> None:
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                question_jobs_on_upload=False,
+                write_questions_on_upload=True,
+            ),
+            capture_runtime_client=TestCaptureRuntimeClient(),
+            llm_provider=RecordingQuestionWriter(),
+            source_processing_async_jobs=False,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+    source_id = _upload_source(client, auth_headers, project_id)
+
+    source = client.get(f"/projects/{project_id}/sources/{source_id}", headers=auth_headers)
+    questions = client.get(f"/projects/{project_id}/questions", headers=auth_headers)
+
+    assert source.status_code == questions.status_code == 200
+    source_questions = [item for item in questions.json()["items"] if item["source_id"] == source_id]
+    assert source.json()["question_count"] == len(source_questions) == 1
+
+
 def test_a_hand_written_question_updates_the_source_question_count_immediately(
     client: TestClient, auth_headers
 ) -> None:
@@ -285,26 +309,7 @@ def test_create_question_rejects_partial_source_reference(
     assert response.json()["code"] == "validation_error"
 
 
-def _append_generated_questions(
-    db,
-    *,
-    project_id: str,
-    source_id: str,
-    suggestions: list[QuestionSuggestion],
-):
-    if not authoring_projects(db).exists(project_id):
-        raise NotFoundError("Project not found.")
-    with db.connect() as connection:
-        rows = questions_repository._append_generated_questions(
-            connection,
-            project_id=project_id,
-            source_id=source_id,
-            suggestions=suggestions,
-        )
-    return [questions_repository._question_from_row(row) for row in rows]
-
-
-def test_background_append_preserves_existing_questions_and_dedupes_retries(
+def test_append_preserves_existing_questions_and_dedupes_retries(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
@@ -340,17 +345,12 @@ def test_background_append_preserves_existing_questions_and_dedupes_retries(
         source_question_number="1",
     )
 
-    first = _append_generated_questions(
-        client.app.state.database,
-        project_id=project_id,
-        source_id=source_id,
-        suggestions=[suggestion],
+    repository = question_repository(client.app.state.database)
+    first = repository.append_generated_questions_and_record_count(
+        project_id, source_id, [suggestion]
     )
-    second = _append_generated_questions(
-        client.app.state.database,
-        project_id=project_id,
-        source_id=source_id,
-        suggestions=[suggestion],
+    second = repository.append_generated_questions_and_record_count(
+        project_id, source_id, [suggestion]
     )
 
     assert len(first) == 1

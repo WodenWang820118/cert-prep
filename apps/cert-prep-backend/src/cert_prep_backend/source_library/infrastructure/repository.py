@@ -27,7 +27,6 @@ from cert_prep_backend.source_library.infrastructure.sources import (
     list_sources,
     set_authored_question_count,
     set_question_count,
-    update_question_count,
 )
 from cert_prep_backend.source_library.infrastructure.progress import (
     recover_processing_sources,
@@ -68,17 +67,10 @@ class SqliteSourceRepository:
     def record_question_count(
         self, project_id: str, source_id: str, *, status: str, question_count: int
     ) -> None:
-        if self._connection is not None:
-            set_question_count(
-                self._connection,
-                project_id=project_id,
-                source_id=source_id,
-                status=status,
-                question_count=question_count,
-            )
-            return
-        update_question_count(
-            self._db,
+        if self._connection is None:
+            raise RuntimeError("The question count joins the transaction that stores the questions.")
+        set_question_count(
+            self._connection,
             project_id=project_id,
             source_id=source_id,
             status=status,
@@ -247,6 +239,5 @@ __all__ = [
     "list_chunks",
     "list_sources",
     "recover_processing_sources",
-    "update_question_count",
     "update_chunk_translation",
 ]

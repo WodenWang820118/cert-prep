@@ -121,30 +121,6 @@ def get_source_file(db: Database, project_id: str, source_id: str) -> SourceFile
     )
 
 
-def update_question_count(
-    db: Database,
-    *,
-    project_id: str,
-    source_id: str,
-    status: str,
-    question_count: int,
-) -> Source:
-    """Update question generation state on a source."""
-
-    with db.connect() as connection:
-        set_question_count(
-            connection,
-            project_id=project_id,
-            source_id=source_id,
-            status=status,
-            question_count=question_count,
-        )
-        row = source_query(connection, project_id, source_id)
-    if row is None:
-        raise NotFoundError("Document not found.")
-    return source_from_row(row)
-
-
 def set_question_count(
     connection: Connection,
     *,

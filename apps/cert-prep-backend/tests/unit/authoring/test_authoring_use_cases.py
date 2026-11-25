@@ -1,5 +1,4 @@
-"""Question Authoring use cases: generating questions for a source records how many questions
-it has in all, and nothing is written for a source without text."""
+"""Question Authoring use cases for generation, writing and editing."""
 
 from __future__ import annotations
 
@@ -35,7 +34,6 @@ def _suggestion(question: str) -> QuestionSuggestion:
 class FakeQuestions:
     def __init__(self, *, keep: int) -> None:
         self.keep = keep
-        self.stored: list[QuestionSuggestion] = []
         self.calls: list[tuple] = []
 
     def questions_of(self, project_id: str):
@@ -50,26 +48,19 @@ class FakeQuestions:
         self.calls.append(("edit", project_id, question_id, edit))
         return edit
 
-    def add_generated(self, project_id: str, source_id: str, suggestions: Sequence[QuestionSuggestion]):
-        self.calls.append(("add_generated", project_id, source_id, list(suggestions)))
-        kept = list(suggestions)[: self.keep]
-        self.stored.extend(kept)
-        return kept
-
-    def count_for_source(self, project_id: str, source_id: str) -> int:
-        return len(self.stored)
+    def append_generated_questions_and_record_count(
+        self, project_id: str, source_id: str, suggestions: Sequence[QuestionSuggestion]
+    ):
+        self.calls.append(("append_and_record_count", project_id, source_id, list(suggestions)))
+        return list(suggestions)[: self.keep]
 
 
 class FakeSources:
     def __init__(self, chunks: list[SourceChunk]) -> None:
         self.chunks = chunks
-        self.counts: list[tuple[str, str, int]] = []
 
     def chunks_of(self, project_id: str, source_id: str) -> list[SourceChunk]:
         return self.chunks
-
-    def record_question_count(self, project_id: str, source_id: str, count: int) -> None:
-        self.counts.append((project_id, source_id, count))
 
 
 class FakeWriting:
@@ -81,7 +72,7 @@ class FakeWriting:
         return [_suggestion("One?"), _suggestion("Two?")]
 
 
-def test_generating_questions_twice_records_every_question_of_the_source() -> None:
+def test_generation_passes_suggestions_to_the_atomic_write() -> None:
     questions, sources, writing = FakeQuestions(keep=1), FakeSources([CHUNK]), FakeWriting()
 
     def generate():
@@ -101,8 +92,9 @@ def test_generating_questions_twice_records_every_question_of_the_source() -> No
 
     assert [question.question for question in first + second] == ["One?", "One?"]
     assert writing.calls == [("model", [CHUNK], 5, QuestionGenerationStrategy.HYBRID_REASONING)] * 2
-    # The count is every question the source has, not the one each run added.
-    assert sources.counts == [("project", "document", 1), ("project", "document", 2)]
+    assert questions.calls == [
+        ("append_and_record_count", "project", "document", [_suggestion("One?"), _suggestion("Two?")])
+    ] * 2
 
 
 def test_a_source_without_text_gets_no_questions() -> None:
@@ -120,7 +112,7 @@ def test_a_source_without_text_gets_no_questions() -> None:
             strategy=QuestionGenerationStrategy.DETERMINISTIC_ONLY,
         )
 
-    assert writing.calls == [] and questions.calls == [] and sources.counts == []
+    assert writing.calls == [] and questions.calls == []
 
 
 def test_question_use_cases_pass_the_learner_input_to_the_repository() -> None:

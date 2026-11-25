@@ -5,7 +5,10 @@ import json
 import pytest
 
 from cert_prep_backend.authoring.domain.models import QuestionSuggestion
-from cert_prep_backend.bootstrap.authoring_links import bind_source_question_count
+from cert_prep_backend.bootstrap.authoring_links import (
+    bind_source_question_count,
+    question_repository,
+)
 from cert_prep_backend.authoring.infrastructure import question_generation_jobs
 from cert_prep_backend.authoring.infrastructure import repository as questions_repository
 
@@ -34,10 +37,9 @@ def _full_suggestion(chunk: dict) -> QuestionSuggestion:
     )
 
 
-def _create_via_plain_path(db, project_id, source_id, suggestions):
-    return questions_repository.create_generated_questions(
-        db, project_id=project_id, source_id=source_id, suggestions=suggestions,
-        projects=authoring_projects(db),
+def _create_via_source_generation(db, project_id, source_id, suggestions):
+    return question_repository(db).append_generated_questions_and_record_count(
+        project_id, source_id, suggestions
     )
 
 
@@ -70,7 +72,7 @@ def _create_via_job_path(db, project_id, source_id, suggestions):
     )
 
 
-@pytest.mark.parametrize("create", [_create_via_plain_path, _create_via_job_path])
+@pytest.mark.parametrize("create", [_create_via_source_generation, _create_via_job_path])
 def test_generated_question_insert_persists_every_column(client, auth_headers, create) -> None:
     db = client.app.state.database
     project_id, source_id, chunk = _source_chunk(client, auth_headers)
@@ -99,7 +101,10 @@ def test_generated_question_insert_persists_every_column(client, auth_headers, c
 
     stored = rows["Which word fits?"]
     assert stored["created_at"] and stored["created_at"] == stored["updated_at"]
-    assert {key: value for key, value in stored.items() if key not in {"id", "created_at", "updated_at"}} == {
+    stored_values = {
+        key: value for key, value in stored.items() if key not in {"id", "created_at", "updated_at"}
+    }
+    assert stored_values == {
         "project_id": project_id,
         "source_id": source_id,
         "chunk_id": chunk["id"],
