@@ -246,8 +246,9 @@ test('the threshold file supplies all rule values and rejects missing or invalid
 });
 
 test('only PLR0913 is exempt in actual FastAPI route modules', () => {
-  const file = 'apps/cert-prep-backend/src/cert_prep_backend/capture_integration/api/router.py';
-  const helper = file.replace('router.py', 'helpers.py');
+  const file = 'apps/cert-prep-backend/src/cert_prep_backend/capture_integration/api/review_lifecycle.py';
+  // The composer registers the route modules and declares no route signature itself.
+  const helper = file.replace('review_lifecycle.py', 'router.py');
   const diagnostic = (name: string, code: string, message: string) =>
     ({ filename: join(root, name), code, location: { row: 20 }, message });
   const output = JSON.stringify([
