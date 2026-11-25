@@ -636,33 +636,6 @@ function manifestArtifact(
   return { path: value.path, bytes: value.bytes, sha256: value.sha256 };
 }
 
-function ledgerArtifact(
-  value: unknown,
-  index: number,
-): {
-  readonly registry: string;
-  readonly name: string;
-  readonly sha256: string;
-} {
-  if (!isRecord(value)) {
-    throw new Error(`Candidate release ledger artifact ${index} is invalid.`);
-  }
-  exactRecordKeys(
-    value,
-    ['name', 'registry', 'sha256'],
-    `Candidate release ledger artifact ${index}`,
-  );
-  if (
-    typeof value.registry !== 'string' ||
-    typeof value.name !== 'string' ||
-    typeof value.sha256 !== 'string' ||
-    !SHA256_PATTERN.test(value.sha256)
-  ) {
-    throw new Error(`Candidate release ledger artifact ${index} is invalid.`);
-  }
-  return { registry: value.registry, name: value.name, sha256: value.sha256 };
-}
-
 async function verifyCombinedCandidateRoot(
   input: CandidateArtifactReceiptInput,
 ): Promise<CandidateArtifactReceipt> {
@@ -780,70 +753,56 @@ async function verifyCombinedCandidateRoot(
   if (!schemaArtifact) {
     throw new Error('Candidate runtime schema artifact is missing.');
   }
-  const cutoff = /^(0)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?$/u.exec(String(manifest.releaseVersion));
-  const allowsLegacy = cutoff !== null && (Number(cutoff[2]) < 11 || (Number(cutoff[2]) === 11 && Number(cutoff[3]) === 0 && Boolean(cutoff[4])));
-  let summaryBytes: Buffer | undefined;
-  try {
-    summaryBytes = await readFile(join(root, 'candidate-verification-summary.json'));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || !allowsLegacy) throw error;
+  const summaryBytes = await readFile(
+    join(root, 'candidate-verification-summary.json'),
+  );
+  const summary = parseJsonBytes(
+    summaryBytes,
+    'Candidate verification summary',
+  );
+  exactRecordKeys(
+    summary,
+    [
+      'schemaVersion',
+      'candidateId',
+      'sourceCommit',
+      'candidateManifestSha256',
+      'contractSetSha256',
+      'captureDocumentSchemaSha256',
+    ],
+    'Candidate verification summary',
+  );
+  if (
+    summary.schemaVersion !== '1' ||
+    summary.candidateId !== manifest.candidateId ||
+    summary.sourceCommit !== manifest.sourceCommit ||
+    summary.candidateManifestSha256 !== manifestSha256 ||
+    summary.contractSetSha256 !== manifest.contractSetSha256 ||
+    summary.captureDocumentSchemaSha256 !== schemaArtifact.sha256
+  ) {
+    throw new Error(
+      'Candidate verification summary does not match the candidate manifest.',
+    );
   }
-  let ledger: Record<string, unknown> | undefined;
-  if (summaryBytes !== undefined) {
-    const summary = parseJsonBytes(summaryBytes, 'Candidate verification summary');
-    exactRecordKeys(summary, ['schemaVersion', 'candidateId', 'sourceCommit', 'candidateManifestSha256', 'contractSetSha256', 'captureDocumentSchemaSha256'], 'Candidate verification summary');
-    if (summary.schemaVersion !== '1' || summary.candidateId !== manifest.candidateId || summary.sourceCommit !== manifest.sourceCommit || summary.candidateManifestSha256 !== manifestSha256 || summary.contractSetSha256 !== manifest.contractSetSha256 || summary.captureDocumentSchemaSha256 !== schemaArtifact.sha256) {
-      throw new Error('Candidate verification summary does not match the candidate manifest.');
-    }
-    const contractDigest = sha256(await readFile(join(root, 'contracts/contract-set.json')));
-    if (contractDigest !== summary.contractSetSha256) throw new Error('Candidate verification summary contract digest is invalid.');
-    // From 0.11.0 on the summary is the only receipt; a ledger beside it would
-    // be accepted unvalidated, so its presence fails the candidate.
-    if (!allowsLegacy) {
-      const leftoverLedger = await lstat(join(root, 'release-ledger.json')).then(
-        () => true,
-        (error: NodeJS.ErrnoException) => {
-          if (error.code === 'ENOENT') return false;
-          throw error;
-        },
-      );
-      if (leftoverLedger) {
-        throw new Error('Candidate release ledger is not allowed beside a verification summary from 0.11.0 on.');
-      }
-    }
-  } else {
-    ledger = parseJsonBytes(
-      await readFile(join(root, 'release-ledger.json')),
-      'Candidate release ledger',
+  const contractDigest = sha256(
+    await readFile(join(root, 'contracts/contract-set.json')),
+  );
+  if (contractDigest !== summary.contractSetSha256) {
+    throw new Error(
+      'Candidate verification summary contract digest is invalid.',
     );
-    exactRecordKeys(
-      ledger,
-      [
-        'artifacts',
-        'candidateId',
-        'candidateManifestSha256',
-        'releaseMode',
-        'schemaSha256',
-        'sourceCommit',
-        'status',
-        'version',
-      ],
-      'Candidate release ledger',
+  }
+  const hasReleaseLedger = await lstat(join(root, 'release-ledger.json')).then(
+    () => true,
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return false;
+      throw error;
+    },
+  );
+  if (hasReleaseLedger) {
+    throw new Error(
+      'Candidate release ledger is not allowed; the verification summary is the only receipt.',
     );
-    if (
-      ledger.candidateId !== manifestCandidateId ||
-      ledger.candidateManifestSha256 !== manifestSha256 ||
-      ledger.sourceCommit !== input.sourceCommit ||
-      ledger.version !== input.releaseVersion ||
-      ledger.releaseMode !== manifest.releaseMode ||
-      ledger.status !== 'candidate-verified' ||
-      !Array.isArray(ledger.artifacts)
-    ) {
-      throw new Error('Candidate release ledger identity is invalid.');
-    }
-    if (ledger.schemaSha256 !== schemaArtifact.sha256) {
-      throw new Error('Candidate release ledger schema digest is invalid.');
-    }
   }
   if (schemaArtifact.sha256 !== CAPTURE_DOCUMENT_SCHEMA_SHA256) {
     throw new Error(
@@ -920,42 +879,6 @@ async function verifyCombinedCandidateRoot(
     ...pythonArtifacts,
     ...crateArtifacts,
   ];
-  const expectedLedgerArtifacts = expectedRegistryArtifacts.map((artifact) => {
-    const [registryDirectory, name] = artifact.path.split('/');
-    return {
-      registry:
-        registryDirectory === 'package'
-          ? 'npm'
-          : registryDirectory === 'python'
-            ? 'pypi'
-            : 'crates.io',
-      name,
-      sha256: artifact.sha256,
-    };
-  });
-  if (ledger) {
-    const declaredLedgerArtifacts = (ledger.artifacts as unknown[]).map(ledgerArtifact);
-    const ledgerArtifactKey = (artifact: {
-      readonly registry: string;
-      readonly name: string;
-      readonly sha256: string;
-    }): string =>
-      `${artifact.registry}\u0000${artifact.name}\u0000${artifact.sha256}`;
-    const expectedLedgerKeys = new Set(
-      expectedLedgerArtifacts.map(ledgerArtifactKey),
-    );
-    const declaredLedgerKeys = declaredLedgerArtifacts.map(ledgerArtifactKey);
-    if (
-      declaredLedgerArtifacts.length !== expectedLedgerArtifacts.length ||
-      expectedLedgerKeys.size !== expectedLedgerArtifacts.length ||
-      new Set(declaredLedgerKeys).size !== declaredLedgerKeys.length ||
-      declaredLedgerKeys.some((key) => !expectedLedgerKeys.has(key))
-    ) {
-      throw new Error(
-        'Candidate release ledger artifact inventory is incomplete.',
-      );
-    }
-  }
   for (const artifact of expectedRegistryArtifacts) {
     const name = basename(artifact.path);
     const checksumPath = `checksums/${name}.sha256`;
