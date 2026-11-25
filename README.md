@@ -129,6 +129,7 @@ corepack pnpm nx run cert-prep-e2e:e2e
 The browser suite answers every API call from a route mock and writes its
 screenshots under `output/playwright/cert-prep/e2e-route-mocked-cycle`. Real
 OCR on the packaged app is `cert-prep-desktop:acceptance-real`.
+The dev-server real-engine journey is `cert-prep-e2e:smoke-real-engines-dev-server` (manual; not part of `pnpm ci:local`).
 
 ### Desktop and packaging
 

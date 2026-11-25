@@ -31,6 +31,24 @@
       "executor": "nx:run-commands",
       "dependsOn": ["e2e-mocked-api"],
       "options": { "command": "node -e \"process.stdout.write('cert-prep-e2e mocked API suite completed\\n')\"" }
+    },
+    "smoke-real-engines-dev-server": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "metadata": {
+        "description": "Manual dev-server journey with published Capture Runtime engines. Not part of local or GitHub CI."
+      },
+      "options": {
+        "command": "node apps/cert-prep-e2e/src/real-engines/run.mts"
+      }
+    },
+    "real-engines-unit-test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["default", "{workspaceRoot}/apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts"],
+      "options": {
+        "command": "node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts --test apps/cert-prep-e2e/src/real-engines/devices.test.mts"
+      }
     }
   }
 }
