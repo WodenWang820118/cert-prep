@@ -150,13 +150,13 @@ test('generated question snapshots count usable questions without storing text',
   assert.doesNotMatch(JSON.stringify(snapshot), /SECRET|hidden-token|Bearer/i);
 });
 
-test('Whole source evidence returns only the validated selected-document count', () => {
+test('Whole source evidence returns only the validated selected-source count', () => {
   const request = validWholeSourceRequest();
   const response = validWholeSourceResponse();
 
   const count = wholeSourceQuestionCountFromSession(request, response, {
     projectId: 'project-1',
-    documentId: 'document-1',
+    sourceId: 'source-1',
   });
 
   assert.equal(count, 2);
@@ -164,7 +164,7 @@ test('Whole source evidence returns only the validated selected-document count',
 });
 
 test('Whole source evidence rejects stale counts, scope drift, and unusable questions', () => {
-  const expected = { projectId: 'project-1', documentId: 'document-1' };
+  const expected = { projectId: 'project-1', sourceId: 'source-1' };
 
   const empty = validWholeSourceResponse();
   empty.question_ids = [];
@@ -218,15 +218,15 @@ test('Whole source evidence rejects stale counts, scope drift, and unusable ques
     null,
   );
 
-  const wrongDocument = validWholeSourceResponse();
-  wrongDocument.questions[0] = {
-    ...wrongDocument.questions[0],
-    document_id: 'document-2',
+  const wrongSource = validWholeSourceResponse();
+  wrongSource.questions[0] = {
+    ...wrongSource.questions[0],
+    source_id: 'source-2',
   };
   assert.equal(
     wholeSourceQuestionCountFromSession(
       validWholeSourceRequest(),
-      wrongDocument,
+      wrongSource,
       expected,
     ),
     null,
@@ -286,12 +286,12 @@ test('Whole source evidence rejects stale counts, scope drift, and unusable ques
     null,
   );
 
-  const wrongResponseDocument = validWholeSourceResponse();
-  wrongResponseDocument.document_id = 'document-2';
+  const wrongResponseSource = validWholeSourceResponse();
+  wrongResponseSource.source_id = 'source-2';
   assert.equal(
     wholeSourceQuestionCountFromSession(
       validWholeSourceRequest(),
-      wrongResponseDocument,
+      wrongResponseSource,
       expected,
     ),
     null,
@@ -405,8 +405,8 @@ test('first chunk gate metrics use strict under-threshold timing', () => {
 
 function validWholeSourceRequest() {
   return {
-    mode: 'full_document',
-    document_id: 'document-1',
+    mode: 'full_source',
+    source_id: 'source-1',
     question_count: 2,
   };
 }
@@ -415,8 +415,8 @@ function validWholeSourceResponse() {
   return {
     id: 'session-1',
     project_id: 'project-1',
-    mode: 'full_document',
-    document_id: 'document-1',
+    mode: 'full_source',
+    source_id: 'source-1',
     question_count: 2,
     status: 'active',
     question_ids: ['question-1', 'question-2'],
@@ -429,7 +429,7 @@ function validWholeSourceResponse() {
         rationale: 'SECRET rationale',
         citation_page: 1,
         source_excerpt: null,
-        document_id: 'document-1',
+        source_id: 'source-1',
       },
       {
         id: 'question-2',
@@ -439,7 +439,7 @@ function validWholeSourceResponse() {
         rationale: 'Second rationale',
         citation_page: null,
         source_excerpt: 'Second source excerpt',
-        document_id: 'document-1',
+        source_id: 'source-1',
       },
     ],
   };

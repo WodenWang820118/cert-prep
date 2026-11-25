@@ -2,35 +2,35 @@ from __future__ import annotations
 
 from sqlite3 import Row
 
-from cert_prep_contracts.documents import SourceKind
+from cert_prep_contracts.sources import SourceKind
 
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.platform.errors import NotFoundError
 from cert_prep_backend.source_library.application.ports import StudyProjects
-from cert_prep_backend.source_library.domain.document import SourceDocument
-from cert_prep_backend.source_library.domain.statuses import SourceDocumentStatus
+from cert_prep_backend.source_library.domain.source import Source
+from cert_prep_backend.source_library.domain.statuses import SourceStatus
 
 
-def document_query(connection, project_id: str, document_id: str) -> Row | None:
-    """Load a document row with its current chunk count."""
+def source_query(connection, project_id: str, source_id: str) -> Row | None:
+    """Load a source row with its current chunk count."""
 
     return connection.execute(
         """
-        SELECT documents.*,
-            COUNT(document_chunks.id) AS chunks_count
-        FROM documents
-        LEFT JOIN document_chunks ON document_chunks.document_id = documents.id
-        WHERE documents.project_id = ? AND documents.id = ?
-        GROUP BY documents.id
+        SELECT sources.*,
+            COUNT(source_chunks.id) AS chunks_count
+        FROM sources
+        LEFT JOIN source_chunks ON source_chunks.source_id = sources.id
+        WHERE sources.project_id = ? AND sources.id = ?
+        GROUP BY sources.id
         """,
-        (project_id, document_id),
+        (project_id, source_id),
     ).fetchone()
 
 
-def document_from_row(row: Row) -> SourceDocument:
-    """Map a persisted document row with its chunk count into a SourceDocument."""
+def source_from_row(row: Row) -> Source:
+    """Map a persisted source row with its chunk count into a Source."""
 
-    return SourceDocument(
+    return Source(
         id=row["id"],
         project_id=row["project_id"],
         filename=row["filename"],
@@ -38,7 +38,7 @@ def document_from_row(row: Row) -> SourceDocument:
         language_hint=row["language_hint"],
         page_count=row["page_count"],
         has_text=bool(row["has_text"]),
-        status=SourceDocumentStatus(row["status"]),
+        status=SourceStatus(row["status"]),
         extraction_method=row["extraction_method"],
         ocr_device=row["ocr_device"],
         extraction_provenance=row["extraction_provenance"],
@@ -62,13 +62,13 @@ def document_from_row(row: Row) -> SourceDocument:
     )
 
 
-def ensure_document_exists(db: Database, project_id: str, document_id: str) -> None:
-    """Raise when a document does not belong to the requested project."""
+def ensure_source_exists(db: Database, project_id: str, source_id: str) -> None:
+    """Raise when a source does not belong to the requested project."""
 
     with db.connect() as connection:
         row = connection.execute(
-            "SELECT id FROM documents WHERE project_id = ? AND id = ?",
-            (project_id, document_id),
+            "SELECT id FROM sources WHERE project_id = ? AND id = ?",
+            (project_id, source_id),
         ).fetchone()
     if row is None:
         raise NotFoundError("Document not found.")

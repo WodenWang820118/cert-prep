@@ -1,5 +1,5 @@
-"""Question Authoring use cases: generating questions for a document records how many questions
-it has in all, and nothing is written for a document without text."""
+"""Question Authoring use cases: generating questions for a source records how many questions
+it has in all, and nothing is written for a source without text."""
 
 from __future__ import annotations
 
@@ -50,13 +50,13 @@ class FakeQuestions:
         self.calls.append(("edit", project_id, question_id, edit))
         return edit
 
-    def add_generated(self, project_id: str, document_id: str, suggestions: Sequence[QuestionSuggestion]):
-        self.calls.append(("add_generated", project_id, document_id, list(suggestions)))
+    def add_generated(self, project_id: str, source_id: str, suggestions: Sequence[QuestionSuggestion]):
+        self.calls.append(("add_generated", project_id, source_id, list(suggestions)))
         kept = list(suggestions)[: self.keep]
         self.stored.extend(kept)
         return kept
 
-    def count_for_source(self, project_id: str, document_id: str) -> int:
+    def count_for_source(self, project_id: str, source_id: str) -> int:
         return len(self.stored)
 
 
@@ -65,11 +65,11 @@ class FakeSources:
         self.chunks = chunks
         self.counts: list[tuple[str, str, int]] = []
 
-    def chunks_of(self, project_id: str, document_id: str) -> list[SourceChunk]:
+    def chunks_of(self, project_id: str, source_id: str) -> list[SourceChunk]:
         return self.chunks
 
-    def record_question_count(self, project_id: str, document_id: str, count: int) -> None:
-        self.counts.append((project_id, document_id, count))
+    def record_question_count(self, project_id: str, source_id: str, count: int) -> None:
+        self.counts.append((project_id, source_id, count))
 
 
 class FakeWriting:
@@ -81,17 +81,17 @@ class FakeWriting:
         return [_suggestion("One?"), _suggestion("Two?")]
 
 
-def test_generating_questions_twice_records_the_documents_total() -> None:
+def test_generating_questions_twice_records_the_sources_total() -> None:
     questions, sources, writing = FakeQuestions(keep=1), FakeSources([CHUNK]), FakeWriting()
 
     def generate():
-        return use_cases.generate_document_questions(
+        return use_cases.generate_source_questions(
             questions,
             sources,
             writing,
             "model",
             project_id="project",
-            document_id="document",
+            source_id="document",
             limit=5,
             strategy=QuestionGenerationStrategy.HYBRID_REASONING,
         )
@@ -101,21 +101,21 @@ def test_generating_questions_twice_records_the_documents_total() -> None:
 
     assert [question.question for question in first + second] == ["One?", "One?"]
     assert writing.calls == [("model", [CHUNK], 5, QuestionGenerationStrategy.HYBRID_REASONING)] * 2
-    # The count is every question the document has, not the one each run added.
+    # The count is every question the source has, not the one each run added.
     assert sources.counts == [("project", "document", 1), ("project", "document", 2)]
 
 
-def test_a_document_without_text_gets_no_questions() -> None:
+def test_a_source_without_text_gets_no_questions() -> None:
     questions, sources, writing = FakeQuestions(keep=5), FakeSources([]), FakeWriting()
 
     with pytest.raises(ValidationError, match="no extracted text chunks"):
-        use_cases.generate_document_questions(
+        use_cases.generate_source_questions(
             questions,
             sources,
             writing,
             "model",
             project_id="project",
-            document_id="document",
+            source_id="document",
             limit=5,
             strategy=QuestionGenerationStrategy.DETERMINISTIC_ONLY,
         )
@@ -143,33 +143,33 @@ class FakeWork:
     def __init__(self) -> None:
         self.calls: list[tuple] = []
 
-    def retry_jobs(self, project_id, document_id):
-        self.calls.append(("retry_jobs", project_id, document_id))
+    def retry_jobs(self, project_id, source_id):
+        self.calls.append(("retry_jobs", project_id, source_id))
         return []
 
-    def start_manual_operation(self, project_id, document_id, limit, strategy):
-        self.calls.append(("start", project_id, document_id, limit, strategy))
+    def start_manual_operation(self, project_id, source_id, limit, strategy):
+        self.calls.append(("start", project_id, source_id, limit, strategy))
 
-    def manual_operation(self, project_id, document_id, operation_id):
-        self.calls.append(("view", project_id, document_id, operation_id))
+    def manual_operation(self, project_id, source_id, operation_id):
+        self.calls.append(("view", project_id, source_id, operation_id))
 
-    def cancel_manual_operation(self, project_id, document_id, operation_id):
-        self.calls.append(("cancel", project_id, document_id, operation_id))
+    def cancel_manual_operation(self, project_id, source_id, operation_id):
+        self.calls.append(("cancel", project_id, source_id, operation_id))
 
 
 class FakeJobs:
     def __init__(self) -> None:
         self.calls: list[tuple] = []
 
-    def jobs_of(self, project_id, document_id):
-        self.calls.append(("jobs_of", project_id, document_id))
+    def jobs_of(self, project_id, source_id):
+        self.calls.append(("jobs_of", project_id, source_id))
         return []
 
-    def cancel(self, project_id, document_id, job_id):
-        self.calls.append(("cancel", project_id, document_id, job_id))
+    def cancel(self, project_id, source_id, job_id):
+        self.calls.append(("cancel", project_id, source_id, job_id))
 
-    def discard_unfinished(self, project_id, document_id):
-        self.calls.append(("discard_unfinished", project_id, document_id))
+    def discard_unfinished(self, project_id, source_id):
+        self.calls.append(("discard_unfinished", project_id, source_id))
 
 
 def test_generation_use_cases_reach_the_background_work_and_the_jobs() -> None:

@@ -76,7 +76,7 @@ const CAPTURE_WORKBENCH_READY_STATUS_PATTERN =
 
 interface CaptureResult {
   readonly captureId: string;
-  readonly documentId: string;
+  readonly sourceId: string;
   readonly safeMetadata: Record<string, unknown>;
 }
 
@@ -269,7 +269,7 @@ async function runLazyCaptureJourney(
     120_000,
   );
   await waitForCaptureWorkbenchReady(run);
-  const capture = await runCaptureDocumentFlow(run, fixturePath, fixtureName);
+  const capture = await runCaptureSourceFlow(run, fixturePath, fixtureName);
   firstSecurity.assertClean();
   await screenshot(run, 'capture-workbench-completed');
 
@@ -325,7 +325,7 @@ async function runLazyCaptureJourney(
     relaunchedApi,
   );
   await waitForCaptureWorkbenchReady(run);
-  await verifyPersistedDocument(run, capture.documentId, secondRotation.api);
+  await verifyPersistedSource(run, capture.sourceId, secondRotation.api);
   await relaunchedPage
     .getByRole('link', { name: 'Questions', exact: true })
     .click();
@@ -334,13 +334,13 @@ async function runLazyCaptureJourney(
     run,
     new RegExp(fixtureName.replace('.', '\\.')),
     60_000,
-    'persisted Capture document visible',
+    'persisted Capture source visible',
   );
   const relaunchedRunningPersisted = phase(
     'running',
     true,
     secondRotation.owned,
-    { persistedDocumentVisible: true },
+    { persistedSourceVisible: true },
   );
   relaunchSecurity.assertClean();
   await screenshot(run, 'capture-workbench-persisted');
@@ -418,7 +418,7 @@ async function startCaptureRuntimeAndRotateBackend(
   return { api: nextApi, owned };
 }
 
-async function runCaptureDocumentFlow(
+async function runCaptureSourceFlow(
   run: SmokeRunState,
   fixturePath: string,
   fixtureName: string,
@@ -461,8 +461,8 @@ async function runCaptureDocumentFlow(
     throw new Error('Capture upload did not return a valid response.');
   }
   const captureId = stringValue(capturePayload.captureId);
-  const documentId = stringValue(capturePayload.documentId);
-  if (!captureId || !documentId) {
+  const sourceId = stringValue(capturePayload.sourceId);
+  if (!captureId || !sourceId) {
     throw new Error('Capture upload response lacked exact IDs.');
   }
 
@@ -502,24 +502,24 @@ async function runCaptureDocumentFlow(
   await page
     .getByRole('heading', { name: 'Capture document saved' })
     .waitFor({ timeout: 120_000 });
-  const documentResponse = await page.request.get(
+  const sourceResponse = await page.request.get(
     `${projectApi.apiBaseUrl}/projects/${encodeURIComponent(
       projectApi.projectId,
-    )}/documents/${encodeURIComponent(documentId)}`,
+    )}/sources/${encodeURIComponent(sourceId)}`,
     { headers: { Authorization: projectApi.authorization } },
   );
-  const documentPayload: unknown = await documentResponse.json();
+  const sourcePayload: unknown = await sourceResponse.json();
   if (
-    !documentResponse.ok() ||
-    !isRecord(documentPayload) ||
-    documentPayload.status !== 'ready' ||
-    documentPayload.extraction_method !== 'text_recognition' ||
-    documentPayload.failure_message !== null ||
-    typeof documentPayload.chunks_count !== 'number' ||
-    documentPayload.chunks_count < 1
+    !sourceResponse.ok() ||
+    !isRecord(sourcePayload) ||
+    sourcePayload.status !== 'ready' ||
+    sourcePayload.extraction_method !== 'text_recognition' ||
+    sourcePayload.failure_message !== null ||
+    typeof sourcePayload.chunks_count !== 'number' ||
+    sourcePayload.chunks_count < 1
   ) {
     throw new Error(
-      'Capture document was not durably ready with OCR-only extraction.',
+      'Capture source was not durably ready with OCR-only extraction.',
     );
   }
 
@@ -543,7 +543,7 @@ async function runCaptureDocumentFlow(
   }
   return {
     captureId,
-    documentId,
+    sourceId,
     safeMetadata: {
       source: {
         fileName: sourceFileName,
@@ -553,26 +553,26 @@ async function runCaptureDocumentFlow(
         engine: extraction.engine,
         device: extraction.device,
       },
-      document: {
-        id: documentId,
-        status: documentPayload.status,
-        extractionMethod: documentPayload.extraction_method,
-        chunksCount: documentPayload.chunks_count,
+      savedSource: {
+        id: sourceId,
+        status: sourcePayload.status,
+        extractionMethod: sourcePayload.extraction_method,
+        chunksCount: sourcePayload.chunks_count,
       },
       markdownReviewPresent: true,
     },
   };
 }
 
-async function verifyPersistedDocument(
+async function verifyPersistedSource(
   run: SmokeRunState,
-  documentId: string,
+  sourceId: string,
   projectApi: ProjectApiRef,
 ): Promise<void> {
   const response = await activePage(run).request.get(
     `${projectApi.apiBaseUrl}/projects/${encodeURIComponent(
       projectApi.projectId,
-    )}/documents/${encodeURIComponent(documentId)}`,
+    )}/sources/${encodeURIComponent(sourceId)}`,
     { headers: { Authorization: projectApi.authorization } },
   );
   const payload: unknown = await response.json();
@@ -583,7 +583,7 @@ async function verifyPersistedDocument(
     payload.extraction_method !== 'text_recognition' ||
     payload.failure_message !== null
   ) {
-    throw new Error('Persisted Capture document was not ready after relaunch.');
+    throw new Error('Persisted Capture source was not ready after relaunch.');
   }
 }
 
@@ -931,7 +931,7 @@ function createRun(
     port: options.cdpPort,
     processBaseline: { all: [], nodePids: new Set() },
     projectApi: null,
-    uploadedDocument: null,
+    uploadedSource: null,
     questionObservationStartedAt: null,
     questionObservationActive: false,
     questionGenerationApiPollErrorCaptured: false,

@@ -13,49 +13,49 @@ import {
 import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { CertPrepAuthInterceptor } from '../data';
-import type { DocumentRead, QuestionRead } from '../domain';
+import type { SourceRead, QuestionRead } from '../domain';
 import {
-  appDocument,
+  appSource,
   appProject,
   availableLlmHealth,
   backendHealth,
   buttonByText,
   editableAppQuestion,
   emptyWrongAnswerSummary,
-  secondAppDocument,
+  secondAppSource,
   secondAppProject,
 } from '../testing';
 import { App } from './app.component';
 import { appRoutes } from './app-routes.constants';
 
 /**
- * Characterization of when the `/questions` route reloads the project's question
+ * Characterization of when the `/questions` route reloads the project's
  * questions (DDD step C7, part 4). It drives the real route, shell and stores
  * against `HttpTestingController` and records every HTTP request and
  * server-sent event stream in the order they are issued. Moving the reload
  * from the Questions page into Question Authoring's store must not change these
  * logs.
  */
-const otherDocument: DocumentRead = {
-  ...appDocument,
-  id: 'document-3',
+const otherSource: SourceRead = {
+  ...appSource,
+  id: 'source-3',
   filename: 'controls.pdf',
   updated_at: '2026-06-16T00:00:00Z',
 };
-const uploadedDocument: DocumentRead = {
-  ...appDocument,
-  id: 'document-uploaded',
+const uploadedSource: SourceRead = {
+  ...appSource,
+  id: 'source-uploaded',
   filename: 'uploaded.pdf',
 };
 const uploadedQuestion: QuestionRead = {
   ...editableAppQuestion,
   id: 'question-uploaded',
-  document_id: uploadedDocument.id,
+  source_id: uploadedSource.id,
   question: 'Which control was uploaded last?',
 };
 
 interface FakeServer {
-  documents: Record<string, DocumentRead[]>;
+  sources: Record<string, SourceRead[]>;
   questions: Record<string, QuestionRead[]>;
 }
 
@@ -74,9 +74,9 @@ describe('Questions route reloads', () => {
     localStorage.clear();
     log = [];
     server = {
-      documents: {
-        [appProject.id]: [appDocument, otherDocument],
-        [secondAppProject.id]: [secondAppDocument],
+      sources: {
+        [appProject.id]: [appSource, otherSource],
+        [secondAppProject.id]: [secondAppSource],
       },
       questions: {
         [appProject.id]: [editableAppQuestion],
@@ -159,31 +159,31 @@ describe('Questions route reloads', () => {
     const { method } = request.request;
     const path = pathOf(request.request.url);
     const project = /^\/projects\/([^/]+)/.exec(path)?.[1] ?? '';
-    const documents = server.documents[project] ?? [];
+    const sources = server.sources[project] ?? [];
     const routes: [RegExp, () => unknown][] = [
       [/^GET \/health$/, () => backendHealth()],
       [/^GET \/llm\/health$/, () => availableLlmHealth()],
       [/^GET \/runtime\/requirements$/, () => ({ items: [] })],
       [/^GET \/projects$/, () => ({ items: [appProject, secondAppProject] })],
-      [/^GET \/projects\/[^/]+\/documents$/, () => ({ items: documents })],
+      [/^GET \/projects\/[^/]+\/sources$/, () => ({ items: sources })],
       [
-        /^POST \/projects\/[^/]+\/documents$/,
+        /^POST \/projects\/[^/]+\/sources$/,
         () => {
-          server.documents[project] = [uploadedDocument, ...documents];
+          server.sources[project] = [uploadedSource, ...sources];
           server.questions[project] = [uploadedQuestion];
-          return uploadedDocument;
+          return uploadedSource;
         },
       ],
       [
-        /^GET \/projects\/[^/]+\/documents\/[^/]+$/,
-        () => documents.find((document) => path.endsWith(`/${document.id}`)),
+        /^GET \/projects\/[^/]+\/sources\/[^/]+$/,
+        () => sources.find((source) => path.endsWith(`/${source.id}`)),
       ],
       [
-        /^GET \/projects\/[^/]+\/documents\/[^/]+\/chunks$/,
+        /^GET \/projects\/[^/]+\/sources\/[^/]+\/chunks$/,
         () => ({ items: [] }),
       ],
       [
-        /^GET \/projects\/[^/]+\/documents\/[^/]+\/question-jobs$/,
+        /^GET \/projects\/[^/]+\/sources\/[^/]+\/question-jobs$/,
         () => ({ items: [] }),
       ],
       [
@@ -221,11 +221,11 @@ describe('Questions route reloads', () => {
     );
   }
 
-  async function selectDocument(documentId: string): Promise<void> {
+  async function selectSource(sourceId: string): Promise<void> {
     const select = sourcePanel().querySelector(
-      'app-source-document-status select',
+      'app-source-status select',
     ) as HTMLSelectElement;
-    select.value = documentId;
+    select.value = sourceId;
     select.dispatchEvent(new Event('change'));
     await drain();
   }
@@ -234,7 +234,7 @@ describe('Questions route reloads', () => {
     const input = sourcePanel().querySelector(
       '#sourceFiles',
     ) as HTMLInputElement;
-    const file = new File(['%PDF-1.7'], uploadedDocument.filename, {
+    const file = new File(['%PDF-1.7'], uploadedSource.filename, {
       type: 'application/pdf',
     });
     Object.defineProperty(input, 'files', {
@@ -247,7 +247,7 @@ describe('Questions route reloads', () => {
     return drain(
       (request) =>
         request.request.method === 'POST' &&
-        pathOf(request.request.url).endsWith('/documents'),
+        pathOf(request.request.url).endsWith('/sources'),
     );
   }
 
@@ -259,7 +259,7 @@ describe('Questions route reloads', () => {
     return drain();
   }
 
-  it('a. loads the questions on open and again when the latest document becomes active', async () => {
+  it('a. loads the questions on open and again when the latest source becomes active', async () => {
     await openQuestions();
 
     expect(log).toEqual([
@@ -268,13 +268,13 @@ describe('Questions route reloads', () => {
       'GET /llm/health',
       'GET /llm/provider-selection',
       'GET /llm/requirements',
-      'GET /projects/project-1/documents',
+      'GET /projects/project-1/sources',
       'GET /projects/project-1/questions',
       'GET /projects/project-1/wrong-answers',
       'GET /projects/project-1/wrong-answers/summary',
       'GET /projects/project-1/practice-sessions',
-      'GET /projects/project-1/documents/document-1',
-      'GET /projects/project-1/documents/document-1/chunks',
+      'GET /projects/project-1/sources/source-1',
+      'GET /projects/project-1/sources/source-1/chunks',
       'GET /projects/project-1/questions',
     ]);
     expect(questionRequests()).toHaveLength(2);
@@ -282,7 +282,7 @@ describe('Questions route reloads', () => {
   });
 
   it('b. reloads the questions when an upload finishes after the first questions query returned empty', async () => {
-    server.documents[appProject.id] = [];
+    server.sources[appProject.id] = [];
     server.questions[appProject.id] = [];
     await openQuestions();
     expect(log).toEqual([
@@ -291,7 +291,7 @@ describe('Questions route reloads', () => {
       'GET /llm/health',
       'GET /llm/provider-selection',
       'GET /llm/requirements',
-      'GET /projects/project-1/documents',
+      'GET /projects/project-1/sources',
       'GET /projects/project-1/questions',
       'GET /projects/project-1/wrong-answers',
       'GET /projects/project-1/wrong-answers/summary',
@@ -303,7 +303,7 @@ describe('Questions route reloads', () => {
 
     expect(heldUploads).toHaveLength(1);
     expect(log).toEqual([
-      'POST /projects/project-1/documents',
+      'POST /projects/project-1/sources',
       'GET /projects/project-1/questions',
     ]);
     expect(questionsPanelText()).toContain('No questions are ready yet.');
@@ -313,59 +313,59 @@ describe('Questions route reloads', () => {
     await drain();
 
     expect(log).toEqual([
-      'GET /projects/project-1/documents/document-uploaded',
-      'GET /projects/project-1/documents/document-uploaded/chunks',
+      'GET /projects/project-1/sources/source-uploaded',
+      'GET /projects/project-1/sources/source-uploaded/chunks',
       'GET /projects/project-1/questions',
-      'GET /projects/project-1/documents/document-uploaded',
-      'GET /projects/project-1/documents/document-uploaded/chunks',
+      'GET /projects/project-1/sources/source-uploaded',
+      'GET /projects/project-1/sources/source-uploaded/chunks',
     ]);
     expect(questionRequests()).toHaveLength(1);
     expect(questionsPanelText()).toContain(uploadedQuestion.question);
     expect(questionsPanelText()).not.toContain('No questions are ready yet.');
   });
 
-  it('c. reloads the questions once when the learner selects a different document', async () => {
+  it('c. reloads the questions once when the learner selects a different source', async () => {
     await openQuestions();
     log = [];
 
-    await selectDocument(otherDocument.id);
+    await selectSource(otherSource.id);
 
     expect(log).toEqual([
-      'GET /projects/project-1/documents/document-3',
-      'GET /projects/project-1/documents/document-3/chunks',
+      'GET /projects/project-1/sources/source-3',
+      'GET /projects/project-1/sources/source-3/chunks',
       'GET /projects/project-1/questions',
     ]);
     expect(questionRequests()).toHaveLength(1);
   });
 
-  it('d. reloads the questions when the learner re-selects the same document', async () => {
+  it('d. reloads the questions when the learner re-selects the same source', async () => {
     await openQuestions();
     log = [];
 
-    await selectDocument(appDocument.id);
+    await selectSource(appSource.id);
 
     expect(log).toEqual([
-      'GET /projects/project-1/documents/document-1',
-      'GET /projects/project-1/documents/document-1/chunks',
+      'GET /projects/project-1/sources/source-1',
+      'GET /projects/project-1/sources/source-1/chunks',
       'GET /projects/project-1/questions',
     ]);
     expect(questionRequests()).toHaveLength(1);
   });
 
-  it('e. loads the questions on a project switch and again when its latest document becomes active', async () => {
+  it('e. loads the questions on a project switch and again when its latest source becomes active', async () => {
     await openQuestions();
     log = [];
 
     await selectProject(secondAppProject.name);
 
     expect(log).toEqual([
-      'GET /projects/project-2/documents',
+      'GET /projects/project-2/sources',
       'GET /projects/project-2/questions',
       'GET /projects/project-2/wrong-answers',
       'GET /projects/project-2/wrong-answers/summary',
       'GET /projects/project-2/practice-sessions',
-      'GET /projects/project-2/documents/document-2',
-      'GET /projects/project-2/documents/document-2/chunks',
+      'GET /projects/project-2/sources/source-2',
+      'GET /projects/project-2/sources/source-2/chunks',
       'GET /projects/project-2/questions',
     ]);
     expect(questionRequests()).toHaveLength(2);

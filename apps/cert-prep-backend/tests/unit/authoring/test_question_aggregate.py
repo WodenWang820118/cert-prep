@@ -1,5 +1,5 @@
 """Question: a learner's correction changes only what they give, and a cited source names
-both its document and its chunk."""
+both its source and its chunk."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ def _question() -> Question:
     return Question(
         id="authored_question",
         project_id="project",
-        document_id="document",
+        source_id="document",
         chunk_id="chunk",
         question="Which control limits access?",
         choices=("Least privilege", "Open shares"),
@@ -60,7 +60,7 @@ def test_an_edit_keeps_the_source_status_and_creation_time() -> None:
 
     edited = authored_question.edited(QuestionEdit(answer="Open shares", answer_key_source="manual"), now=EDITED)
 
-    assert (edited.document_id, edited.chunk_id, edited.citation_locator_kind) == (
+    assert (edited.source_id, edited.chunk_id, edited.citation_locator_kind) == (
         "document",
         "chunk",
         "page",
@@ -78,13 +78,13 @@ def test_an_empty_edit_only_touches_the_update_time() -> None:
 
 
 @pytest.mark.parametrize(
-    ("document_id", "chunk_id"),
+    ("source_id", "chunk_id"),
     [("document", None), (None, "chunk")],
 )
-def test_a_cited_source_names_both_document_and_chunk(
-    document_id: str | None, chunk_id: str | None
+def test_a_cited_source_names_both_source_and_chunk(
+    source_id: str | None, chunk_id: str | None
 ) -> None:
-    authored_question = NewQuestion(question="Q?", document_id=document_id, chunk_id=chunk_id)
+    authored_question = NewQuestion(question="Q?", source_id=source_id, chunk_id=chunk_id)
 
     assert authored_question.cites_a_source
     with pytest.raises(ValidationError, match="must be provided together"):
@@ -92,13 +92,13 @@ def test_a_cited_source_names_both_document_and_chunk(
 
 
 @pytest.mark.parametrize(
-    ("document_id", "chunk_id", "cites"),
+    ("source_id", "chunk_id", "cites"),
     [(None, None, False), ("document", "chunk", True)],
 )
 def test_a_question_without_or_with_a_whole_source_is_complete(
-    document_id: str | None, chunk_id: str | None, cites: bool
+    source_id: str | None, chunk_id: str | None, cites: bool
 ) -> None:
-    authored_question = NewQuestion(question="Q?", document_id=document_id, chunk_id=chunk_id)
+    authored_question = NewQuestion(question="Q?", source_id=source_id, chunk_id=chunk_id)
 
     authored_question.ensure_source_is_complete()
     assert authored_question.cites_a_source is cites

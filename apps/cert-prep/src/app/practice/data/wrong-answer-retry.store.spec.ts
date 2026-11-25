@@ -29,7 +29,7 @@ describe('WrongAnswerRetryStore', () => {
     rationale: 'The citation supports A.',
     citation_page: 3,
     source_excerpt: 'Relevant source excerpt.',
-    document_id: 'document-1',
+    source_id: 'source-1',
     created_at: '2026-06-23T00:00:00Z',
     answer_key_source: null,
   };
@@ -41,7 +41,7 @@ describe('WrongAnswerRetryStore', () => {
       {
         question_id: wrongAnswer.question_id,
         question: wrongAnswer.question,
-        document_id: wrongAnswer.document_id,
+        source_id: wrongAnswer.source_id,
         citation_page: wrongAnswer.citation_page,
         source_excerpt: wrongAnswer.source_excerpt,
         miss_count: 2,
@@ -50,7 +50,7 @@ describe('WrongAnswerRetryStore', () => {
     ],
     clusters: [
       {
-        document_id: wrongAnswer.document_id,
+        source_id: wrongAnswer.source_id,
         citation_page: wrongAnswer.citation_page,
         current_wrong_count: 1,
         cleared_count: 2,

@@ -7,8 +7,8 @@ from typing import Any
 HTTP_METHODS = {"delete", "get", "patch", "post", "put"}
 CLOSED_ENUM_SCHEMAS = frozenset(
     {
-        "DocumentOperationPhase",
-        "DocumentOperationStatus",
+        "SourceOperationPhase",
+        "SourceOperationStatus",
         "QuestionGenerationJobStatus",
         "ManualQuestionGenerationStatus",
         "LLMInstallationStatus",

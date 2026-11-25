@@ -215,7 +215,7 @@ export async function runPackagedFlowSmoke(
     port: parsedOptions.cdpPort,
     processBaseline: { all: [], nodePids: new Set() },
     projectApi: null,
-    uploadedDocument: null,
+    uploadedSource: null,
     questionObservationStartedAt: null,
     questionObservationActive: false,
     questionGenerationApiPollErrorCaptured: false,

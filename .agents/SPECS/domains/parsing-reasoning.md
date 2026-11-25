@@ -43,11 +43,11 @@ readiness after a validated CaptureDocument has been persisted.
   number, page, excerpt, and reason. A partial completion must not be replaced
   by a broad prompt or another provider.
 - Reasoning failure does not corrupt or remove a successfully persisted source
-  document or its raw capture provenance.
+  source or its raw capture provenance.
 
 ## Source boundary
 
-The documents pipeline validates the uploaded envelope locally, then routes PDF,
+The source pipeline validates the uploaded envelope locally, then routes PDF,
 image, and audio to `CertPrepCaptureCoordinator` and `CaptureRuntimeClient`.
 Only the sidecar-validated v2 `CaptureDocument` enters host structuring and
 SQLite persistence. See `capture-runtime-integration.md` for the capture
@@ -55,10 +55,10 @@ contract and fail-closed policy.
 
 ## Recovery
 
-Document cancellation, retry, timeout, and runtime-unavailable states are
+Source cancellation, retry, timeout, and runtime-unavailable states are
 durable and explicit. Raw/result validation, review confirmation, and process
 cleanup must complete before the capture job is removed. Question generation jobs
-remain isolated by project and document and retain their existing restart and
+remain isolated by project and source and retain their existing restart and
 wrong-answer recovery contracts.
 
 ## Verification

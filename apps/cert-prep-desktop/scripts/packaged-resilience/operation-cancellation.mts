@@ -26,7 +26,7 @@ export type CancelableOperationScenario =
   | (CancelableOperationScenarioBase & {
       readonly kind: 'question';
       readonly projectId: string;
-      readonly documentId: string;
+      readonly sourceId: string;
       readonly provider: string;
       readonly model: string;
     })
@@ -226,13 +226,13 @@ function assertOperationScope(
   const matchesKindScope =
     scenario.kind !== 'runtime' ||
     stringField(body.kind, 'runtime response kind') === scenario.operationKind;
-  const matchesDocumentScope =
+  const matchesSourceScope =
     scenario.kind !== 'question' ||
     (stringField(body.project_id, 'question response project_id') ===
       scenario.projectId &&
-      stringField(body.document_id, 'question response document_id') ===
-        scenario.documentId);
-  if (!matchesCommonScope || !matchesKindScope || !matchesDocumentScope) {
+      stringField(body.source_id, 'question response source_id') ===
+        scenario.sourceId);
+  if (!matchesCommonScope || !matchesKindScope || !matchesSourceScope) {
     throw new Error(`${scenario.kind} response scope did not match the request.`);
   }
 }
@@ -256,7 +256,7 @@ function proofScope(
     return {
       ...common,
       projectId: scenario.projectId,
-      documentId: scenario.documentId,
+      sourceId: scenario.sourceId,
     };
   }
   if (scenario.kind === 'runtime') {

@@ -3,7 +3,7 @@
 ## Purpose
 
 Cert Prep is a local-first Windows/Tauri certification-prep app. The core user
-journey is: create/select a project, upload a source document, capture and
+journey is: create/select a project, upload a source, capture and
 review its extracted text, review editable questions, practice through Whole
 source or Random draw, and clear wrong answers through correct attempts in
 Wrong-answer retry.
@@ -14,7 +14,7 @@ practice, or review flows after a source has been captured.
 
 ## Decisions
 
-- Projects own source documents, parsed chunks, editable question records,
+- Projects own sources, parsed chunks, editable question records,
   practice sessions, and wrong-answer review state.
 - The Angular UI keeps workflow panels for projects, source import, question
   review/editing, practice, and wrong-answer review.
@@ -31,7 +31,7 @@ practice, or review flows after a source has been captured.
 - Use Angular `httpResource` for stable signal-driven reads. The generated
   OpenAPI client keeps its Promise contract for commands and compatibility,
   while a generated typed request factory supplies route-safe requests to the
-  authenticated resource client. Resource keys own project/document scope so
+  authenticated resource client. Resource keys own project/source scope so
   changing selection cancels obsolete reads and cannot write stale data into
   the current workbench.
 - Keep non-capture uploads, mutations, Tauri calls, Blob audio, and
@@ -56,11 +56,11 @@ practice, or review flows after a source has been captured.
 - A playable question requires question text, at least two
   nonempty choices, an answer present in the choices, rationale, and either a
   citation page or source excerpt.
-- Source files, Questions, and Whole source share an explicit active document
-  selection. Questions defaults to active-document questions and shows active
+- Source files, Questions, and Whole source share an explicit active source
+  selection. Questions defaults to active-source questions and shows active
   counts against the project total.
 - Source import accepts PDF, PNG, JPEG/JPG, static WebP, MP3, WAV, and M4A files
-  in one queue while preserving the document library. The client uses bounded
+  in one queue while preserving the source library. The client uses bounded
   concurrency (default 2, configurable from 1 through 4), filters unsupported
   MIME/extension hints without discarding valid selections, and leaves content
   validation authoritative to the backend. Each settled request immediately
@@ -70,7 +70,7 @@ practice, or review flows after a source has been captured.
   existing queued or in-flight items. Selected, queued, uploading, uploaded,
   failed, canceled, and Retry states remain per file; successful uploads are
   partial success when another file fails, and the most recent successful
-  document becomes active.
+  source becomes active.
 - The concurrency selector describes simultaneous uploads, not batch size.
   Ambiguous transport failures retain the original operation id for status
   reconciliation, and reconciliation consumes an ordinary queue slot. Canceling
@@ -90,7 +90,7 @@ practice, or review flows after a source has been captured.
   sent by the client become the persisted source and SHA-256 identity; the app
   does not retain the uncropped image, crop coordinates, or a re-edit history.
   No endpoint, DTO, database, OCR-provider, Retry, concurrency, partial-success,
-  or active-document contract changes for this feature.
+  or active-source contract changes for this feature.
 - Wrong-answer AI help is a per-card, single grounded explanation. Provider
   failures fall back to deterministic copy and must not block refresh, manual
   review, or clearing by a later correct attempt.
@@ -105,8 +105,8 @@ practice, or review flows after a source has been captured.
   current and cleared counts, last wrong date, repeated misses, and source page
   clusters. The summary remains project-scoped and distinguishes current wrong
   answers from cleared history.
-- Wrong-answer responses carry `document_id` for per-source grouping. Filenames
-  remain client-derived from loaded documents instead of duplicating filename
+- Wrong-answer responses carry `source_id` for per-source grouping. Filenames
+  remain client-derived from loaded sources instead of duplicating filename
   metadata on the wrong-answer DTO.
 - `Mark for review` is removed from the practice runner until there is a real
   persisted user flag. Settings, Account, and footer links remain disabled
@@ -136,8 +136,8 @@ Page requirements:
 
 - Questions: show `Cert Prep`, runtime chips in the page header, the workspace
   banner, and the two-column Source files / Questions workbench.
-- Whole source: show a source-document selector, `Start whole source`, compact
-  document/question/session metrics, stable choice rows, `Submit answer`, and
+- Whole source: show a source selector, `Start whole source`, compact
+  source/question/session metrics, stable choice rows, `Submit answer`, and
   a right-side session details / question navigator rail when useful.
 - Random draw: reuse Whole source runner language and density, with random-draw
   question count controls.

@@ -7,7 +7,7 @@ from sqlite3 import Connection, Row
 from typing import Any
 from uuid import uuid4
 
-from cert_prep_backend.authoring.application.ports import ProjectDocuments, StudyProjects
+from cert_prep_backend.authoring.application.ports import ProjectSources, StudyProjects
 from cert_prep_backend.authoring.domain.generation import (
     ManualQuestionGeneration,
     ManualQuestionGenerationStatus,
@@ -20,21 +20,21 @@ def create_operation(
     db: Database,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     limit: int,
     strategy: str,
     provider: str,
     model: str,
     projects: StudyProjects,
-    documents: ProjectDocuments,
+    sources: ProjectSources,
 ) -> ManualQuestionGeneration:
     if not projects.exists(project_id):
         raise NotFoundError("Project not found.")
-    documents.require(project_id, document_id)
+    sources.require(project_id, source_id)
     queued = ManualQuestionGeneration.queue(
         operation_id=str(uuid4()),
         project_id=project_id,
-        document_id=document_id,
+        source_id=source_id,
         limit=limit,
         strategy=strategy,
         provider=provider,
@@ -43,13 +43,13 @@ def create_operation(
     )
     try:
         with db.connect() as connection:
-            existing = _active_operation(connection, project_id, document_id)
+            existing = _active_operation(connection, project_id, source_id)
             if existing is not None:
                 return operation_from_row(existing)
             connection.execute(
                 """
                 INSERT INTO manual_question_generations(
-                    id, project_id, document_id, limit_count, strategy,
+                    id, project_id, source_id, limit_count, strategy,
                     status, phase, cancellable, provider, model,
                     generated_count, created_at, updated_at
                 )
@@ -58,7 +58,7 @@ def create_operation(
                 (
                     queued.id,
                     queued.project_id,
-                    queued.document_id,
+                    queued.source_id,
                     queued.limit,
                     queued.strategy,
                     queued.status.value,
@@ -77,7 +77,7 @@ def create_operation(
             ).fetchone()
     except sqlite3.IntegrityError:
         with db.connect() as connection:
-            row = _active_operation(connection, project_id, document_id)
+            row = _active_operation(connection, project_id, source_id)
     if row is None:
         raise NotFoundError("Manual question generation operation was not created.")
     return operation_from_row(row)
@@ -87,11 +87,11 @@ def get_operation(
     db: Database,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     operation_id: str,
 ) -> ManualQuestionGeneration:
     with db.connect() as connection:
-        row = _operation_row(connection, operation_id, (project_id, document_id))
+        row = _operation_row(connection, operation_id, (project_id, source_id))
     if row is None:
         raise NotFoundError("Manual question generation operation not found.")
     return operation_from_row(row)
@@ -141,16 +141,16 @@ def request_cancel(
     db: Database,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     operation_id: str,
-    documents: ProjectDocuments,
+    sources: ProjectSources,
 ) -> ManualQuestionGeneration:
-    documents.require(project_id, document_id)
+    sources.require(project_id, source_id)
     return _transition(
         db,
         operation_id,
         lambda operation, now: operation.cancel(now),
-        owner=(project_id, document_id),
+        owner=(project_id, source_id),
     )
 
 
@@ -168,7 +168,7 @@ def operation_from_row(row: Row) -> ManualQuestionGeneration:
     return ManualQuestionGeneration(
         id=row["id"],
         project_id=row["project_id"],
-        document_id=row["document_id"],
+        source_id=row["source_id"],
         limit=row["limit_count"],
         strategy=row["strategy"],
         status=ManualQuestionGenerationStatus(row["status"]),
@@ -232,13 +232,13 @@ def _operation_row(
             "SELECT * FROM manual_question_generations WHERE id = ?",
             (operation_id,),
         ).fetchone()
-    project_id, document_id = owner
+    project_id, source_id = owner
     return connection.execute(
         """
         SELECT * FROM manual_question_generations
-        WHERE id = ? AND project_id = ? AND document_id = ?
+        WHERE id = ? AND project_id = ? AND source_id = ?
         """,
-        (operation_id, project_id, document_id),
+        (operation_id, project_id, source_id),
     ).fetchone()
 
 
@@ -269,16 +269,16 @@ def _apply(
         raise RuntimeError("Manual question generation operation changed while it was locked.")
 
 
-def _active_operation(connection, project_id: str, document_id: str) -> Row | None:
+def _active_operation(connection, project_id: str, source_id: str) -> Row | None:
     return connection.execute(
         """
         SELECT * FROM manual_question_generations
-        WHERE project_id = ? AND document_id = ?
+        WHERE project_id = ? AND source_id = ?
           AND status IN ('queued', 'running', 'cancel_requested')
         ORDER BY created_at DESC, id DESC
         LIMIT 1
         """,
-        (project_id, document_id),
+        (project_id, source_id),
     ).fetchone()
 
 

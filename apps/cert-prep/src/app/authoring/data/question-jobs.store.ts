@@ -1,7 +1,7 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { forkJoin, from, map, Observable, Subscription, tap } from 'rxjs';
 import { CERT_PREP_API } from '../../core/data';
-import type { DocumentRead, QuestionGenerationJobRead } from '../../core/domain';
+import type { SourceRead, QuestionGenerationJobRead } from '../../core/domain';
 import { isQuestionJobsEventTerminal } from '../../core/domain';
 import type { QuestionJobsEvent } from '../../core/domain';
 import { CertPrepSseClient } from '../../core/data';
@@ -17,8 +17,8 @@ export class QuestionJobsStore {
   private readonly projects = inject(ProjectStore);
   private readonly sourceImport = inject(SourceImportStore);
   private readonly sse = inject(CertPrepSseClient);
-  private questionJobsDocumentKey: string | null = null;
-  private streamDocumentKey: string | null = null;
+  private questionJobsSourceKey: string | null = null;
+  private streamSourceKey: string | null = null;
   private streamSubscription: Subscription | null = null;
   private settledKey: string | null = null;
   private streamTerminalSeen = false;
@@ -42,36 +42,36 @@ export class QuestionJobsStore {
 
   reset(): void {
     this.questionJobs.set([]);
-    this.questionJobsDocumentKey = null;
+    this.questionJobsSourceKey = null;
     this.stopJobStream();
     this.resetStreamError();
   }
 
   syncJobStream(
     projectId: string | null,
-    document: DocumentRead | null,
+    source: SourceRead | null,
     loadQuestions: (projectId: string) => void,
   ): void {
-    const documentKey =
-      projectId !== null && document !== null
-        ? `${projectId}:${document.id}`
+    const sourceKey =
+      projectId !== null && source !== null
+        ? `${projectId}:${source.id}`
         : null;
     const hasActiveJobs =
-      documentKey !== null &&
-      this.streamDocumentKey === documentKey &&
+      sourceKey !== null &&
+      this.streamSourceKey === sourceKey &&
       this.hasActiveQuestionJobs(this.questionJobs());
     const shouldStream =
-      documentKey !== null &&
-      ((document?.status === 'processing' && document.chunks_count > 0) ||
+      sourceKey !== null &&
+      ((source?.status === 'processing' && source.chunks_count > 0) ||
         hasActiveJobs);
 
-    if (shouldStream && document !== null && projectId !== null) {
-      this.ensureJobStream(projectId, document.id, loadQuestions);
-    } else if (documentKey === null) {
+    if (shouldStream && source !== null && projectId !== null) {
+      this.ensureJobStream(projectId, source.id, loadQuestions);
+    } else if (sourceKey === null) {
       this.stopJobStream({ clearJobs: true });
     } else if (
-      this.questionJobsDocumentKey !== null &&
-      this.questionJobsDocumentKey !== documentKey
+      this.questionJobsSourceKey !== null &&
+      this.questionJobsSourceKey !== sourceKey
     ) {
       this.stopJobStream({ clearJobs: true });
     } else if (!hasActiveJobs) {
@@ -85,24 +85,24 @@ export class QuestionJobsStore {
 
   ensureJobStream(
     projectId: string,
-    documentId: string,
+    sourceId: string,
     loadQuestions: (projectId: string) => void,
   ): void {
-    const nextKey = `${projectId}:${documentId}`;
+    const nextKey = `${projectId}:${sourceId}`;
     if (
-      this.streamDocumentKey === nextKey &&
+      this.streamSourceKey === nextKey &&
       (this.streamSubscription !== null || this.settledKey === nextKey)
     ) {
       return;
     }
     this.stopJobStream();
-    this.streamDocumentKey = nextKey;
+    this.streamSourceKey = nextKey;
     this.settledKey = null;
     this.streamTerminalSeen = false;
     this.resetStreamError();
     loadQuestions(projectId);
-    this.loadQuestionJobs(projectId, documentId).subscribe({
-      next: () => this.startJobStream(projectId, documentId, loadQuestions),
+    this.loadQuestionJobs(projectId, sourceId).subscribe({
+      next: () => this.startJobStream(projectId, sourceId, loadQuestions),
       error: () => this.handleStreamError(nextKey),
     });
   }
@@ -110,22 +110,22 @@ export class QuestionJobsStore {
   stopJobStream(options: { clearJobs?: boolean } = {}): void {
     this.streamSubscription?.unsubscribe();
     this.streamSubscription = null;
-    this.streamDocumentKey = null;
+    this.streamSourceKey = null;
     this.settledKey = null;
     this.streamTerminalSeen = false;
     if (options.clearJobs) {
       this.questionJobs.set([]);
-      this.questionJobsDocumentKey = null;
+      this.questionJobsSourceKey = null;
       this.resetStreamError();
     }
   }
 
-  loadQuestionJobs(projectId: string, documentId: string): Observable<void> {
-    const documentKey = `${projectId}:${documentId}`;
-    return from(this.api.listDocumentQuestionJobs(projectId, documentId)).pipe(
+  loadQuestionJobs(projectId: string, sourceId: string): Observable<void> {
+    const sourceKey = `${projectId}:${sourceId}`;
+    return from(this.api.listSourceQuestionJobs(projectId, sourceId)).pipe(
       tap((jobs) => {
-        if (!this.isCurrentProjectDocument(projectId, documentId)) return;
-        this.questionJobsDocumentKey = documentKey;
+        if (!this.isCurrentProjectSource(projectId, sourceId)) return;
+        this.questionJobsSourceKey = sourceKey;
         this.questionJobs.set(jobs.items);
       }),
       map(() => undefined),
@@ -134,22 +134,22 @@ export class QuestionJobsStore {
 
   retryJobStream(
     projectId: string,
-    documentId: string,
+    sourceId: string,
     loadQuestions: (projectId: string) => void,
   ): void {
     this.stopJobStream();
-    const key = `${projectId}:${documentId}`;
-    this.streamDocumentKey = key;
+    const key = `${projectId}:${sourceId}`;
+    this.streamSourceKey = key;
     this.settledKey = null;
     this.resetStreamError();
     loadQuestions(projectId);
-    this.startJobStream(projectId, documentId, loadQuestions);
+    this.startJobStream(projectId, sourceId, loadQuestions);
   }
 
   cancelActiveQuestionJobs(): void {
     const projectId = this.projects.selectedProjectId();
-    const documentId = this.sourceImport.activeDocument()?.id ?? null;
-    if (projectId === null || documentId === null || this.cancelingQuestionJobs()) {
+    const sourceId = this.sourceImport.activeSource()?.id ?? null;
+    if (projectId === null || sourceId === null || this.cancelingQuestionJobs()) {
       return;
     }
     const jobs = this.questionJobs().filter(
@@ -161,17 +161,17 @@ export class QuestionJobsStore {
     this.cancelingQuestionJobs.set(true);
     forkJoin(
       jobs.map((job) =>
-        from(this.api.cancelDocumentQuestionJob(projectId, documentId, job.id)),
+        from(this.api.cancelSourceQuestionJob(projectId, sourceId, job.id)),
       ),
     ).subscribe({
       next: (canceled) => {
-        if (!this.isCurrentProjectDocument(projectId, documentId)) return;
+        if (!this.isCurrentProjectSource(projectId, sourceId)) return;
         const replacements = new Map(canceled.map((job) => [job.id, job]));
         this.questionJobs.update((current) =>
           current.map((job) => replacements.get(job.id) ?? job),
         );
         if (this.hasActiveQuestionJobs(this.questionJobs())) {
-          this.retryJobStream(projectId, documentId, () => undefined);
+          this.retryJobStream(projectId, sourceId, () => undefined);
         }
         this.cancelingQuestionJobs.set(false);
       },
@@ -190,28 +190,28 @@ export class QuestionJobsStore {
 
   private startJobStream(
     projectId: string,
-    documentId: string,
+    sourceId: string,
     loadQuestions: (projectId: string) => void,
   ): void {
-    const key = `${projectId}:${documentId}`;
-    if (this.streamDocumentKey !== key || this.streamSubscription !== null) return;
+    const key = `${projectId}:${sourceId}`;
+    if (this.streamSourceKey !== key || this.streamSubscription !== null) return;
     this.streamSubscription = this.sse
       .streamJson<QuestionJobsEvent>(
-        `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/question-jobs/events`,
+        `/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/question-jobs/events`,
         'question-jobs',
         { isTerminal: isQuestionJobsEventTerminal },
       )
       .subscribe({
         next: (event) => {
-          if (!this.isCurrentProjectDocument(projectId, documentId)) return;
-          this.questionJobsDocumentKey = key;
+          if (!this.isCurrentProjectSource(projectId, sourceId)) return;
+          this.questionJobsSourceKey = key;
           this.questionJobs.set(event.items);
           this.streamTerminalSeen ||= isQuestionJobsEventTerminal(event);
           loadQuestions(projectId);
         },
         error: () => this.handleStreamError(key),
         complete: () => {
-          if (this.streamDocumentKey === key) {
+          if (this.streamSourceKey === key) {
             this.streamSubscription = null;
             if (this.streamTerminalSeen) {
               this.settledKey = key;
@@ -224,7 +224,7 @@ export class QuestionJobsStore {
   }
 
   private handleStreamError(key: string): void {
-    if (this.streamDocumentKey !== key) return;
+    if (this.streamSourceKey !== key) return;
     this.streamSubscription = null;
     this.streamError.set(
       'Question generation progress could not be refreshed. Retry the event stream.',
@@ -235,10 +235,10 @@ export class QuestionJobsStore {
     this.streamError.set(null);
   }
 
-  private isCurrentProjectDocument(projectId: string, documentId: string): boolean {
+  private isCurrentProjectSource(projectId: string, sourceId: string): boolean {
     return (
       this.projects.selectedProjectId() === projectId &&
-      this.sourceImport.activeDocument()?.id === documentId
+      this.sourceImport.activeSource()?.id === sourceId
     );
   }
 

@@ -8,11 +8,11 @@ engine and its installation, audio decoding, time-aligned transcript segments
 and unavailable/error states; Cert passes the spoken language (`ja` for
 Japanese audio). Cert Prep owns the authenticated proxy, persistence and the
 Traditional Chinese translation. Audio is not accepted by the capture review
-session; it is imported through the documents upload.
+session; it is imported through the sources upload.
 
 The source text remains canonical. Each persisted audio chunk keeps its
-time locator and raw source-language transcript in `document_chunks.raw_text`; the
-reviewed or translated value is stored in `document_chunks.text` and the
+time locator and raw source-language transcript in `source_chunks.raw_text`; the
+reviewed or translated value is stored in `source_chunks.text` and the
 translation fields.
 
 ## Failure and lifecycle rules
@@ -23,7 +23,7 @@ translation fields.
 - Cancel, retry, timeout and runtime failure remain explicit and preserve the
   canonical source when it is safe to retry.
 - Translation failure does not discard a successful transcription.
-- Audio stays in the shared document/chunk and practice pipeline with its time
+- Audio stays in the shared source/chunk and practice pipeline with its time
   locator and source/translation revision semantics.
 
 ## Evidence
@@ -33,4 +33,4 @@ retry, timeout, unavailable runtime and translation mapping. A real run must use
 the published Capture Runtime and check source-language transcript retention and the
 Traditional Chinese translation separately. The installed-app transcription
 journey, through the Questions page's source-library import, is still pending
-([TODO](../../TODOS/capture-workbench-cert-prep-pdf.md)).
+([TODO](../../TODOS/packaged-capture-smoke.md)).

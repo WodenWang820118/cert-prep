@@ -22,7 +22,7 @@ test('smoke run state keeps the caller options and metrics and starts idle', () 
     page: null,
     port: 9444,
     projectApi: null,
-    uploadedDocument: null,
+    uploadedSource: null,
     questionObservationStartedAt: null,
     questionObservationActive: false,
     questionGenerationApiPollErrorCaptured: false,

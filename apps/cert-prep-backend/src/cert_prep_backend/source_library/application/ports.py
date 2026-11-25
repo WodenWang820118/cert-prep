@@ -1,5 +1,5 @@
 """What the Source Library use cases need from storage, stored files, translation, the
-document worker pool, and the downstream contexts that extract text and write questions."""
+source worker pool, and the downstream contexts that extract text and write questions."""
 
 from __future__ import annotations
 
@@ -7,43 +7,43 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
-from cert_prep_contracts.documents import SourceKind
+from cert_prep_contracts.sources import SourceKind
 
-from cert_prep_backend.source_library.domain.document import (
-    DocumentChunk,
-    SourceDocument,
+from cert_prep_backend.source_library.domain.source import (
+    SourceChunk,
+    Source,
     SourceFile,
 )
-from cert_prep_backend.source_library.domain.operation import DocumentOperation
+from cert_prep_backend.source_library.domain.operation import SourceOperation
 
 
-class DocumentRepository(Protocol):
-    """Documents and chunks; NotFoundError when the project or document does not exist."""
+class SourceRepository(Protocol):
+    """Sources and chunks; NotFoundError when the project or source does not exist."""
 
-    def documents_of(self, project_id: str) -> list[SourceDocument]: ...
+    def sources_of(self, project_id: str) -> list[Source]: ...
 
-    def document(self, project_id: str, document_id: str) -> SourceDocument: ...
+    def source(self, project_id: str, source_id: str) -> Source: ...
 
-    def source_file(self, project_id: str, document_id: str) -> SourceFile: ...
+    def source_file(self, project_id: str, source_id: str) -> SourceFile: ...
 
-    def chunks_of(self, project_id: str, document_id: str) -> list[DocumentChunk]: ...
+    def chunks_of(self, project_id: str, source_id: str) -> list[SourceChunk]: ...
 
-    def chunk(self, project_id: str, document_id: str, chunk_id: str) -> DocumentChunk:
-        """One chunk of the document; NotFoundError "Document chunk not found." when the
-        document has no such chunk (whether or not the document exists)."""
+    def chunk(self, project_id: str, source_id: str, chunk_id: str) -> SourceChunk:
+        """One chunk of the source; NotFoundError "Source chunk not found." when the
+        source has no such chunk (whether or not the source exists)."""
         ...
 
     def edit_chunk_text(
-        self, project_id: str, document_id: str, chunk_id: str, text: str
-    ) -> DocumentChunk:
+        self, project_id: str, source_id: str, chunk_id: str, text: str
+    ) -> SourceChunk:
         """Store a transcript chunk's new text as a new revision; its translation goes stale."""
         ...
 
     def recover_processing(self) -> int:
-        """Settle documents an app restart left marked as processing."""
+        """Settle sources an app restart left marked as processing."""
         ...
 
-    def attach_document(
+    def attach_source(
         self,
         project_id: str,
         operation_id: str,
@@ -55,34 +55,34 @@ class DocumentRepository(Protocol):
         page_count: int,
         source_kind: SourceKind,
         duration_ms: int | None = None,
-    ) -> SourceDocument:
-        """Store a processing document and attach it to the upload that claimed the operation."""
+    ) -> Source:
+        """Store a processing source and attach it to the upload that claimed the operation."""
         ...
 
     def record_question_count(
-        self, project_id: str, document_id: str, *, status: str, question_count: int
+        self, project_id: str, source_id: str, *, status: str, question_count: int
     ) -> None:
-        """Store the document's status and its count of questions."""
+        """Store the source's status and its count of questions."""
         ...
 
 
-class DocumentOperationRepository(Protocol):
+class SourceOperationRepository(Protocol):
     """Operations; each transition is stored atomically, guarded by the state it came from."""
 
-    def operation(self, project_id: str, operation_id: str) -> DocumentOperation: ...
+    def operation(self, project_id: str, operation_id: str) -> SourceOperation: ...
 
-    def active_operation_of(self, project_id: str, document_id: str) -> DocumentOperation | None:
-        """The queued, running or canceling operation of a document, if any."""
+    def active_operation_of(self, project_id: str, source_id: str) -> SourceOperation | None:
+        """The queued, running or canceling operation of a source, if any."""
         ...
 
-    def claim(self, project_id: str, operation_id: str) -> tuple[DocumentOperation, bool]:
+    def claim(self, project_id: str, operation_id: str) -> tuple[SourceOperation, bool]:
         """The operation under this id, and whether this call claimed it for a new upload."""
         ...
 
     def start_retry(
-        self, project_id: str, document_id: str, operation_id: str
-    ) -> DocumentOperation:
-        """Reset a retryable document and start its processing under a new operation id."""
+        self, project_id: str, source_id: str, operation_id: str
+    ) -> SourceOperation:
+        """Reset a retryable source and start its processing under a new operation id."""
         ...
 
     def fail(
@@ -91,20 +91,20 @@ class DocumentOperationRepository(Protocol):
         operation_id: str,
         *,
         error: str,
-        document_status: str | None = None,
+        source_status: str | None = None,
         extraction_method: str | None = None,
-    ) -> DocumentOperation: ...
+    ) -> SourceOperation: ...
 
-    def cancel(self, project_id: str, operation_id: str) -> DocumentOperation:
+    def cancel(self, project_id: str, operation_id: str) -> SourceOperation:
         """Cancel or request cancellation; an unknown id is stored as canceled before it starts."""
         ...
 
     def acknowledge_cancellation(
         self, project_id: str, operation_id: str
-    ) -> DocumentOperation: ...
+    ) -> SourceOperation: ...
 
-    def cancel_processing_of(self, project_id: str, document_id: str) -> DocumentOperation:
-        """Cancel the operation processing a document."""
+    def cancel_processing_of(self, project_id: str, source_id: str) -> SourceOperation:
+        """Cancel the operation processing a source."""
         ...
 
     def recover_interrupted(self) -> int:
@@ -118,12 +118,12 @@ class StudyProjects(Protocol):
     def exists(self, project_id: str) -> bool: ...
 
 
-class DocumentQuestionJobs(Protocol):
-    """Question Authoring's question generation jobs of a document. Question Authoring owns them
+class SourceQuestionJobs(Protocol):
+    """Question Authoring's question generation jobs of a source. Question Authoring owns them
     (D17)."""
 
-    def discard_unfinished(self, project_id: str, document_id: str) -> None:
-        """Drop the document's jobs that have not ended; ended jobs stay as its question history."""
+    def discard_unfinished(self, project_id: str, source_id: str) -> None:
+        """Drop the source's jobs that have not ended; ended jobs stay as its question history."""
         ...
 
 
@@ -158,7 +158,7 @@ class SourceFileStore(Protocol):
     def store(
         self, *, project_id: str, sha256: str, content: bytes, canonical_suffix: str
     ) -> str:
-        """Store the original bytes and return the path recorded on the document."""
+        """Store the original bytes and return the path recorded on the source."""
         ...
 
     def verified_path(self, project_id: str, storage_path: str, expected_sha256: str) -> Path:
@@ -195,22 +195,22 @@ class TraditionalChineseTranslator(Protocol):
 
 class ChunkTranslator(Protocol):
     def translate_chunk(
-        self, project_id: str, document_id: str, chunk_id: str
-    ) -> DocumentChunk: ...
+        self, project_id: str, source_id: str, chunk_id: str
+    ) -> SourceChunk: ...
 
-    def translate_stale_chunks(self, project_id: str, document_id: str) -> list[DocumentChunk]:
+    def translate_stale_chunks(self, project_id: str, source_id: str) -> list[SourceChunk]:
         """Translate every transcript chunk edited since its translation was made."""
         ...
 
 
-class QueuedDocumentWork(Protocol):
+class QueuedSourceWork(Protocol):
     def cancel(self, operation_id: str) -> bool:
         """Drop the operation's work if it is still queued; True when its cancellation was stored."""
         ...
 
 
-class DocumentWork(QueuedDocumentWork, Protocol):
-    """The document worker pool: processing runs there, one operation per item."""
+class SourceWork(QueuedSourceWork, Protocol):
+    """The source worker pool: processing runs there, one operation per item."""
 
     def submit(
         self,
@@ -226,10 +226,10 @@ class DocumentWork(QueuedDocumentWork, Protocol):
 
 
 class SourceExtraction(Protocol):
-    """Extracts a document's text and stores it as its chunks (Capture Integration's
+    """Extracts a source's text and stores it as its chunks (Capture Integration's
     Capture Runtime, without a review).
 
-    Errors: DocumentProcessingCanceledError when should_cancel stopped it,
+    Errors: SourceProcessingCanceledError when should_cancel stopped it,
     CaptureRequirementUnavailable for a missing requirement, CaptureRuntimeUnavailable
     for an unreachable runtime, SourceTextNotDetected and
     SourceExtractionFailed when it ran and failed."""
@@ -238,7 +238,7 @@ class SourceExtraction(Protocol):
         self,
         *,
         project_id: str,
-        document_id: str,
+        source_id: str,
         operation_id: str,
         file_name: str,
         content: bytes,
@@ -247,11 +247,11 @@ class SourceExtraction(Protocol):
         sha256: str,
         language_hint: str,
         should_cancel: Callable[[], bool],
-    ) -> SourceDocument: ...
+    ) -> Source: ...
 
 
 class ImportedQuestionGeneration(Protocol):
-    """Starts questions for a document whose import produced chunks (Question
+    """Starts questions for a source whose import produced chunks (Question
     Authoring)."""
 
-    def start_question_generation(self, project_id: str, document_id: str) -> None: ...
+    def start_question_generation(self, project_id: str, source_id: str) -> None: ...

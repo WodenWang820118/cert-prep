@@ -39,16 +39,16 @@ from cert_prep_backend.platform.errors import (
 )
 
 
-documents_router = APIRouter(
-    prefix="/projects/{project_id}/documents/{document_id}/questions",
+sources_router = APIRouter(
+    prefix="/projects/{project_id}/sources/{source_id}/questions",
     tags=["questions"],
 )
 question_jobs_router = APIRouter(
-    prefix="/projects/{project_id}/documents/{document_id}/question-jobs",
+    prefix="/projects/{project_id}/sources/{source_id}/question-jobs",
     tags=["questions"],
 )
 manual_operations_router = APIRouter(
-    prefix="/projects/{project_id}/documents/{document_id}/question-generations",
+    prefix="/projects/{project_id}/sources/{source_id}/question-generations",
     tags=["questions"],
 )
 questions_router = APIRouter(prefix="/projects/{project_id}/questions", tags=["questions"])
@@ -79,13 +79,13 @@ def get_llm_provider(request: Request) -> LLMProvider:
 
 
 @question_jobs_router.get("", response_model=QuestionGenerationJobList)
-def list_document_question_jobs(
+def list_source_question_jobs(
     project_id: str,
-    document_id: str,
+    source_id: str,
     jobs: QuestionGenerationJobRepository = Depends(get_question_generation_job_repository),
 ) -> dict:
     try:
-        return {"items": authoring.list_generation_jobs(jobs, project_id, document_id)}
+        return {"items": authoring.list_generation_jobs(jobs, project_id, source_id)}
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
@@ -95,26 +95,26 @@ def list_document_question_jobs(
     response_model=QuestionGenerationJobList,
     status_code=status.HTTP_202_ACCEPTED,
 )
-def retry_document_question_jobs(
+def retry_source_question_jobs(
     project_id: str,
-    document_id: str,
+    source_id: str,
     work: QuestionGenerationWork = Depends(get_question_generation_work),
 ) -> dict:
     try:
-        return {"items": authoring.retry_generation_jobs(work, project_id, document_id)}
+        return {"items": authoring.retry_generation_jobs(work, project_id, source_id)}
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
 
 @question_jobs_router.delete("/{job_id}", response_model=QuestionGenerationJobRead)
-def cancel_document_question_job(
+def cancel_source_question_job(
     project_id: str,
-    document_id: str,
+    source_id: str,
     job_id: str,
     jobs: QuestionGenerationJobRepository = Depends(get_question_generation_job_repository),
 ) -> QuestionGenerationJob:
     try:
-        return authoring.cancel_generation_job(jobs, project_id, document_id, job_id)
+        return authoring.cancel_generation_job(jobs, project_id, source_id, job_id)
     except QuestionJobNotCancellableError as exc:
         raise api_error(
             status.HTTP_409_CONFLICT,
@@ -132,7 +132,7 @@ def cancel_document_question_job(
 )
 def start_manual_question_generation(
     project_id: str,
-    document_id: str,
+    source_id: str,
     payload: QuestionGenerateRequest,
     work: QuestionGenerationWork = Depends(get_question_generation_work),
 ) -> ManualQuestionGeneration:
@@ -140,7 +140,7 @@ def start_manual_question_generation(
         return authoring.start_manual_generation(
             work,
             project_id,
-            document_id,
+            source_id,
             limit=payload.limit,
             strategy=payload.strategy,
         )
@@ -154,12 +154,12 @@ def start_manual_question_generation(
 )
 def get_manual_question_generation(
     project_id: str,
-    document_id: str,
+    source_id: str,
     operation_id: str,
     work: QuestionGenerationWork = Depends(get_question_generation_work),
 ) -> ManualQuestionGeneration:
     try:
-        return authoring.view_manual_generation(work, project_id, document_id, operation_id)
+        return authoring.view_manual_generation(work, project_id, source_id, operation_id)
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
@@ -170,12 +170,12 @@ def get_manual_question_generation(
 )
 def cancel_manual_question_generation(
     project_id: str,
-    document_id: str,
+    source_id: str,
     operation_id: str,
     work: QuestionGenerationWork = Depends(get_question_generation_work),
 ) -> ManualQuestionGeneration:
     try:
-        return authoring.cancel_manual_generation(work, project_id, document_id, operation_id)
+        return authoring.cancel_manual_generation(work, project_id, source_id, operation_id)
     except QuestionJobNotCancellableError as exc:
         raise api_error(
             status.HTTP_409_CONFLICT,
@@ -186,10 +186,10 @@ def cancel_manual_question_generation(
         raise not_found_error(str(exc)) from exc
 
 
-@documents_router.post("", response_model=QuestionList, status_code=status.HTTP_201_CREATED)
-def generate_document_questions(
+@sources_router.post("", response_model=QuestionList, status_code=status.HTTP_201_CREATED)
+def generate_source_questions(
     project_id: str,
-    document_id: str,
+    source_id: str,
     payload: QuestionGenerateRequest,
     questions: QuestionRepository = Depends(get_question_repository),
     sources: QuestionSources = Depends(get_question_sources),
@@ -198,13 +198,13 @@ def generate_document_questions(
 ) -> dict:
     try:
         return {
-            "items": authoring.generate_document_questions(
+            "items": authoring.generate_source_questions(
                 questions,
                 sources,
                 writing,
                 provider,
                 project_id=project_id,
-                document_id=document_id,
+                source_id=source_id,
                 limit=payload.limit,
                 strategy=payload.strategy,
             )

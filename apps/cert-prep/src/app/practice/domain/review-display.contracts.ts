@@ -1,3 +1,3 @@
-import type { DocumentRead } from '../../core/domain';
+import type { SourceRead } from '../../core/domain';
 
-export type SourceDocumentLabel = Pick<DocumentRead, 'id' | 'filename'>;
+export type SourceLabel = Pick<SourceRead, 'id' | 'filename'>;

@@ -1,5 +1,5 @@
 import type {
-  DocumentRead,
+  SourceRead,
   QuestionGenerationJobRead,
   ManualQuestionGenerationRead,
   QuestionRead,
@@ -11,7 +11,7 @@ export function questionFixture(
   return {
     id: 'question-1',
     project_id: 'project-1',
-    document_id: 'document-1',
+    source_id: 'source-1',
     chunk_id: 'chunk-1',
     question: 'Which answer is supported by the cited source?',
     choices: ['A', 'B', 'C', 'D'],
@@ -32,15 +32,15 @@ export function questionFixture(
   };
 }
 
-export function documentRead(
-  overrides: Partial<DocumentRead> = {},
-): DocumentRead {
+export function sourceRead(
+  overrides: Partial<SourceRead> = {},
+): SourceRead {
   return {
-    id: 'document-1',
+    id: 'source-1',
     project_id: 'project-1',
     filename: 'jlpt-n1.pdf',
     source_kind: 'pdf',
-    sha256: 'document-sha',
+    sha256: 'source-sha',
     language_hint: 'ja',
     page_count: 46,
     has_text: true,
@@ -66,7 +66,7 @@ export function questionJob(
   return {
     id: 'job-1',
     project_id: 'project-1',
-    document_id: 'document-1',
+    source_id: 'source-1',
     chunk_id: 'chunk-1',
     page_number: 1,
     strategy: 'hybrid_reasoning',
@@ -93,7 +93,7 @@ export function manualQuestionGeneration(
   return {
     id: 'manual-operation-1',
     project_id: 'project-1',
-    document_id: 'document-1',
+    source_id: 'source-1',
     limit: 3,
     strategy: 'hybrid_reasoning',
     status: 'running',

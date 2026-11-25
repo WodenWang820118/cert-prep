@@ -7,7 +7,7 @@ from sqlite3 import Connection
 from typing import Protocol
 from uuid import UUID
 
-from cert_prep_contracts.documents import SourceKind
+from cert_prep_contracts.sources import SourceKind
 from cert_prep_contracts.transcription import TranscriptSegment
 
 from cert_prep_backend.capture_integration.application.results import (
@@ -18,13 +18,13 @@ from cert_prep_backend.capture_integration.domain.review_session import (
     CaptureReviewSession,
     CaptureReviewStatus,
 )
-from cert_prep_backend.source_library.domain.document import (
-    DocumentChunk,
+from cert_prep_backend.source_library.domain.source import (
+    SourceChunk,
     PageExtraction,
-    SourceDocument,
+    Source,
     SourceFile,
 )
-from cert_prep_backend.source_library.domain.operation import DocumentOperation
+from cert_prep_backend.source_library.domain.operation import SourceOperation
 
 
 class PreparedCaptureSource(Protocol):
@@ -43,7 +43,7 @@ class CaptureReviewStore(Protocol):
     ) -> CaptureReviewSession: ...
 
     def create(
-        self, *, project_id: str, document_id: str, operation_id: str
+        self, *, project_id: str, source_id: str, operation_id: str
     ) -> CaptureReviewSession: ...
 
     def finish(
@@ -56,14 +56,14 @@ class CaptureReviewStore(Protocol):
     ) -> CaptureReviewSession: ...
 
 
-class CaptureDocuments(Protocol):
-    def document(self, project_id: str, document_id: str) -> SourceDocument: ...
+class CaptureSources(Protocol):
+    def source(self, project_id: str, source_id: str) -> Source: ...
 
-    def source_file(self, project_id: str, document_id: str) -> SourceFile: ...
+    def source_file(self, project_id: str, source_id: str) -> SourceFile: ...
 
-    def chunks_of(self, project_id: str, document_id: str) -> list[DocumentChunk]: ...
+    def chunks_of(self, project_id: str, source_id: str) -> list[SourceChunk]: ...
 
-    def attach_document(
+    def attach_source(
         self,
         project_id: str,
         operation_id: str,
@@ -74,31 +74,31 @@ class CaptureDocuments(Protocol):
         storage_path: str,
         page_count: int,
         source_kind: SourceKind,
-    ) -> SourceDocument: ...
+    ) -> Source: ...
 
 
 class CaptureOperations(Protocol):
     def claim_upload(self, project_id: str, operation_id: str) -> bool: ...
 
-    def fail(self, project_id: str, operation_id: str, *, error: str) -> DocumentOperation: ...
+    def fail(self, project_id: str, operation_id: str, *, error: str) -> SourceOperation: ...
 
-    def cancel(self, project_id: str, operation_id: str) -> DocumentOperation: ...
+    def cancel(self, project_id: str, operation_id: str) -> SourceOperation: ...
 
     def acknowledge_cancellation(
         self, project_id: str, operation_id: str
-    ) -> DocumentOperation: ...
+    ) -> SourceOperation: ...
 
-    def operation(self, project_id: str, operation_id: str) -> DocumentOperation: ...
+    def operation(self, project_id: str, operation_id: str) -> SourceOperation: ...
 
     def mark_review_pending(
-        self, project_id: str, document_id: str, operation_id: str
-    ) -> DocumentOperation: ...
+        self, project_id: str, source_id: str, operation_id: str
+    ) -> SourceOperation: ...
 
 
 class CaptureReviewCommit(Protocol):
     """Signals that a review session is committing, in the caller's transaction."""
 
-    def begin_commit(self, project_id: str, document_id: str, operation_id: str) -> None: ...
+    def begin_commit(self, project_id: str, source_id: str, operation_id: str) -> None: ...
 
 
 BindCaptureReviewCommit = Callable[[Connection], CaptureReviewCommit]
@@ -113,23 +113,23 @@ class CapturePublication(Protocol):
         *,
         project_id: str,
         operation_id: str,
-        document_id: str,
+        source_id: str,
         segments: Sequence[tuple[TranscriptSegment, str]],
         model: str,
         device: str | None,
         warning: str | None,
         extraction_provenance: str,
-    ) -> SourceDocument: ...
+    ) -> Source: ...
 
     def publish_success(
         self,
         *,
         project_id: str,
         operation_id: str,
-        document_id: str,
+        source_id: str,
         extraction: PageExtraction,
         extraction_provenance: str,
-    ) -> SourceDocument: ...
+    ) -> Source: ...
 
 
 class CaptureFileStore(Protocol):
@@ -165,7 +165,7 @@ class CaptureReviewWorkflow(Protocol):
         self,
         *,
         project_id: str,
-        document_id: str,
+        source_id: str,
         operation_id: str,
         session_id: str,
         candidate: object,
@@ -176,7 +176,7 @@ class CaptureReviewWorkflow(Protocol):
         self,
         *,
         project_id: str,
-        document_id: str,
+        source_id: str,
         operation_id: str,
         session_id: str,
         file_name: str,
@@ -191,12 +191,12 @@ class CaptureReviewWorkflow(Protocol):
         self,
         *,
         project_id: str,
-        document_id: str,
+        source_id: str,
         operation_id: str,
         session_id: str,
         candidate: object,
         should_cancel: Callable[[], bool],
-    ) -> SourceDocument: ...
+    ) -> Source: ...
 
 
 class CaptureReviewMaintenance(Protocol):
@@ -286,7 +286,7 @@ class CaptureEventSignal(Protocol):
 
 
 class CaptureQuestionGeneration(Protocol):
-    def enqueue_document(self, project_id: str, document_id: str) -> None: ...
+    def enqueue_source(self, project_id: str, source_id: str) -> None: ...
 
 
 class CaptureRuntimeSetup(Protocol):

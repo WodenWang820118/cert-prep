@@ -4,7 +4,7 @@ import { classifyQuestionGenerationStatus } from './question-generation-evidence
 import { errorMessage } from './text-utils.mts';
 import type {
   SmokeRunState,
-  UploadedDocumentRef,
+  UploadedSourceRef,
 } from './types.mts';
 import { bodyText, screenshot } from './runner-context.mts';
 import { pollQuestionGenerationApis } from './question-generation-observer-api.mts';
@@ -16,7 +16,7 @@ export async function observeQuestionGenerationUiUntil(
   run: SmokeRunState,
   parseStart: number,
   completion: Promise<void>,
-  uploadedDocument: UploadedDocumentRef | null,
+  uploadedSource: UploadedSourceRef | null,
 ): Promise<void> {
   let completed = false;
   completion.then(
@@ -34,15 +34,15 @@ export async function observeQuestionGenerationUiUntil(
     run.metrics.ui_timings_ms.question_generation_first_usable_question_visible !== undefined;
 
   while (!completed && (!statusCaptured || !usableCaptured)) {
-    if (uploadedDocument) {
-      await pollQuestionGenerationApis(run, uploadedDocument, Date.now() - parseStart);
+    if (uploadedSource) {
+      await pollQuestionGenerationApis(run, uploadedSource, Date.now() - parseStart);
     }
     const text = await bodyText(run);
     if (!statusCaptured && QUESTION_GENERATION_STATUS_PATTERN.test(text)) {
       const elapsedMs = Date.now() - parseStart;
       const questionGenerationStatus = classifyQuestionGenerationStatus(text);
       run.metrics.ui_timings_ms.question_generation_status_visible = elapsedMs;
-      run.metrics.observations.push(`Question generation question status: ${questionGenerationStatus}.`);
+      run.metrics.observations.push(`Question generation status: ${questionGenerationStatus}.`);
       if (questionGenerationStatus === 'ready') {
         run.metrics.ui_timings_ms.question_generation_first_question_ready_visible = elapsedMs;
       } else if (questionGenerationStatus === 'blocked') {
@@ -66,13 +66,13 @@ export async function observeQuestionGenerationUiUntil(
     ]);
   }
 
-  if (uploadedDocument) {
-    await pollQuestionGenerationApis(run, uploadedDocument, Date.now() - parseStart);
+  if (uploadedSource) {
+    await pollQuestionGenerationApis(run, uploadedSource, Date.now() - parseStart);
   }
 
   if (run.metrics.ui_timings_ms.question_generation_status_visible === undefined) {
     run.metrics.observations.push(
-      'Question generation question status was not visible before OCR parse completion.',
+      'Question generation status was not visible before OCR parse completion.',
     );
   }
 }

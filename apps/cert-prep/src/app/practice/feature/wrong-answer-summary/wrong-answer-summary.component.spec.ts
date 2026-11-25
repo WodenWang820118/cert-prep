@@ -3,7 +3,7 @@ import { provideRouter, Router } from '@angular/router';
 import { of } from 'rxjs';
 import { CERT_PREP_API } from '../../../core/data';
 import type {
-  DocumentRead,
+  SourceRead,
   PracticeSessionRead,
   ProjectRead,
   WrongAnswerRead,
@@ -23,8 +23,8 @@ describe('WrongAnswerSummaryComponent', () => {
     created_at: '2026-06-23T00:00:00Z',
     updated_at: '2026-06-23T00:00:00Z',
   };
-  const document: DocumentRead = {
-    id: 'document-1',
+  const source: SourceRead = {
+    id: 'source-1',
     project_id: project.id,
     filename: 'security.pdf',
     source_kind: 'pdf',
@@ -55,11 +55,11 @@ describe('WrongAnswerSummaryComponent', () => {
     rationale: 'The citation supports A.',
     citation_page: 3,
     source_excerpt: 'Relevant source excerpt.',
-    document_id: document.id,
+    source_id: source.id,
     created_at: '2026-06-23T00:00:00Z',
     answer_key_source: null,
   };
-  const fallbackDocumentWrongAnswer: WrongAnswerRead = {
+  const fallbackSourceWrongAnswer: WrongAnswerRead = {
     ...wrongAnswer,
     attempt_id: 'attempt-2',
     question_id: 'question-2',
@@ -67,7 +67,7 @@ describe('WrongAnswerSummaryComponent', () => {
     selected_answer: 'Only the model name',
     correct_answer: 'The cited page and excerpt',
     citation_page: 7,
-    document_id: 'missing-document',
+    source_id: 'missing-source',
   };
   const summary: WrongAnswerSummaryRead = {
     current_wrong_count: 2,
@@ -77,7 +77,7 @@ describe('WrongAnswerSummaryComponent', () => {
       {
         question_id: wrongAnswer.question_id,
         question: wrongAnswer.question,
-        document_id: wrongAnswer.document_id,
+        source_id: wrongAnswer.source_id,
         citation_page: wrongAnswer.citation_page,
         source_excerpt: wrongAnswer.source_excerpt,
         miss_count: 2,
@@ -86,7 +86,7 @@ describe('WrongAnswerSummaryComponent', () => {
       {
         question_id: 'cleared-question',
         question: 'Which cleared item should stay visible?',
-        document_id: document.id,
+        source_id: source.id,
         citation_page: 4,
         source_excerpt: 'Cleared source excerpt.',
         miss_count: 2,
@@ -95,21 +95,21 @@ describe('WrongAnswerSummaryComponent', () => {
     ],
     clusters: [
       {
-        document_id: wrongAnswer.document_id,
+        source_id: wrongAnswer.source_id,
         citation_page: wrongAnswer.citation_page,
         current_wrong_count: 1,
         cleared_count: 0,
         last_wrong_at: wrongAnswer.created_at,
       },
       {
-        document_id: fallbackDocumentWrongAnswer.document_id,
-        citation_page: fallbackDocumentWrongAnswer.citation_page,
+        source_id: fallbackSourceWrongAnswer.source_id,
+        citation_page: fallbackSourceWrongAnswer.citation_page,
         current_wrong_count: 1,
         cleared_count: 0,
-        last_wrong_at: fallbackDocumentWrongAnswer.created_at,
+        last_wrong_at: fallbackSourceWrongAnswer.created_at,
       },
       {
-        document_id: document.id,
+        source_id: source.id,
         citation_page: 4,
         current_wrong_count: 0,
         cleared_count: 1,
@@ -130,12 +130,12 @@ describe('WrongAnswerSummaryComponent', () => {
         rationale: wrongAnswer.rationale,
         citation_page: wrongAnswer.citation_page,
         source_excerpt: wrongAnswer.source_excerpt,
-        document_id: wrongAnswer.document_id,
+        source_id: wrongAnswer.source_id,
         answer_key_source: null,
       },
     ],
     mode: 'review_retry',
-    document_id: null,
+    source_id: null,
     question_count: 1,
     random_seed: null,
     status: 'active',
@@ -159,7 +159,7 @@ describe('WrongAnswerSummaryComponent', () => {
       listQuestions: vi.fn().mockReturnValue(of({ items: [] })),
       listWrongAnswers: vi
         .fn()
-        .mockReturnValue(of({ items: [wrongAnswer, fallbackDocumentWrongAnswer] })),
+        .mockReturnValue(of({ items: [wrongAnswer, fallbackSourceWrongAnswer] })),
       summarizeWrongAnswers: vi.fn().mockReturnValue(of(summary)),
     };
     TestBed.configureTestingModule({
@@ -195,11 +195,11 @@ describe('WrongAnswerSummaryComponent', () => {
     expect(metricValue(element, 'Weak Areas')).toBe('3');
     expect(metricValue(element, 'Last Wrong')).toBe('2026-06-23');
     expect(element.textContent).toContain(
-      'grouped by source document and page',
+      'grouped by source and page',
     );
     expect(element.textContent).toContain('security.pdf');
     expect(element.textContent).toContain('Page 3');
-    expect(element.textContent).toContain('missing-document');
+    expect(element.textContent).toContain('missing-source');
     expect(element.textContent).toContain('Which control applies?');
     expect(element.textContent).toContain('Relevant source excerpt.');
     expect(element.textContent).toContain('B');
@@ -312,8 +312,8 @@ describe('WrongAnswerSummaryComponent', () => {
     const review = TestBed.inject(WrongAnswerRetryStore);
     projects.projects.set([project]);
     projects.select(project.id);
-    sourceImport.documents.set([document]);
-    review.wrongAnswers.set([wrongAnswer, fallbackDocumentWrongAnswer]);
+    sourceImport.sources.set([source]);
+    review.wrongAnswers.set([wrongAnswer, fallbackSourceWrongAnswer]);
     review.summary.set(summary);
   }
 

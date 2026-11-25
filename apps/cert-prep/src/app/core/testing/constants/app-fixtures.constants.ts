@@ -1,5 +1,5 @@
 import type {
-  DocumentRead,
+  SourceRead,
   ProjectRead,
   QuestionRead,
 } from '../../domain';
@@ -18,8 +18,8 @@ export const secondAppProject: ProjectRead = {
   name: 'Network Study',
 };
 
-export const appDocument: DocumentRead = {
-  id: 'document-1',
+export const appSource: SourceRead = {
+  id: 'source-1',
   project_id: appProject.id,
   filename: 'security.pdf',
   source_kind: 'pdf',
@@ -41,9 +41,9 @@ export const appDocument: DocumentRead = {
   updated_at: '2026-06-17T00:00:00Z',
 };
 
-export const secondAppDocument: DocumentRead = {
-  ...appDocument,
-  id: 'document-2',
+export const secondAppSource: SourceRead = {
+  ...appSource,
+  id: 'source-2',
   project_id: secondAppProject.id,
   filename: 'network.pdf',
   source_kind: 'pdf',
@@ -52,7 +52,7 @@ export const secondAppDocument: DocumentRead = {
 export const editableAppQuestion: QuestionRead = {
   id: 'question-1',
   project_id: appProject.id,
-  document_id: appDocument.id,
+  source_id: appSource.id,
   chunk_id: 'chunk-1',
   question: 'Which principle limits permissions?',
   choices: ['Least privilege', 'Privilege sprawl'],

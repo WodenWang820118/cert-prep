@@ -18,7 +18,7 @@ export interface PublishedRuntimeNegativeCaseEvidence {
   readonly case: 'image' | 'audio' | 'scanned-pdf' | 'mixed-pdf';
   readonly fileName: string;
   readonly operationStatus: 'failed';
-  readonly documentStatus: 'extraction_failed' | 'transcription_failed';
+  readonly sourceStatus: 'extraction_failed' | 'transcription_failed';
   readonly chunksCount: 0;
   readonly markdownStatus: 409;
   readonly error: string;
@@ -30,7 +30,7 @@ interface NegativeCaseDefinition {
   readonly fileName: string;
   readonly mediaType: string;
   readonly content: Buffer;
-  readonly expectedDocumentStatus: PublishedRuntimeNegativeCaseEvidence['documentStatus'];
+  readonly expectedSourceStatus: PublishedRuntimeNegativeCaseEvidence['sourceStatus'];
   readonly expectedError: string;
 }
 
@@ -84,7 +84,7 @@ export async function runPublishedRuntimeNegativeDataCases(
       fileName: 'runtime-negative-image.png',
       mediaType: 'image/png',
       content: minimalPng(),
-      expectedDocumentStatus: 'extraction_failed',
+      expectedSourceStatus: 'extraction_failed',
       expectedError: IMAGE_OCR_ERROR,
     },
     {
@@ -93,7 +93,7 @@ export async function runPublishedRuntimeNegativeDataCases(
       fileName: 'runtime-negative-audio.wav',
       mediaType: 'audio/wav',
       content: minimalWav(),
-      expectedDocumentStatus: 'transcription_failed',
+      expectedSourceStatus: 'transcription_failed',
       expectedError: AUDIO_ERROR,
     },
     {
@@ -102,7 +102,7 @@ export async function runPublishedRuntimeNegativeDataCases(
       fileName: 'runtime-negative-scanned.pdf',
       mediaType: 'application/pdf',
       content: imageOnlyPdf(),
-      expectedDocumentStatus: 'extraction_failed',
+      expectedSourceStatus: 'extraction_failed',
       expectedError: PDF_OCR_ERROR,
     },
     {
@@ -111,7 +111,7 @@ export async function runPublishedRuntimeNegativeDataCases(
       fileName: 'runtime-negative-mixed.pdf',
       mediaType: 'application/pdf',
       content: mixedTextAndImagePdf(),
-      expectedDocumentStatus: 'extraction_failed',
+      expectedSourceStatus: 'extraction_failed',
       expectedError: PDF_OCR_ERROR,
     },
   ];
@@ -134,7 +134,7 @@ async function runNegativeCase(
   const response = await page.request.post(
     `${projectApi.apiBaseUrl}/projects/${encodeURIComponent(
       projectApi.projectId,
-    )}/documents`,
+    )}/sources`,
     {
       headers: authHeaders,
       multipart: {
@@ -152,9 +152,9 @@ async function runNegativeCase(
   if (response.status() !== 201 || !isRecord(uploaded)) {
     throw new Error(`${definition.case} upload was not durably accepted.`);
   }
-  const documentId = stringValue(uploaded.id);
-  if (!documentId) {
-    throw new Error(`${definition.case} upload omitted its document ID.`);
+  const sourceId = stringValue(uploaded.id);
+  if (!sourceId) {
+    throw new Error(`${definition.case} upload omitted its source ID.`);
   }
   const operation = await waitForFailedOperation(
     page,
@@ -166,29 +166,29 @@ async function runNegativeCase(
       `${definition.case} exposed an unexpected dependency error.`,
     );
   }
-  const document = await getJson(
+  const source = await getJson(
     page,
     `${projectApi.apiBaseUrl}/projects/${encodeURIComponent(
       projectApi.projectId,
-    )}/documents/${encodeURIComponent(documentId)}`,
+    )}/sources/${encodeURIComponent(sourceId)}`,
     projectApi.authorization,
   );
   if (
-    document.status !== definition.expectedDocumentStatus ||
-    document.extraction_method !== 'none' ||
-    document.failure_message !== operation.error ||
-    document.extraction_warnings !== null ||
-    document.chunks_count !== 0
+    source.status !== definition.expectedSourceStatus ||
+    source.extraction_method !== 'none' ||
+    source.failure_message !== operation.error ||
+    source.extraction_warnings !== null ||
+    source.chunks_count !== 0
   ) {
     throw new Error(
-      `${definition.case} produced a ready or non-empty document.`,
+      `${definition.case} produced a ready or non-empty source.`,
     );
   }
   const chunks = await getJson(
     page,
     `${projectApi.apiBaseUrl}/projects/${encodeURIComponent(
       projectApi.projectId,
-    )}/documents/${encodeURIComponent(documentId)}/chunks`,
+    )}/sources/${encodeURIComponent(sourceId)}/chunks`,
     projectApi.authorization,
   );
   if (!Array.isArray(chunks.items) || chunks.items.length !== 0) {
@@ -197,7 +197,7 @@ async function runNegativeCase(
   const markdown = await page.request.get(
     `${projectApi.apiBaseUrl}/projects/${encodeURIComponent(
       projectApi.projectId,
-    )}/documents/${encodeURIComponent(documentId)}/markdown`,
+    )}/sources/${encodeURIComponent(sourceId)}/markdown`,
     { headers: { Authorization: projectApi.authorization } },
   );
   const markdownError: unknown = await markdown.json();
@@ -212,7 +212,7 @@ async function runNegativeCase(
     case: definition.case,
     fileName: definition.fileName,
     operationStatus: 'failed',
-    documentStatus: definition.expectedDocumentStatus,
+    sourceStatus: definition.expectedSourceStatus,
     chunksCount: 0,
     markdownStatus: 409,
     error: stringValue(operation.error),
@@ -230,7 +230,7 @@ async function waitForFailedOperation(
       page,
       `${projectApi.apiBaseUrl}/projects/${encodeURIComponent(
         projectApi.projectId,
-      )}/document-operations/${encodeURIComponent(operationId)}`,
+      )}/source-operations/${encodeURIComponent(operationId)}`,
       projectApi.authorization,
     );
     if (operation.status === 'failed') return operation;

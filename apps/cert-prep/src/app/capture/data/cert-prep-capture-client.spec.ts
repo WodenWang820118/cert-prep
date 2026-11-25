@@ -19,7 +19,7 @@ const TEST_BACKEND_TOKEN = 'backend-token';
 type ApiMocks = Record<
   | 'captureRuntimeReady'
   | 'captureRuntimeRequirements'
-  | 'getDocumentMarkdown'
+  | 'getSourceMarkdown'
   | 'createCapture'
   | 'getCapture'
   | 'deleteCapture'
@@ -49,7 +49,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
           ],
         }),
       ),
-      getDocumentMarkdown: vi.fn().mockReturnValue(of(new Blob(['# scan']))),
+      getSourceMarkdown: vi.fn().mockReturnValue(of(new Blob(['# scan']))),
       createCapture: vi.fn().mockReturnValue(of(makeOperation())),
       getCapture: vi.fn().mockReturnValue(of(makeOperation())),
       deleteCapture: vi.fn().mockReturnValue(of(undefined)),
@@ -537,7 +537,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
       'capture-1',
       { signal: undefined },
     );
-    expect(client.documentIdForSourceSha256('a'.repeat(64))).toBe('document-1');
+    expect(client.sourceIdForSha256('a'.repeat(64))).toBe('source-1');
   });
 
   it.each([undefined, null, 'NVIDIA GeForce RTX 4060'])(
@@ -1043,7 +1043,7 @@ function makeOperation(
     createdAt: '2026-07-23T10:00:00.000Z',
     updatedAt: '2026-07-23T10:00:01.000Z',
     completedAt: terminal ? '2026-07-23T10:00:02.000Z' : null,
-    documentId: 'document-1',
+    sourceId: 'source-1',
   };
 }
 

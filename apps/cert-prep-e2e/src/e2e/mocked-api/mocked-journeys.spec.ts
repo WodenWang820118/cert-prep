@@ -17,8 +17,8 @@ import { minimalPng } from '../support/minimal-image';
 import {
   completePracticeQuestions,
   createProject,
-  createWorkspaceWithUploadedDocument,
-  expectWholeSourceDocumentOptions,
+  createWorkspaceWithUploadedSource,
+  expectWholeSourceOptions,
   expectRandomDrawAvailableCount,
   expectWorkspaceReady,
   expectWrongAnswerSummary,
@@ -30,7 +30,7 @@ import {
   startWrongAnswerSummaryWeakAreaRetry,
   startRetryForAllWrongAnswersAndClearReview,
   startRandomDraw,
-  uploadDocumentAndExpectQuestion,
+  uploadSourceAndExpectQuestion,
   wrongChoiceForQuestion,
 } from '../support/practice-flow';
 
@@ -48,7 +48,7 @@ test('opens the Capture Workbench from the Questions page', async ({ page }) => 
 test('observes manual question generation on the Questions page', async ({ page }) => {
   const api = await installMockCertPrepApi(page);
   await seedMockApiConfig(page, apiBaseUrl, devToken);
-  await createWorkspaceWithUploadedDocument(page, api);
+  await createWorkspaceWithUploadedSource(page, api);
   await expect(page).toHaveURL(/\/questions$/);
   const requests: string[] = [];
   page.on('request', (request) => {
@@ -63,10 +63,10 @@ test('observes manual question generation on the Questions page', async ({ page 
     /\/question-generations\/[^/]+\/events$/u.test(new URL(response.url()).pathname),
   );
   await page.getByTestId('question-generate').click();
-  // The page asks for a reasoning generation of the document it shows.
+  // The page asks for a reasoning generation of the source it shows.
   const start = await generationStart;
   expect(new URL(start.url()).pathname).toBe(
-    `/projects/${api.project.id}/documents/${api.document.id}/question-generations`,
+    `/projects/${api.project.id}/sources/${api.source.id}/question-generations`,
   );
   expect(start.postDataJSON()).toMatchObject({ strategy: 'hybrid_reasoning' });
   // It follows the operation on its named event stream until the operation ends.
@@ -93,7 +93,7 @@ test('completes Random draw for every playable mocked question and records wrong
   const api = await installMockCertPrepApi(page);
   await seedMockApiConfig(page, apiBaseUrl, devToken);
 
-  await createWorkspaceWithUploadedDocument(page, api);
+  await createWorkspaceWithUploadedSource(page, api);
   await startRandomDraw(page, api);
 
   expect(api.practiceSessionPayload()).toMatchObject({
@@ -126,10 +126,10 @@ test('captures the route-mocked practice journey for UI regression only', async 
   );
   await mkdir(screenshotDirectory, { recursive: true });
 
-  await createWorkspaceWithUploadedDocument(page, api);
+  await createWorkspaceWithUploadedSource(page, api);
   expect(
-    api.uploadedDocuments().map((document) => document.filename),
-  ).toContain(api.document.filename);
+    api.uploadedSources().map((source) => source.filename),
+  ).toContain(api.source.filename);
   await page.screenshot({
     path: resolve(screenshotDirectory, '01-uploaded-pdf-ready.png'),
     fullPage: true,
@@ -149,7 +149,7 @@ test('captures the route-mocked practice journey for UI regression only', async 
   });
 });
 
-test('keeps Whole source sessions isolated to the selected PDF document', async ({
+test('keeps Whole source sessions isolated to the selected PDF source', async ({
   page,
 }) => {
   const api = await installMockCertPrepApi(page);
@@ -175,7 +175,7 @@ test('keeps mixed PDF and image multipart filenames in upload order and the libr
   const api = await installMockCertPrepApi(page);
   await seedMockApiConfig(page, apiBaseUrl, devToken);
   await installUploadCapture(page);
-  const pdfDocument = api.document;
+  const pdfSource = api.source;
 
   await page.goto('/');
   await createProject(page, api);
@@ -188,7 +188,7 @@ test('keeps mixed PDF and image multipart filenames in upload order and the libr
   ]);
   await page.locator('input[aria-label="Source files"]').setInputFiles([
     {
-      name: pdfDocument.filename,
+      name: pdfSource.filename,
       mimeType: 'application/pdf',
       buffer: binaryPdf,
     },
@@ -202,11 +202,11 @@ test('keeps mixed PDF and image multipart filenames in upload order and the libr
   await page.getByRole('button', { name: 'Upload files' }).click();
 
   await expect
-    .poll(() => api.uploadedDocuments().map((document) => document.filename))
-    .toEqual([pdfDocument.filename, imageFilename]);
+    .poll(() => api.uploadedSources().map((source) => source.filename))
+    .toEqual([pdfSource.filename, imageFilename]);
 
   const uploadList = page.getByLabel('Selected source file upload status');
-  for (const filename of [pdfDocument.filename, imageFilename]) {
+  for (const filename of [pdfSource.filename, imageFilename]) {
     await expect(
       uploadList.locator(':scope > div').filter({ hasText: filename }),
     ).toContainText('Uploaded');
@@ -214,22 +214,22 @@ test('keeps mixed PDF and image multipart filenames in upload order and the libr
 
   const library = page.getByLabel('Project source library');
   await expect(
-    library.locator('option', { hasText: pdfDocument.filename }),
+    library.locator('option', { hasText: pdfSource.filename }),
   ).toHaveCount(1);
   await expect(
     library.locator('option', { hasText: imageFilename }),
   ).toHaveCount(1);
-  const imageDocument = api.uploadedDocuments()[1];
-  expect(api.uploadedDocuments().map((document) => document.source_kind)).toEqual([
+  const imageSource = api.uploadedSources()[1];
+  expect(api.uploadedSources().map((source) => source.source_kind)).toEqual([
     'pdf',
     'image',
   ]);
-  expect(imageDocument?.filename).toBe(imageFilename);
+  expect(imageSource?.filename).toBe(imageFilename);
   await expect
     .poll(async () => (await capturedUploads(page))[1]?.bytes)
     .toEqual(Array.from(minimalPng()));
   await expect(library).toHaveValue(
-    imageDocument?.id ?? 'missing-image-document',
+    imageSource?.id ?? 'missing-image-source',
   );
 });
 
@@ -435,7 +435,7 @@ test('retries a wrong answer from Review and clears it after a correct answer', 
   const api = await installMockCertPrepApi(page);
   await seedMockApiConfig(page, apiBaseUrl, devToken);
 
-  await createWorkspaceWithUploadedDocument(page, api);
+  await createWorkspaceWithUploadedSource(page, api);
   await startRandomDraw(page, api, 1);
   await retryWrongAnswerAndClearReview(page, api);
   expect(api.wrongAnswers()).toHaveLength(0);
@@ -447,7 +447,7 @@ test('starts a retry from all current wrong answers', async ({
   const api = await installMockCertPrepApi(page);
   await seedMockApiConfig(page, apiBaseUrl, devToken);
 
-  await createWorkspaceWithUploadedDocument(page, api);
+  await createWorkspaceWithUploadedSource(page, api);
   await startRandomDraw(page, api, 2);
   await startRetryForAllWrongAnswersAndClearReview(page, api);
   expect(api.wrongAnswers()).toHaveLength(0);
@@ -459,7 +459,7 @@ test('shows wrong-answer summary weak areas and starts a focused retry', async (
   const api = await installMockCertPrepApi(page);
   await seedMockApiConfig(page, apiBaseUrl, devToken);
 
-  await createWorkspaceWithUploadedDocument(page, api);
+  await createWorkspaceWithUploadedSource(page, api);
   await startRandomDraw(page, api, 2);
   await completePracticeQuestions(
     page,
@@ -469,7 +469,7 @@ test('shows wrong-answer summary weak areas and starts a focused retry', async (
   );
   await expectWrongAnswerSummary(page, api);
   await startWrongAnswerSummaryWeakAreaRetry(page, api, {
-    documentId: api.document.id,
+    sourceId: api.source.id,
     citationPage: 1,
   });
   expect(api.practiceSessionPayload()).toMatchObject({
@@ -477,16 +477,16 @@ test('shows wrong-answer summary weak areas and starts a focused retry', async (
   });
 });
 
-test('clears document question practice and review state when switching projects', async ({
+test('clears source question practice and review state when switching projects', async ({
   page,
 }) => {
   const api = await installMockCertPrepApi(page);
   await seedMockApiConfig(page, apiBaseUrl, devToken);
 
-  await createWorkspaceWithUploadedDocument(page, api);
+  await createWorkspaceWithUploadedSource(page, api);
   await createProject(page, api, api.secondaryProject);
-  await uploadDocumentAndExpectQuestion(page, api, {
-    document: api.secondaryDocument,
+  await uploadSourceAndExpectQuestion(page, api, {
+    source: api.secondarySource,
     question: api.secondaryQuestion,
   });
 
@@ -496,7 +496,7 @@ test('clears document question practice and review state when switching projects
   await expect(
     page
       .locator('.workbench-file-name')
-      .getByText(api.document.filename, { exact: true }),
+      .getByText(api.source.filename, { exact: true }),
   ).toBeVisible();
   await page.getByRole('link', { name: 'Random draw' }).click();
   await startRandomDraw(page, api, 1);
@@ -524,10 +524,10 @@ test('clears document question practice and review state when switching projects
   await expect(
     page
       .locator('.workbench-file-name')
-      .getByText(api.secondaryDocument.filename, { exact: true }),
+      .getByText(api.secondarySource.filename, { exact: true }),
   ).toBeVisible();
   await expect(page.getByText(api.secondaryQuestion.question)).toBeVisible();
-  await expect(page.getByText(api.document.filename)).toBeHidden();
+  await expect(page.getByText(api.source.filename)).toBeHidden();
   await expect(page.getByText(api.question.question)).toBeHidden();
 
   await page.getByRole('link', { name: 'Random draw' }).click();
@@ -547,7 +547,7 @@ test('clears document question practice and review state when switching projects
   const pathsAfterSwitch = api.requestLogSince(requestMarker);
   expect(pathsAfterSwitch).toEqual(
     expect.arrayContaining([
-      `GET /projects/${api.secondaryProject.id}/documents`,
+      `GET /projects/${api.secondaryProject.id}/sources`,
       `GET /projects/${api.secondaryProject.id}/questions`,
       `GET /projects/${api.secondaryProject.id}/wrong-answers`,
       `GET /projects/${api.secondaryProject.id}/wrong-answers/summary`,
@@ -568,7 +568,7 @@ test('excludes incomplete questions from Random draw and Whole source', async ({
   await seedMockApiConfig(page, apiBaseUrl, devToken);
   expect(api.incompleteQuestions.length).toBeGreaterThan(0);
 
-  await createWorkspaceWithUploadedDocument(page, api);
+  await createWorkspaceWithUploadedSource(page, api);
 
   await page.getByRole('link', { name: 'Random draw' }).click();
   await expectRandomDrawAvailableCount(page, api.playableQuestions.length);
@@ -580,16 +580,16 @@ test('excludes incomplete questions from Random draw and Whole source', async ({
     question_count: api.playableQuestions.length,
   });
 
-  await expectWholeSourceDocumentOptions(page, api);
-  await page.getByRole('combobox').selectOption(api.wholeSourceDocument.id);
+  await expectWholeSourceOptions(page, api);
+  await page.getByRole('combobox').selectOption(api.wholeSource.id);
   await page.getByRole('button', { name: 'Start whole source' }).click();
   await expect
     .poll(() => api.practiceSessionPayload())
-    .toMatchObject({ mode: 'full_document' });
+    .toMatchObject({ mode: 'full_source' });
   expect(api.practiceSessionPayload()).toMatchObject({
-    mode: 'full_document',
-    document_id: api.wholeSourceDocument.id,
-    question_count: api.playableQuestionsForDocument(api.wholeSourceDocument.id)
+    mode: 'full_source',
+    source_id: api.wholeSource.id,
+    question_count: api.playableQuestionsForSource(api.wholeSource.id)
       .length,
   });
 });

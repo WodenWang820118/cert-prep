@@ -10,7 +10,7 @@ class SourceTooLarge(ValidationError):
 
 
 class SourceTextNotDetected(BackendError):
-    """Extraction ran but found no text; the document keeps the no_text_detected status."""
+    """Extraction ran but found no text; the source keeps the no_text_detected status."""
 
 
 class SourceExtractionFailed(BackendError):

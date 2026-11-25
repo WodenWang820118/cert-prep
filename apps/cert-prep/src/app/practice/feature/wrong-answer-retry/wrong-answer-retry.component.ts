@@ -56,8 +56,8 @@ export class WrongAnswerRetryComponent {
     this.startRetrySession([wrongAnswer.attempt_id]);
   }
 
-  protected documentLabel(documentId: string | null): string | null {
-    return this.display.documentLabel(this.sourceImport.documents(), documentId);
+  protected sourceLabel(sourceId: string | null): string | null {
+    return this.display.sourceLabel(this.sourceImport.sources(), sourceId);
   }
 
   protected lastWrongDateLabel(value: string | null): string {

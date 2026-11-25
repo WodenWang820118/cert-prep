@@ -21,7 +21,7 @@ test('local verifier requires evidence roots strictly under the evidence parent'
     workspaceRoot,
     candidateDistributionProfile: 'local_nonpublishable',
   } as unknown as InstalledCandidateRunnerBinding;
-  const name = 'CERT_PREP_RESILIENCE_DOCUMENT_OUTPUT_ROOT';
+  const name = 'CERT_PREP_RESILIENCE_SOURCE_OUTPUT_ROOT';
   const verify = (root: string) =>
     verifyLocalResilienceEvidence(
       {

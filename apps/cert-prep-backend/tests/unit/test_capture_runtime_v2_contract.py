@@ -509,10 +509,10 @@ def test_v2_audio_capture_names_its_spoken_language_only_when_given(
     ("language_hint", "spoken_language"),
     [("ja", "ja"), ("en", "en"), ("zh-Hant", None), ("zh-Hans", None), ("auto", None), ("mixed", None)],
 )
-def test_a_document_language_hint_names_capture_spoken_language_only_outside_chinese(
+def test_a_source_language_hint_names_capture_spoken_language_only_outside_chinese(
     language_hint: str, spoken_language: str | None
 ) -> None:
-    from cert_prep_backend.capture_integration.infrastructure.document_extraction import capture_spoken_language as _capture_spoken_language
+    from cert_prep_backend.capture_integration.infrastructure.source_extraction import capture_spoken_language as _capture_spoken_language
 
     assert _capture_spoken_language(language_hint) == spoken_language
 
@@ -859,7 +859,7 @@ def test_v2_responses_accept_capture_090_download_and_page_progress_fields() -> 
     client = _client(handler)
     snapshot = client.get_capture("capture-1")
     read = CaptureReviewOperationRead.model_validate(
-        {**snapshot.model_dump(), "document_id": "document-1"}
+        {**snapshot.model_dump(), "source_id": "source-1"}
     ).model_dump(mode="json", by_alias=True)
     assert (read["pagesTotal"], read["pagesDone"]) == (12, 9)
     assert client.get_requirements().items[0].download_bytes == 2_000

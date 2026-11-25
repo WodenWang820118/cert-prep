@@ -23,15 +23,15 @@ def test_generation_defaults_to_deterministic_only_without_provider_call(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
             capture_runtime_client=TestCaptureRuntimeClient(),
             llm_provider=provider,
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
         )
     )
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
+    source_id = _upload_source(client, auth_headers, project_id)
 
     assert QuestionGenerateRequest().strategy.value == "deterministic_only"
     response = client.post(
-        f"/projects/{project_id}/documents/{document_id}/questions",
+        f"/projects/{project_id}/sources/{source_id}/questions",
         headers=auth_headers,
         json={"limit": 1},
     )
@@ -51,14 +51,14 @@ def test_hybrid_reasoning_provider_output_is_saved_as_playable_question(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
             capture_runtime_client=TestCaptureRuntimeClient(),
             llm_provider=provider,
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
         )
     )
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
+    source_id = _upload_source(client, auth_headers, project_id)
 
     response = client.post(
-        f"/projects/{project_id}/documents/{document_id}/questions",
+        f"/projects/{project_id}/sources/{source_id}/questions",
         headers=auth_headers,
         json={"limit": 1, "strategy": "hybrid_reasoning"},
     )
@@ -75,9 +75,9 @@ def test_created_question_is_playable_and_editable(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
+    source_id = _upload_source(client, auth_headers, project_id)
     question = client.post(
-        f"/projects/{project_id}/documents/{document_id}/questions",
+        f"/projects/{project_id}/sources/{source_id}/questions",
         headers=auth_headers,
         json={"limit": 1, "strategy": "hybrid_reasoning"},
     ).json()["items"][0]
@@ -97,9 +97,9 @@ def test_generation_preserves_existing_source_questions(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
+    source_id = _upload_source(client, auth_headers, project_id)
     chunks = client.get(
-        f"/projects/{project_id}/documents/{document_id}/chunks",
+        f"/projects/{project_id}/sources/{source_id}/chunks",
         headers=auth_headers,
     ).json()["items"]
     chunk = chunks[0]
@@ -107,7 +107,7 @@ def test_generation_preserves_existing_source_questions(
         f"/projects/{project_id}/questions",
         headers=auth_headers,
         json={
-            "document_id": document_id,
+            "source_id": source_id,
             "chunk_id": chunk["id"],
             "question": "Which action applies?",
             "choices": ["Apply least privilege", "Grant all access"],
@@ -122,7 +122,7 @@ def test_generation_preserves_existing_source_questions(
     assert created.status_code == 201
 
     generated = client.post(
-        f"/projects/{project_id}/documents/{document_id}/questions",
+        f"/projects/{project_id}/sources/{source_id}/questions",
         headers=auth_headers,
         json={"limit": 1},
     )
@@ -143,20 +143,20 @@ def test_generating_twice_leaves_the_sources_total_question_count(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
             capture_runtime_client=TestCaptureRuntimeClient(),
             llm_provider=RecordingQuestionWriter(),
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
         )
     )
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
+    source_id = _upload_source(client, auth_headers, project_id)
     chunk = client.get(
-        f"/projects/{project_id}/documents/{document_id}/chunks",
+        f"/projects/{project_id}/sources/{source_id}/chunks",
         headers=auth_headers,
     ).json()["items"][0]
     written = client.post(
         f"/projects/{project_id}/questions",
         headers=auth_headers,
         json={
-            "document_id": document_id,
+            "source_id": source_id,
             "chunk_id": chunk["id"],
             "question": "Which action applies?",
             "choices": ["Apply least privilege", "Grant all access"],
@@ -170,18 +170,18 @@ def test_generating_twice_leaves_the_sources_total_question_count(
 
     def source_questions() -> int:
         items = client.get(f"/projects/{project_id}/questions", headers=auth_headers).json()
-        return sum(1 for item in items["items"] if item["document_id"] == document_id)
+        return sum(1 for item in items["items"] if item["source_id"] == source_id)
 
     def question_count() -> int:
-        document = client.get(
-            f"/projects/{project_id}/documents/{document_id}", headers=auth_headers
+        source = client.get(
+            f"/projects/{project_id}/sources/{source_id}", headers=auth_headers
         )
-        return document.json()["question_count"]
+        return source.json()["question_count"]
 
     added = []
     for _ in range(2):
         generated = client.post(
-            f"/projects/{project_id}/documents/{document_id}/questions",
+            f"/projects/{project_id}/sources/{source_id}/questions",
             headers=auth_headers,
             json={"limit": 1, "strategy": "hybrid_reasoning"},
         )
@@ -199,13 +199,13 @@ def test_create_question_rejects_partial_source_reference(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
+    source_id = _upload_source(client, auth_headers, project_id)
 
     response = client.post(
         f"/projects/{project_id}/questions",
         headers=auth_headers,
         json={
-            "document_id": document_id,
+            "source_id": source_id,
             "question": "Which action applies?",
             "choices": ["Apply least privilege", "Grant all access"],
             "answer": "Apply least privilege",
@@ -222,7 +222,7 @@ def _append_generated_questions(
     db,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     suggestions: list[QuestionSuggestion],
 ):
     if not authoring_projects(db).exists(project_id):
@@ -231,7 +231,7 @@ def _append_generated_questions(
         rows = questions_repository._append_generated_questions(
             connection,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             suggestions=suggestions,
         )
     return [questions_repository._question_from_row(row) for row in rows]
@@ -241,16 +241,16 @@ def test_background_append_preserves_existing_questions_and_dedupes_retries(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
+    source_id = _upload_source(client, auth_headers, project_id)
     chunk = client.get(
-        f"/projects/{project_id}/documents/{document_id}/chunks",
+        f"/projects/{project_id}/sources/{source_id}/chunks",
         headers=auth_headers,
     ).json()["items"][0]
     existing = client.post(
         f"/projects/{project_id}/questions",
         headers=auth_headers,
         json={
-            "document_id": document_id,
+            "source_id": source_id,
             "chunk_id": chunk["id"],
             "question": "Existing edited question",
             "choices": ["A", "B"],
@@ -276,13 +276,13 @@ def test_background_append_preserves_existing_questions_and_dedupes_retries(
     first = _append_generated_questions(
         client.app.state.database,
         project_id=project_id,
-        document_id=document_id,
+        source_id=source_id,
         suggestions=[suggestion],
     )
     second = _append_generated_questions(
         client.app.state.database,
         project_id=project_id,
-        document_id=document_id,
+        source_id=source_id,
         suggestions=[suggestion],
     )
 
@@ -342,7 +342,7 @@ def test_bad_question_source_ids_return_error_envelope(client: TestClient, auth_
             "rationale": "Because it matches the control objective.",
             "citation_page": 1,
             "source_excerpt": "A source.",
-            "document_id": "missing-document",
+            "source_id": "missing-document",
             "chunk_id": "missing-chunk",
         },
     )
@@ -359,20 +359,20 @@ def test_explicit_generation_returns_provider_unavailable_error_envelope(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
             capture_runtime_client=TestCaptureRuntimeClient(),
             llm_provider=UnavailableQuestionWriter(),
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
         )
     )
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    document = client.get(
-        f"/projects/{project_id}/documents/{document_id}", headers=auth_headers
+    source_id = _upload_source(client, auth_headers, project_id)
+    source = client.get(
+        f"/projects/{project_id}/sources/{source_id}", headers=auth_headers
     )
-    assert document.status_code == 200
-    assert document.json()["status"] == "ready"
-    assert document.json()["question_count"] == 0
+    assert source.status_code == 200
+    assert source.json()["status"] == "ready"
+    assert source.json()["question_count"] == 0
 
     response = client.post(
-        f"/projects/{project_id}/documents/{document_id}/questions",
+        f"/projects/{project_id}/sources/{source_id}/questions",
         headers=auth_headers,
         json={"limit": 1, "strategy": "hybrid_reasoning"},
     )
@@ -446,7 +446,7 @@ class RecordingQuestionWriter:
         ][:limit]
 
 
-def _upload_document(
+def _upload_source(
     client: TestClient,
     auth_headers,
     project_id: str,
@@ -454,7 +454,7 @@ def _upload_document(
     text: str = "Least privilege limits access to required permissions.",
 ) -> str:
     response = client.post(
-        f"/projects/{project_id}/documents",
+        f"/projects/{project_id}/sources",
         headers=auth_headers,
         files={
             "file": (

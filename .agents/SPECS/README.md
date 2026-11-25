@@ -33,11 +33,11 @@ decisions are in [`.agents/PLANS/ddd-refactor/`](../PLANS/ddd-refactor/README.md
   (`cert-prep-desktop:acceptance-real`) and its inputs.
 - `packaged-capture-workbench-smoke.md` - the standalone packaged Capture
   Workbench smoke.
-- `long-running-operation-sse.md` - authenticated snapshot SSE for document,
+- `long-running-operation-sse.md` - authenticated snapshot SSE for source,
   question generation and LLM installation operations.
 - `angular-resource-migration.md` - `httpResource` reads beside the generated
   Promise client.
-- `desktop-cdp-stack-overflow.md` - the desktop's 8 MiB main-thread stack
+- `desktop-main-thread-stack.md` - the desktop's 8 MiB main-thread stack
   reserve and its probe.
 
 ## Active backlog

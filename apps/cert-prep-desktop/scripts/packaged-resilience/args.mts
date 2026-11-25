@@ -50,7 +50,7 @@ export interface InstalledCandidateRunnerBinding extends InstalledExecutionRunne
   readonly candidateDistributionProfile: CandidateDistributionProfile;
 }
 
-export interface DocumentCancellationRunnerOptions extends InstalledCandidateRunnerBinding {
+export interface SourceCancellationRunnerOptions extends InstalledCandidateRunnerBinding {
   readonly pdfPath: string;
   readonly outputRoot: string;
   readonly diagnosticsRoot: string;
@@ -107,10 +107,10 @@ interface InstallReceiptDocument {
   readonly installedAt: string;
 }
 
-export async function loadDocumentCancellationOptions(
+export async function loadSourceCancellationOptions(
   environment: Readonly<NodeJS.ProcessEnv> = process.env,
   workspaceRoot = defaultWorkspaceRoot,
-): Promise<DocumentCancellationRunnerOptions> {
+): Promise<SourceCancellationRunnerOptions> {
   const installedCandidate = await loadInstalledCandidateBinding(
     environment,
     workspaceRoot,
@@ -134,7 +134,7 @@ export async function loadDocumentCancellationOptions(
   const diagnosticsRoot = `${outputRoot}.diagnostics`;
   if (existsSync(outputRoot) || existsSync(diagnosticsRoot)) {
     throw new Error(
-      'Packaged document-cancellation output and diagnostics paths must not exist before the run.',
+      'Packaged source-cancellation output and diagnostics paths must not exist before the run.',
     );
   }
 

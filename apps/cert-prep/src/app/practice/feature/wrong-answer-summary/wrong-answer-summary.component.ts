@@ -77,10 +77,10 @@ export class WrongAnswerSummaryComponent {
           (wrongAnswer) => wrongAnswer.attempt_id,
         );
         return {
-          key: this.clusterKey(cluster.document_id, cluster.citation_page),
-          documentLabel: this.display.requiredDocumentLabel(
-            this.sourceImport.documents(),
-            cluster.document_id,
+          key: this.clusterKey(cluster.source_id, cluster.citation_page),
+          sourceLabel: this.display.requiredSourceLabel(
+            this.sourceImport.sources(),
+            cluster.source_id,
           ),
           pageLabel: this.display.pageLabel(cluster.citation_page),
           currentWrongCount: cluster.current_wrong_count,
@@ -101,9 +101,9 @@ export class WrongAnswerSummaryComponent {
       .map((miss) => ({
         questionId: miss.question_id,
         question: miss.question,
-        documentLabel: this.display.requiredDocumentLabel(
-          this.sourceImport.documents(),
-          miss.document_id,
+        sourceLabel: this.display.requiredSourceLabel(
+          this.sourceImport.sources(),
+          miss.source_id,
         ),
         pageLabel: this.display.pageLabel(miss.citation_page),
         sourceExcerpt: miss.source_excerpt,
@@ -166,7 +166,7 @@ export class WrongAnswerSummaryComponent {
       .wrongAnswers()
       .filter(
         (wrongAnswer) =>
-          wrongAnswer.document_id === cluster.document_id &&
+          wrongAnswer.source_id === cluster.source_id &&
           wrongAnswer.citation_page === cluster.citation_page,
       );
   }
@@ -187,17 +187,17 @@ export class WrongAnswerSummaryComponent {
       right.current_wrong_count - left.current_wrong_count ||
       right.cleared_count - left.cleared_count ||
       (right.last_wrong_at ?? '').localeCompare(left.last_wrong_at ?? '') ||
-      this.clusterKey(left.document_id, left.citation_page).localeCompare(
-        this.clusterKey(right.document_id, right.citation_page),
+      this.clusterKey(left.source_id, left.citation_page).localeCompare(
+        this.clusterKey(right.source_id, right.citation_page),
       )
     );
   }
 
   private clusterKey(
-    documentId: string | null,
+    sourceId: string | null,
     citationPage: number | null,
   ): string {
-    return `${documentId ?? 'no-document'}:${citationPage ?? 'no-page'}`;
+    return `${sourceId ?? 'no-source'}:${citationPage ?? 'no-page'}`;
   }
 
 }

@@ -2,6 +2,30 @@
 
 ## 0.1.0-alpha.1 - Unreleased
 
+- Rename imported study material to **source**. Under `/projects/{project_id}`,
+  `/documents` becomes `/sources`, `{document_id}` becomes `{source_id}`,
+  and `/document-operations` becomes `/source-operations`. The nested
+  `/document-operation/events` path becomes `/source-operation/events`.
+  A recording's audio file moves from `/documents/{document_id}/source` to
+  `/sources/{source_id}/audio`.
+  Cert JSON references change from `document_id` to `source_id`, and the
+  capture review operation's `documentId` becomes `sourceId`.
+- Rename the `document-operation` SSE event to `source-operation`. Its payload
+  key changes from `document` to `source`. Rename retry codes
+  `document_source_missing` to `source_file_missing`, `document_retry_conflict`
+  to `source_retry_conflict`, and `document_retry_not_allowed` to
+  `source_retry_not_allowed`. The practice mode `full_document` becomes
+  `full_source`.
+- Migration 34 will rename `documents`, `document_chunks`, and
+  `document_operations` to `sources`, `source_chunks`, and
+  `source_operations`. It will rename `document_id` to `source_id` in
+  `source_chunks`, `source_operations`, `questions`, `question_generation_jobs`,
+  `manual_question_generations`, `capture_review_sessions`, and
+  `practice_session_questions`. It will rename `practice_sessions.source_document_id`
+  to `source_id` and migrate saved `full_document` practice modes.
+- Rename `CERT_PREP_DOCUMENT_PROCESSING_PARALLELISM` to
+  `CERT_PREP_SOURCE_PROCESSING_PARALLELISM`.
+
 - Store and return source kinds as `pdf`, `image`, and `recording`.
   Existing source records are migrated when the database opens.
 - Rename `CERT_PREP_MAX_UPLOAD_BYTES` to `CERT_PREP_MAX_PAGE_SOURCE_UPLOAD_BYTES`

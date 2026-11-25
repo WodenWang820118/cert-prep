@@ -22,11 +22,11 @@ class StudyProjects(Protocol):
     def exists(self, project_id: str) -> bool: ...
 
 
-class ProjectDocuments(Protocol):
-    """Whether a source document belongs to a project. Source Library owns documents (D17)."""
+class ProjectSources(Protocol):
+    """Whether a source belongs to a project. Source Library owns sources (D17)."""
 
-    def require(self, project_id: str, document_id: str) -> None:
-        """NotFoundError unless the document belongs to the project."""
+    def require(self, project_id: str, source_id: str) -> None:
+        """NotFoundError unless the source belongs to the project."""
         ...
 
 
@@ -42,19 +42,19 @@ class QuestionRepository(Protocol):
     def edit(self, project_id: str, question_id: str, edit: QuestionEdit) -> Question: ...
 
     def add_generated(
-        self, project_id: str, document_id: str, suggestions: Sequence[QuestionSuggestion]
+        self, project_id: str, source_id: str, suggestions: Sequence[QuestionSuggestion]
     ) -> list[Question]:
-        """Store generated questions, skipping ones the document already has."""
+        """Store generated questions, skipping ones the source already has."""
         ...
 
-    def count_for_source(self, project_id: str, document_id: str) -> int:
-        """How many questions the document has, whoever wrote them and whenever."""
+    def count_for_source(self, project_id: str, source_id: str) -> int:
+        """How many questions the source has, whoever wrote them and whenever."""
         ...
 
     def for_source(
-        self, project_id: str, *, document_id: str | None
+        self, project_id: str, *, source_id: str | None
     ) -> list[Question]:
-        """Questions of the project, by id, or of one document in source order."""
+        """Questions of the project, by id, or of one source in source order."""
         ...
 
     def find(self, project_id: str, question_id: str) -> Question | None:
@@ -67,34 +67,34 @@ class QuestionRepository(Protocol):
 
 
 class QuestionGenerationJobRepository(Protocol):
-    def jobs_of(self, project_id: str, document_id: str) -> list[QuestionGenerationJob]: ...
+    def jobs_of(self, project_id: str, source_id: str) -> list[QuestionGenerationJob]: ...
 
-    def cancel(self, project_id: str, document_id: str, job_id: str) -> QuestionGenerationJob: ...
+    def cancel(self, project_id: str, source_id: str, job_id: str) -> QuestionGenerationJob: ...
 
-    def discard_unfinished(self, project_id: str, document_id: str) -> None:
-        """Delete the document's pending, running and cancel-requested jobs; ended ones stay."""
+    def discard_unfinished(self, project_id: str, source_id: str) -> None:
+        """Delete the source's pending, running and cancel-requested jobs; ended ones stay."""
         ...
 
 
-class DocumentQuestionCount(Protocol):
-    """A source document's count of questions and the status that follows from it. Source Library
-    owns documents (D17). The count is always every question the document has, not the number
+class SourceQuestionCount(Protocol):
+    """A source's count of questions and the status that follows from it. Source Library
+    owns sources (D17). The count is always every question the source has, not the number
     a writer just added."""
 
-    def record_question_count(self, project_id: str, document_id: str, count: int) -> None: ...
+    def record_question_count(self, project_id: str, source_id: str, count: int) -> None: ...
 
-    def record_import_question_count(self, project_id: str, document_id: str, count: int) -> None:
-        """Record the document's question count after questions were written while it was
-        imported; a document without text or chunks is marked no_text_detected."""
+    def record_import_question_count(self, project_id: str, source_id: str, count: int) -> None:
+        """Record the source's question count after questions were written while it was
+        imported; a source without text or chunks is marked no_text_detected."""
         ...
 
 
-class QuestionSources(DocumentQuestionCount, Protocol):
-    """A document's source chunks in Source Library, and its count of questions."""
+class QuestionSources(SourceQuestionCount, Protocol):
+    """A source's chunks in Source Library, and its count of questions."""
 
-    def chunks_of(self, project_id: str, document_id: str) -> list[SourceChunk]: ...
+    def chunks_of(self, project_id: str, source_id: str) -> list[SourceChunk]: ...
 
-    def chunk(self, project_id: str, document_id: str, chunk_id: str) -> SourceChunk: ...
+    def chunk(self, project_id: str, source_id: str, chunk_id: str) -> SourceChunk: ...
 
 
 class QuestionWriting(Protocol):
@@ -111,7 +111,7 @@ class QuestionWriting(Protocol):
     def import_suggestions(
         self, model: object, chunks: Sequence[SourceChunk], limit: int
     ) -> list[QuestionSuggestion]:
-        """Questions written in one pass while a document is imported, without a strategy;
+        """Questions written in one pass while a source is imported, without a strategy;
         LanguageModelUnavailable when the model cannot write them."""
         ...
 
@@ -120,24 +120,24 @@ class QuestionGenerationWork(Protocol):
     """Generation that runs in the background: per-chunk jobs, retried jobs and manual
     operations."""
 
-    def enqueue_document(self, project_id: str, document_id: str) -> None:
+    def enqueue_source(self, project_id: str, source_id: str) -> None:
         """Queue a generation job per chunk, when the settings stream questions at import."""
         ...
 
-    def retry_jobs(self, project_id: str, document_id: str) -> list[QuestionGenerationJob]: ...
+    def retry_jobs(self, project_id: str, source_id: str) -> list[QuestionGenerationJob]: ...
 
     def start_manual_operation(
         self,
         project_id: str,
-        document_id: str,
+        source_id: str,
         limit: int,
         strategy: QuestionGenerationStrategy,
     ) -> ManualQuestionGeneration: ...
 
     def manual_operation(
-        self, project_id: str, document_id: str, operation_id: str
+        self, project_id: str, source_id: str, operation_id: str
     ) -> ManualQuestionGeneration: ...
 
     def cancel_manual_operation(
-        self, project_id: str, document_id: str, operation_id: str
+        self, project_id: str, source_id: str, operation_id: str
     ) -> ManualQuestionGeneration: ...

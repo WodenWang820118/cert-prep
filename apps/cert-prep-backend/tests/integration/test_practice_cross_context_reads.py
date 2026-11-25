@@ -1,7 +1,7 @@
 """Today's results of the practice queries that used to read other contexts' tables.
 
 The reads now go through the owning context, on the practice transaction's connection
-except for document membership, which still opens its own connection first.
+except for source membership, which still opens its own connection first.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from sqlite3 import Connection
 
 import pytest
 
-from cert_prep_backend.bootstrap.practice_reads import bind_practice_reads, practice_documents
+from cert_prep_backend.bootstrap.practice_reads import bind_practice_reads, practice_sources
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.platform.errors import NotFoundError
@@ -29,44 +29,44 @@ class _LeaveUncommitted(Exception):
     """Stops the practice unit of work so its transaction rolls back."""
 
 
-def test_source_questions_use_id_order_or_document_source_order(tmp_path: Path) -> None:
+def test_source_questions_use_id_order_or_source_order(tmp_path: Path) -> None:
     database = _database(tmp_path)
     store = _store(database)
     with database.connect() as connection:
         _project(connection, "proj")
-        _document(connection, "proj", "doc-1")
-        _document(connection, "proj", "doc-2")
+        _source(connection, "proj", "doc-1")
+        _source(connection, "proj", "doc-2")
         _question(
-            connection, question_id="a", project_id="proj", document_id="doc-1",
+            connection, question_id="a", project_id="proj", source_id="doc-1",
             source_order=2, citation_page=9, created_at="t9",
         )
         _question(
-            connection, question_id="b", project_id="proj", document_id="doc-1",
+            connection, question_id="b", project_id="proj", source_id="doc-1",
             source_order=1, citation_page=1, created_at="t0",
         )
         _question(
-            connection, question_id="c", project_id="proj", document_id="doc-1",
+            connection, question_id="c", project_id="proj", source_id="doc-1",
             source_order=None, citation_page=5, created_at="t0",
         )
         _question(
-            connection, question_id="d", project_id="proj", document_id="doc-1",
+            connection, question_id="d", project_id="proj", source_id="doc-1",
             source_order=None, citation_page=1, created_at="t9",
         )
         _question(
-            connection, question_id="e", project_id="proj", document_id="doc-1",
+            connection, question_id="e", project_id="proj", source_id="doc-1",
             source_order=0, created_at="t0",
         )
         _question(
-            connection, question_id="f", project_id="proj", document_id="doc-2",
+            connection, question_id="f", project_id="proj", source_id="doc-2",
             source_order=1, created_at="t0",
         )
 
     with store.reading() as practice:
-        assert _ids(practice.source_questions("proj", document_id=None)) == [
+        assert _ids(practice.source_questions("proj", source_id=None)) == [
             "a", "b", "c", "d", "e", "f",
         ]
-        document_questions = practice.source_questions("proj", document_id="doc-1")
-        assert _ids(document_questions) == ["e", "b", "a", "d", "c"]
+        source_questions = practice.source_questions("proj", source_id="doc-1")
+        assert _ids(source_questions) == ["e", "b", "a", "d", "c"]
 
 
 def test_session_and_history_keep_snapshot_text_and_the_question_answer_key(tmp_path: Path) -> None:
@@ -74,35 +74,35 @@ def test_session_and_history_keep_snapshot_text_and_the_question_answer_key(tmp_
     store = _store(database)
     with database.connect() as connection:
         _project(connection, "proj")
-        _document(connection, "proj", "doc")
+        _source(connection, "proj", "doc")
         _question(
-            connection, question_id="coalesce", project_id="proj", document_id="doc",
+            connection, question_id="coalesce", project_id="proj", source_id="doc",
             question="question coalesce", rationale="question why",
         )
         _question(
-            connection, question_id="kept", project_id="proj", document_id="doc",
+            connection, question_id="kept", project_id="proj", source_id="doc",
             question="question kept", answer_key_source="source",
         )
         _question(
-            connection, question_id="retired", project_id="proj", document_id="doc",
+            connection, question_id="retired", project_id="proj", source_id="doc",
             question="question retired", rationale="retired why",
             answer_key_source="source",
         )
         _question(
-            connection, question_id="bare", project_id="proj", document_id="doc",
+            connection, question_id="bare", project_id="proj", source_id="doc",
             question="bare question", rationale="",
         )
         _question(
-            connection, question_id="outside", project_id="proj", document_id="doc",
+            connection, question_id="outside", project_id="proj", source_id="doc",
             question="outside question", rationale="playable why", citation_page=2,
         )
         _question(
-            connection, question_id="unplayable-outside", project_id="proj", document_id="doc",
+            connection, question_id="unplayable-outside", project_id="proj", source_id="doc",
             question="unplayable outside", rationale="",
         )
 
-    coalesce = _shown("coalesce", correct_answer="B", rationale=None, document_id=None)
-    kept = _shown("kept", document_id="kept-doc")
+    coalesce = _shown("coalesce", correct_answer="B", rationale=None, source_id=None)
+    kept = _shown("kept", source_id="kept-doc")
     retired_snapshot = _shown("retired", question="snapshot retired")
     bare = _shown("bare", question="snapshot bare")
     with store.writing() as practice:
@@ -120,7 +120,7 @@ def test_session_and_history_keep_snapshot_text_and_the_question_answer_key(tmp_
             INSERT INTO practice_session_questions(
                 session_id, project_id, question_id, question_order, question,
                 choices_json, correct_answer, rationale, citation_page, source_excerpt,
-                created_at, document_id
+                created_at, source_id
             )
             VALUES ('session', 'proj', 'snap-only', 0, 'snapshot only',
                 '["A", "B"]', 'A', NULL, 2, 'only excerpt', 't0', 'snap-doc')
@@ -149,17 +149,17 @@ def test_session_and_history_keep_snapshot_text_and_the_question_answer_key(tmp_
 
         assert shown["snap-only"].question == "snapshot only"
         assert shown["snap-only"].rationale is None
-        assert shown["snap-only"].document_id == "snap-doc"
+        assert shown["snap-only"].source_id == "snap-doc"
         assert shown["snap-only"].answer_key_source is None
 
         assert shown["coalesce"].question == "snapshot coalesce"
         assert shown["coalesce"].correct_answer == "B"
         assert shown["coalesce"].rationale is None
         assert shown["coalesce"].citation_page == 8
-        assert shown["coalesce"].document_id == "doc"
+        assert shown["coalesce"].source_id == "doc"
         assert shown["coalesce"].answer_key_source == "source"
 
-        assert shown["kept"].document_id == "kept-doc"
+        assert shown["kept"].source_id == "kept-doc"
         assert shown["kept"].answer_key_source == "source"
         assert shown["kept"].question == "snapshot kept"
 
@@ -172,7 +172,7 @@ def test_session_and_history_keep_snapshot_text_and_the_question_answer_key(tmp_
         asked = practice.question_for_answer(session, "coalesce")
         assert asked is not None
         assert asked.question == "snapshot coalesce"
-        assert asked.document_id is None
+        assert asked.source_id is None
         assert asked.answer_key_source is None
 
         bare_asked = practice.question_for_answer(session, "bare")
@@ -189,7 +189,7 @@ def test_session_and_history_keep_snapshot_text_and_the_question_answer_key(tmp_
         assert history[0].question.answer_key_source == "source"
         assert history[1].question.question == "snapshot coalesce"
         assert history[1].question.rationale is None
-        assert history[1].question.document_id == "doc"
+        assert history[1].question.source_id == "doc"
         assert history[1].question.correct_answer == "B"
         assert history[1].question.answer_key_source == "source"
 
@@ -206,10 +206,10 @@ def test_answer_history_since_is_the_latest_row_at_or_after_the_target(tmp_path:
     with database.connect() as connection:
         _project(connection, "proj")
         _project(connection, "other")
-        _document(connection, "proj", "doc")
-        _question(connection, question_id="q", project_id="proj", document_id="doc", question="question q")
+        _source(connection, "proj", "doc")
+        _question(connection, question_id="q", project_id="proj", source_id="doc", question="question q")
 
-    question = _shown("q", question="snapshot q", document_id="doc", rationale="why")
+    question = _shown("q", question="snapshot q", source_id="doc", rationale="why")
     with store.writing() as practice:
         # Only one active session per project; these two exist for their snapshots.
         for session_id in ("session-z", "session-a"):
@@ -275,39 +275,39 @@ def test_practice_transaction_sees_uncommitted_projects_and_questions(tmp_path: 
                 practice._connection,
                 question_id="question-new",
                 project_id="new-project",
-                document_id=None,
+                source_id=None,
                 question="uncommitted",
             )
-            _document(practice._connection, "new-project", "doc-new")
+            _source(practice._connection, "new-project", "doc-new")
             assert practice.project_exists("new-project") is True
-            assert _ids(practice.source_questions("new-project", document_id=None)) == [
+            assert _ids(practice.source_questions("new-project", source_id=None)) == [
                 "question-new",
             ]
             assert SqliteProjectRepository(database).get("new-project") is None
             assert question_repository(database).for_source(
-                "new-project", document_id=None
+                "new-project", source_id=None
             ) == []
             with pytest.raises(NotFoundError, match="^Document not found.$"):
-                store.require_document("new-project", "doc-new")
+                store.require_source("new-project", "doc-new")
             raise _LeaveUncommitted()
 
     with store.reading() as practice:
         assert practice.project_exists("new-project") is False
-        assert practice.source_questions("new-project", document_id=None) == []
+        assert practice.source_questions("new-project", source_id=None) == []
 
 
-def test_require_document_accepts_a_committed_document_of_that_project(tmp_path: Path) -> None:
+def test_require_source_accepts_a_committed_source_of_that_project(tmp_path: Path) -> None:
     database = _database(tmp_path)
     store = _store(database)
     with database.connect() as connection:
         _project(connection, "proj")
         _project(connection, "other")
-        _document(connection, "proj", "doc")
+        _source(connection, "proj", "doc")
 
-    store.require_document("proj", "doc")
-    for project_id, document_id in (("other", "doc"), ("proj", "missing"), ("missing", "doc")):
+    store.require_source("proj", "doc")
+    for project_id, source_id in (("other", "doc"), ("proj", "missing"), ("missing", "doc")):
         with pytest.raises(NotFoundError, match="^Document not found.$"):
-            store.require_document(project_id, document_id)
+            store.require_source(project_id, source_id)
 
 
 def _database(tmp_path: Path) -> Database:
@@ -320,7 +320,7 @@ def _store(database: Database) -> SqlitePracticeStore:
     return SqlitePracticeStore(
         database,
         bind_reads=lambda connection: bind_practice_reads(database, connection),
-        documents=practice_documents(database),
+        sources=practice_sources(database),
     )
 
 
@@ -334,16 +334,16 @@ def _project(connection: Connection, project_id: str) -> None:
     )
 
 
-def _document(connection: Connection, project_id: str, document_id: str) -> None:
+def _source(connection: Connection, project_id: str, source_id: str) -> None:
     connection.execute(
         """
-        INSERT INTO documents(
+        INSERT INTO sources(
             id, project_id, filename, sha256, storage_path,
             page_count, has_text, status, created_at, updated_at, source_kind
         )
         VALUES (?, ?, 'notes.pdf', 'hash', 'notes.pdf', 1, 1, 'ready', 't0', 't0', 'pdf')
         """,
-        (document_id, project_id),
+        (source_id, project_id),
     )
 
 
@@ -352,7 +352,7 @@ def _question(
     *,
     question_id: str,
     project_id: str,
-    document_id: str | None,
+    source_id: str | None,
     source_order: int | None = None,
     citation_page: int | None = 1,
     created_at: str = "t0",
@@ -363,7 +363,7 @@ def _question(
     connection.execute(
         """
         INSERT INTO questions(
-            id, project_id, document_id, question, choices_json, answer,
+            id, project_id, source_id, question, choices_json, answer,
             answer_key_source, rationale, citation_page, source_excerpt,
             source_order, created_at, updated_at
         )
@@ -372,7 +372,7 @@ def _question(
         (
             question_id,
             project_id,
-            document_id,
+            source_id,
             question_id if question is None else question,
             answer_key_source,
             rationale,
@@ -390,7 +390,7 @@ def _shown(
     question: str | None = None,
     correct_answer: str = "A",
     rationale: str | None = "snapshot why",
-    document_id: str | None = "snap-doc",
+    source_id: str | None = "snap-doc",
 ) -> PracticeQuestion:
     return PracticeQuestion(
         id=question_id,
@@ -400,7 +400,7 @@ def _shown(
         rationale=rationale,
         citation_page=8,
         source_excerpt="snapshot excerpt",
-        document_id=document_id,
+        source_id=source_id,
     )
 
 

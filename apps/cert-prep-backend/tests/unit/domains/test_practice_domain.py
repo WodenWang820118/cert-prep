@@ -34,7 +34,7 @@ def test_practice_enums_keep_their_serialized_values() -> None:
     assert session.status is PracticeSessionStatus.ACTIVE
     assert session.question_ids == ("question-1",)
     assert session.mode is PracticeSessionMode.RANDOM_DRAW
-    assert session.source_document_id is None
+    assert session.source_id is None
     assert session.requested_question_count == 10
     assert session.random_seed is None
     assert session.completed_at is None
@@ -43,23 +43,23 @@ def test_practice_enums_keep_their_serialized_values() -> None:
 
 def test_ordered_selection_keeps_playable_order_and_requires_questions() -> None:
     selection = select_questions(
-        PracticeSessionMode.FULL_DOCUMENT,
+        PracticeSessionMode.FULL_SOURCE,
         ["q-1", "q-2", "q-3"],
         requested_count=2,
         random_seed=None,
-        document_id="document-1",
+        source_id="document-1",
         new_seed=_never_seed,
     )
 
     assert selection.question_ids == ("q-1", "q-2")
-    assert selection.document_id == "document-1"
+    assert selection.source_id == "document-1"
     with pytest.raises(PracticeRuleViolation) as exc_info:
         select_questions(
             PracticeSessionMode.REVIEW_RETRY,
             [],
             requested_count=10,
             random_seed=None,
-            document_id=None,
+            source_id=None,
             new_seed=_never_seed,
         )
     assert str(exc_info.value) == NO_PLAYABLE_QUESTIONS_MESSAGE
@@ -239,7 +239,7 @@ def test_current_wrong_answers_uses_latest_attempt_per_question() -> None:
         "Ungrounded",
         "Grounded",
     )
-    assert (wrong.citation_page, wrong.document_id, wrong.created_at) == (
+    assert (wrong.citation_page, wrong.source_id, wrong.created_at) == (
         2,
         None,
         "2026-06-11T00:04:00Z",

@@ -24,7 +24,7 @@ def _job(status: Job = Job.PENDING, **changes: object) -> QuestionGenerationJob:
     job = QuestionGenerationJob(
         id="job",
         project_id="project",
-        document_id="document",
+        source_id="document",
         chunk_id="chunk",
         page_number=1,
         strategy="hybrid_reasoning",
@@ -49,7 +49,7 @@ def _operation() -> ManualQuestionGeneration:
     return ManualQuestionGeneration.queue(
         operation_id="operation",
         project_id="project",
-        document_id="document",
+        source_id="document",
         limit=3,
         strategy="hybrid_reasoning",
         provider="fake",

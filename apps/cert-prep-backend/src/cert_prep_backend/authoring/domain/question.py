@@ -24,7 +24,7 @@ __all__ = ["QuestionEdit", "NewQuestion", "Question"]
 
 @dataclass(frozen=True, slots=True)
 class NewQuestion:
-    """A question the learner writes by hand; it may cite one chunk of a source document."""
+    """A question the learner writes by hand; it may cite one chunk of a source."""
 
     question: str = ""
     choices: Sequence[str] = ()
@@ -34,7 +34,7 @@ class NewQuestion:
     citation_page: int | None = None
     source_excerpt: str | None = None
     confidence: float | None = None
-    document_id: str | None = None
+    source_id: str | None = None
     chunk_id: str | None = None
     source_order: int | None = None
     source_question_number: str | None = None
@@ -47,12 +47,12 @@ class NewQuestion:
 
     @property
     def cites_a_source(self) -> bool:
-        return self.document_id is not None or self.chunk_id is not None
+        return self.source_id is not None or self.chunk_id is not None
 
     def ensure_source_is_complete(self) -> None:
-        """A cited source names both the document and the chunk, or neither."""
+        """A citation names both the source and the chunk, or neither."""
 
-        if self.cites_a_source and (self.document_id is None or self.chunk_id is None):
+        if self.cites_a_source and (self.source_id is None or self.chunk_id is None):
             raise ValidationError("Document id and chunk id must be provided together.")
 
 
@@ -102,7 +102,7 @@ class Question:
 
     id: str
     project_id: str
-    document_id: str | None
+    source_id: str | None
     chunk_id: str | None
     question: str
     choices: tuple[str, ...]

@@ -316,7 +316,7 @@ export function buildQuestionGenerationBaselineReport(
       first_chunk_visible: timings.first_chunk_visible ?? null,
       question_generation_status_visible:
         timings.question_generation_status_visible ?? null,
-      first_streamed_question_visible:
+      first_question_visible:
         run.metrics.question_generation.first_question_visible_ms ?? null,
       first_usable_question_visible: firstUsable ?? null,
       parse_complete_visible: parseComplete ?? null,
@@ -636,7 +636,7 @@ function acceptanceIsolationPassed(
 function renderQuestionGenerationBaselineMarkdown(
   report: QuestionGenerationBaselineReport,
 ): string {
-  return `# Packaged Question generation Baseline
+  return `# Packaged Question Generation Baseline
 
 - Status: ${report.status}
 - Generated: ${report.generated_at}

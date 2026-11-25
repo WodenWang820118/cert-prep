@@ -1,14 +1,14 @@
 import type {
-  DocumentOperationRead,
-  DocumentRead,
+  SourceOperationRead,
+  SourceRead,
   QuestionGenerationJobRead,
   ManualQuestionGenerationRead,
   LLMInstallationRead,
 } from './api.contracts';
 
-export interface DocumentOperationEvent {
-  readonly operation: DocumentOperationRead;
-  readonly document: DocumentRead | null;
+export interface SourceOperationEvent {
+  readonly operation: SourceOperationRead;
+  readonly source: SourceRead | null;
 }
 
 export interface QuestionJobsEvent {
@@ -18,8 +18,8 @@ export interface QuestionJobsEvent {
 export type QuestionGenerationEvent = ManualQuestionGenerationRead;
 export type LLMInstallationEvent = LLMInstallationRead;
 
-export function isDocumentOperationEventTerminal(
-  event: DocumentOperationEvent,
+export function isSourceOperationEventTerminal(
+  event: SourceOperationEvent,
 ): boolean {
   return ['canceled', 'succeeded', 'failed'].includes(event.operation.status);
 }

@@ -201,17 +201,17 @@ export class CaptureWorkbenchPage implements AfterViewInit, OnDestroy {
     const completed = event as CustomEvent<CaptureCompletedEvent>;
     this.lastCompleted.set(completed.detail);
     const projectId = this.projects.selectedProjectId();
-    const documentId = this.client.documentIdForSourceSha256(
+    const sourceId = this.client.sourceIdForSha256(
       completed.detail.document.source.sha256,
     );
     if (projectId !== null) {
-      if (documentId !== null) {
-        this.sourceImport.refreshUploadedDocument(projectId, documentId);
+      if (sourceId !== null) {
+        this.sourceImport.refreshUploadedSource(projectId, sourceId);
       }
-      // Re-select the document from the durable project list as well. This
+      // Re-select the source from the durable project list as well. This
       // closes the startup/resource race where an in-flight project refresh
-      // can otherwise clear the just-completed active document.
-      this.sourceImport.loadLatestDocument(projectId);
+      // can otherwise clear the just-completed active source.
+      this.sourceImport.loadLatestSource(projectId);
     }
     this.status.set(
       `Completed ${completed.detail.document.source.fileName}. Saved to your project.`,
@@ -220,12 +220,12 @@ export class CaptureWorkbenchPage implements AfterViewInit, OnDestroy {
 
   protected downloadMarkdown(): void {
     const completed = this.lastCompleted();
-    const document = this.sourceImport.activeDocument();
+    const source = this.sourceImport.activeSource();
     if (
       completed === null ||
-      document === null ||
-      document.status !== 'ready' ||
-      document.chunks_count < 1
+      source === null ||
+      source.status !== 'ready' ||
+      source.chunks_count < 1
     ) {
       return;
     }
@@ -233,7 +233,7 @@ export class CaptureWorkbenchPage implements AfterViewInit, OnDestroy {
     this.markdownDownloadState.set('downloading');
     this.markdownDownloadError.set(null);
     this.registration.add(
-      this.client.getDocumentMarkdown(document.project_id, document.id).subscribe({
+      this.client.getSourceMarkdown(source.project_id, source.id).subscribe({
         next: (blob) => {
           const objectUrl = URL.createObjectURL(blob);
           try {

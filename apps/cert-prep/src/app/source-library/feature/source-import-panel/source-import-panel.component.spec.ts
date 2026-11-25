@@ -2,9 +2,9 @@ import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { of, Subject } from 'rxjs';
 import { CERT_PREP_API, OperationStore } from '../../../core/data';
-import type { DocumentRead, ProjectRead } from '../../../core/domain';
+import type { SourceRead, ProjectRead } from '../../../core/domain';
 import { ProjectStore } from '../../../projects/data';
-import { appDocument, appProject, secondAppProject } from '../../../core/testing';
+import { appSource, appProject, secondAppProject } from '../../../core/testing';
 import { SourceImportStore } from '../../data';
 import type { SourceImportAction, SourceUploadItem } from '../../domain';
 import { SourceImportPanelComponent } from './source-import-panel.component';
@@ -13,7 +13,7 @@ describe('SourceImportPanelComponent', () => {
   let projects: ReturnType<typeof createProjectsFake>;
   let sourceImport: ReturnType<typeof createSourceImportFake>;
   let operations: ReturnType<typeof createOperationsFake>;
-  let api: { getDocumentAudioSource: ReturnType<typeof vi.fn> };
+  let api: { getSourceAudio: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -23,7 +23,7 @@ describe('SourceImportPanelComponent', () => {
     sourceImport = createSourceImportFake();
     operations = createOperationsFake();
     api = {
-      getDocumentAudioSource: vi.fn(() => of(new Blob(['audio'], { type: 'audio/mpeg' }))),
+      getSourceAudio: vi.fn(() => of(new Blob(['audio'], { type: 'audio/mpeg' }))),
     };
     TestBed.configureTestingModule({
       imports: [SourceImportPanelComponent],
@@ -53,7 +53,7 @@ describe('SourceImportPanelComponent', () => {
     expect(text).not.toContain('Extraction');
   });
 
-  it('keeps upload and document selection orchestration at the coordinator', () => {
+  it('keeps upload and source selection orchestration at the coordinator', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     fixture.detectChanges();
     const component = fixture.componentInstance as unknown as {
@@ -61,10 +61,10 @@ describe('SourceImportPanelComponent', () => {
     };
 
     component.handleAction({ type: 'upload' });
-    component.handleAction({ type: 'select-document', documentId: 'document-1' });
+    component.handleAction({ type: 'select-source', sourceId: 'source-1' });
 
-    expect(sourceImport.uploadDocuments).toHaveBeenCalledTimes(1);
-    expect(sourceImport.selectDocument).toHaveBeenCalledWith('document-1');
+    expect(sourceImport.uploadSources).toHaveBeenCalledTimes(1);
+    expect(sourceImport.selectSource).toHaveBeenCalledWith('source-1');
   });
 
   it('preserves append upload intent through a sequential crop queue', () => {
@@ -111,18 +111,18 @@ describe('SourceImportPanelComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('The source upload failed.');
   });
 
-  it('does not let a previous project/document audio response replace the active preview', () => {
+  it('does not let a previous project/source audio response replace the active preview', () => {
     const firstResponse = new Subject<Blob>();
     const secondResponse = new Subject<Blob>();
-    api.getDocumentAudioSource
+    api.getSourceAudio
       .mockReset()
       .mockReturnValueOnce(firstResponse)
       .mockReturnValueOnce(secondResponse);
-    sourceImport.activeDocument.set(audioDocument('audio-1'));
+    sourceImport.activeSource.set(audioSource('audio-1'));
     sourceImport.previewChunks.set([{} as never]);
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     fixture.detectChanges();
-    expect(api.getDocumentAudioSource).toHaveBeenCalledWith(
+    expect(api.getSourceAudio).toHaveBeenCalledWith(
       appProject.id,
       'audio-1',
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
@@ -130,7 +130,7 @@ describe('SourceImportPanelComponent', () => {
 
     projects.selectedProject.set(secondAppProject);
     fixture.detectChanges();
-    expect(api.getDocumentAudioSource).toHaveBeenNthCalledWith(
+    expect(api.getSourceAudio).toHaveBeenNthCalledWith(
       2,
       secondAppProject.id,
       'audio-1',
@@ -163,9 +163,9 @@ function createOperationsFake() {
 
 function createSourceImportFake() {
   const uploadItems = signal<SourceUploadItem[]>([]);
-  const documents = signal<DocumentRead[]>([]);
-  const activeDocumentId = signal<string | null>(null);
-  const activeDocument = signal<DocumentRead | null>(null);
+  const sources = signal<SourceRead[]>([]);
+  const activeSourceId = signal<string | null>(null);
+  const activeSource = signal<SourceRead | null>(null);
   const previewChunks = signal<never[]>([]);
   return {
     sourceFileAccept: '.pdf,.png,.jpg,.jpeg,.webp,.mp3,.wav,.m4a',
@@ -175,22 +175,22 @@ function createSourceImportFake() {
     selectedFileLabel: signal('No source file selected'),
     canUpload: signal(false),
     isUploading: signal(false),
-    documents,
-    activeDocumentId,
-    activeDocument,
+    sources,
+    activeSourceId,
+    activeSource,
     streamError: signal<string | null>(null),
     previewChunks,
     hiddenChunkCount: signal(0),
     isTranscriptMutationBusy: signal(false),
     shouldAppendNewSelection: vi.fn(() => false),
     chooseFiles: vi.fn(),
-    uploadDocuments: vi.fn(),
-    selectDocument: vi.fn(),
+    uploadSources: vi.fn(),
+    selectSource: vi.fn(),
     cancelUploadItem: vi.fn(),
     retryUploadItem: vi.fn(),
-    cancelActiveDocumentProcessing: vi.fn(),
-    retryActiveDocumentProcessing: vi.fn(),
-    retryDocumentStream: vi.fn(),
+    cancelActiveSourceProcessing: vi.fn(),
+    retryActiveSourceProcessing: vi.fn(),
+    retrySourceStream: vi.fn(),
     updateTranscriptChunk: vi.fn(),
     translateTranscriptChunk: vi.fn(),
     translateStaleTranscriptChunks: vi.fn(),
@@ -207,14 +207,14 @@ function uploadItem(
     id,
     file: new File(['source'], `${id}.pdf`, { type: 'application/pdf' }),
     status,
-    document: null,
+    source: null,
     error,
   };
 }
 
-function audioDocument(id: string): DocumentRead {
+function audioSource(id: string): SourceRead {
   return {
-    ...appDocument,
+    ...appSource,
     id,
     source_kind: 'recording',
     chunks_count: 1,

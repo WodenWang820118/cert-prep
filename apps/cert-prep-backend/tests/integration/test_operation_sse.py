@@ -13,7 +13,7 @@ from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.platform.sse import operation_snapshot_stream
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.llm_provisioning.infrastructure.manager import LLMInstallationManager
-from cert_prep_backend.source_library.infrastructure import operations as document_operations
+from cert_prep_backend.source_library.infrastructure import operations as source_operations
 from cert_prep_backend.platform.change_notifications import DatabaseChangeNotifier
 from cert_prep_backend.platform.database import Database
 from cert_prep_contracts.llm_installation import (
@@ -212,7 +212,7 @@ def test_runtime_manager_db_commits_wake_operation_stream(
         manager.close()
 
 
-def test_document_operation_events_route_streams_authenticated_terminal_snapshot(
+def test_source_operation_events_route_streams_authenticated_terminal_snapshot(
     tmp_path,
 ) -> None:
     token = "route-token"
@@ -229,15 +229,15 @@ def test_document_operation_events_route_streams_authenticated_terminal_snapshot
         assert project_response.status_code == 201
         project_id = project_response.json()["id"]
         operation_id = "route-terminal-operation"
-        document_operations.claim_operation(
+        source_operations.claim_operation(
             app.state.database,
             project_id=project_id,
             operation_id=operation_id,
         )
-        app.state.document_operation_repository.fail(
+        app.state.source_operation_repository.fail(
             project_id, operation_id, error="Route smoke terminal state."
         )
-        path = f"/projects/{project_id}/document-operations/{operation_id}/events"
+        path = f"/projects/{project_id}/source-operations/{operation_id}/events"
 
         assert client.get(path).status_code == 401
         with client.stream(
@@ -250,13 +250,13 @@ def test_document_operation_events_route_streams_authenticated_terminal_snapshot
             assert response.headers["cache-control"] == "no-store"
             body = response.read().decode()
 
-    assert body.startswith("id: 8\nevent: document-operation\ndata: ")
+    assert body.startswith("id: 8\nevent: source-operation\ndata: ")
     payload = json.loads(body.split("data: ", 1)[1].strip())
     assert payload["operation"]["id"] == operation_id
     assert payload["operation"]["status"] == "failed"
 
 
-def test_document_operation_events_active_route_does_not_expose_recovered_operation(
+def test_source_operation_events_active_route_does_not_expose_recovered_operation(
     tmp_path,
 ) -> None:
     token = "restart-token"
@@ -273,12 +273,12 @@ def test_document_operation_events_active_route_does_not_expose_recovered_operat
         assert project_response.status_code == 201
         project_id = project_response.json()["id"]
         operation_id = "restart-active-operation"
-        document_operations.claim_operation(
+        source_operations.claim_operation(
             first_app.state.database,
             project_id=project_id,
             operation_id=operation_id,
         )
-        document = document_operations.create_and_attach_document(
+        source = source_operations.create_and_attach_source(
             first_app.state.database,
             project_id=project_id,
             operation_id=operation_id,
@@ -289,12 +289,12 @@ def test_document_operation_events_active_route_does_not_expose_recovered_operat
             storage_path=str(tmp_path / "restart.pdf"),
             page_count=1,
         )
-        document_id = document.id
+        source_id = source.id
         assert (
-            document_operations.get_active_operation_for_document(
+            source_operations.get_active_operation_for_source(
                 first_app.state.database,
                 project_id=project_id,
-                document_id=document_id,
+                source_id=source_id,
             )
             is not None
         )
@@ -302,12 +302,12 @@ def test_document_operation_events_active_route_does_not_expose_recovered_operat
     recovered_app = create_app(settings=settings)
     with TestClient(recovered_app) as client:
         active_path = (
-            f"/projects/{project_id}/documents/{document_id}/document-operation/events"
+            f"/projects/{project_id}/sources/{source_id}/source-operation/events"
         )
         assert client.get(active_path, headers=headers).status_code == 404
 
         terminal_path = (
-            f"/projects/{project_id}/document-operations/{operation_id}/events"
+            f"/projects/{project_id}/source-operations/{operation_id}/events"
         )
         with client.stream("GET", terminal_path, headers=headers) as response:
             assert response.status_code == 200
@@ -315,19 +315,19 @@ def test_document_operation_events_active_route_does_not_expose_recovered_operat
 
     payload = json.loads(body.split("data: ", 1)[1].strip())
     assert payload["operation"]["status"] == "failed"
-    assert payload["document"]["status"] == "extraction_failed"
+    assert payload["source"]["status"] == "extraction_failed"
 
 
-def test_document_operation_events_streams_an_active_operation(tmp_path) -> None:
-    """The active-operation route reads the DocumentOperation the repository returns.
+def test_source_operation_events_streams_an_active_operation(tmp_path) -> None:
+    """The active-operation route reads the SourceOperation the repository returns.
 
-    A learner whose page reconnects while a document is still processing reaches this route;
-    it used to fail with "'DocumentOperation' object is not subscriptable".
+    A learner whose page reconnects while a source is still processing reaches this route;
+    it used to fail by treating the operation snapshot as a subscriptable object.
     """
 
     import asyncio
 
-    from cert_prep_backend.source_library.api.operation_events import current_document_operation_events
+    from cert_prep_backend.source_library.api.operation_events import current_source_operation_events
 
     token = "active-token"
     settings = Settings(data_dir=tmp_path, api_token=token, llm_provider="fake")
@@ -339,10 +339,10 @@ def test_document_operation_events_streams_an_active_operation(tmp_path) -> None
             json={"name": "Active operation events"},
         ).json()["id"]
         operation_id = "active-operation"
-        document_operations.claim_operation(
+        source_operations.claim_operation(
             app.state.database, project_id=project_id, operation_id=operation_id
         )
-        document = document_operations.create_and_attach_document(
+        source = source_operations.create_and_attach_source(
             app.state.database,
             project_id=project_id,
             operation_id=operation_id,
@@ -354,12 +354,12 @@ def test_document_operation_events_streams_an_active_operation(tmp_path) -> None
             page_count=1,
         )
 
-        response = current_document_operation_events(
+        response = current_source_operation_events(
             project_id,
-            document.id,
+            source.id,
             last_event_id=None,
-            operations=app.state.document_operation_repository,
-            documents=app.state.document_repository,
+            operations=app.state.source_operation_repository,
+            sources=app.state.source_repository,
             notifier=app.state.database_change_notifier,
         )
         async def first(iterator):
@@ -371,7 +371,7 @@ def test_document_operation_events_streams_an_active_operation(tmp_path) -> None
         first_event = asyncio.run(first(response.body_iterator))
 
     text = first_event if isinstance(first_event, str) else first_event.decode()
-    assert "event: document-operation" in text
+    assert "event: source-operation" in text
     payload = json.loads(text.split("data: ", 1)[1].strip())
     assert payload["operation"]["id"] == operation_id
     assert payload["operation"]["status"] == "running"

@@ -49,7 +49,7 @@ and need the product owner's review before they are updated
 - Image acceptance sits beside the PDF acceptance and reuses the packaged image
   runner's lifecycle and cleanup primitives. The PDF practice/export flow is not
   generalized to images: PDF assertions are intentionally PDF-specific, and the
-  image path has its own terminal-document contract.
+  image path has its own terminal source contract.
 - Image OCR must reach `ready` with one processed page, text chunks,
   `text_recognition` extraction, a non-empty OCR device and a SHA-256 matching the
   supplied bytes.
@@ -91,7 +91,7 @@ and need the product owner's review before they are updated
 - The PDF journey stays fail-closed and passes only with complete cleanup and
   no browser, page or console errors.
 - The image journey uploads the supplied file through the packaged UI and
-  verifies the persisted document API response, not only visible status text.
+  verifies the persisted source API response, not only visible status text.
 - PDF and image evidence are isolated below one run directory, each journey
   uses its own temporary app-data directory, and the final manifest records
   both fixtures and all cleanup fields.

@@ -11,13 +11,13 @@ import { OperationStore } from '../../../core/data';
 import { ProjectStore } from '../../../projects/data';
 import { SourceAudioPreviewService, SourceImportStore } from '../../data';
 import type {
-  SourceDocumentStatusViewModel,
+  SourceStatusViewModel,
   SourceEvidenceViewModel,
   SourceImportAction,
   SourceUploadQueueViewModel,
 } from '../../domain';
 import {
-  SourceDocumentStatusComponent,
+  SourceStatusComponent,
   SourceEvidencePreviewComponent,
   SourceImageCropDialogComponent,
   SourceImageCropService,
@@ -27,7 +27,7 @@ import {
 @Component({
   selector: 'app-source-import-panel',
   imports: [
-    SourceDocumentStatusComponent,
+    SourceStatusComponent,
     SourceEvidencePreviewComponent,
     SourceImageCropDialogComponent,
     SourceUploadQueueComponent,
@@ -41,8 +41,8 @@ import {
         (action)="handleAction($event)"
       />
       <div class="workbench-panel-body">
-        <app-source-document-status
-          [model]="documentStatusModel()"
+        <app-source-status
+          [model]="sourceStatusModel()"
           (action)="handleAction($event)"
         />
         <app-source-evidence-preview
@@ -88,18 +88,18 @@ export class SourceImportPanelComponent {
     }),
   );
 
-  protected readonly documentStatusModel =
-    computed<SourceDocumentStatusViewModel>(() => ({
-      documents: this.sourceImport.documents(),
-      activeDocumentId: this.sourceImport.activeDocumentId(),
-      document: this.sourceImport.activeDocument(),
+  protected readonly sourceStatusModel =
+    computed<SourceStatusViewModel>(() => ({
+      sources: this.sourceImport.sources(),
+      activeSourceId: this.sourceImport.activeSourceId(),
+      source: this.sourceImport.activeSource(),
       streamError: this.sourceImport.streamError(),
-      cancelBusy: this.operations.isBusyFor('document-cancel'),
-      retryBusy: this.operations.isBusyFor('document-retry'),
+      cancelBusy: this.operations.isBusyFor('source-cancel'),
+      retryBusy: this.operations.isBusyFor('source-retry'),
     }));
 
   protected readonly evidenceModel = computed<SourceEvidenceViewModel>(() => ({
-    document: this.sourceImport.activeDocument(),
+    source: this.sourceImport.activeSource(),
     chunks: this.sourceImport.previewChunks(),
     hiddenChunkCount: this.sourceImport.hiddenChunkCount(),
     audio: this.audioPreview.state(),
@@ -115,11 +115,11 @@ export class SourceImportPanelComponent {
   constructor() {
     effect(() => {
       const projectId = this.projects.selectedProject()?.id ?? null;
-      const document = this.sourceImport.activeDocument();
+      const source = this.sourceImport.activeSource();
       this.audioPreview.load(
         projectId,
-        document?.source_kind === 'recording' && document.chunks_count > 0
-          ? document.id
+        source?.source_kind === 'recording' && source.chunks_count > 0
+          ? source.id
           : null,
       );
     });
@@ -137,7 +137,7 @@ export class SourceImportPanelComponent {
         this.setCropImagesBeforeUpload(action.enabled);
         return;
       case 'upload':
-        this.sourceImport.uploadDocuments();
+        this.sourceImport.uploadSources();
         return;
       case 'cancel-upload':
         this.sourceImport.cancelUploadItem(action.itemId);
@@ -145,17 +145,17 @@ export class SourceImportPanelComponent {
       case 'retry-upload':
         this.sourceImport.retryUploadItem(action.itemId);
         return;
-      case 'select-document':
-        this.sourceImport.selectDocument(action.documentId);
+      case 'select-source':
+        this.sourceImport.selectSource(action.sourceId);
         return;
       case 'cancel-processing':
-        this.sourceImport.cancelActiveDocumentProcessing();
+        this.sourceImport.cancelActiveSourceProcessing();
         return;
       case 'retry-processing':
-        this.sourceImport.retryActiveDocumentProcessing();
+        this.sourceImport.retryActiveSourceProcessing();
         return;
       case 'retry-progress':
-        this.sourceImport.retryDocumentStream();
+        this.sourceImport.retrySourceStream();
         return;
       case 'retry-audio':
         this.audioPreview.retry();

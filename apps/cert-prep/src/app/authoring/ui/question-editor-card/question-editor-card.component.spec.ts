@@ -39,7 +39,7 @@ describe('QuestionEditorCardComponent', () => {
     },
   );
 
-  it('marks an AI-inferred key beside the practice status and the answer', () => {
+  it('marks an AI-inferred key in the card metadata and beside the answer', () => {
     const fixture = TestBed.createComponent(QuestionEditorCardComponent);
     fixture.componentRef.setInput('model', {
       ...questionModel(),

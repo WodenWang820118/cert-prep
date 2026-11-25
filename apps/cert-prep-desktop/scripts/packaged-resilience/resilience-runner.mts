@@ -388,10 +388,10 @@ export async function executeRemainingResilienceScenarios(
 
   await uploadAndParsePdf(run);
   const projectApi = requireProjectApi(run);
-  const uploadedDocument = run.uploadedDocument;
+  const uploadedSource = run.uploadedSource;
   if (
-    !uploadedDocument ||
-    uploadedDocument.projectId !== projectApi.projectId
+    !uploadedSource ||
+    uploadedSource.projectId !== projectApi.projectId
   ) {
     throw new Error(
       'Remaining resilience upload was not bound to the exact project.',
@@ -400,7 +400,7 @@ export async function executeRemainingResilienceScenarios(
   const uploadTriggeredJobs = await drainUploadTriggeredQuestionJobs(
     transport,
     projectApi.projectId,
-    uploadedDocument.documentId,
+    uploadedSource.sourceId,
     options.timeoutMs,
   );
 
@@ -452,8 +452,8 @@ export async function executeRemainingResilienceScenarios(
   });
 
   const question = await captureTimedProof(now, async () => {
-    const startPath = `/projects/${encoded(projectApi.projectId)}/documents/${encoded(
-      uploadedDocument.documentId,
+    const startPath = `/projects/${encoded(projectApi.projectId)}/sources/${encoded(
+      uploadedSource.sourceId,
     )}/question-generations`;
     const scenario: CancelableOperationScenario = {
       kind: 'question',
@@ -461,7 +461,7 @@ export async function executeRemainingResilienceScenarios(
       operationPath: (operationId) => `${startPath}/${encoded(operationId)}`,
       startData: { limit: 2, strategy: 'hybrid_reasoning' },
       projectId: projectApi.projectId,
-      documentId: uploadedDocument.documentId,
+      sourceId: uploadedSource.sourceId,
       provider: selection.provider,
       model: selection.model,
       timeoutMs: options.timeoutMs,
@@ -470,10 +470,10 @@ export async function executeRemainingResilienceScenarios(
           options.latePublishObservationWindowMs,
           wait,
           async () => ({
-            usableQuestionCount: await currentExactDocumentQuestionCount(
+            usableQuestionCount: await currentExactSourceQuestionCount(
               transport,
               projectApi.projectId,
-              uploadedDocument.documentId,
+              uploadedSource.sourceId,
             ),
           }),
         ),
@@ -486,7 +486,7 @@ export async function executeRemainingResilienceScenarios(
       scenario.operationPath,
       {
         project_id: projectApi.projectId,
-        document_id: uploadedDocument.documentId,
+        source_id: uploadedSource.sourceId,
         provider: selection.provider,
         model: selection.model,
       },
@@ -499,7 +499,7 @@ export async function executeRemainingResilienceScenarios(
       {
         ...commitBinding,
         projectId: projectApi.projectId,
-        documentId: uploadedDocument.documentId,
+        sourceId: uploadedSource.sourceId,
       },
       options.timeoutMs,
     );
@@ -517,7 +517,7 @@ export async function executeRemainingResilienceScenarios(
       transport,
       page: requirePage(run),
       projectId: projectApi.projectId,
-      documentId: uploadedDocument.documentId,
+      sourceId: uploadedSource.sourceId,
       timeoutMs: options.timeoutMs,
       restart: async (label) => {
         const previousAuthorization = requireProjectApi(run).authorization;
@@ -814,17 +814,17 @@ export async function exactOllamaHealth(
 export async function drainUploadTriggeredQuestionJobs(
   transport: JsonTransport,
   projectId: string,
-  documentId: string,
+  sourceId: string,
   timeoutMs: number,
 ): Promise<UploadTriggeredQuestionJobsProof> {
-  const jobsPath = `/projects/${encoded(projectId)}/documents/${encoded(
-    documentId,
+  const jobsPath = `/projects/${encoded(projectId)}/sources/${encoded(
+    sourceId,
   )}/question-jobs`;
   const terminal = await pollJson(
     transport,
     jobsPath,
     (body) => {
-      const items = exactQuestionJobItems(body, projectId, documentId);
+      const items = exactQuestionJobItems(body, projectId, sourceId);
       return (
         items.length > 0 &&
         items.every((item) =>
@@ -834,7 +834,7 @@ export async function drainUploadTriggeredQuestionJobs(
     },
     { timeoutMs, label: 'upload-triggered automatic question jobs' },
   );
-  const jobs = exactQuestionJobItems(terminal, projectId, documentId);
+  const jobs = exactQuestionJobItems(terminal, projectId, sourceId);
   if (jobs.some((job) => job.status !== 'skipped_missing_model')) {
     throw new Error(
       'Upload-triggered question jobs did not all terminate on the isolated missing model.',
@@ -848,7 +848,7 @@ export async function drainUploadTriggeredQuestionJobs(
     [200],
     'questions before manual generation',
   );
-  const usable = exactUsableQuestions(questions, projectId, documentId);
+  const usable = exactUsableQuestions(questions, projectId, sourceId);
   if (usable.length !== 0) {
     throw new Error(
       'Automatic question jobs published usable questions before manual proof.',
@@ -864,7 +864,7 @@ export async function drainUploadTriggeredQuestionJobs(
 function exactQuestionJobItems(
   body: Record<string, unknown>,
   projectId: string,
-  documentId: string,
+  sourceId: string,
 ): Record<string, unknown>[] {
   if (!Array.isArray(body.items)) {
     throw new Error('Automatic question job list was invalid.');
@@ -877,7 +877,7 @@ function exactQuestionJobItems(
     const status = String(item.status);
     if (
       item.project_id !== projectId ||
-      item.document_id !== documentId ||
+      item.source_id !== sourceId ||
       typeof item.id !== 'string' ||
       item.id.trim().length === 0 ||
       (!UPLOAD_QUESTION_JOB_TERMINAL_STATUSES.has(status) &&
@@ -889,20 +889,20 @@ function exactQuestionJobItems(
   });
 }
 
-export async function waitForExactDocumentQuestions(
+export async function waitForExactSourceQuestions(
   transport: JsonTransport,
   projectId: string,
-  documentId: string,
+  sourceId: string,
   timeoutMs: number,
 ): Promise<number> {
   const body = await pollJson(
     transport,
     `/projects/${encoded(projectId)}/questions`,
     (candidate) =>
-      exactUsableQuestions(candidate, projectId, documentId).length >= 2,
+      exactUsableQuestions(candidate, projectId, sourceId).length >= 2,
     { timeoutMs, label: 'manual question publication' },
   );
-  const usable = exactUsableQuestions(body, projectId, documentId);
+  const usable = exactUsableQuestions(body, projectId, sourceId);
   if (usable.length < 2) {
     throw new Error(
       'Manual question commit did not publish two usable questions.',
@@ -918,18 +918,18 @@ export async function waitForValidatedManualQuestionPublication(
   timeoutMs: number,
 ): Promise<number> {
   assertManualQuestionGenerationTerminalEvidence(terminalResponse, expected);
-  return waitForExactDocumentQuestions(
+  return waitForExactSourceQuestions(
     transport,
     expected.projectId,
-    expected.documentId,
+    expected.sourceId,
     timeoutMs,
   );
 }
 
-async function currentExactDocumentQuestionCount(
+async function currentExactSourceQuestionCount(
   transport: JsonTransport,
   projectId: string,
-  documentId: string,
+  sourceId: string,
 ): Promise<number> {
   const body = requireJsonObject(
     await transport.request(
@@ -937,15 +937,15 @@ async function currentExactDocumentQuestionCount(
       `/projects/${encoded(projectId)}/questions`,
     ),
     [200],
-    'current exact-document questions',
+    'current exact-source questions',
   );
-  return exactUsableQuestions(body, projectId, documentId).length;
+  return exactUsableQuestions(body, projectId, sourceId).length;
 }
 
 function exactUsableQuestions(
   body: Record<string, unknown>,
   projectId: string,
-  documentId: string,
+  sourceId: string,
 ): Record<string, unknown>[] {
   if (!Array.isArray(body.items)) {
     throw new Error('Question list was invalid.');
@@ -960,10 +960,10 @@ function exactUsableQuestions(
     }
     const answer = item.answer;
     const usable = typeof answer === 'string' && answer.trim().length > 0;
-    if (usable && item.document_id !== documentId) {
-      throw new Error('Usable question escaped the exact document.');
+    if (usable && item.source_id !== sourceId) {
+      throw new Error('Usable question escaped the exact source.');
     }
-    return usable && item.document_id === documentId;
+    return usable && item.source_id === sourceId;
   }) as Record<string, unknown>[];
 }
 
@@ -1147,7 +1147,7 @@ function createRunState(options: RemainingResilienceOptions): SmokeRunState {
     port: options.cdpPort,
     processBaseline: { all: [], nodePids: new Set() },
     projectApi: null,
-    uploadedDocument: null,
+    uploadedSource: null,
     questionObservationStartedAt: null,
     questionObservationActive: false,
     questionGenerationApiPollErrorCaptured: false,
@@ -1297,7 +1297,7 @@ function proofObservations(
   event: string,
 ): EvidenceEnvelopeOptions['observations'] {
   const projectId = optionalString(proof.projectId);
-  const documentId = optionalString(proof.documentId);
+  const sourceId = optionalString(proof.sourceId);
   const operationId = optionalString(proof.operationId);
   const sessionId = optionalString(proof.sessionId);
   return [
@@ -1305,7 +1305,7 @@ function proofObservations(
       at: startedAt,
       event: `${event}.started`,
       ...(projectId ? { projectId } : {}),
-      ...(documentId ? { documentId } : {}),
+      ...(sourceId ? { sourceId } : {}),
       ...(operationId ? { operationId } : {}),
       ...(sessionId ? { sessionId } : {}),
     },
@@ -1313,7 +1313,7 @@ function proofObservations(
       at: completedAt,
       event: `${event}.verified`,
       ...(projectId ? { projectId } : {}),
-      ...(documentId ? { documentId } : {}),
+      ...(sourceId ? { sourceId } : {}),
       ...(operationId ? { operationId } : {}),
       ...(sessionId ? { sessionId } : {}),
     },

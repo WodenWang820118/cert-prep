@@ -13,7 +13,7 @@ from capture_runtime_client import (
     CaptureDocument,
     CaptureSourceKind,
 )
-from cert_prep_contracts.documents import SourceKind
+from cert_prep_contracts.sources import SourceKind
 
 from cert_prep_backend.capture_integration.source_kind import to_capture_source_kind
 from cert_prep_backend.capture_integration.domain.review_session import (
@@ -44,10 +44,10 @@ from cert_prep_backend.capture_integration.infrastructure.persistence import (
 from cert_prep_backend.capture_integration.infrastructure import review_sessions
 from cert_prep_backend.source_library.application import use_cases as source_library
 from cert_prep_backend.source_library.application.ports import (
-    DocumentOperationRepository,
-    DocumentRepository,
+    SourceOperationRepository,
+    SourceRepository,
 )
-from cert_prep_backend.source_library.domain.document import SourceDocument
+from cert_prep_backend.source_library.domain.source import Source
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.platform.errors import CaptureRequirementUnavailable
 
@@ -74,7 +74,7 @@ def begin_capture_commit(
     db: Database,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     operation_id: str,
     session_id: str,
     candidate: CaptureDocument,
@@ -96,7 +96,7 @@ def begin_capture_commit(
         if acquired:
             bind_commit(connection).begin_commit(
                 project_id=project_id,
-                document_id=document_id,
+                source_id=source_id,
                 operation_id=operation_id,
             )
         return CaptureCommitClaim(session=session, acquired=acquired)
@@ -107,7 +107,7 @@ def begin_review_capture(
     *,
     coordinator: CertPrepCaptureCoordinator,
     project_id: str,
-    document_id: str,
+    source_id: str,
     operation_id: str,
     session_id: str,
     file_name: str,
@@ -116,9 +116,9 @@ def begin_review_capture(
     source_kind: CaptureSourceKind,
     should_cancel: Callable[[], bool],
     operations: CaptureOperations,
-    documents: DocumentRepository,
+    sources: SourceRepository,
     on_runtime_started: Callable[[str], None] | None = None,
-) -> SourceDocument:
+) -> Source:
     def persist_runtime_id(operation) -> None:
         review_sessions.set_runtime_capture_id(
             db,
@@ -149,29 +149,29 @@ def begin_review_capture(
         )
         operations.mark_review_pending(
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             operation_id=operation_id,
         )
     except Exception:
         coordinator.cancel(operation.capture_id)
         raise
-    return source_library.view_document(documents, project_id, document_id)
+    return source_library.view_source(sources, project_id, source_id)
 
 
 def commit_review_capture(
     db: Database,
     *,
     coordinator: CertPrepCaptureCoordinator,
-    document_operations: DocumentOperationRepository,
+    source_operations: SourceOperationRepository,
     project_id: str,
-    document_id: str,
+    source_id: str,
     operation_id: str,
     session_id: str,
     candidate: CaptureDocument,
     should_cancel: Callable[[], bool],
-    documents: DocumentRepository,
+    sources: SourceRepository,
     publication: CapturePublication,
-) -> SourceDocument:
+) -> Source:
     session = review_sessions.get(db, project_id=project_id, session_id=session_id)
     runtime_capture_id = session.runtime_capture_id
     if not isinstance(runtime_capture_id, str) or not runtime_capture_id:
@@ -185,13 +185,13 @@ def commit_review_capture(
             should_cancel=should_cancel,
         )
         terminal_sequence = capture.last_event_sequence
-        source = source_library.view_document(documents, project_id, document_id)
-        document = publish_capture_document(
+        imported_source = source_library.view_source(sources, project_id, source_id)
+        source = publish_capture_document(
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             operation_id=operation_id,
-            source_kind=source.source_kind,
-            expected_sha256=source.sha256,
+            source_kind=imported_source.source_kind,
+            expected_sha256=imported_source.sha256,
             document=capture.document,
             runtime_version=capture.runtime_version,
             ocr_projection=capture.ocr_projection,
@@ -204,7 +204,7 @@ def commit_review_capture(
             status=CaptureReviewStatus.COMPLETED,
             terminal_sequence=capture.last_event_sequence,
         )
-        return document
+        return source
     except CaptureRuntimeCanceledError:
         review_sessions.finish(
             db,
@@ -217,7 +217,7 @@ def commit_review_capture(
         if isinstance(error, CaptureRuntimeJobError):
             terminal_sequence = error.last_event_sequence
         try:
-            document_operations.fail(
+            source_operations.fail(
                 project_id, operation_id, error="Capture review confirmation failed."
             )
         finally:
@@ -235,14 +235,14 @@ def cleanup_active_review_sessions(
     db: Database,
     *,
     coordinator: CertPrepCaptureCoordinator | None,
-    document_operations: DocumentOperationRepository,
+    source_operations: SourceOperationRepository,
 ) -> tuple[str, ...]:
     """Cancel pending sidecar jobs during startup/shutdown recovery."""
 
     return _cleanup_review_sessions(
         db,
         coordinator=coordinator,
-        document_operations=document_operations,
+        source_operations=source_operations,
         sessions=review_sessions.active(db),
     )
 
@@ -251,14 +251,14 @@ def cleanup_expired_review_sessions(
     db: Database,
     *,
     coordinator: CertPrepCaptureCoordinator | None,
-    document_operations: DocumentOperationRepository,
+    source_operations: SourceOperationRepository,
 ) -> tuple[str, ...]:
     """Cancel review sessions whose thirty-minute confirmation window expired."""
 
     return _cleanup_review_sessions(
         db,
         coordinator=coordinator,
-        document_operations=document_operations,
+        source_operations=source_operations,
         sessions=review_sessions.expired(db),
     )
 
@@ -267,7 +267,7 @@ def _cleanup_review_sessions(
     db: Database,
     *,
     coordinator: CertPrepCaptureCoordinator | None,
-    document_operations: DocumentOperationRepository,
+    source_operations: SourceOperationRepository,
     sessions: list[CaptureReviewSession],
 ) -> tuple[str, ...]:
     """Cancel the supplied durable sessions and their ephemeral runtime jobs."""
@@ -285,13 +285,13 @@ def _cleanup_review_sessions(
                 # must not remain reviewable after process recovery.
                 pass
         try:
-            document_operations.cancel(session.project_id, session.operation_id)
-            document_operations.acknowledge_cancellation(
+            source_operations.cancel(session.project_id, session.operation_id)
+            source_operations.acknowledge_cancellation(
                 session.project_id, session.operation_id
             )
         except Exception:
             try:
-                document_operations.fail(
+                source_operations.fail(
                     session.project_id,
                     session.operation_id,
                     error="Capture review session was recovered after host shutdown.",
@@ -319,17 +319,17 @@ class CaptureReviewWorkflowAdapter:
         self,
         db: Database,
         coordinator: CertPrepCaptureCoordinator | None,
-        document_operations: DocumentOperationRepository,
+        source_operations: SourceOperationRepository,
         *,
-        documents: DocumentRepository,
+        sources: SourceRepository,
         publication: CapturePublication,
         bind_commit: BindCaptureReviewCommit,
         operations: CaptureOperations,
     ) -> None:
         self._db = db
         self._coordinator = coordinator
-        self._document_operations = document_operations
-        self._documents = documents
+        self._source_operations = source_operations
+        self._sources = sources
         self._publication = publication
         self._bind_commit = bind_commit
         self._operations = operations
@@ -338,7 +338,7 @@ class CaptureReviewWorkflowAdapter:
         self,
         *,
         project_id: str,
-        document_id: str,
+        source_id: str,
         operation_id: str,
         session_id: str,
         file_name: str,
@@ -353,7 +353,7 @@ class CaptureReviewWorkflowAdapter:
                 self._db,
                 coordinator=self._coordinator,
                 project_id=project_id,
-                document_id=document_id,
+                source_id=source_id,
                 operation_id=operation_id,
                 session_id=session_id,
                 file_name=file_name,
@@ -363,7 +363,7 @@ class CaptureReviewWorkflowAdapter:
                 should_cancel=should_cancel,
                 on_runtime_started=on_runtime_started,
                 operations=self._operations,
-                documents=self._documents,
+                sources=self._sources,
             )
         except CaptureRuntimeCanceledError as error:
             raise CaptureExtractionCanceled() from error
@@ -404,7 +404,7 @@ class CaptureReviewWorkflowAdapter:
         self,
         *,
         project_id: str,
-        document_id: str,
+        source_id: str,
         operation_id: str,
         session_id: str,
         candidate: object,
@@ -413,7 +413,7 @@ class CaptureReviewWorkflowAdapter:
         claim = begin_capture_commit(
             self._db,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             operation_id=operation_id,
             session_id=session_id,
             candidate=cast(CaptureDocument, candidate),
@@ -426,24 +426,24 @@ class CaptureReviewWorkflowAdapter:
         self,
         *,
         project_id: str,
-        document_id: str,
+        source_id: str,
         operation_id: str,
         session_id: str,
         candidate: object,
         should_cancel: Callable[[], bool],
-    ) -> SourceDocument:
+    ) -> Source:
         try:
             return commit_review_capture(
                 self._db,
                 coordinator=self._coordinator,
-                document_operations=self._document_operations,
+                source_operations=self._source_operations,
                 project_id=project_id,
-                document_id=document_id,
+                source_id=source_id,
                 operation_id=operation_id,
                 session_id=session_id,
                 candidate=cast(CaptureDocument, candidate),
                 should_cancel=should_cancel,
-                documents=self._documents,
+                sources=self._sources,
                 publication=self._publication,
             )
         except CaptureRuntimeCanceledError as error:
@@ -457,24 +457,24 @@ class CaptureReviewMaintenanceAdapter:
         self,
         db: Database,
         coordinator: CertPrepCaptureCoordinator | None,
-        document_operations: DocumentOperationRepository,
+        source_operations: SourceOperationRepository,
     ) -> None:
         self._db = db
         self._coordinator = coordinator
-        self._document_operations = document_operations
+        self._source_operations = source_operations
 
     def expire(self) -> tuple[str, ...]:
         return cleanup_expired_review_sessions(
             self._db,
             coordinator=self._coordinator,
-            document_operations=self._document_operations,
+            source_operations=self._source_operations,
         )
 
     def recover(self) -> tuple[str, ...]:
         return cleanup_active_review_sessions(
             self._db,
             coordinator=self._coordinator,
-            document_operations=self._document_operations,
+            source_operations=self._source_operations,
         )
 
 

@@ -9,27 +9,27 @@ def test_project_scoped_records_are_invisible_to_other_projects(
     owner_project_id = _create_project(client, auth_headers, "Owner")
     other_project_id = _create_project(client, auth_headers, "Other")
 
-    owner_document_id = _upload_document(
+    owner_source_id = _upload_source(
         client,
         auth_headers,
         owner_project_id,
         filename="owner.pdf",
         text="Least privilege keeps cloud permissions scoped.",
     )
-    owner_chunk = _first_chunk(client, auth_headers, owner_project_id, owner_document_id)
+    owner_chunk = _first_chunk(client, auth_headers, owner_project_id, owner_source_id)
     owner_question = _create_question(
         client,
         auth_headers,
         owner_project_id,
-        owner_document_id,
+        owner_source_id,
         owner_chunk,
         question="Which access model should be applied?",
     )
-    owner_session = _create_full_document_session(
+    owner_session = _create_full_source_session(
         client,
         auth_headers,
         owner_project_id,
-        owner_document_id,
+        owner_source_id,
     )
     owner_attempt = _record_attempt(
         client,
@@ -42,7 +42,7 @@ def test_project_scoped_records_are_invisible_to_other_projects(
     assert owner_attempt["is_correct"] is False
 
     assert _items(
-        client.get(f"/projects/{other_project_id}/documents", headers=auth_headers)
+        client.get(f"/projects/{other_project_id}/sources", headers=auth_headers)
     ) == []
     assert _items(
         client.get(f"/projects/{other_project_id}/questions", headers=auth_headers)
@@ -59,21 +59,21 @@ def test_project_scoped_records_are_invisible_to_other_projects(
 
     _assert_not_found(
         client.get(
-            f"/projects/{other_project_id}/documents/{owner_document_id}",
+            f"/projects/{other_project_id}/sources/{owner_source_id}",
             headers=auth_headers,
         ),
         "Document not found.",
     )
     _assert_not_found(
         client.get(
-            f"/projects/{other_project_id}/documents/{owner_document_id}/chunks",
+            f"/projects/{other_project_id}/sources/{owner_source_id}/chunks",
             headers=auth_headers,
         ),
         "Document not found.",
     )
     _assert_not_found(
         client.post(
-            f"/projects/{other_project_id}/documents/{owner_document_id}/questions",
+            f"/projects/{other_project_id}/sources/{owner_source_id}/questions",
             headers=auth_headers,
             json={"limit": 1},
         ),
@@ -83,7 +83,7 @@ def test_project_scoped_records_are_invisible_to_other_projects(
         client.post(
             f"/projects/{other_project_id}/questions",
             headers=auth_headers,
-            json=_question_payload(owner_document_id, owner_chunk),
+            json=_question_payload(owner_source_id, owner_chunk),
         ),
         "Document chunk not found.",
     )
@@ -99,7 +99,7 @@ def test_project_scoped_records_are_invisible_to_other_projects(
         client.post(
             f"/projects/{other_project_id}/practice-sessions",
             headers=auth_headers,
-            json={"mode": "full_document", "document_id": owner_document_id},
+            json={"mode": "full_source", "source_id": owner_source_id},
         ),
         "Document not found.",
     )
@@ -136,27 +136,27 @@ def test_project_scoped_records_are_invisible_to_other_projects(
         "Wrong answer not found.",
     )
 
-    other_document_id = _upload_document(
+    other_source_id = _upload_source(
         client,
         auth_headers,
         other_project_id,
         filename="other.pdf",
         text="Segregation of duties limits privileged action.",
     )
-    other_chunk = _first_chunk(client, auth_headers, other_project_id, other_document_id)
+    other_chunk = _first_chunk(client, auth_headers, other_project_id, other_source_id)
     _create_question(
         client,
         auth_headers,
         other_project_id,
-        other_document_id,
+        other_source_id,
         other_chunk,
         question="Which duty model should be applied?",
     )
-    other_session = _create_full_document_session(
+    other_session = _create_full_source_session(
         client,
         auth_headers,
         other_project_id,
-        other_document_id,
+        other_source_id,
     )
 
     _assert_not_found(
@@ -181,7 +181,7 @@ def _create_project(client: TestClient, auth_headers, name: str) -> str:
     return response.json()["id"]
 
 
-def _upload_document(
+def _upload_source(
     client: TestClient,
     auth_headers,
     project_id: str,
@@ -190,7 +190,7 @@ def _upload_document(
     text: str,
 ) -> str:
     response = client.post(
-        f"/projects/{project_id}/documents",
+        f"/projects/{project_id}/sources",
         headers=auth_headers,
         files={
             "file": (
@@ -208,10 +208,10 @@ def _first_chunk(
     client: TestClient,
     auth_headers,
     project_id: str,
-    document_id: str,
+    source_id: str,
 ) -> dict:
     response = client.get(
-        f"/projects/{project_id}/documents/{document_id}/chunks",
+        f"/projects/{project_id}/sources/{source_id}/chunks",
         headers=auth_headers,
     )
     assert response.status_code == 200
@@ -224,7 +224,7 @@ def _create_question(
     client: TestClient,
     auth_headers,
     project_id: str,
-    document_id: str,
+    source_id: str,
     chunk: dict,
     *,
     question: str,
@@ -232,20 +232,20 @@ def _create_question(
     response = client.post(
         f"/projects/{project_id}/questions",
         headers=auth_headers,
-        json=_question_payload(document_id, chunk, question=question),
+        json=_question_payload(source_id, chunk, question=question),
     )
     assert response.status_code == 201
     return response.json()
 
 
 def _question_payload(
-    document_id: str,
+    source_id: str,
     chunk: dict,
     *,
     question: str = "Which access model should be applied?",
 ) -> dict:
     return {
-        "document_id": document_id,
+        "source_id": source_id,
         "chunk_id": chunk["id"],
         "question": question,
         "choices": ["Use least privilege", "Allow unrestricted access"],
@@ -257,16 +257,16 @@ def _question_payload(
     }
 
 
-def _create_full_document_session(
+def _create_full_source_session(
     client: TestClient,
     auth_headers,
     project_id: str,
-    document_id: str,
+    source_id: str,
 ) -> dict:
     response = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
-        json={"mode": "full_document", "document_id": document_id},
+        json={"mode": "full_source", "source_id": source_id},
     )
     assert response.status_code == 201
     return response.json()

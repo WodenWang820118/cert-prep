@@ -4,14 +4,14 @@ from practice_test_support import (
     _create_manual_question,
     _create_project,
     _generate_playable_question,
-    _upload_document,
+    _upload_source,
 )
 
 
 def test_practice_attempt_rejects_answer_outside_choices(client: TestClient, auth_headers) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    question = _generate_playable_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    question = _generate_playable_question(client, auth_headers, project_id, source_id)
     session = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
@@ -34,8 +34,8 @@ def test_legacy_practice_attempt_fallback_does_not_require_live_playability(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    question = _create_manual_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    question = _create_manual_question(client, auth_headers, project_id, source_id)
     session = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
@@ -72,8 +72,8 @@ def test_practice_attempt_grades_against_session_question_snapshot(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    question = _create_manual_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    question = _create_manual_question(client, auth_headers, project_id, source_id)
     session = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
@@ -109,13 +109,13 @@ def test_practice_attempt_rejects_question_outside_session(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    _generate_playable_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    _generate_playable_question(client, auth_headers, project_id, source_id)
     second_question = _create_manual_question(
         client,
         auth_headers,
         project_id,
-        document_id,
+        source_id,
     )
     playable_questions = client.get(
         f"/projects/{project_id}/questions",
@@ -152,13 +152,13 @@ def test_practice_attempt_rejects_incomplete_questions_as_not_playable(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    _create_manual_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    _create_manual_question(client, auth_headers, project_id, source_id)
     incomplete = _create_manual_question(
         client,
         auth_headers,
         project_id,
-        document_id,
+        source_id,
         rationale=" ",
     )
     session = client.post(
@@ -186,13 +186,13 @@ def test_practice_excludes_and_rejects_question_without_evidence(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    complete = _create_manual_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    complete = _create_manual_question(client, auth_headers, project_id, source_id)
     no_evidence = _create_manual_question(
         client,
         auth_headers,
         project_id,
-        document_id,
+        source_id,
         question="Which answer is missing source evidence?",
         citation_page=None,
         source_excerpt=None,

@@ -44,7 +44,7 @@ from cert_prep_backend.capture_integration.application.messages import (
     TEXT_RECOGNITION_FAILED_MESSAGE,
     TEXT_RECOGNITION_UNAVAILABLE_MESSAGE,
 )
-from cert_prep_backend.source_library.domain.document import (
+from cert_prep_backend.source_library.domain.source import (
     NO_TEXT_DETECTED_MESSAGE,
     ExtractedPage,
     PageExtraction,
@@ -61,8 +61,8 @@ from capture_runtime_client import (
 )
 from cert_prep_backend.capture_integration.infrastructure.host_models import RuntimeReady
 from cert_prep_backend.capture_integration.api.router import CaptureRuntimeEventRegistry
-from document_test_helpers import _create_project
-from document_test_llm_fakes import FakeQuestionWriter
+from source_test_helpers import _create_project
+from source_test_llm_fakes import FakeQuestionWriter
 
 
 NOW = datetime(2026, 7, 20, 5, 0, tzinfo=UTC)
@@ -148,17 +148,17 @@ def _attach_public_capture(
     headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
     project_id = _create_project(client, headers)
     operation_id = str(uuid4())
-    document_id = str(uuid4())
+    source_id = str(uuid4())
     operations.claim_operation(
         app.state.database,
         project_id=project_id,
         operation_id=operation_id,
     )
-    operations.create_and_attach_document(
+    operations.create_and_attach_source(
         app.state.database,
         project_id=project_id,
         operation_id=operation_id,
-        document_id=document_id,
+        source_id=source_id,
         filename="capture.pdf",
         source_kind="pdf",
         sha256="a" * 64,
@@ -170,7 +170,7 @@ def _attach_public_capture(
     return {
         "project_id": project_id,
         "operation_id": operation_id,
-        "document_id": document_id,
+        "source_id": source_id,
         "document": document,
         "projection": _test_ocr_projection(raw, "capture-1"),
     }
@@ -180,23 +180,23 @@ def _public_capture_counts(
     app,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
 ) -> tuple[int, int, str, int]:
     with app.state.database.connect() as connection:
-        document = connection.execute(
-            "SELECT status, processed_page_count FROM documents WHERE project_id = ? AND id = ?",
-            (project_id, document_id),
+        source = connection.execute(
+            "SELECT status, processed_page_count FROM sources WHERE project_id = ? AND id = ?",
+            (project_id, source_id),
         ).fetchone()
-        assert document is not None
-        documents = connection.execute(
-            "SELECT COUNT(*) FROM documents WHERE project_id = ?",
+        assert source is not None
+        sources = connection.execute(
+            "SELECT COUNT(*) FROM sources WHERE project_id = ?",
             (project_id,),
         ).fetchone()[0]
         chunks = connection.execute(
-            "SELECT COUNT(*) FROM document_chunks WHERE project_id = ? AND document_id = ?",
-            (project_id, document_id),
+            "SELECT COUNT(*) FROM source_chunks WHERE project_id = ? AND source_id = ?",
+            (project_id, source_id),
         ).fetchone()[0]
-    return int(documents), int(chunks), str(document["status"]), int(document["processed_page_count"])
+    return int(sources), int(chunks), str(source["status"]), int(source["processed_page_count"])
 
 
 @pytest.mark.parametrize(
@@ -209,7 +209,7 @@ def test_public_capture_publication_rejects_noncanonical_write_provenance(
 ) -> None:
     app = create_app(
         settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
         background_question_jobs=False,
     )
     with TestClient(app) as client:
@@ -221,7 +221,7 @@ def test_public_capture_publication_rejects_noncanonical_write_provenance(
             publish_capture_document(
                 runtime_version=CAPTURE_RUNTIME_VERSION,
                 project_id=str(fixture["project_id"]),
-                document_id=str(fixture["document_id"]),
+                source_id=str(fixture["source_id"]),
                 operation_id=str(fixture["operation_id"]),
                 source_kind="pdf",
                 expected_sha256="a" * 64,
@@ -233,7 +233,7 @@ def test_public_capture_publication_rejects_noncanonical_write_provenance(
         assert _public_capture_counts(
             app,
             project_id=str(fixture["project_id"]),
-            document_id=str(fixture["document_id"]),
+            source_id=str(fixture["source_id"]),
         ) == (1, 0, "processing", 0)
 
 
@@ -242,7 +242,7 @@ def test_public_capture_publication_maps_exact_producer_engine_to_durable_method
 ) -> None:
     app = create_app(
         settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
         background_question_jobs=False,
     )
     with TestClient(app) as client:
@@ -253,7 +253,7 @@ def test_public_capture_publication_maps_exact_producer_engine_to_durable_method
         result = publish_capture_document(
             runtime_version=CAPTURE_RUNTIME_VERSION,
             project_id=str(fixture["project_id"]),
-            document_id=str(fixture["document_id"]),
+            source_id=str(fixture["source_id"]),
             operation_id=str(fixture["operation_id"]),
             source_kind="pdf",
             expected_sha256="a" * 64,
@@ -266,7 +266,7 @@ def test_public_capture_publication_maps_exact_producer_engine_to_durable_method
         assert _public_capture_counts(
             app,
             project_id=str(fixture["project_id"]),
-            document_id=str(fixture["document_id"]),
+            source_id=str(fixture["source_id"]),
         ) == (1, 1, "ready", 1)
 
 
@@ -277,7 +277,7 @@ def test_public_capture_publication_rejects_projection_engine_mismatch(
 ) -> None:
     app = create_app(
         settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
         background_question_jobs=False,
     )
     with TestClient(app) as client:
@@ -294,7 +294,7 @@ def test_public_capture_publication_rejects_projection_engine_mismatch(
             publish_capture_document(
                 runtime_version=CAPTURE_RUNTIME_VERSION,
                 project_id=str(fixture["project_id"]),
-                document_id=str(fixture["document_id"]),
+                source_id=str(fixture["source_id"]),
                 operation_id=str(fixture["operation_id"]),
                 source_kind="pdf",
                 expected_sha256="a" * 64,
@@ -306,7 +306,7 @@ def test_public_capture_publication_rejects_projection_engine_mismatch(
         assert _public_capture_counts(
             app,
             project_id=str(fixture["project_id"]),
-            document_id=str(fixture["document_id"]),
+            source_id=str(fixture["source_id"]),
         ) == (1, 0, "processing", 0)
 
 
@@ -315,7 +315,7 @@ def test_public_capture_publication_rejects_page_provenance_mismatch_without_wri
 ) -> None:
     app = create_app(
         settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
         background_question_jobs=False,
     )
     with TestClient(app) as client:
@@ -329,7 +329,7 @@ def test_public_capture_publication_rejects_page_provenance_mismatch_without_wri
             publish_capture_document(
                 runtime_version=CAPTURE_RUNTIME_VERSION,
                 project_id=str(fixture["project_id"]),
-                document_id=str(fixture["document_id"]),
+                source_id=str(fixture["source_id"]),
                 operation_id=str(fixture["operation_id"]),
                 source_kind="pdf",
                 expected_sha256="a" * 64,
@@ -341,7 +341,7 @@ def test_public_capture_publication_rejects_page_provenance_mismatch_without_wri
         assert _public_capture_counts(
             app,
             project_id=str(fixture["project_id"]),
-            document_id=str(fixture["document_id"]),
+            source_id=str(fixture["source_id"]),
         ) == (1, 0, "processing", 0)
 
 
@@ -350,7 +350,7 @@ def test_public_capture_publication_rejects_unresolved_page_without_writes(
 ) -> None:
     app = create_app(
         settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
         background_question_jobs=False,
     )
     with TestClient(app) as client:
@@ -365,7 +365,7 @@ def test_public_capture_publication_rejects_unresolved_page_without_writes(
             publish_capture_document(
                 runtime_version=CAPTURE_RUNTIME_VERSION,
                 project_id=str(fixture["project_id"]),
-                document_id=str(fixture["document_id"]),
+                source_id=str(fixture["source_id"]),
                 operation_id=str(fixture["operation_id"]),
                 source_kind="pdf",
                 expected_sha256="a" * 64,
@@ -377,7 +377,7 @@ def test_public_capture_publication_rejects_unresolved_page_without_writes(
         assert _public_capture_counts(
             app,
             project_id=str(fixture["project_id"]),
-            document_id=str(fixture["document_id"]),
+            source_id=str(fixture["source_id"]),
         ) == (1, 0, "processing", 0)
 
 
@@ -386,7 +386,7 @@ def test_public_capture_publication_uses_projection_validation_for_embedded_mode
 ) -> None:
     app = create_app(
         settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
         background_question_jobs=False,
     )
     with TestClient(app) as client:
@@ -399,7 +399,7 @@ def test_public_capture_publication_uses_projection_validation_for_embedded_mode
         result = publish_capture_document(
             runtime_version=CAPTURE_RUNTIME_VERSION,
             project_id=str(fixture["project_id"]),
-            document_id=str(fixture["document_id"]),
+            source_id=str(fixture["source_id"]),
             operation_id=str(fixture["operation_id"]),
             source_kind="pdf",
             expected_sha256="a" * 64,
@@ -414,7 +414,7 @@ def test_public_capture_publication_uses_projection_validation_for_embedded_mode
 def test_legacy_text_layer_rows_remain_read_compatible(tmp_path: Path) -> None:
     app = create_app(
         settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
         background_question_jobs=False,
     )
     with TestClient(app) as client:
@@ -423,21 +423,21 @@ def test_legacy_text_layer_rows_remain_read_compatible(tmp_path: Path) -> None:
             client,
             headers,
         )
-        expected_document_ids: dict[str, str] = {}
+        expected_source_ids: dict[str, str] = {}
         for method in ("text_layer",):
             operation_id = str(uuid4())
-            document_id = str(uuid4())
-            expected_document_ids[method] = document_id
+            source_id = str(uuid4())
+            expected_source_ids[method] = source_id
             operations.claim_operation(
                 app.state.database,
                 project_id=project_id,
                 operation_id=operation_id,
             )
-            operations.create_and_attach_document(
+            operations.create_and_attach_source(
                 app.state.database,
                 project_id=project_id,
                 operation_id=operation_id,
-                document_id=document_id,
+                source_id=source_id,
                 filename=f"legacy-{method}.pdf",
                 source_kind="pdf",
                 sha256="a" * 64,
@@ -449,7 +449,7 @@ def test_legacy_text_layer_rows_remain_read_compatible(tmp_path: Path) -> None:
                 app.state.database,
                 project_id=project_id,
                 operation_id=operation_id,
-                document_id=document_id,
+                source_id=source_id,
                 extraction=PageExtraction(
                     page_count=1,
                     pages=(
@@ -472,16 +472,16 @@ def test_legacy_text_layer_rows_remain_read_compatible(tmp_path: Path) -> None:
                 ),
             )
 
-        documents = client.get(
-            f"/projects/{project_id}/documents",
+        sources = client.get(
+            f"/projects/{project_id}/sources",
             headers=headers,
         )
-        assert documents.status_code == 200
-        by_id = {item["id"]: item for item in documents.json()["items"]}
-        for method, document_id in expected_document_ids.items():
-            assert by_id[document_id]["extraction_method"] == method
+        assert sources.status_code == 200
+        by_id = {item["id"]: item for item in sources.json()["items"]}
+        for method, source_id in expected_source_ids.items():
+            assert by_id[source_id]["extraction_method"] == method
             chunks = client.get(
-                f"/projects/{project_id}/documents/{document_id}/chunks",
+                f"/projects/{project_id}/sources/{source_id}/chunks",
                 headers=headers,
             )
             assert chunks.status_code == 200
@@ -1083,30 +1083,30 @@ def test_upload_delegates_to_capture_runtime_and_atomically_maps_existing_chunks
             settings=settings,
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
             background_question_jobs=False,
         )
     ) as client:
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
         project_id = _create_project(client, headers)
-        source = minimal_pdf("Legacy extractor must not own this result.")
+        content = minimal_pdf("Legacy extractor must not own this result.")
 
         response = client.post(
-            f"/projects/{project_id}/documents",
+            f"/projects/{project_id}/sources",
             headers=headers,
             data={"language_hint": "ja"},
-            files={"file": ("capture.pdf", source, "application/pdf")},
+            files={"file": ("capture.pdf", content, "application/pdf")},
         )
 
         assert response.status_code == 201
-        document = response.json()
-        assert document["status"] == "ready"
-        assert document["sha256"] == hashlib.sha256(source).hexdigest()
-        assert document["extraction_method"] == "text_recognition"
-        assert document["ocr_device"] == "igpu"
-        assert document["chunks_count"] == 1
+        source = response.json()
+        assert source["status"] == "ready"
+        assert source["sha256"] == hashlib.sha256(content).hexdigest()
+        assert source["extraction_method"] == "text_recognition"
+        assert source["ocr_device"] == "igpu"
+        assert source["chunks_count"] == 1
         chunks = client.get(
-            f"/projects/{project_id}/documents/{document['id']}/chunks",
+            f"/projects/{project_id}/sources/{source['id']}/chunks",
             headers=headers,
         ).json()["items"]
         assert chunks[0]["text"] == "Sidecar extracted source text"
@@ -1126,27 +1126,27 @@ def test_image_upload_uses_the_same_capture_runtime_host_path(tmp_path: Path) ->
             settings=settings,
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
             background_question_jobs=False,
         )
     ) as client:
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
         project_id = _create_project(client, headers)
-        source = minimal_image()
+        content = minimal_image()
 
         response = client.post(
-            f"/projects/{project_id}/documents",
+            f"/projects/{project_id}/sources",
             headers=headers,
-            files={"file": ("capture.png", source, "image/png")},
+            files={"file": ("capture.png", content, "image/png")},
         )
 
         assert response.status_code == 201
-        document = response.json()
-        assert document["status"] == "ready"
-        assert document["source_kind"] == "image"
-        assert document["extraction_method"] == "text_recognition"
+        source = response.json()
+        assert source["status"] == "ready"
+        assert source["source_kind"] == "image"
+        assert source["extraction_method"] == "text_recognition"
         chunks = client.get(
-            f"/projects/{project_id}/documents/{document['id']}/chunks",
+            f"/projects/{project_id}/sources/{source['id']}/chunks",
             headers=headers,
         ).json()["items"]
         assert chunks[0]["text"] == "Sidecar extracted source text"
@@ -1162,7 +1162,7 @@ def test_review_image_preserves_canonical_jpeg_source_identity(tmp_path: Path) -
             settings=settings,
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
             background_question_jobs=False,
         )
     ) as client:
@@ -1213,31 +1213,31 @@ def test_audio_upload_uses_capture_time_provenance_without_cert_whisper(
             settings=settings,
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
             background_question_jobs=False,
         )
     ) as client:
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
         project_id = _create_project(client, headers)
-        source = minimal_audio(suffix)
+        content = minimal_audio(suffix)
 
         response = client.post(
-            f"/projects/{project_id}/documents",
+            f"/projects/{project_id}/sources",
             headers=headers,
             data={"language_hint": "ja"},
-            files={"file": (f"capture{suffix}", source, media_type)},
+            files={"file": (f"capture{suffix}", content, media_type)},
         )
 
         assert response.status_code == 201
-        document = response.json()
-        assert document["status"] == "ready"
-        assert document["source_kind"] == "recording"
-        assert document["transcription_status"] == "succeeded"
-        assert document["translation_status"] == "succeeded"
-        assert document["effective_transcription_model"] == "tea-asr-1.1-mini"
-        assert document["duration_ms"] == 900
+        source = response.json()
+        assert source["status"] == "ready"
+        assert source["source_kind"] == "recording"
+        assert source["transcription_status"] == "succeeded"
+        assert source["translation_status"] == "succeeded"
+        assert source["effective_transcription_model"] == "tea-asr-1.1-mini"
+        assert source["duration_ms"] == 900
         chunks = client.get(
-            f"/projects/{project_id}/documents/{document['id']}/chunks",
+            f"/projects/{project_id}/sources/{source['id']}/chunks",
             headers=headers,
         ).json()["items"]
         assert chunks[0]["locator_kind"] == "time"
@@ -1251,7 +1251,7 @@ def test_audio_upload_uses_capture_time_provenance_without_cert_whisper(
         assert runtime.started_media_types == [media_type]
         assert runtime.result_kinds == {"recording"}
         persisted = client.get(
-            f"/projects/{project_id}/documents/{document['id']}",
+            f"/projects/{project_id}/sources/{source['id']}",
             headers=headers,
         ).json()
         assert persisted["source_kind"] == "recording"
@@ -1269,7 +1269,7 @@ def test_review_result_fails_closed_when_runtime_replay_violates_contract(
             settings=settings,
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
             background_question_jobs=False,
         )
     ) as client:
@@ -1326,7 +1326,7 @@ def test_review_result_fails_closed_when_runtime_replay_violates_contract(
     (
         "filename",
         "media_type",
-        "expected_document_status",
+        "expected_source_status",
         "expected_message",
     ),
     [
@@ -1355,7 +1355,7 @@ def test_core_only_ocr_and_audio_sources_fail_before_sidecar_dispatch(
     caplog: pytest.LogCaptureFixture,
     filename: str,
     media_type: str,
-    expected_document_status: str,
+    expected_source_status: str,
     expected_message: str,
 ) -> None:
     caplog.set_level("WARNING")
@@ -1373,7 +1373,7 @@ def test_core_only_ocr_and_audio_sources_fail_before_sidecar_dispatch(
             settings=settings,
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
             background_question_jobs=False,
         )
     ) as client:
@@ -1386,7 +1386,7 @@ def test_core_only_ocr_and_audio_sources_fail_before_sidecar_dispatch(
         )
 
         response = client.post(
-            f"/projects/{project_id}/documents",
+            f"/projects/{project_id}/sources",
             headers=headers,
             files={"file": (filename, source, media_type)},
         )
@@ -1397,20 +1397,20 @@ def test_core_only_ocr_and_audio_sources_fail_before_sidecar_dispatch(
             "message": expected_message,
         }
         operation = client.get(
-            f"/projects/{project_id}/document-operations/{operation_id}",
+            f"/projects/{project_id}/source-operations/{operation_id}",
             headers={"Authorization": f"Bearer {AUTH_TOKEN}"},
         ).json()
         assert operation["status"] == "failed"
         assert operation["error"] == expected_message
-        documents = client.get(
-            f"/projects/{project_id}/documents",
+        sources = client.get(
+            f"/projects/{project_id}/sources",
             headers={"Authorization": f"Bearer {AUTH_TOKEN}"},
         ).json()["items"]
-        assert len(documents) == 1
-        assert documents[0]["status"] == expected_document_status
-        assert documents[0]["chunks_count"] == 0
-        assert documents[0]["failure_message"] == expected_message
-        assert documents[0]["extraction_warnings"] is None
+        assert len(sources) == 1
+        assert sources[0]["status"] == expected_source_status
+        assert sources[0]["chunks_count"] == 0
+        assert sources[0]["failure_message"] == expected_message
+        assert sources[0]["extraction_warnings"] is None
 
     assert runtime.requirement_reads == 1
     assert runtime.create_attempts == 0
@@ -1460,7 +1460,7 @@ class FailingCaptureRuntime(DeterministicCaptureRuntime):
 
 
 @pytest.mark.parametrize(
-    ("code", "expected_document_status", "expected_message"),
+    ("code", "expected_source_status", "expected_message"),
     [
         ("ocr_page_failed", "extraction_failed", TEXT_RECOGNITION_FAILED_MESSAGE),
         ("no_text_detected", "no_text_detected", NO_TEXT_DETECTED_MESSAGE),
@@ -1470,14 +1470,14 @@ def test_a_failed_capture_stores_and_shows_cert_text_and_logs_the_runtime_text(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
     code: str,
-    expected_document_status: str,
+    expected_source_status: str,
     expected_message: str,
 ) -> None:
     runtime = FailingCaptureRuntime(code)
     settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
     operation_id = f"runtime-failure-{code}"
     caplog.set_level("WARNING")
-    # The default upload: the document is accepted and extracted in the background.
+    # The default upload: the source is accepted and extracted in the background.
     with TestClient(
         create_app(
             settings=settings,
@@ -1489,35 +1489,35 @@ def test_a_failed_capture_stores_and_shows_cert_text_and_logs_the_runtime_text(
         auth = {"Authorization": f"Bearer {AUTH_TOKEN}"}
         project_id = _create_project(client, auth)
         response = client.post(
-            f"/projects/{project_id}/documents",
+            f"/projects/{project_id}/sources",
             headers={**auth, "X-Cert-Prep-Operation-Id": operation_id},
             files={"file": ("scan.pdf", minimal_pdf("Scanned page."), "application/pdf")},
         )
         assert response.status_code == 201
         accepted = response.json()
         # The worker may finish before the response is built; either way the response is the
-        # document, never the runtime's text.
+        # source, never the runtime's text.
         assert accepted["filename"] == "scan.pdf"
         assert (accepted["status"], accepted["failure_message"]) in {
             ("processing", None),
-            (expected_document_status, expected_message),
+            (expected_source_status, expected_message),
         }
         operation = None
         for _ in range(200):
             operation = client.get(
-                f"/projects/{project_id}/document-operations/{operation_id}", headers=auth
+                f"/projects/{project_id}/source-operations/{operation_id}", headers=auth
             )
             if operation.json()["status"] == "failed":
                 break
             time.sleep(0.01)
         assert operation is not None
-        documents = client.get(f"/projects/{project_id}/documents", headers=auth)
+        sources = client.get(f"/projects/{project_id}/sources", headers=auth)
         with client.app.state.database.connect() as connection:
             stored = [
                 str(value)
                 for row in connection.execute(
-                    "SELECT failure_message, extraction_warnings FROM documents"
-                    " UNION ALL SELECT error, NULL FROM document_operations"
+                    "SELECT failure_message, extraction_warnings FROM sources"
+                    " UNION ALL SELECT error, NULL FROM source_operations"
                 )
                 for value in tuple(row)
                 if value is not None
@@ -1525,11 +1525,11 @@ def test_a_failed_capture_stores_and_shows_cert_text_and_logs_the_runtime_text(
 
     assert operation.json()["status"] == "failed"
     assert operation.json()["error"] == expected_message
-    [document] = documents.json()["items"]
-    assert document["id"] == accepted["id"]
-    assert document["status"] == expected_document_status
-    assert document["failure_message"] == expected_message
-    for body in (response.text, operation.text, documents.text, *stored):
+    [source] = sources.json()["items"]
+    assert source["id"] == accepted["id"]
+    assert source["status"] == expected_source_status
+    assert source["failure_message"] == expected_message
+    for body in (response.text, operation.text, sources.text, *stored):
         assert _RUNTIME_ONLY_TEXT not in body
     # The runtime's text is a diagnostic: one warning names it with the Capture code, and no
     # logged traceback carries it as the cause of Cert's error.
@@ -1593,7 +1593,7 @@ def _start_review_capture_until_failed(app, operation_id: str) -> tuple[str, int
                 row = connection.execute(
                     """SELECT operation.status, operation.error, session.last_event_sequence,
                               session.status
-                       FROM document_operations AS operation
+                       FROM source_operations AS operation
                        JOIN capture_review_sessions AS session
                            ON session.operation_id = operation.id
                        WHERE operation.id = ?""",
@@ -1617,7 +1617,7 @@ def test_a_review_start_without_a_capture_code_keeps_the_generic_message(
         settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
         llm_provider=EchoCaptureProvider(),
         capture_runtime_client=CompletedBeforeStructuringRuntime(error=attached_error),
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
         background_question_jobs=False,
     )
 
@@ -1644,7 +1644,7 @@ def test_a_direct_upload_completed_before_structuring_keeps_the_source_kind_mess
             settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=CompletedBeforeStructuringRuntime(),
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
             background_question_jobs=False,
         ),
         raise_server_exceptions=False,
@@ -1652,20 +1652,20 @@ def test_a_direct_upload_completed_before_structuring_keeps_the_source_kind_mess
         auth = {"Authorization": f"Bearer {AUTH_TOKEN}"}
         project_id = _create_project(client, auth)
         client.post(
-            f"/projects/{project_id}/documents",
+            f"/projects/{project_id}/sources",
             headers={**auth, "X-Cert-Prep-Operation-Id": "direct-completed"},
             files={"file": ("scan.pdf", minimal_pdf("Scanned page."), "application/pdf")},
         )
         operation = client.get(
-            f"/projects/{project_id}/document-operations/direct-completed", headers=auth
+            f"/projects/{project_id}/source-operations/direct-completed", headers=auth
         ).json()
-        [document] = client.get(f"/projects/{project_id}/documents", headers=auth).json()[
+        [source] = client.get(f"/projects/{project_id}/sources", headers=auth).json()[
             "items"
         ]
 
     assert operation["status"] == "failed"
     assert operation["error"] == TEXT_RECOGNITION_FAILED_MESSAGE
-    assert document["failure_message"] == TEXT_RECOGNITION_FAILED_MESSAGE
+    assert source["failure_message"] == TEXT_RECOGNITION_FAILED_MESSAGE
 
 def test_a_failed_review_start_stores_cert_text_and_logs_the_runtime_text_once(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
@@ -1675,7 +1675,7 @@ def test_a_failed_review_start_stores_cert_text_and_logs_the_runtime_text_once(
         settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
         llm_provider=EchoCaptureProvider(),
         capture_runtime_client=FailingCaptureRuntime("ocr_page_failed"),
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
         background_question_jobs=False,
     )
 
@@ -1690,34 +1690,34 @@ def test_a_failed_review_start_stores_cert_text_and_logs_the_runtime_text_once(
     assert "code ocr_page_failed" in warning
     assert caplog.text.count(_RUNTIME_ONLY_TEXT) == 1
 
-def test_a_synchronous_upload_without_text_returns_its_document(tmp_path: Path) -> None:
+def test_a_synchronous_upload_without_text_returns_its_source(tmp_path: Path) -> None:
     settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
     with TestClient(
         create_app(
             settings=settings,
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=FailingCaptureRuntime("no_text_detected"),
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
             background_question_jobs=False,
         )
     ) as client:
         auth = {"Authorization": f"Bearer {AUTH_TOKEN}"}
         project_id = _create_project(client, auth)
         response = client.post(
-            f"/projects/{project_id}/documents",
+            f"/projects/{project_id}/sources",
             headers={**auth, "X-Cert-Prep-Operation-Id": "sync-no-text"},
             files={"file": ("scan.pdf", minimal_pdf("Scanned page."), "application/pdf")},
         )
         operation = client.get(
-            f"/projects/{project_id}/document-operations/sync-no-text", headers=auth
+            f"/projects/{project_id}/source-operations/sync-no-text", headers=auth
         ).json()
 
     assert response.status_code == 201
-    document = response.json()
-    assert document["status"] == "no_text_detected"
-    assert document["failure_message"] == NO_TEXT_DETECTED_MESSAGE
+    source = response.json()
+    assert source["status"] == "no_text_detected"
+    assert source["failure_message"] == NO_TEXT_DETECTED_MESSAGE
     assert operation["status"] == "failed"
-    assert operation["document_id"] == document["id"]
+    assert operation["source_id"] == source["id"]
 
 
 def test_pending_host_snapshot_does_not_expose_runtime_terminal_state(
@@ -1730,7 +1730,7 @@ def test_pending_host_snapshot_does_not_expose_runtime_terminal_state(
             settings=settings,
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
             background_question_jobs=False,
         )
     ) as client:
@@ -1741,7 +1741,7 @@ def test_pending_host_snapshot_does_not_expose_runtime_terminal_state(
             headers=headers,
             files={"file": ("pending-race.pdf", minimal_pdf("Pending race."), "application/pdf")},
         )
-        assert created.json()["documentId"] != created.json()["captureId"]
+        assert created.json()["sourceId"] != created.json()["captureId"]
         assert runtime.listener_waiting.wait(timeout=2)
         try:
             snapshot = client.get(
@@ -1802,7 +1802,7 @@ def test_review_capture_pauses_before_persistence_and_applies_confirmed_overlay(
             settings=settings,
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
             background_question_jobs=False,
         )
     ) as client:
@@ -1822,12 +1822,12 @@ def test_review_capture_pauses_before_persistence_and_applies_confirmed_overlay(
         assert capture["protocolVersion"] == "2"
         assert capture["status"] == "waiting_input"
 
-        pending_document = client.get(
-            f"/projects/{project_id}/documents/{capture['documentId']}",
+        pending_source = client.get(
+            f"/projects/{project_id}/sources/{capture['sourceId']}",
             headers=headers,
         ).json()
-        assert pending_document["status"] == "processing"
-        assert pending_document["chunks_count"] == 0
+        assert pending_source["status"] == "processing"
+        assert pending_source["chunks_count"] == 0
 
         pending = _wait_for_capture_status(
             client,
@@ -1928,7 +1928,7 @@ def test_review_capture_pauses_before_persistence_and_applies_confirmed_overlay(
         assert result.json()["result"]["blocks"][0]["targetText"] == "Corrected OCR text"
 
         saved = client.get(
-            f"/projects/{project_id}/documents/{capture['documentId']}/chunks",
+            f"/projects/{project_id}/sources/{capture['sourceId']}/chunks",
             headers=headers,
         )
         assert saved.status_code == 200
@@ -1972,7 +1972,7 @@ def test_host_events_wait_for_durable_commit_before_emitting_terminal(
             settings=settings,
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
             background_question_jobs=False,
         )
     ) as client:
@@ -1984,8 +1984,8 @@ def test_host_events_wait_for_durable_commit_before_emitting_terminal(
             files={"file": ("race.pdf", minimal_pdf("Commit race."), "application/pdf")},
         )
         capture_id = created.json()["captureId"]
-        document_id = created.json()["documentId"]
-        assert capture_id != document_id
+        source_id = created.json()["sourceId"]
+        assert capture_id != source_id
         assert created.json()["ingestionId"] == capture_id
         pending = _wait_for_capture_status(
             client,
@@ -2081,14 +2081,14 @@ def test_host_events_wait_for_durable_commit_before_emitting_terminal(
         assert recorded_engine["stageMs"] == {"recognize": 900}
         with Database(settings).connect() as connection:
             stored = connection.execute(
-                "SELECT extraction_provenance FROM documents WHERE id = ?", (document_id,)
+                "SELECT extraction_provenance FROM sources WHERE id = ?", (source_id,)
             ).fetchone()[0]
         assert json.loads(stored)["engine"] == recorded_engine
 
         with Database(settings).connect() as connection:
             connection.execute(
-                "UPDATE documents SET extraction_provenance = NULL WHERE id = ?",
-                (document_id,),
+                "UPDATE sources SET extraction_provenance = NULL WHERE id = ?",
+                (source_id,),
             )
         historical = client.get(
             f"/projects/{project_id}/capture-reviews/{capture_id}/result",
@@ -2134,7 +2134,7 @@ def test_capture_awaits_structuring_only_once_its_review_can_be_confirmed(
             settings=settings,
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
             background_question_jobs=False,
         )
     ) as client:
@@ -2211,7 +2211,7 @@ def test_review_capture_events_proxy_replays_with_host_identity_without_cancel(
             settings=settings,
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
             background_question_jobs=False,
         )
     ) as client:
@@ -2257,7 +2257,7 @@ def test_review_capture_events_reject_invalid_cursor_before_streaming(
             settings=settings,
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
             background_question_jobs=False,
         )
     ) as client:
@@ -2291,7 +2291,7 @@ def test_review_capture_events_treat_empty_cursor_as_initial_subscription(
             settings=settings,
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
             background_question_jobs=False,
         )
     ) as client:
@@ -2325,7 +2325,7 @@ def test_terminal_event_replays_monotonically_after_result_deletes_runtime(
             settings=settings,
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
             background_question_jobs=False,
         )
     ) as client:
@@ -2429,7 +2429,7 @@ def test_pdf_capture_requirement_unavailable_reports_ocr_required_failure(
         settings=settings,
         llm_provider=EchoCaptureProvider(),
         capture_runtime_client=runtime,
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
         background_question_jobs=False,
     )
     operation_id = "requirement-unavailable-pdf"
@@ -2450,7 +2450,7 @@ def test_pdf_capture_requirement_unavailable_reports_ocr_required_failure(
         for _ in range(100):
             with app.state.database.connect() as connection:
                 operation = connection.execute(
-                    "SELECT status, phase, error FROM document_operations WHERE id = ?",
+                    "SELECT status, phase, error FROM source_operations WHERE id = ?",
                     (operation_id,),
                 ).fetchone()
             if operation is not None and operation[0] == "failed":
@@ -2481,7 +2481,7 @@ def test_expired_review_is_canceled_and_terminal_cancel_is_idempotent(tmp_path: 
         settings=settings,
         llm_provider=EchoCaptureProvider(),
         capture_runtime_client=runtime,
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
         background_question_jobs=False,
     )
     with TestClient(app) as client:
@@ -2532,7 +2532,7 @@ def test_confirmation_request_is_atomic_idempotent_and_rejects_divergent_replay(
         settings=settings,
         llm_provider=EchoCaptureProvider(),
         capture_runtime_client=runtime,
-        document_processing_async_jobs=True,
+        source_processing_async_jobs=True,
         background_question_jobs=False,
     )
     with TestClient(app) as client:
@@ -2616,7 +2616,7 @@ def test_failed_capture_upload_finishes_claimed_operation(tmp_path: Path) -> Non
         settings=settings,
         llm_provider=EchoCaptureProvider(),
         capture_runtime_client=runtime,
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
         background_question_jobs=False,
     )
     operation_id = "oversized-capture"
@@ -2635,7 +2635,7 @@ def test_failed_capture_upload_finishes_claimed_operation(tmp_path: Path) -> Non
 
         with app.state.database.connect() as connection:
             operation = connection.execute(
-                "SELECT status, phase, document_id FROM document_operations WHERE id = ?",
+                "SELECT status, phase, source_id FROM source_operations WHERE id = ?",
                 (operation_id,),
             ).fetchone()
         assert operation is not None
@@ -2649,7 +2649,7 @@ def test_same_operation_id_cannot_start_two_capture_uploads(tmp_path: Path) -> N
         settings=settings,
         llm_provider=EchoCaptureProvider(),
         capture_runtime_client=runtime,
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
         background_question_jobs=False,
     )
     with TestClient(app) as client:

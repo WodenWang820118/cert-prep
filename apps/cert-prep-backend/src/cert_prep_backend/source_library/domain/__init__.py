@@ -1,25 +1,25 @@
-from cert_prep_backend.source_library.domain.document import (
+from cert_prep_backend.source_library.domain.source import (
     ExtractedPage,
     PageExtraction,
-    SourceDocument,
-    DocumentChunk,
+    Source,
+    SourceChunk,
     SourceFile,
 )
 from cert_prep_backend.source_library.domain.statuses import (
-    DOCUMENT_STATUS_VALUES,
+    SOURCE_STATUS_VALUES,
     EXTRACTION_METHOD_VALUES,
     ExtractionMethod,
-    SourceDocumentStatus,
+    SourceStatus,
 )
 
 __all__ = [
-    "DOCUMENT_STATUS_VALUES",
+    "SOURCE_STATUS_VALUES",
     "EXTRACTION_METHOD_VALUES",
     "ExtractedPage",
     "PageExtraction",
     "ExtractionMethod",
-    "SourceDocument",
-    "DocumentChunk",
-    "SourceDocumentStatus",
+    "Source",
+    "SourceChunk",
+    "SourceStatus",
     "SourceFile",
 ]

@@ -131,7 +131,7 @@
 }
 
 .page-chip,
-.document-chip {
+.source-chip {
   display: inline-flex;
   align-items: center;
   width: fit-content;
@@ -146,7 +146,7 @@
   line-height: 1.25rem;
 }
 
-.document-chip {
+.source-chip {
   background: #f5f8ff;
   color: var(--workbench-text);
 }

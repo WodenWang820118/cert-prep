@@ -7,7 +7,7 @@ import type {
  * Practice session modes supported by the project question bank.
  */
 export type PracticeSessionMode =
-  | 'full_document'
+  | 'full_source'
   | 'random_draw'
   | 'review_retry';
 
@@ -17,7 +17,7 @@ export type PracticeSessionMode =
 export type PracticeSessionPayload = PracticeSessionCreate &
   Partial<{
     mode: PracticeSessionMode;
-    document_id: string;
+    source_id: string;
   }>;
 
 export type PracticeSessionQuestion = PracticeSessionRead['questions'][number];

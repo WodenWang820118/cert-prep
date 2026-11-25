@@ -9,14 +9,14 @@ describe('ReviewDisplayService', () => {
     service = TestBed.inject(ReviewDisplayService);
   });
 
-  it('resolves document labels with a stable fallback', () => {
-    const documents = [{ id: 'document-1', filename: 'guide.pdf' }];
+  it('resolves source labels with a stable fallback', () => {
+    const sources = [{ id: 'source-1', filename: 'guide.pdf' }];
 
-    expect(service.documentLabel(documents, 'document-1')).toBe('guide.pdf');
-    expect(service.documentLabel(documents, 'missing')).toBe('missing');
-    expect(service.documentLabel(documents, null)).toBeNull();
-    expect(service.requiredDocumentLabel(documents, null)).toBe(
-      'No source document',
+    expect(service.sourceLabel(sources, 'source-1')).toBe('guide.pdf');
+    expect(service.sourceLabel(sources, 'missing')).toBe('missing');
+    expect(service.sourceLabel(sources, null)).toBeNull();
+    expect(service.requiredSourceLabel(sources, null)).toBe(
+      'No source',
     );
   });
 

@@ -486,7 +486,7 @@ def _app(tmp_path: Path, runtime: RecordingOcrRuntime):
         Settings(data_dir=tmp_path, api_token=TOKEN, llm_provider="fake"),
         llm_provider=provider,
         capture_runtime_client=runtime,
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
         llm_installation_async_jobs=False,
         background_question_jobs=False,
     )
@@ -518,7 +518,7 @@ def _create_capture_session(
         operation_id=operation_id,
     )
     assert claim.acquired
-    document = operations.create_and_attach_document(
+    source = operations.create_and_attach_source(
         app.state.database,
         project_id=project_id,
         operation_id=operation_id,
@@ -532,7 +532,7 @@ def _create_capture_session(
     session = review_sessions.create(
         app.state.database,
         project_id=project_id,
-        document_id=document.id,
+        source_id=source.id,
         operation_id=operation_id,
     )
     if runtime_capture_id is not None:

@@ -55,11 +55,14 @@ test('acceptance masks the current Project source library card label', () => {
     ),
     true,
   );
+  // The library mask must stay specific: an unrelated workbench field (the
+  // question count input) remains visible in the pixel contract.
   assert.equal(
     calls.some(
       (call) =>
         call.kind === 'filter' &&
-        call.hasText === 'Project document library',
+        call.hasText instanceof RegExp &&
+        call.hasText.test('Question count'),
     ),
     false,
   );

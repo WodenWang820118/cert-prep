@@ -8,7 +8,7 @@ import { provideCertPrepHttpResourceClientFake } from '../../core/testing';
 import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../../source-library/data';
 import {
-  documentRead,
+  sourceRead,
   manualQuestionGeneration,
   questionFixture,
 } from './questions.store.spec-helpers';
@@ -18,11 +18,11 @@ describe('QuestionsStore generation', () => {
     startManualQuestionGeneration: vi.fn(),
     getManualQuestionGeneration: vi.fn(),
     cancelManualQuestionGeneration: vi.fn(),
-    getDocument: vi.fn(),
-    listDocumentChunks: vi.fn(),
-    listDocumentQuestionJobs: vi.fn(),
+    getSource: vi.fn(),
+    listSourceChunks: vi.fn(),
+    listSourceQuestionJobs: vi.fn(),
     listQuestions: vi.fn(),
-    retryDocumentQuestionJobs: vi.fn(),
+    retrySourceQuestionJobs: vi.fn(),
     updateQuestion: vi.fn(),
   };
   let manualStream: Subject<ReturnType<typeof manualQuestionGeneration>>;
@@ -52,12 +52,12 @@ describe('QuestionsStore generation', () => {
     ]);
     projects.select('project-1');
 
-    apiClient.getDocument.mockReturnValue(of(documentRead()));
-    apiClient.listDocumentChunks.mockReturnValue(of({ items: [] }));
-    apiClient.listDocumentQuestionJobs.mockReturnValue(of({ items: [] }));
+    apiClient.getSource.mockReturnValue(of(sourceRead()));
+    apiClient.listSourceChunks.mockReturnValue(of({ items: [] }));
+    apiClient.listSourceQuestionJobs.mockReturnValue(of({ items: [] }));
   });
 
-  it('uses source-file guidance when generation has no active document', () => {
+  it('uses source-file guidance when generation has no active source', () => {
     const store = TestBed.inject(QuestionsStore);
     const operations = TestBed.inject(OperationStore);
 
@@ -74,7 +74,7 @@ describe('QuestionsStore generation', () => {
     const store = TestBed.inject(QuestionsStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const question = questionFixture();
-    activateDocument(sourceImport, documentRead());
+    activateSource(sourceImport, sourceRead());
     apiClient.startManualQuestionGeneration.mockReturnValue(of(
       manualQuestionGeneration({ strategy: 'deterministic_only' }),
     ));
@@ -85,12 +85,12 @@ describe('QuestionsStore generation', () => {
 
     expect(apiClient.startManualQuestionGeneration).toHaveBeenCalledWith(
       'project-1',
-      'document-1',
+      'source-1',
       { limit: 3, strategy: 'deterministic_only' },
       { signal: expect.any(AbortSignal) },
     );
     expect(sseClient.streamJson).toHaveBeenCalledWith(
-      '/projects/project-1/documents/document-1/question-generations/manual-operation-1/events',
+      '/projects/project-1/sources/source-1/question-generations/manual-operation-1/events',
       'question-generation',
       { isTerminal: expect.any(Function) },
     );
@@ -102,9 +102,9 @@ describe('QuestionsStore generation', () => {
       generated_count: 1,
     }));
     TestBed.tick();
-    expect(apiClient.listDocumentQuestionJobs).toHaveBeenCalledWith(
+    expect(apiClient.listSourceQuestionJobs).toHaveBeenCalledWith(
       'project-1',
-      'document-1',
+      'source-1',
     );
   });
 
@@ -113,7 +113,7 @@ describe('QuestionsStore generation', () => {
     const sourceImport = TestBed.inject(SourceImportStore);
     const question = questionFixture();
     store.setQuestionLimit(8);
-    activateDocument(sourceImport, documentRead());
+    activateSource(sourceImport, sourceRead());
     apiClient.startManualQuestionGeneration.mockReturnValue(of(
       manualQuestionGeneration({ limit: 8 }),
     ));
@@ -124,7 +124,7 @@ describe('QuestionsStore generation', () => {
 
     expect(apiClient.startManualQuestionGeneration).toHaveBeenCalledWith(
       'project-1',
-      'document-1',
+      'source-1',
       { limit: 8, strategy: 'hybrid_reasoning' },
       { signal: expect.any(AbortSignal) },
     );
@@ -136,16 +136,16 @@ describe('QuestionsStore generation', () => {
       generated_count: 1,
     }));
     TestBed.tick();
-    expect(apiClient.listDocumentQuestionJobs).toHaveBeenCalledWith(
+    expect(apiClient.listSourceQuestionJobs).toHaveBeenCalledWith(
       'project-1',
-      'document-1',
+      'source-1',
     );
   });
 
   it('requests cancellation and applies the terminal manual operation event', () => {
     const store = TestBed.inject(QuestionsStore);
     const sourceImport = TestBed.inject(SourceImportStore);
-    activateDocument(sourceImport, documentRead());
+    activateSource(sourceImport, sourceRead());
     apiClient.startManualQuestionGeneration.mockReturnValue(of(
       manualQuestionGeneration(),
     ));
@@ -163,7 +163,7 @@ describe('QuestionsStore generation', () => {
 
     expect(apiClient.cancelManualQuestionGeneration).toHaveBeenCalledWith(
       'project-1',
-      'document-1',
+      'source-1',
       'manual-operation-1',
     );
     expect(store.manualQuestionGeneration()?.status).toBe('cancel_requested');
@@ -178,10 +178,10 @@ describe('QuestionsStore generation', () => {
   });
 });
 
-function activateDocument(
+function activateSource(
   sourceImport: SourceImportStore,
-  document: ReturnType<typeof documentRead>,
+  source: ReturnType<typeof sourceRead>,
 ): void {
-  sourceImport.documents.set([document]);
-  sourceImport.setActiveDocumentId(document.id);
+  sourceImport.sources.set([source]);
+  sourceImport.setActiveSourceId(source.id);
 }

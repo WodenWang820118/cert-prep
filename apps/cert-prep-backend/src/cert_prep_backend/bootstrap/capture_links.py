@@ -19,9 +19,9 @@ from cert_prep_backend.capture_integration.application.ports import (
     CaptureReviewCommit,
 )
 from cert_prep_backend.platform.database import Database
-from cert_prep_backend.source_library.application.ports import DocumentOperationRepository
-from cert_prep_backend.source_library.domain.document import PageExtraction, SourceDocument
-from cert_prep_backend.source_library.domain.operation import DocumentOperation
+from cert_prep_backend.source_library.application.ports import SourceOperationRepository
+from cert_prep_backend.source_library.domain.source import PageExtraction, Source
+from cert_prep_backend.source_library.domain.operation import SourceOperation
 from cert_prep_backend.source_library.infrastructure import operations
 
 
@@ -31,11 +31,11 @@ class SourceLibraryCaptureReviewCommit:
     def __init__(self, connection: Connection) -> None:
         self._connection = connection
 
-    def begin_commit(self, project_id: str, document_id: str, operation_id: str) -> None:
+    def begin_commit(self, project_id: str, source_id: str, operation_id: str) -> None:
         operations.begin_capture_review_commit_in_connection(
             self._connection,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             operation_id=operation_id,
         )
 
@@ -60,18 +60,18 @@ class SourceLibraryCapturePublication:
         *,
         project_id: str,
         operation_id: str,
-        document_id: str,
+        source_id: str,
         segments: Sequence[tuple[TranscriptSegment, str]],
         model: str,
         device: str | None,
         warning: str | None,
         extraction_provenance: str,
-    ) -> SourceDocument:
+    ) -> Source:
         return operations.publish_capture_audio_success(
             self._db,
             project_id=project_id,
             operation_id=operation_id,
-            document_id=document_id,
+            source_id=source_id,
             segments=segments,
             model=model,
             device=device,
@@ -84,15 +84,15 @@ class SourceLibraryCapturePublication:
         *,
         project_id: str,
         operation_id: str,
-        document_id: str,
+        source_id: str,
         extraction: PageExtraction,
         extraction_provenance: str,
-    ) -> SourceDocument:
+    ) -> Source:
         return operations.publish_success(
             self._db,
             project_id=project_id,
             operation_id=operation_id,
-            document_id=document_id,
+            source_id=source_id,
             extraction=extraction,
             extraction_provenance=extraction_provenance,
         )
@@ -106,7 +106,7 @@ class SourceLibraryCaptureOperations:
     """Adapts Source Library operations for Capture Integration."""
 
     def __init__(
-        self, db: Database, operations_repository: DocumentOperationRepository
+        self, db: Database, operations_repository: SourceOperationRepository
     ) -> None:
         self._db = db
         self._operations = operations_repository
@@ -116,32 +116,32 @@ class SourceLibraryCaptureOperations:
 
     def fail(
         self, project_id: str, operation_id: str, *, error: str
-    ) -> DocumentOperation:
+    ) -> SourceOperation:
         return self._operations.fail(project_id, operation_id, error=error)
 
-    def cancel(self, project_id: str, operation_id: str) -> DocumentOperation:
+    def cancel(self, project_id: str, operation_id: str) -> SourceOperation:
         return self._operations.cancel(project_id, operation_id)
 
     def acknowledge_cancellation(
         self, project_id: str, operation_id: str
-    ) -> DocumentOperation:
+    ) -> SourceOperation:
         return self._operations.acknowledge_cancellation(project_id, operation_id)
 
-    def operation(self, project_id: str, operation_id: str) -> DocumentOperation:
+    def operation(self, project_id: str, operation_id: str) -> SourceOperation:
         return self._operations.operation(project_id, operation_id)
 
     def mark_review_pending(
-        self, project_id: str, document_id: str, operation_id: str
-    ) -> DocumentOperation:
+        self, project_id: str, source_id: str, operation_id: str
+    ) -> SourceOperation:
         return operations.mark_capture_review_pending(
             self._db,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             operation_id=operation_id,
         )
 
 
 def capture_operations(
-    db: Database, operations_repository: DocumentOperationRepository
+    db: Database, operations_repository: SourceOperationRepository
 ) -> CaptureOperations:
     return SourceLibraryCaptureOperations(db, operations_repository)

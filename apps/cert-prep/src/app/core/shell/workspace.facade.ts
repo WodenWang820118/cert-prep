@@ -56,7 +56,7 @@ export class WorkspaceFacade {
     this.practice.reset();
     this.review.reset();
 
-    this.sourceImport.loadLatestDocument(projectId);
+    this.sourceImport.loadLatestSource(projectId);
     this.questionsStore.load(projectId);
     this.review.load(projectId);
     this.practice.loadActiveSession(projectId);

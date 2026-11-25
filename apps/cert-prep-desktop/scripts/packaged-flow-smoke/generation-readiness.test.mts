@@ -6,14 +6,14 @@ import type { APIResponse, Page, Response } from 'playwright';
 import {
   captureGenerationReadinessAtProjectCreate,
   captureProjectApiAfterRestart,
-  isProjectDocumentsCollectionResponse,
+  isProjectSourcesCollectionResponse,
 } from './generation-readiness.mts';
-import { waitForUploadDocumentResponse } from './question-generation-observer-api.mts';
+import { waitForUploadSourceResponse } from './question-generation-observer-api.mts';
 import type { SmokeRunState } from './types.mts';
 
 const API_BASE_URL = 'http://127.0.0.1:8765';
 const PROJECT_ID = '00000000-0000-4000-8000-000000000001';
-const DOCUMENT_ID = '00000000-0000-4000-8000-000000000002';
+const SOURCE_ID = '00000000-0000-4000-8000-000000000002';
 const AUTH_TOKEN = 'alpha.super-secret-token';
 const AUTHORIZATION = `Bearer ${AUTH_TOKEN}`;
 const INSTALLED_PATH = 'C:\\Program Files\\Ollama\\ollama.exe';
@@ -117,7 +117,7 @@ test('restart API capture rejects a project list without the exact project', asy
       url: 'http://127.0.0.1:8877/projects',
       authorization: 'Bearer restarted-token',
       status: 200,
-      payload: { items: [{ id: DOCUMENT_ID }] },
+      payload: { items: [{ id: SOURCE_ID }] },
       method: 'GET',
     }),
   );
@@ -598,39 +598,39 @@ test('project and upload capture reject a different origin, auth, or project', a
   };
   const matching = uploadResponse();
   assert.equal(
-    isProjectDocumentsCollectionResponse(projectApi, matching),
+    isProjectSourcesCollectionResponse(projectApi, matching),
     true,
   );
   assert.equal(
-    isProjectDocumentsCollectionResponse(
+    isProjectSourcesCollectionResponse(
       projectApi,
       uploadResponse({
-        url: `http://127.0.0.1:8766/projects/${PROJECT_ID}/documents`,
+        url: `http://127.0.0.1:8766/projects/${PROJECT_ID}/sources`,
       }),
     ),
     false,
   );
   assert.equal(
-    isProjectDocumentsCollectionResponse(
+    isProjectSourcesCollectionResponse(
       projectApi,
       uploadResponse({ authorization: 'Bearer different-token' }),
     ),
     false,
   );
   assert.equal(
-    isProjectDocumentsCollectionResponse(
+    isProjectSourcesCollectionResponse(
       projectApi,
       uploadResponse({
-        url: `${API_BASE_URL}/projects/00000000-0000-4000-8000-000000000009/documents`,
+        url: `${API_BASE_URL}/projects/00000000-0000-4000-8000-000000000009/sources`,
       }),
     ),
     false,
   );
   assert.equal(
-    isProjectDocumentsCollectionResponse(
+    isProjectSourcesCollectionResponse(
       projectApi,
       uploadResponse({
-        url: `${API_BASE_URL}/projects/${PROJECT_ID}/documents?forward=https://example.test`,
+        url: `${API_BASE_URL}/projects/${PROJECT_ID}/sources?forward=https://example.test`,
       }),
     ),
     false,
@@ -638,7 +638,7 @@ test('project and upload capture reject a different origin, auth, or project', a
 
   const noContextRun = smokeRun();
   noContextRun.page = null;
-  assert.equal(await waitForUploadDocumentResponse(noContextRun), null);
+  assert.equal(await waitForUploadSourceResponse(noContextRun), null);
   assert.match(
     noContextRun.metrics.observations[0] ?? '',
     /context was unavailable/,
@@ -750,10 +750,10 @@ function uploadResponse(
   } = {},
 ): Response {
   return response({
-    url: overrides.url ?? `${API_BASE_URL}/projects/${PROJECT_ID}/documents`,
+    url: overrides.url ?? `${API_BASE_URL}/projects/${PROJECT_ID}/sources`,
     authorization: overrides.authorization ?? AUTHORIZATION,
     status: 201,
-    payload: { id: DOCUMENT_ID, project_id: PROJECT_ID },
+    payload: { id: SOURCE_ID, project_id: PROJECT_ID },
     method: 'POST',
   });
 }

@@ -26,16 +26,16 @@ export class PracticeSessionPayloadService {
 
   createPayload(args: {
     readonly mode: PracticeSessionMode;
-    readonly wholeSourceDocumentId: string | null;
-    readonly selectedDocumentQuestionCount: number;
+    readonly wholeSourceId: string | null;
+    readonly selectedSourceQuestionCount: number;
     readonly sessionQuestionCount: number;
     readonly questionCount: number;
   }): PracticeSessionPayload {
-    if (args.mode === 'full_document') {
+    if (args.mode === 'full_source') {
       return {
         mode: args.mode,
-        document_id: args.wholeSourceDocumentId ?? undefined,
-        question_count: Math.max(1, args.selectedDocumentQuestionCount),
+        source_id: args.wholeSourceId ?? undefined,
+        question_count: Math.max(1, args.selectedSourceQuestionCount),
       };
     }
 

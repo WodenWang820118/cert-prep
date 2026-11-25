@@ -24,7 +24,7 @@ class WrongAnswer:
     rationale: str | None
     citation_page: int | None
     source_excerpt: str | None
-    document_id: str | None
+    source_id: str | None
     created_at: str
     answer_key_source: str | None = None
 
@@ -43,7 +43,7 @@ class WrongAnswer:
             rationale=question.rationale,
             citation_page=question.citation_page,
             source_excerpt=question.source_excerpt,
-            document_id=question.document_id,
+            source_id=question.source_id,
             created_at=attempt.created_at,
             answer_key_source=question.answer_key_source,
         )
@@ -59,7 +59,7 @@ class WrongAnswer:
             rationale=self.rationale,
             citation_page=self.citation_page,
             source_excerpt=self.source_excerpt,
-            document_id=self.document_id,
+            source_id=self.source_id,
             answer_key_source=self.answer_key_source,
         )
 
@@ -104,7 +104,7 @@ class RepeatedMiss:
 
     question_id: str
     question: str
-    document_id: str | None
+    source_id: str | None
     citation_page: int | None
     source_excerpt: str | None
     miss_count: int
@@ -113,9 +113,9 @@ class RepeatedMiss:
 
 @dataclass(frozen=True, slots=True)
 class WrongAnswerCluster:
-    """Wrong answers grouped by the document page they come from."""
+    """Wrong answers grouped by the source page they come from."""
 
-    document_id: str | None
+    source_id: str | None
     citation_page: int | None
     current_wrong_count: int
     cleared_count: int
@@ -171,7 +171,7 @@ def _repeated_misses(
         RepeatedMiss(
             question_id=question_id,
             question=questions[question_id].question,
-            document_id=questions[question_id].document_id,
+            source_id=questions[question_id].source_id,
             citation_page=questions[question_id].citation_page,
             source_excerpt=questions[question_id].source_excerpt,
             miss_count=miss_count,
@@ -195,31 +195,31 @@ def _clusters(
         lambda: {"current": 0, "cleared": 0, "last_wrong_at": None}
     )
     for wrong_answer in current:
-        cluster = counts[(wrong_answer.document_id, wrong_answer.citation_page)]
+        cluster = counts[(wrong_answer.source_id, wrong_answer.citation_page)]
         cluster["current"] += 1
         cluster["last_wrong_at"] = _latest(cluster["last_wrong_at"], wrong_answer.created_at)
     for question_id in cleared_question_ids:
         question = questions.get(question_id)
         if question is None:
             continue
-        cluster = counts[(question.document_id, question.citation_page)]
+        cluster = counts[(question.source_id, question.citation_page)]
         cluster["cleared"] += 1
         cluster["last_wrong_at"] = _latest(cluster["last_wrong_at"], last_wrong_by_question[question_id])
     clusters = [
         WrongAnswerCluster(
-            document_id=document_id,
+            source_id=source_id,
             citation_page=citation_page,
             current_wrong_count=cluster["current"],
             cleared_count=cluster["cleared"],
             last_wrong_at=cluster["last_wrong_at"],
         )
-        for (document_id, citation_page), cluster in counts.items()
+        for (source_id, citation_page), cluster in counts.items()
     ]
     return tuple(
         sorted(
             clusters,
             key=lambda item: (
-                item.document_id or "",
+                item.source_id or "",
                 item.citation_page if item.citation_page is not None else -1,
             ),
         )

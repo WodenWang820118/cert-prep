@@ -11,10 +11,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
-import type { DocumentCancellationRunnerOptions } from './args.mts';
+import type { SourceCancellationRunnerOptions } from './args.mts';
 import {
   loadRemainingResilienceOptions,
-  type DocumentCancellationOptionsLoader,
+  type SourceCancellationOptionsLoader,
 } from './remaining-options.mts';
 
 test('remaining options preserve the base options and derive isolated Ollama inputs', async () => {
@@ -22,7 +22,7 @@ test('remaining options preserve the base options and derive isolated Ollama inp
   try {
     let observedEnvironment: Readonly<NodeJS.ProcessEnv> | undefined;
     let observedWorkspaceRoot: string | undefined;
-    const baseLoader: DocumentCancellationOptionsLoader = async (
+    const baseLoader: SourceCancellationOptionsLoader = async (
       environment,
       workspaceRoot,
     ) => {
@@ -41,7 +41,7 @@ test('remaining options preserve the base options and derive isolated Ollama inp
     assert.equal(observedWorkspaceRoot, fixture.baseOptions.workspaceRoot);
     for (const [key, value] of Object.entries(fixture.baseOptions)) {
       assert.deepEqual(
-        options[key as keyof DocumentCancellationRunnerOptions],
+        options[key as keyof SourceCancellationRunnerOptions],
         value,
       );
     }
@@ -56,7 +56,7 @@ test('remaining options preserve the base options and derive isolated Ollama inp
   }
 });
 
-test('remaining options propagate a real document-options validation error first', async () => {
+test('remaining options propagate a real source-options validation error first', async () => {
   await assert.rejects(
     loadRemainingResilienceOptions({
       CERT_PREP_RESILIENCE_OLLAMA_EXE_PATH: 'relative/ollama.exe',
@@ -208,7 +208,7 @@ interface OptionsFixture {
   readonly root: string;
   readonly ollamaExePath: string;
   readonly environment: Readonly<NodeJS.ProcessEnv>;
-  readonly baseOptions: DocumentCancellationRunnerOptions;
+  readonly baseOptions: SourceCancellationRunnerOptions;
   cleanup(): void;
 }
 
@@ -220,7 +220,7 @@ function optionsFixture(): OptionsFixture {
   writeFileSync(ollamaExePath, 'ollama');
   const outputRoot = join(root, 'output');
   const diagnosticsRoot = `${outputRoot}.diagnostics`;
-  const baseOptions: DocumentCancellationRunnerOptions = {
+  const baseOptions: SourceCancellationRunnerOptions = {
     workspaceRoot: root,
     candidateRoot: join(root, 'candidate'),
     installedExePath: join(root, 'Cert Prep.exe'),

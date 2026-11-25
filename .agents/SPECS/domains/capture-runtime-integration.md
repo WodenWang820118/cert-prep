@@ -43,7 +43,7 @@ mixed-result arbitration or provider fallback.
   the stored value of rows extracted before Capture.
 - `capture_integration/infrastructure/mapping.py` accepts exactly the producer
   engine `text-recognition` and writes the durable discriminator `text_recognition` on
-  the document and every page and chunk. Neither value is inferred from a
+  the source and every page and chunk. Neither value is inferred from a
   substring.
 - Existing `text_layer` rows (pre-Capture text-layer extraction) are legacy read-only data:
   displayed and exported by their existing rules, never a new write, route
@@ -111,7 +111,7 @@ Review happens before host structuring. A capture pauses for review and the
 user may edit only existing segment text. Confirmation sends the capture id,
 client request id and review contract, never the source or raw text again. The
 backend validates provenance, structures, commits the `CaptureDocument` to the
-runtime and persists it. Before confirmation the document stays processing with
+runtime and persists it. Before confirmation the source stays processing with
 no usable chunks. Review sessions expire after 1800 seconds and are cleaned up
 on completion, cancellation, expiry and restart recovery.
 
@@ -143,14 +143,14 @@ is terminal. A runtime terminal seen while the session is active advances the
 durable event cursor and is held behind comment heartbeats and bounded session
 reloads. Host `captureId` is the review session id. `ingestionId` is the runtime
 ingestion id when the runtime reports one, otherwise the review session id; it is
-never the document id, which is `documentId`. The in-process event registry is only a wake-up signal;
+never the source id, which the host exposes as `sourceId`. The in-process event registry is only a wake-up signal;
 every wait reloads the session from the database.
 
 ## Persistence boundary
 
 After confirmation the host maps the validated `CaptureDocument` into the
-document/chunk model. `document_chunks.raw_text` keeps the original OCR text or
-source-language transcript; `document_chunks.text` keeps the reviewed or Traditional
+source/chunk model. `source_chunks.raw_text` keeps the original OCR text or
+source-language transcript; `source_chunks.text` keeps the reviewed or Traditional
 Chinese text. Review overrides are validated against immutable runtime raw
 segments and applied in the local mapping layer. Capture Runtime never writes
 Cert SQLite.

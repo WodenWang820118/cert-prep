@@ -277,7 +277,7 @@ test('installation binding rejects forged digests and unsafe installer paths', (
   );
 });
 
-test('OCR evidence requires exact cancel, terminal, distinct retry, same document, and late-publish proof', () => {
+test('OCR evidence requires exact cancel, terminal, distinct retry, same source, and late-publish proof', () => {
   const evidence = validEvidence('ocr');
   const proof = evidence.proof as Record<string, unknown>;
   assert.throws(
@@ -301,7 +301,7 @@ test('OCR evidence requires exact cancel, terminal, distinct retry, same documen
             ...proof,
             canceledResponse: {
               ...(proof.canceledResponse as object),
-              document_id: 'document-other',
+              source_id: 'source-other',
             },
           },
         },
@@ -339,10 +339,11 @@ test('OCR evidence requires exact cancel, terminal, distinct retry, same documen
   );
 });
 
-test('partial cleanup requires chunks and every derived metric to remain zero', () => {
+test('partial cleanup requires chunks and page progress to be removed and the question count to be kept', () => {
   const evidence = validEvidence('partialDataRemoved');
   const proof = evidence.proof as Record<string, unknown>;
   const afterCanceled = proof.afterCanceled as Record<string, unknown>;
+  const beforeCancel = proof.beforeCancel as Record<string, unknown>;
   assert.throws(
     () =>
       validateResilienceEvidence(
@@ -357,6 +358,36 @@ test('partial cleanup requires chunks and every derived metric to remain zero', 
         context,
       ),
     /partial data cleanup/,
+  );
+  assert.throws(
+    () =>
+      validateResilienceEvidence(
+        {
+          ...evidence,
+          proof: {
+            ...proof,
+            beforeCancel: { ...beforeCancel, questionCount: 2 },
+            afterCanceled: { ...afterCanceled, questionCount: 1 },
+          },
+        },
+        'partialDataRemoved',
+        context,
+      ),
+    /partial data cleanup/,
+  );
+  assert.doesNotThrow(() =>
+    validateResilienceEvidence(
+      {
+        ...evidence,
+        proof: {
+          ...proof,
+          beforeCancel: { ...beforeCancel, questionCount: 2 },
+          afterCanceled: { ...afterCanceled, questionCount: 2 },
+        },
+      },
+      'partialDataRemoved',
+      context,
+    ),
   );
 });
 
@@ -790,7 +821,7 @@ export function validSessionRestartEvidence(): Record<string, unknown> {
 
 function validProof(check: ResilienceCheck): Record<string, unknown> {
   const projectId = 'project-1';
-  const documentId = 'document-1';
+  const sourceId = 'source-1';
   const operationId = 'operation-1';
   const cancelResponse = operation(
     operationId,
@@ -798,7 +829,7 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
     'canceling',
     false,
     projectId,
-    documentId,
+    sourceId,
   );
   const terminalResponse = operation(
     operationId,
@@ -806,22 +837,22 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
     'canceled',
     false,
     projectId,
-    documentId,
+    sourceId,
   );
   switch (check) {
     case 'upload':
       return {
         projectId,
         operationId,
-        cancelResponse: { ...cancelResponse, document_id: null },
-        terminalResponse: { ...terminalResponse, document_id: null },
-        documentCreated: false,
+        cancelResponse: { ...cancelResponse, source_id: null },
+        terminalResponse: { ...terminalResponse, source_id: null },
+        sourceCreated: false,
         uploadResponseObserved: false,
       };
     case 'ocr':
       return {
         projectId,
-        documentId,
+        sourceId,
         initialOperationId: operationId,
         retryOperationId: 'operation-2',
         cancelResponse,
@@ -832,7 +863,7 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
           'ocr',
           true,
           projectId,
-          documentId,
+          sourceId,
         ),
         retryTerminalResponse: operation(
           'operation-2',
@@ -840,14 +871,14 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
           'completed',
           false,
           projectId,
-          documentId,
+          sourceId,
         ),
-        readyDocumentResponse: {
-          id: documentId,
+        readySourceResponse: {
+          id: sourceId,
           project_id: projectId,
           status: 'ready',
         },
-        sameDocumentRetry: true,
+        sameSourceRetry: true,
         latePublishSuppressed: true,
         latePublishObservationWindowMs: 2_000,
       };
@@ -856,7 +887,7 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
         ...scopedCancellation(
           {
             projectId,
-            documentId,
+            sourceId,
             provider: 'ollama',
             model: 'qwen3.5:4b',
           },
@@ -867,7 +898,7 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
         manualQuestionGenerationTerminalResponse: {
           id: 'operation-commit',
           project_id: projectId,
-          document_id: documentId,
+          source_id: sourceId,
           limit: 2,
           strategy: 'hybrid_reasoning',
           status: 'succeeded',
@@ -984,7 +1015,7 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
     case 'partialDataRemoved':
       return {
         projectId,
-        documentId,
+        sourceId,
         operationId,
         beforeCancel: { chunksCount: 2, nonZeroDerivedMetricCount: 1, questionCount: 0 },
         afterCanceled: {
@@ -1013,7 +1044,7 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
 function scopedCancellation(
   scope: {
     readonly projectId?: string;
-    readonly documentId?: string;
+    readonly sourceId?: string;
     readonly kind?: string;
     readonly provider: string;
     readonly model: string;
@@ -1024,7 +1055,7 @@ function scopedCancellation(
 ): Record<string, unknown> {
   const responseScope = {
     ...(scope.projectId ? { project_id: scope.projectId } : {}),
-    ...(scope.documentId ? { document_id: scope.documentId } : {}),
+    ...(scope.sourceId ? { source_id: scope.sourceId } : {}),
     ...(scope.kind ? { kind: scope.kind } : {}),
     provider: scope.provider,
     model: scope.model,
@@ -1032,7 +1063,7 @@ function scopedCancellation(
   const commitStartedAt = '2026-07-14T00:00:05.000Z';
   return {
     ...(scope.projectId ? { projectId: scope.projectId } : {}),
-    ...(scope.documentId ? { documentId: scope.documentId } : {}),
+    ...(scope.sourceId ? { sourceId: scope.sourceId } : {}),
     ...(scope.kind ? { kind: scope.kind } : {}),
     provider: scope.provider,
     model: scope.model,
@@ -1064,7 +1095,7 @@ function operation(
   phase: string,
   cancellable: boolean,
   projectId?: string,
-  documentId?: string,
+  sourceId?: string,
 ): Record<string, unknown> {
   return {
     id,
@@ -1072,6 +1103,6 @@ function operation(
     phase,
     cancellable,
     ...(projectId ? { project_id: projectId } : {}),
-    ...(documentId ? { document_id: documentId } : {}),
+    ...(sourceId ? { source_id: sourceId } : {}),
   };
 }

@@ -35,7 +35,7 @@
       "label": "整份教材",
       "codeName": "PracticeSessionMode.FULL_DOCUMENT",
       "enum": { "enumId": "PracticeSessionMode", "value": "full_document" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "practice.session-mode.review-retry",
@@ -84,28 +84,28 @@
       "label": "處理中",
       "codeName": "SourceDocumentStatus.PROCESSING",
       "enum": { "enumId": "SourceDocumentStatus", "value": "processing" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.document-status.cancel-requested",
       "label": "取消中",
       "codeName": "SourceDocumentStatus.CANCEL_REQUESTED",
       "enum": { "enumId": "SourceDocumentStatus", "value": "cancel_requested" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.document-status.canceled",
       "label": "已取消",
       "codeName": "SourceDocumentStatus.CANCELED",
       "enum": { "enumId": "SourceDocumentStatus", "value": "canceled" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.document-status.ready",
       "label": "可用",
       "codeName": "SourceDocumentStatus.READY",
       "enum": { "enumId": "SourceDocumentStatus", "value": "ready" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.document-status.exam-failed",
@@ -119,7 +119,7 @@
       "label": "沒有文字",
       "codeName": "SourceDocumentStatus.NO_TEXT_DETECTED",
       "enum": { "enumId": "SourceDocumentStatus", "value": "no_text_detected" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.document-status.ocr-failed",
@@ -133,7 +133,7 @@
       "label": "擷取失敗",
       "codeName": "SourceDocumentStatus.EXTRACTION_FAILED",
       "enum": { "enumId": "SourceDocumentStatus", "value": "extraction_failed" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.document-status.transcription-failed",
@@ -143,7 +143,7 @@
         "enumId": "SourceDocumentStatus",
         "value": "transcription_failed"
       },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.extraction-method.embedded",
@@ -205,13 +205,13 @@
       "id": "source-library.extraction-warnings",
       "label": "擷取警告",
       "codeName": "DocumentRead.extraction_warnings",
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.failure-message",
       "label": "失敗訊息",
       "codeName": "DocumentRead.failure_message",
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.content-profile.unknown",
@@ -274,14 +274,14 @@
       "label": "排隊中",
       "codeName": "DocumentOperationStatus.QUEUED",
       "enum": { "enumId": "DocumentOperationStatus", "value": "queued" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.operation-status.running",
       "label": "執行中",
       "codeName": "DocumentOperationStatus.RUNNING",
       "enum": { "enumId": "DocumentOperationStatus", "value": "running" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.operation-status.cancel-requested",
@@ -291,42 +291,42 @@
         "enumId": "DocumentOperationStatus",
         "value": "cancel_requested"
       },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.operation-status.canceled",
       "label": "已取消",
       "codeName": "DocumentOperationStatus.CANCELED",
       "enum": { "enumId": "DocumentOperationStatus", "value": "canceled" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.operation-status.succeeded",
       "label": "成功",
       "codeName": "DocumentOperationStatus.SUCCEEDED",
       "enum": { "enumId": "DocumentOperationStatus", "value": "succeeded" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.operation-status.failed",
       "label": "失敗",
       "codeName": "DocumentOperationStatus.FAILED",
       "enum": { "enumId": "DocumentOperationStatus", "value": "failed" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.operation-phase.uploading",
       "label": "上傳中",
       "codeName": "DocumentOperationPhase.UPLOADING",
       "enum": { "enumId": "DocumentOperationPhase", "value": "uploading" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.operation-phase.processing",
       "label": "處理中",
       "codeName": "DocumentOperationPhase.PROCESSING",
       "enum": { "enumId": "DocumentOperationPhase", "value": "processing" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.operation-phase.awaiting-review",
@@ -336,56 +336,56 @@
         "enumId": "DocumentOperationPhase",
         "value": "awaiting_review"
       },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.operation-phase.transcribing",
       "label": "轉錄中",
       "codeName": "DocumentOperationPhase.TRANSCRIBING",
       "enum": { "enumId": "DocumentOperationPhase", "value": "transcribing" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.operation-phase.translating",
       "label": "翻譯中",
       "codeName": "DocumentOperationPhase.TRANSLATING",
       "enum": { "enumId": "DocumentOperationPhase", "value": "translating" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.operation-phase.canceling",
       "label": "取消中",
       "codeName": "DocumentOperationPhase.CANCELING",
       "enum": { "enumId": "DocumentOperationPhase", "value": "canceling" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.operation-phase.committing",
       "label": "寫入結果",
       "codeName": "DocumentOperationPhase.COMMITTING",
       "enum": { "enumId": "DocumentOperationPhase", "value": "committing" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.operation-phase.canceled",
       "label": "已取消",
       "codeName": "DocumentOperationPhase.CANCELED",
       "enum": { "enumId": "DocumentOperationPhase", "value": "canceled" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.operation-phase.completed",
       "label": "完成",
       "codeName": "DocumentOperationPhase.COMPLETED",
       "enum": { "enumId": "DocumentOperationPhase", "value": "completed" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.operation-phase.failed",
       "label": "失敗",
       "codeName": "DocumentOperationPhase.FAILED",
       "enum": { "enumId": "DocumentOperationPhase", "value": "failed" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "ai-providers.execution-mode.auto",
@@ -1120,6 +1120,330 @@
       "label": "不適用",
       "codeName": "DevicePreferenceStatus.NOT_APPLICABLE",
       "enum": { "enumId": "DevicePreferenceStatus", "value": "not_applicable" },
+      "retired": false
+    },
+    {
+      "id": "practice.session-mode.full-source",
+      "label": "整份教材",
+      "codeName": "PracticeSessionMode.FULL_SOURCE",
+      "enum": {
+        "enumId": "PracticeSessionMode",
+        "value": "full_source"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-status.processing",
+      "label": "處理中",
+      "codeName": "SourceStatus.PROCESSING",
+      "enum": {
+        "enumId": "SourceStatus",
+        "value": "processing"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-status.cancel-requested",
+      "label": "取消中",
+      "codeName": "SourceStatus.CANCEL_REQUESTED",
+      "enum": {
+        "enumId": "SourceStatus",
+        "value": "cancel_requested"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-status.canceled",
+      "label": "已取消",
+      "codeName": "SourceStatus.CANCELED",
+      "enum": {
+        "enumId": "SourceStatus",
+        "value": "canceled"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-status.ready",
+      "label": "可用",
+      "codeName": "SourceStatus.READY",
+      "enum": {
+        "enumId": "SourceStatus",
+        "value": "ready"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-status.no-text-detected",
+      "label": "沒有文字",
+      "codeName": "SourceStatus.NO_TEXT_DETECTED",
+      "enum": {
+        "enumId": "SourceStatus",
+        "value": "no_text_detected"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-status.extraction-failed",
+      "label": "擷取失敗",
+      "codeName": "SourceStatus.EXTRACTION_FAILED",
+      "enum": {
+        "enumId": "SourceStatus",
+        "value": "extraction_failed"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-status.transcription-failed",
+      "label": "轉錄失敗",
+      "codeName": "SourceStatus.TRANSCRIPTION_FAILED",
+      "enum": {
+        "enumId": "SourceStatus",
+        "value": "transcription_failed"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-extraction-warnings",
+      "label": "擷取警告",
+      "codeName": "SourceRead.extraction_warnings",
+      "retired": false
+    },
+    {
+      "id": "source-library.source-failure-message",
+      "label": "失敗訊息",
+      "codeName": "SourceRead.failure_message",
+      "retired": false
+    },
+    {
+      "id": "source-library.source-operation-status.queued",
+      "label": "排隊中",
+      "codeName": "SourceOperationStatus.QUEUED",
+      "enum": {
+        "enumId": "SourceOperationStatus",
+        "value": "queued"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-operation-status.running",
+      "label": "執行中",
+      "codeName": "SourceOperationStatus.RUNNING",
+      "enum": {
+        "enumId": "SourceOperationStatus",
+        "value": "running"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-operation-status.cancel-requested",
+      "label": "要求取消",
+      "codeName": "SourceOperationStatus.CANCEL_REQUESTED",
+      "enum": {
+        "enumId": "SourceOperationStatus",
+        "value": "cancel_requested"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-operation-status.canceled",
+      "label": "已取消",
+      "codeName": "SourceOperationStatus.CANCELED",
+      "enum": {
+        "enumId": "SourceOperationStatus",
+        "value": "canceled"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-operation-status.succeeded",
+      "label": "成功",
+      "codeName": "SourceOperationStatus.SUCCEEDED",
+      "enum": {
+        "enumId": "SourceOperationStatus",
+        "value": "succeeded"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-operation-status.failed",
+      "label": "失敗",
+      "codeName": "SourceOperationStatus.FAILED",
+      "enum": {
+        "enumId": "SourceOperationStatus",
+        "value": "failed"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-operation-phase.uploading",
+      "label": "上傳中",
+      "codeName": "SourceOperationPhase.UPLOADING",
+      "enum": {
+        "enumId": "SourceOperationPhase",
+        "value": "uploading"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-operation-phase.processing",
+      "label": "處理中",
+      "codeName": "SourceOperationPhase.PROCESSING",
+      "enum": {
+        "enumId": "SourceOperationPhase",
+        "value": "processing"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-operation-phase.awaiting-review",
+      "label": "等待檢閱",
+      "codeName": "SourceOperationPhase.AWAITING_REVIEW",
+      "enum": {
+        "enumId": "SourceOperationPhase",
+        "value": "awaiting_review"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-operation-phase.transcribing",
+      "label": "轉錄中",
+      "codeName": "SourceOperationPhase.TRANSCRIBING",
+      "enum": {
+        "enumId": "SourceOperationPhase",
+        "value": "transcribing"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-operation-phase.translating",
+      "label": "翻譯中",
+      "codeName": "SourceOperationPhase.TRANSLATING",
+      "enum": {
+        "enumId": "SourceOperationPhase",
+        "value": "translating"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-operation-phase.canceling",
+      "label": "取消中",
+      "codeName": "SourceOperationPhase.CANCELING",
+      "enum": {
+        "enumId": "SourceOperationPhase",
+        "value": "canceling"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-operation-phase.committing",
+      "label": "寫入結果",
+      "codeName": "SourceOperationPhase.COMMITTING",
+      "enum": {
+        "enumId": "SourceOperationPhase",
+        "value": "committing"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-operation-phase.canceled",
+      "label": "已取消",
+      "codeName": "SourceOperationPhase.CANCELED",
+      "enum": {
+        "enumId": "SourceOperationPhase",
+        "value": "canceled"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-operation-phase.completed",
+      "label": "完成",
+      "codeName": "SourceOperationPhase.COMPLETED",
+      "enum": {
+        "enumId": "SourceOperationPhase",
+        "value": "completed"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source-operation-phase.failed",
+      "label": "失敗",
+      "codeName": "SourceOperationPhase.FAILED",
+      "enum": {
+        "enumId": "SourceOperationPhase",
+        "value": "failed"
+      },
+      "retired": false
+    },
+    {
+      "id": "source-library.source",
+      "label": "教材",
+      "codeName": "Source",
+      "retired": false
+    },
+    {
+      "id": "source-library.source-chunk",
+      "label": "段落",
+      "codeName": "SourceChunk",
+      "retired": false
+    },
+    {
+      "id": "source-library.source-operation",
+      "label": "教材作業",
+      "codeName": "SourceOperation",
+      "retired": false
+    },
+    {
+      "id": "source-library.source-failure-state",
+      "label": "失敗後的教材狀態",
+      "codeName": "SourceFailureState",
+      "retired": false
+    },
+    {
+      "id": "source-library.source-read",
+      "label": "教材詳情",
+      "codeName": "SourceRead",
+      "retired": false
+    },
+    {
+      "id": "source-library.source-list",
+      "label": "教材清單",
+      "codeName": "SourceList",
+      "retired": false
+    },
+    {
+      "id": "source-library.source-operation-read",
+      "label": "教材作業快照",
+      "codeName": "SourceOperationRead",
+      "retired": false
+    },
+    {
+      "id": "source-library.source-id",
+      "label": "教材 ID",
+      "codeName": "SourceOperationRead.source_id",
+      "retired": false
+    },
+    {
+      "id": "source-library.source-file-missing",
+      "label": "教材檔案遺失",
+      "codeName": "source_file_missing",
+      "retired": false
+    },
+    {
+      "id": "source-library.source-retry-conflict",
+      "label": "教材重試衝突",
+      "codeName": "source_retry_conflict",
+      "retired": false
+    },
+    {
+      "id": "source-library.source-retry-not-allowed",
+      "label": "教材無法重試",
+      "codeName": "source_retry_not_allowed",
+      "retired": false
+    },
+    {
+      "id": "source-library.source-operation-event",
+      "label": "教材作業事件",
+      "codeName": "source-operation",
       "retired": false
     }
   ]

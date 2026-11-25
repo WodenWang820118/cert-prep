@@ -4,7 +4,7 @@ from threading import BoundedSemaphore, Lock, Thread
 
 from cert_prep_backend.authoring.application.ports import (
     QuestionSources,
-    ProjectDocuments,
+    ProjectSources,
     ReadingLexicon,
     StudyProjects,
 )
@@ -71,31 +71,31 @@ class QuestionJobScheduler:
         provider: LLMProvider,
         async_jobs: bool = True,
         reading_lexicon: ReadingLexicon | None = None,
-        question_count: questions_repository.BindDocumentQuestionCount,
+        question_count: questions_repository.BindSourceQuestionCount,
         sources: QuestionSources,
         projects: StudyProjects,
-        documents: ProjectDocuments,
+        project_sources: ProjectSources,
     ) -> None:
         self._settings = settings
-        # Source Library's question count and status of a document, written in the commit of its questions.
+        # Source Library's question count and status of a source, written in the commit of its questions.
         self._question_count = question_count
         self._provider = provider
         self._async_jobs = async_jobs
         self._reading_lexicon = reading_lexicon if settings.reading_solver_enabled else None
         self._sources = sources
         self._projects = projects
-        self._documents = documents
+        self._project_sources = project_sources
         self._job_slots = BoundedSemaphore(settings.question_job_workers)
         self._job_threads: list[Thread] = []
         self._manual_schedule_lock = Lock()
         self._scheduled_manual_ids: set[str] = set()
 
-    def enqueue_document(
+    def enqueue_source(
         self,
         db: Database,
         *,
         project_id: str,
-        document_id: str,
+        source_id: str,
     ) -> list[QuestionGenerationJob]:
         if not self._settings.question_jobs_on_upload:
             return []
@@ -103,7 +103,7 @@ class QuestionJobScheduler:
         strategy = self._settings.question_jobs_strategy
         max_jobs = self._settings.question_jobs_chunk_limit
         jobs: list[QuestionGenerationJob] = []
-        chunks = self._sources.chunks_of(project_id, document_id)
+        chunks = self._sources.chunks_of(project_id, source_id)
         for chunk in chunks:
             if len(jobs) >= max_jobs:
                 break
@@ -116,7 +116,7 @@ class QuestionJobScheduler:
                 question_generation_jobs.enqueue_chunk_job(
                     db,
                     project_id=project_id,
-                    document_id=document_id,
+                    source_id=source_id,
                     chunk_id=chunk.id,
                     page_number=chunk.page_number,
                     strategy=strategy,
@@ -128,8 +128,8 @@ class QuestionJobScheduler:
             )
 
         self._schedule_jobs(db, jobs)
-        return question_generation_jobs.list_document_jobs(
-            db, project_id, document_id, documents=self._documents
+        return question_generation_jobs.list_source_jobs(
+            db, project_id, source_id, sources=self._project_sources
         )
 
     def close(self) -> None:
@@ -146,29 +146,29 @@ class QuestionJobScheduler:
             scheduled += self._schedule_manual_operation(db, operation.id)
         return scheduled
 
-    def retry_document_jobs(
+    def retry_source_jobs(
         self,
         db: Database,
         *,
         project_id: str,
-        document_id: str,
+        source_id: str,
     ) -> list[QuestionGenerationJob]:
         if not self._settings.question_jobs_on_upload:
-            return question_generation_jobs.list_document_jobs(
-                db, project_id, document_id, documents=self._documents
+            return question_generation_jobs.list_source_jobs(
+                db, project_id, source_id, sources=self._project_sources
             )
 
-        jobs = question_generation_jobs.retry_document_jobs(
+        jobs = question_generation_jobs.retry_source_jobs(
             db,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             provider=str(getattr(self._provider, "provider", "unknown")),
             model=str(getattr(self._provider, "model", "")),
-            documents=self._documents,
+            sources=self._project_sources,
         )
         self._schedule_jobs(db, jobs)
-        return question_generation_jobs.list_document_jobs(
-            db, project_id, document_id, documents=self._documents
+        return question_generation_jobs.list_source_jobs(
+            db, project_id, source_id, sources=self._project_sources
         )
 
     def start_manual_operation(
@@ -176,27 +176,27 @@ class QuestionJobScheduler:
         db: Database,
         *,
         project_id: str,
-        document_id: str,
+        source_id: str,
         limit: int,
         strategy: QuestionGenerationStrategy,
     ) -> ManualQuestionGeneration:
         operation = manual_operations.create_operation(
             db,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             limit=limit,
             strategy=strategy,
             provider=str(getattr(self._provider, "provider", "unknown")),
             model=str(getattr(self._provider, "model", "")),
             projects=self._projects,
-            documents=self._documents,
+            sources=self._project_sources,
         )
         if operation.status == ManualQuestionGenerationStatus.QUEUED:
             self._schedule_manual_operation(db, operation.id)
         return manual_operations.get_operation(
             db,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             operation_id=operation.id,
         )
 
@@ -205,13 +205,13 @@ class QuestionJobScheduler:
         db: Database,
         *,
         project_id: str,
-        document_id: str,
+        source_id: str,
         operation_id: str,
     ) -> ManualQuestionGeneration:
         return manual_operations.get_operation(
             db,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             operation_id=operation_id,
         )
 
@@ -220,15 +220,15 @@ class QuestionJobScheduler:
         db: Database,
         *,
         project_id: str,
-        document_id: str,
+        source_id: str,
         operation_id: str,
     ) -> ManualQuestionGeneration:
         return manual_operations.request_cancel(
             db,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             operation_id=operation_id,
-            documents=self._documents,
+            sources=self._project_sources,
         )
 
     def _schedule_jobs(self, db: Database, jobs: list[QuestionGenerationJob]) -> int:
@@ -260,7 +260,7 @@ class QuestionJobScheduler:
             _reset_generation_attribution(self._provider)
 
             source_chunk = self._sources.chunk(
-                job.project_id, job.document_id, job.chunk_id
+                job.project_id, job.source_id, job.chunk_id
             )
             suggestions = [
                 as_editable_question(suggestion)
@@ -284,7 +284,7 @@ class QuestionJobScheduler:
                 db,
                 job_id=job_id,
                 project_id=job.project_id,
-                document_id=job.document_id,
+                source_id=job.source_id,
                 suggestions=suggestions,
                 effective_provider=attribution.effective_provider,
                 effective_model=attribution.effective_model,
@@ -382,7 +382,7 @@ class QuestionJobScheduler:
             operation = manual_operations.mark_running(db, operation_id)
             if operation.status != ManualQuestionGenerationStatus.RUNNING:
                 return
-            chunks = self._sources.chunks_of(operation.project_id, operation.document_id)
+            chunks = self._sources.chunks_of(operation.project_id, operation.source_id)
             if not chunks:
                 raise ValueError("Document has no extracted text chunks.")
             _reset_generation_attribution(self._provider)
@@ -406,7 +406,7 @@ class QuestionJobScheduler:
                 db,
                 operation_id=operation_id,
                 project_id=operation.project_id,
-                document_id=operation.document_id,
+                source_id=operation.source_id,
                 suggestions=suggestions,
                 effective_provider=attribution.effective_provider,
                 effective_model=attribution.effective_model,
@@ -593,41 +593,41 @@ class QuestionJobWork:
         self._manager = manager
         self._db = db
 
-    def enqueue_document(self, project_id: str, document_id: str) -> None:
-        self._manager.enqueue_document(
-            self._db, project_id=project_id, document_id=document_id
+    def enqueue_source(self, project_id: str, source_id: str) -> None:
+        self._manager.enqueue_source(
+            self._db, project_id=project_id, source_id=source_id
         )
 
-    def retry_jobs(self, project_id: str, document_id: str) -> list[QuestionGenerationJob]:
-        return self._manager.retry_document_jobs(
-            self._db, project_id=project_id, document_id=document_id
+    def retry_jobs(self, project_id: str, source_id: str) -> list[QuestionGenerationJob]:
+        return self._manager.retry_source_jobs(
+            self._db, project_id=project_id, source_id=source_id
         )
 
     def start_manual_operation(
         self,
         project_id: str,
-        document_id: str,
+        source_id: str,
         limit: int,
         strategy: QuestionGenerationStrategy,
     ) -> ManualQuestionGeneration:
         return self._manager.start_manual_operation(
             self._db,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             limit=limit,
             strategy=strategy,
         )
 
     def manual_operation(
-        self, project_id: str, document_id: str, operation_id: str
+        self, project_id: str, source_id: str, operation_id: str
     ) -> ManualQuestionGeneration:
         return self._manager.get_manual_operation(
-            self._db, project_id=project_id, document_id=document_id, operation_id=operation_id
+            self._db, project_id=project_id, source_id=source_id, operation_id=operation_id
         )
 
     def cancel_manual_operation(
-        self, project_id: str, document_id: str, operation_id: str
+        self, project_id: str, source_id: str, operation_id: str
     ) -> ManualQuestionGeneration:
         return self._manager.cancel_manual_operation(
-            self._db, project_id=project_id, document_id=document_id, operation_id=operation_id
+            self._db, project_id=project_id, source_id=source_id, operation_id=operation_id
         )

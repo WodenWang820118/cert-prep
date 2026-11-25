@@ -17,7 +17,7 @@ from cert_prep_backend.capture_integration.application.results import CaptureStr
 from cert_prep_backend.capture_integration.domain.review_session import CaptureReviewStatus
 from cert_prep_backend.platform.config import Settings
 from conftest import AUTH_TOKEN, minimal_pdf
-from document_test_helpers import _create_project
+from source_test_helpers import _create_project
 from test_capture_workbench_pipeline import (
     DurableTerminalReplayCaptureRuntime,
     EchoCaptureProvider,
@@ -87,13 +87,13 @@ def _stream(runtime: _Runtime, session: _Session, last_event_id: int | None = No
     return capture_event_stream.host_event_stream(
         runtime=runtime,
         sessions=SimpleNamespace(get=lambda **kwargs: session),
-        documents=object(),
+        sources=object(),
         operations=object(),
         signal=object(),
         project_id="project-1",
         capture_id=CAPTURE_ID,
         session=session,
-        document=SimpleNamespace(id="doc-1", updated_at=NOW),
+        source=SimpleNamespace(id="doc-1", updated_at=NOW),
         last_event_id=last_event_id,
     )
 
@@ -213,7 +213,7 @@ def _client(tmp_path: Path, runtime) -> TestClient:
             settings=settings,
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
             background_question_jobs=False,
         )
     )

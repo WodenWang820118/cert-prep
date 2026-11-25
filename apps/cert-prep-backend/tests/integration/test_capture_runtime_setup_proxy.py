@@ -167,7 +167,7 @@ def test_capture_runtime_setup_requires_configured_backend_client(
     auth_headers: dict[str, str],
 ) -> None:
     settings = Settings(data_dir=tmp_path, api_token=TOKEN, llm_provider="fake")
-    with TestClient(create_app(settings=settings, document_processing_async_jobs=False)) as client:
+    with TestClient(create_app(settings=settings, source_processing_async_jobs=False)) as client:
         response = client.get(
             "/capture-runtime/requirements",
             headers={"Authorization": f"Bearer {TOKEN}"},
@@ -186,7 +186,7 @@ def test_capture_runtime_ready_proxy_requires_auth_and_keeps_sidecar_token_backe
         create_app(
             settings=settings,
             capture_runtime_client=setup_client,  # type: ignore[arg-type]
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
         )
     ) as client:
         assert client.get("/capture-runtime/ready").status_code == 401
@@ -217,7 +217,7 @@ def test_capture_runtime_setup_proxy_keeps_sidecar_token_backend_only(
         create_app(
             settings=settings,
             capture_runtime_client=setup_client,  # type: ignore[arg-type]
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
         )
     ) as client:
         assert client.get("/capture-runtime/requirements").status_code == 401
@@ -267,7 +267,7 @@ def test_capture_runtime_setup_proxy_preserves_core_only_unavailable_requirement
         create_app(
             settings=settings,
             capture_runtime_client=CoreOnlySetupClient(),  # type: ignore[arg-type]
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
         )
     ) as client:
         response = client.get(

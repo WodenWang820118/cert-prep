@@ -1,12 +1,12 @@
 """Shared Python contracts for cert-prep apps and runtime packages."""
 
-from cert_prep_contracts.documents import (
-    DOCUMENT_STATUS_VALUES,
-    DocumentOperationPhase,
-    DocumentOperationRead,
-    DocumentOperationStatus,
-    SourceDocumentStatus,
-    SourceDocumentStatusValue,
+from cert_prep_contracts.sources import (
+    SOURCE_STATUS_VALUES,
+    SourceOperationPhase,
+    SourceOperationRead,
+    SourceOperationStatus,
+    SourceStatus,
+    SourceStatusValue,
     SourceKind,
 )
 from cert_prep_contracts.hardware import (
@@ -48,10 +48,10 @@ from cert_prep_contracts.transcription import (
 __all__ = [
     "DEFAULT_LLM_PRIMARY_MODEL",
     "DEFAULT_LLM_RUNTIME_POLICY",
-    "DOCUMENT_STATUS_VALUES",
-    "DocumentOperationPhase",
-    "DocumentOperationRead",
-    "DocumentOperationStatus",
+    "SOURCE_STATUS_VALUES",
+    "SourceOperationPhase",
+    "SourceOperationRead",
+    "SourceOperationStatus",
     "GenerationAttribution",
     "LLMExecutionMode",
     "LLMExecutionPolicy",
@@ -74,8 +74,8 @@ __all__ = [
     "LLMInstallProgress",
     "LLMRequirementKind",
     "LLMRequirementSnapshot",
-    "SourceDocumentStatus",
-    "SourceDocumentStatusValue",
+    "SourceStatus",
+    "SourceStatusValue",
     "SourceKind",
     "TranscriptSegment",
 ]

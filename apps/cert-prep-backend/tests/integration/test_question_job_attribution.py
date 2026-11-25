@@ -9,36 +9,36 @@ from cert_prep_backend.authoring.infrastructure import question_generation_jobs
 from cert_prep_backend.authoring.infrastructure import manual_operations
 from cert_prep_backend.authoring.infrastructure import repository as questions_repository
 from cert_prep_backend.authoring.domain.models import QuestionSuggestion, UnavailableQuestionBlock
-from cert_prep_backend.bootstrap.authoring_links import bind_document_question_count
+from cert_prep_backend.bootstrap.authoring_links import bind_source_question_count
 from cert_prep_backend.bootstrap.study_projects import authoring_projects
-from cert_prep_backend.bootstrap.authoring_links import authoring_documents
+from cert_prep_backend.bootstrap.authoring_links import authoring_sources
 from cert_prep_backend.authoring.infrastructure.sources import SourceLibraryQuestionSources
-from cert_prep_backend.bootstrap.source_library_links import document_repository
+from cert_prep_backend.bootstrap.source_library_links import source_repository
 
 
 def test_question_insert_and_success_attribution_commit_together(client, auth_headers) -> None:
-    project_id, document_id, chunk = _source_chunk(client, auth_headers)
+    project_id, source_id, chunk = _source_chunk(client, auth_headers)
     job = question_generation_jobs.enqueue_chunk_job(
         client.app.state.database,
         project_id=project_id,
-        document_id=document_id,
+        source_id=source_id,
         chunk_id=chunk["id"],
         page_number=chunk["page_number"],
         strategy="hybrid_reasoning",
         provider="future-provider",
         model="qwen3.5:4b",
         projects=authoring_projects(client.app.state.database),
-        sources=SourceLibraryQuestionSources(document_repository(client.app.state.database)),
+        sources=SourceLibraryQuestionSources(source_repository(client.app.state.database)),
     )
     question_generation_jobs.mark_running(client.app.state.database, job.id)
     question_generation_jobs.begin_commit(client.app.state.database, job.id)
 
     questions_repository.append_generated_questions_and_complete_job(
         client.app.state.database,
-        question_count=bind_document_question_count(client.app.state.database),
+        question_count=bind_source_question_count(client.app.state.database),
         job_id=job.id,
         project_id=project_id,
-        document_id=document_id,
+        source_id=source_id,
         suggestions=[_suggestion(chunk)],
         effective_provider="future-provider",
         effective_model="future-model-fallback",
@@ -60,18 +60,18 @@ def test_question_insert_rolls_back_when_success_attribution_cannot_commit(
     client,
     auth_headers,
 ) -> None:
-    project_id, document_id, chunk = _source_chunk(client, auth_headers)
+    project_id, source_id, chunk = _source_chunk(client, auth_headers)
     job = question_generation_jobs.enqueue_chunk_job(
         client.app.state.database,
         project_id=project_id,
-        document_id=document_id,
+        source_id=source_id,
         chunk_id=chunk["id"],
         page_number=chunk["page_number"],
         strategy="hybrid_reasoning",
         provider="future-provider",
         model="qwen3.5:4b",
         projects=authoring_projects(client.app.state.database),
-        sources=SourceLibraryQuestionSources(document_repository(client.app.state.database)),
+        sources=SourceLibraryQuestionSources(source_repository(client.app.state.database)),
     )
     question_generation_jobs.mark_running(client.app.state.database, job.id)
     question_generation_jobs.begin_commit(client.app.state.database, job.id)
@@ -90,10 +90,10 @@ def test_question_insert_rolls_back_when_success_attribution_cannot_commit(
     with pytest.raises(sqlite3.IntegrityError, match="success attribution rejected"):
         questions_repository.append_generated_questions_and_complete_job(
             client.app.state.database,
-            question_count=bind_document_question_count(client.app.state.database),
+            question_count=bind_source_question_count(client.app.state.database),
             job_id=job.id,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             suggestions=[_suggestion(chunk)],
             effective_provider="future-provider",
             effective_model="qwen3.5:4b",
@@ -111,27 +111,27 @@ def test_manual_operation_persists_unavailable_parsed_blocks_without_playable_ro
     client,
     auth_headers,
 ) -> None:
-    project_id, document_id, chunk = _source_chunk(client, auth_headers)
+    project_id, source_id, chunk = _source_chunk(client, auth_headers)
     operation = manual_operations.create_operation(
         client.app.state.database,
         project_id=project_id,
-        document_id=document_id,
+        source_id=source_id,
         limit=1,
         strategy="hybrid_reasoning",
         provider="capture-runtime-question-completion",
         model="qwen3.5:4b",
         projects=authoring_projects(client.app.state.database),
-        documents=authoring_documents(client.app.state.database),
+        sources=authoring_sources(client.app.state.database),
     )
     manual_operations.mark_running(client.app.state.database, operation.id)
     manual_operations.begin_commit(client.app.state.database, operation.id)
 
     questions_repository.append_generated_questions_and_complete_manual_operation(
         client.app.state.database,
-        question_count=bind_document_question_count(client.app.state.database),
+        question_count=bind_source_question_count(client.app.state.database),
         operation_id=operation.id,
         project_id=project_id,
-        document_id=document_id,
+        source_id=source_id,
         suggestions=[],
         effective_provider=None,
         effective_model=None,
@@ -152,7 +152,7 @@ def test_manual_operation_persists_unavailable_parsed_blocks_without_playable_ro
     completed = manual_operations.get_operation(
         client.app.state.database,
         project_id=project_id,
-        document_id=document_id,
+        source_id=source_id,
         operation_id=operation.id,
     )
     assert completed.status == "succeeded"
@@ -177,8 +177,8 @@ def _source_chunk(client, auth_headers) -> tuple[str, str, dict]:
         headers=auth_headers,
         json={"name": "Attribution project"},
     ).json()["id"]
-    document = client.post(
-        f"/projects/{project_id}/documents",
+    source = client.post(
+        f"/projects/{project_id}/sources",
         headers=auth_headers,
         files={
             "file": (
@@ -189,10 +189,10 @@ def _source_chunk(client, auth_headers) -> tuple[str, str, dict]:
         },
     ).json()
     chunk = client.get(
-        f"/projects/{project_id}/documents/{document['id']}/chunks",
+        f"/projects/{project_id}/sources/{source['id']}/chunks",
         headers=auth_headers,
     ).json()["items"][0]
-    return project_id, document["id"], chunk
+    return project_id, source["id"], chunk
 
 
 def _suggestion(chunk: dict) -> QuestionSuggestion:

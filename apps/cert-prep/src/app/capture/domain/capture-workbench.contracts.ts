@@ -2,7 +2,7 @@ import type { RuntimeReady } from '@gx-capture/capture-workbench-ui';
 
 export interface CaptureRecord {
   readonly projectId: string;
-  readonly documentId: string;
+  readonly sourceId: string;
   readonly sourceSha256: string;
   readonly structuringRequestId: string;
 }

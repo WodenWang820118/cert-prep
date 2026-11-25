@@ -5,7 +5,7 @@ from pathlib import Path
 
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.errors import InvalidSourceError
-from cert_prep_backend.source_library.domain.document import AUDIO_MEDIA_TYPES
+from cert_prep_backend.source_library.domain.source import AUDIO_MEDIA_TYPES
 from cert_prep_backend.source_library.infrastructure.source_preparation import (
     PreparedSource,
     prepare_source,
@@ -84,7 +84,7 @@ class LocalSourceFileStore:
         content: bytes,
         canonical_suffix: str,
     ) -> str:
-        """Store original bytes and return the path capture review records on the document."""
+        """Store original bytes and return the path capture review records on the source."""
 
         return str(
             store_source_file(

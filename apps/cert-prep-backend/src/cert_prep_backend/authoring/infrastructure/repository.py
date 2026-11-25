@@ -6,7 +6,7 @@ from sqlite3 import Connection, Row
 from uuid import uuid4
 
 from cert_prep_backend.authoring.application.ports import (
-    DocumentQuestionCount,
+    SourceQuestionCount,
     QuestionSources,
     StudyProjects,
 )
@@ -16,8 +16,8 @@ from cert_prep_backend.authoring.domain.generation import QuestionJobCanceledErr
 from cert_prep_backend.platform.database import Database, utc_now
 from cert_prep_backend.platform.errors import NotFoundError
 
-BindDocumentQuestionCount = Callable[[Connection], DocumentQuestionCount]
-"""Source Library's question count and status of documents on the given connection, so it joins the commit."""
+BindSourceQuestionCount = Callable[[Connection], SourceQuestionCount]
+"""Source Library's question count and status of sources on the given connection, so it joins the commit."""
 
 
 def create_question(
@@ -32,15 +32,15 @@ def create_question(
         raise NotFoundError("Project not found.")
     payload.ensure_source_is_complete()
     if payload.cites_a_source:
-        assert payload.document_id is not None and payload.chunk_id is not None
-        sources.chunk(project_id, payload.document_id, payload.chunk_id)
+        assert payload.source_id is not None and payload.chunk_id is not None
+        sources.chunk(project_id, payload.source_id, payload.chunk_id)
     question_id = str(uuid4())
     now = utc_now()
     with db.connect() as connection:
         connection.execute(
             """
             INSERT INTO questions(
-                id, project_id, document_id, chunk_id, question, choices_json,
+                id, project_id, source_id, chunk_id, question, choices_json,
                 answer, answer_key_source, rationale, citation_page, source_excerpt,
                 confidence, source_order, source_question_number, item_kind, group_key, group_prompt,
                 created_at, updated_at
@@ -50,7 +50,7 @@ def create_question(
             (
                 question_id,
                 project_id,
-                payload.document_id,
+                payload.source_id,
                 payload.chunk_id,
                 payload.question,
                 json.dumps(list(payload.choices)),
@@ -79,7 +79,7 @@ def create_generated_questions(
     db: Database,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     suggestions: list[QuestionSuggestion],
     projects: StudyProjects,
 ) -> list[Question]:
@@ -92,7 +92,7 @@ def create_generated_questions(
             if _matching_generated_question_exists(
                 connection,
                 project_id=project_id,
-                document_id=document_id,
+                source_id=source_id,
                 suggestion=suggestion,
             ):
                 continue
@@ -102,7 +102,7 @@ def create_generated_questions(
                 connection,
                 question_id=question_id,
                 project_id=project_id,
-                document_id=document_id,
+                source_id=source_id,
                 suggestion=suggestion,
                 source_order=suggestion.source_order or index,
                 now=now,
@@ -120,32 +120,32 @@ def append_generated_questions_and_complete_job(
     *,
     job_id: str,
     project_id: str,
-    document_id: str,
+    source_id: str,
     suggestions: list[QuestionSuggestion],
     effective_provider: str | None,
     effective_model: str | None,
     fallback_reason: str | None,
-    question_count: BindDocumentQuestionCount,
+    question_count: BindSourceQuestionCount,
     projects: StudyProjects,
 ) -> list[Question]:
-    """Commit generated questions, the document's question count and status and the job's exact successful
-    attribution atomically. The job ran after the document was imported, so Source Library
+    """Commit generated questions, the source's question count and status and the job's exact successful
+    attribution atomically. The job ran after the source was imported, so Source Library
     records the import's question count."""
 
     if not projects.exists(project_id):
         raise NotFoundError("Project not found.")
     with db.connect() as connection:
-        # The count and the document's status are read and written under one write lock, as
+        # The count and the source's status are read and written under one write lock, as
         # the single UPDATE that used to do both was.
         connection.execute("BEGIN IMMEDIATE")
         rows = _append_generated_questions(
             connection,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             suggestions=suggestions,
         )
         question_count(connection).record_import_question_count(
-            project_id, document_id, _document_question_count(connection, project_id, document_id)
+            project_id, source_id, _source_question_count(connection, project_id, source_id)
         )
         now = utc_now()
         updated_job = connection.execute(
@@ -160,7 +160,7 @@ def append_generated_questions_and_complete_job(
                 effective_model = ?,
                 fallback_reason = ?,
                 updated_at = ?
-            WHERE id = ? AND project_id = ? AND document_id = ?
+            WHERE id = ? AND project_id = ? AND source_id = ?
                 AND status = 'running'
                 AND phase = 'committing'
                 AND cancellable = 0
@@ -173,7 +173,7 @@ def append_generated_questions_and_complete_job(
                 now,
                 job_id,
                 project_id,
-                document_id,
+                source_id,
             ),
         )
         if updated_job.rowcount != 1:
@@ -181,9 +181,9 @@ def append_generated_questions_and_complete_job(
                 """
                 SELECT status
                 FROM question_generation_jobs
-                WHERE id = ? AND project_id = ? AND document_id = ?
+                WHERE id = ? AND project_id = ? AND source_id = ?
                 """,
-                (job_id, project_id, document_id),
+                (job_id, project_id, source_id),
             ).fetchone()
             if job is not None and job["status"] in {"cancel_requested", "canceled"}:
                 raise QuestionJobCanceledError("Question generation was canceled before commit.")
@@ -198,31 +198,31 @@ def append_generated_questions_and_complete_manual_operation(
     *,
     operation_id: str,
     project_id: str,
-    document_id: str,
+    source_id: str,
     suggestions: list[QuestionSuggestion],
     effective_provider: str | None,
     effective_model: str | None,
     fallback_reason: str | None,
-    question_count: BindDocumentQuestionCount,
+    question_count: BindSourceQuestionCount,
     unavailable_blocks: Sequence[UnavailableQuestionBlock] = (),
     projects: StudyProjects,
 ) -> list[Question]:
-    """Atomically publish manual questions, the document's question count and status and the operation's final
+    """Atomically publish manual questions, the source's question count and status and the operation's final
     attribution."""
 
     if not projects.exists(project_id):
         raise NotFoundError("Project not found.")
     with db.connect() as connection:
-        # One write lock over the count and the document's status, as for a job commit.
+        # One write lock over the count and the source's status, as for a job commit.
         connection.execute("BEGIN IMMEDIATE")
         rows = _append_generated_questions(
             connection,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             suggestions=suggestions,
         )
         question_count(connection).record_question_count(
-            project_id, document_id, _document_question_count(connection, project_id, document_id)
+            project_id, source_id, _source_question_count(connection, project_id, source_id)
         )
         now = utc_now()
         updated = connection.execute(
@@ -233,7 +233,7 @@ def append_generated_questions_and_complete_manual_operation(
                 effective_provider = ?, effective_model = ?, fallback_reason = ?,
                 unavailable_blocks_json = ?,
                 updated_at = ?
-            WHERE id = ? AND project_id = ? AND document_id = ?
+            WHERE id = ? AND project_id = ? AND source_id = ?
               AND status = 'running' AND phase = 'committing' AND cancellable = 0
             """,
             (
@@ -248,7 +248,7 @@ def append_generated_questions_and_complete_manual_operation(
                 now,
                 operation_id,
                 project_id,
-                document_id,
+                source_id,
             ),
         )
         if updated.rowcount != 1:
@@ -256,9 +256,9 @@ def append_generated_questions_and_complete_manual_operation(
                 """
                 SELECT status
                 FROM manual_question_generations
-                WHERE id = ? AND project_id = ? AND document_id = ?
+                WHERE id = ? AND project_id = ? AND source_id = ?
                 """,
-                (operation_id, project_id, document_id),
+                (operation_id, project_id, source_id),
             ).fetchone()
             if operation is not None and operation["status"] in {
                 "cancel_requested",
@@ -273,16 +273,16 @@ def append_generated_questions_and_complete_manual_operation(
     return [_question_from_row(row) for row in rows]
 
 
-def _document_question_count(connection: Connection, project_id: str, document_id: str) -> int:
-    """Every question of the document, which gives the document's question count."""
+def _source_question_count(connection: Connection, project_id: str, source_id: str) -> int:
+    """Every question of the source, which gives the source's question count."""
 
     return connection.execute(
         """
         SELECT COUNT(*)
         FROM questions
-        WHERE project_id = ? AND document_id = ?
+        WHERE project_id = ? AND source_id = ?
         """,
-        (project_id, document_id),
+        (project_id, source_id),
     ).fetchone()[0]
 
 
@@ -291,7 +291,7 @@ def _insert_generated_question(
     *,
     question_id: str,
     project_id: str,
-    document_id: str,
+    source_id: str,
     suggestion: QuestionSuggestion,
     source_order: int,
     now: str,
@@ -299,7 +299,7 @@ def _insert_generated_question(
     connection.execute(
         """
         INSERT INTO questions(
-            id, project_id, document_id, chunk_id, question, choices_json,
+            id, project_id, source_id, chunk_id, question, choices_json,
             answer, answer_key_source, rationale, citation_page, source_excerpt,
             confidence, source_order, source_question_number, item_kind, group_key, group_prompt,
             created_at, updated_at
@@ -309,7 +309,7 @@ def _insert_generated_question(
         (
             question_id,
             project_id,
-            document_id,
+            source_id,
             suggestion.chunk_id,
             suggestion.question,
             json.dumps(suggestion.choices),
@@ -334,7 +334,7 @@ def _append_generated_questions(
     connection,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     suggestions: list[QuestionSuggestion],
 ) -> list[Row]:
     now = utc_now()
@@ -343,7 +343,7 @@ def _append_generated_questions(
         if _matching_generated_question_exists(
             connection,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             suggestion=suggestion,
         ):
             continue
@@ -353,7 +353,7 @@ def _append_generated_questions(
             connection,
             question_id=question_id,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             suggestion=suggestion,
             source_order=suggestion.source_order or index,
             now=now,
@@ -434,15 +434,15 @@ def get_question(db: Database, project_id: str, question_id: str) -> Question:
 
 
 def _source_questions(
-    connection: Connection, project_id: str, *, document_id: str | None
+    connection: Connection, project_id: str, *, source_id: str | None
 ) -> list[Question]:
     """Questions in the order practice asks them.
 
-    A project lists them by id. One document lists them in source order: a missing
+    A project lists them by id. One source lists them in source order: a missing
     source order sorts after the ones that have it, then by page, creation and id.
     """
 
-    if document_id is None:
+    if source_id is None:
         rows = connection.execute(
             """
             SELECT *
@@ -457,7 +457,7 @@ def _source_questions(
             """
             SELECT *
             FROM questions
-            WHERE project_id = ? AND document_id = ?
+            WHERE project_id = ? AND source_id = ?
             ORDER BY
                 CASE WHEN source_order IS NULL THEN 1 ELSE 0 END,
                 source_order,
@@ -465,7 +465,7 @@ def _source_questions(
                 created_at,
                 id
             """,
-            (project_id, document_id),
+            (project_id, source_id),
         ).fetchall()
     return [_question_from_row(row) for row in rows]
 
@@ -499,7 +499,7 @@ def _matching_generated_question_exists(
     connection,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     suggestion: QuestionSuggestion,
 ) -> bool:
     if suggestion.source_question_number:
@@ -508,14 +508,14 @@ def _matching_generated_question_exists(
             SELECT id
             FROM questions
             WHERE project_id = ?
-              AND document_id = ?
+              AND source_id = ?
               AND chunk_id = ?
               AND source_question_number = ?
             LIMIT 1
             """,
             (
                 project_id,
-                document_id,
+                source_id,
                 suggestion.chunk_id,
                 suggestion.source_question_number,
             ),
@@ -528,14 +528,14 @@ def _matching_generated_question_exists(
         SELECT id
         FROM questions
         WHERE project_id = ?
-          AND document_id = ?
+          AND source_id = ?
           AND chunk_id = ?
           AND lower(trim(question)) = ?
         LIMIT 1
         """,
         (
             project_id,
-            document_id,
+            source_id,
             suggestion.chunk_id,
             suggestion.question.strip().casefold(),
         ),
@@ -547,7 +547,7 @@ def _question_from_row(row: Row) -> Question:
     return Question(
         id=row["id"],
         project_id=row["project_id"],
-        document_id=row["document_id"],
+        source_id=row["source_id"],
         chunk_id=row["chunk_id"],
         question=row["question"],
         choices=tuple(json.loads(row["choices_json"])),
@@ -602,27 +602,27 @@ class SqliteQuestionRepository:
         return update_question(self._db, project_id, question_id, edit)
 
     def add_generated(
-        self, project_id: str, document_id: str, suggestions: Sequence[QuestionSuggestion]
+        self, project_id: str, source_id: str, suggestions: Sequence[QuestionSuggestion]
     ) -> list[Question]:
         return create_generated_questions(
             self._db,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             suggestions=list(suggestions),
             projects=self._projects,
         )
 
-    def count_for_source(self, project_id: str, document_id: str) -> int:
+    def count_for_source(self, project_id: str, source_id: str) -> int:
         if self._connection is not None:
-            return _document_question_count(self._connection, project_id, document_id)
+            return _source_question_count(self._connection, project_id, source_id)
         with self._db.connect() as connection:
-            return _document_question_count(connection, project_id, document_id)
+            return _source_question_count(connection, project_id, source_id)
 
-    def for_source(self, project_id: str, *, document_id: str | None) -> list[Question]:
+    def for_source(self, project_id: str, *, source_id: str | None) -> list[Question]:
         if self._connection is not None:
-            return _source_questions(self._connection, project_id, document_id=document_id)
+            return _source_questions(self._connection, project_id, source_id=source_id)
         with self._db.connect() as connection:
-            return _source_questions(connection, project_id, document_id=document_id)
+            return _source_questions(connection, project_id, source_id=source_id)
 
     def find(self, project_id: str, question_id: str) -> Question | None:
         if self._connection is not None:

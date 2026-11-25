@@ -32,9 +32,9 @@ describe('OperationStore', () => {
   it('derives the success message from the completed result', () => {
     const store = TestBed.inject(OperationStore);
     let result: readonly string[] | null = null;
-    store.run('upload', (accepted: string[]) => `${accepted.length} uploads accepted`, () => of(['document-1', 'document-2'])).subscribe((value) => result = value);
+    store.run('upload', (accepted: string[]) => `${accepted.length} uploads accepted`, () => of(['source-1', 'source-2'])).subscribe((value) => result = value);
     TestBed.tick();
-    expect(result).toEqual(['document-1', 'document-2']);
+    expect(result).toEqual(['source-1', 'source-2']);
     expect(store.status()).toBe('2 uploads accepted');
   });
 

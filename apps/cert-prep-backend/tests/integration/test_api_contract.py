@@ -11,10 +11,10 @@ from cert_prep_backend.platform.config import Settings
 def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
     openapi = create_app(Settings(data_dir=tmp_path, api_token="contract-token")).openapi()
 
-    document_properties = openapi["components"]["schemas"]["DocumentRead"]["properties"]
-    assert {"extraction_warnings", "failure_message"} <= document_properties.keys()
+    source_properties = openapi["components"]["schemas"]["SourceRead"]["properties"]
+    assert {"extraction_warnings", "failure_message"} <= source_properties.keys()
 
-    assert _enum_values(openapi, "DocumentRead", "status") == [
+    assert _enum_values(openapi, "SourceRead", "status") == [
         "processing",
         "cancel_requested",
         "canceled",
@@ -23,13 +23,13 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
         "extraction_failed",
         "transcription_failed",
     ]
-    assert _enum_values(openapi, "DocumentRead", "extraction_method") == [
+    assert _enum_values(openapi, "SourceRead", "extraction_method") == [
         "none",
         "text_recognition",
         "transcription",
         "text_layer",
     ]
-    assert _enum_values(openapi, "DocumentRead", "content_profile") == [
+    assert _enum_values(openapi, "SourceRead", "content_profile") == [
         "unknown",
         "jlpt_vocabulary",
         "jlpt_grouped",
@@ -60,12 +60,12 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
     ]
     assert _enum_values(openapi, "PracticeSessionCreate", "mode") == [
         "random_draw",
-        "full_document",
+        "full_source",
         "review_retry",
     ]
     assert _enum_values(openapi, "PracticeSessionRead", "mode") == [
         "random_draw",
-        "full_document",
+        "full_source",
         "review_retry",
     ]
     assert _enum_values(openapi, "PracticeSessionRead", "status") == [
@@ -90,7 +90,7 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
         "ollama",
         "ollama_model",
     ]
-    assert _enum_values(openapi, "DocumentOperationRead", "status") == [
+    assert _enum_values(openapi, "SourceOperationRead", "status") == [
         "queued",
         "running",
         "cancel_requested",
@@ -98,7 +98,7 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
         "succeeded",
         "failed",
     ]
-    assert _enum_values(openapi, "DocumentOperationRead", "phase") == [
+    assert _enum_values(openapi, "SourceOperationRead", "phase") == [
         "uploading",
         "processing",
         "awaiting_review",
@@ -139,14 +139,14 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
     ]
 
 
-def test_document_operation_routes_and_upload_header_are_documented(tmp_path) -> None:
+def test_source_operation_routes_and_upload_header_are_documented(tmp_path) -> None:
     openapi = create_app(Settings(data_dir=tmp_path, api_token="contract-token")).openapi()
-    operation_schema = openapi["components"]["schemas"]["DocumentOperationRead"]
+    operation_schema = openapi["components"]["schemas"]["SourceOperationRead"]
 
     assert set(operation_schema["required"]) == {
         "id",
         "project_id",
-        "document_id",
+        "source_id",
         "status",
         "phase",
         "cancellable",
@@ -154,7 +154,7 @@ def test_document_operation_routes_and_upload_header_are_documented(tmp_path) ->
         "created_at",
         "updated_at",
     }
-    for field in ("document_id", "error"):
+    for field in ("source_id", "error"):
         assert {item.get("type") for item in operation_schema["properties"][field]["anyOf"]} == {
             "string",
             "null",
@@ -162,34 +162,34 @@ def test_document_operation_routes_and_upload_header_are_documented(tmp_path) ->
 
     assert _response_schema_name(
         openapi,
-        "/projects/{project_id}/document-operations/{operation_id}",
+        "/projects/{project_id}/source-operations/{operation_id}",
         "get",
         200,
-    ) == "DocumentOperationRead"
+    ) == "SourceOperationRead"
     assert _response_schema_name(
         openapi,
-        "/projects/{project_id}/document-operations/{operation_id}",
+        "/projects/{project_id}/source-operations/{operation_id}",
         "delete",
         202,
-    ) == "DocumentOperationRead"
+    ) == "SourceOperationRead"
     assert _response_schema_name(
         openapi,
-        "/projects/{project_id}/documents/{document_id}/processing",
+        "/projects/{project_id}/sources/{source_id}/processing",
         "delete",
         202,
-    ) == "DocumentOperationRead"
+    ) == "SourceOperationRead"
     assert _response_schema_name(
         openapi,
-        "/projects/{project_id}/documents/{document_id}/retry",
+        "/projects/{project_id}/sources/{source_id}/retry",
         "post",
         202,
-    ) == "DocumentOperationRead"
+    ) == "SourceOperationRead"
 
     for path in (
-        "/projects/{project_id}/document-operations/{operation_id}/events",
-        "/projects/{project_id}/documents/{document_id}/document-operation/events",
-        "/projects/{project_id}/documents/{document_id}/question-jobs/events",
-        "/projects/{project_id}/documents/{document_id}/question-generations/{operation_id}/events",
+        "/projects/{project_id}/source-operations/{operation_id}/events",
+        "/projects/{project_id}/sources/{source_id}/source-operation/events",
+        "/projects/{project_id}/sources/{source_id}/question-jobs/events",
+        "/projects/{project_id}/sources/{source_id}/question-generations/{operation_id}/events",
         "/llm/installations/{job_id}/events",
     ):
         assert "text/event-stream" in openapi["paths"][path]["get"]["responses"][
@@ -197,43 +197,43 @@ def test_document_operation_routes_and_upload_header_are_documented(tmp_path) ->
         ]["content"]
     assert _response_schema_name(
         openapi,
-        "/projects/{project_id}/document-operations/{operation_id}",
+        "/projects/{project_id}/source-operations/{operation_id}",
         "get",
         404,
     ) == "ApiErrorRead"
     assert _response_schema_name(
         openapi,
-        "/projects/{project_id}/document-operations/{operation_id}",
+        "/projects/{project_id}/source-operations/{operation_id}",
         "delete",
         409,
     ) == "ApiErrorRead"
     assert _response_schema_name(
         openapi,
-        "/projects/{project_id}/documents",
+        "/projects/{project_id}/sources",
         "post",
         503,
     ) == "ApiErrorRead"
     assert _response_schema_name(
         openapi,
-        "/projects/{project_id}/documents/{document_id}/retry",
+        "/projects/{project_id}/sources/{source_id}/retry",
         "post",
         409,
     ) == "ApiErrorRead"
     for path, method in (
         (
-            "/projects/{project_id}/document-operations/{operation_id}",
+            "/projects/{project_id}/source-operations/{operation_id}",
             "get",
         ),
         (
-            "/projects/{project_id}/document-operations/{operation_id}",
+            "/projects/{project_id}/source-operations/{operation_id}",
             "delete",
         ),
-        ("/projects/{project_id}/documents", "post"),
-        ("/projects/{project_id}/documents/{document_id}/retry", "post"),
+        ("/projects/{project_id}/sources", "post"),
+        ("/projects/{project_id}/sources/{source_id}/retry", "post"),
     ):
         assert _response_schema_name(openapi, path, method, 422) == "ApiErrorRead"
 
-    upload = openapi["paths"]["/projects/{project_id}/documents"]["post"]
+    upload = openapi["paths"]["/projects/{project_id}/sources"]["post"]
     upload_body_ref = upload["requestBody"]["content"]["multipart/form-data"]["schema"][
         "$ref"
     ]
@@ -256,7 +256,7 @@ def test_document_operation_routes_and_upload_header_are_documented(tmp_path) ->
     assert header_schema["pattern"] == "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
 
     audio_source = openapi["paths"][
-        "/projects/{project_id}/documents/{document_id}/source"
+        "/projects/{project_id}/sources/{source_id}/audio"
     ]["get"]
     binary_schema = audio_source["responses"]["200"]["content"][
         "application/octet-stream"
@@ -264,7 +264,7 @@ def test_document_operation_routes_and_upload_header_are_documented(tmp_path) ->
     assert binary_schema == {"type": "string", "format": "binary"}
     assert _response_schema_name(
         openapi,
-        "/projects/{project_id}/documents/{document_id}/source",
+        "/projects/{project_id}/sources/{source_id}/audio",
         "get",
         409,
     ) == "ApiErrorRead"
@@ -276,11 +276,11 @@ def test_operation_id_validation_uses_the_documented_error_envelope(tmp_path) ->
 
     with TestClient(app) as client:
         invalid_path = client.get(
-            "/projects/project-id/document-operations/!invalid",
+            "/projects/project-id/source-operations/!invalid",
             headers=auth_headers,
         )
         invalid_header = client.post(
-            "/projects/project-id/documents/document-id/retry",
+            "/projects/project-id/sources/document-id/retry",
             headers={
                 **auth_headers,
                 "X-Cert-Prep-Operation-Id": "!invalid",

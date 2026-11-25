@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { CERT_PREP_API } from '../../../core/data';
 import type {
-  DocumentRead,
+  SourceRead,
   QuestionGenerationJobRead,
   ProjectRead,
   QuestionRead,
@@ -16,10 +16,10 @@ import { QuestionsPanelComponent } from './questions-panel.component';
 
 describe('QuestionsPanelComponent', () => {
   const apiClient = {
-    generateDocumentQuestions: vi.fn(),
-    listDocumentQuestionJobs: vi.fn(),
+    generateSourceQuestions: vi.fn(),
+    listSourceQuestionJobs: vi.fn(),
     listQuestions: vi.fn(),
-    retryDocumentQuestionJobs: vi.fn(),
+    retrySourceQuestionJobs: vi.fn(),
     updateQuestion: vi.fn(),
   };
 
@@ -54,7 +54,7 @@ describe('QuestionsPanelComponent', () => {
     const projects = TestBed.inject(ProjectStore);
     projects.projects.set([projectRead()]);
     projects.select('project-1');
-    activateDocument(TestBed.inject(SourceImportStore), documentRead());
+    activateSource(TestBed.inject(SourceImportStore), sourceRead());
     const fixture = TestBed.createComponent(QuestionsPanelComponent);
     fixture.detectChanges();
 
@@ -68,7 +68,7 @@ describe('QuestionsPanelComponent', () => {
     const projects = TestBed.inject(ProjectStore);
     projects.projects.set([projectRead()]);
     projects.select('project-1');
-    activateDocument(TestBed.inject(SourceImportStore), documentRead());
+    activateSource(TestBed.inject(SourceImportStore), sourceRead());
     TestBed.inject(QuestionsStore).manualQuestionGeneration.set(Object.assign(
       manualQuestionGeneration({ status: 'succeeded', generated_count: countField === 'generated_count' ? 0 : 1 }),
       { [countField]: 0 },
@@ -89,12 +89,12 @@ describe('QuestionsPanelComponent', () => {
     { status: 'failed', generated_count: 0 },
     { status: 'canceled', generated_count: 0 },
     { status: 'succeeded', generated_count: 1 },
-    { status: 'succeeded', generated_count: 0, document_id: 'other-document' },
-  ] as const)('does not show the zero-question notice for $status / $generated_count / $document_id', (operation) => {
+    { status: 'succeeded', generated_count: 0, source_id: 'other-source' },
+  ] as const)('does not show the zero-question notice for $status / $generated_count / $source_id', (operation) => {
     const projects = TestBed.inject(ProjectStore);
     projects.projects.set([projectRead()]);
     projects.select('project-1');
-    activateDocument(TestBed.inject(SourceImportStore), documentRead());
+    activateSource(TestBed.inject(SourceImportStore), sourceRead());
     TestBed.inject(QuestionsStore).manualQuestionGeneration.set(manualQuestionGeneration(operation));
     const fixture = TestBed.createComponent(QuestionsPanelComponent);
     fixture.detectChanges();
@@ -107,7 +107,7 @@ describe('QuestionsPanelComponent', () => {
     const questionsStore = TestBed.inject(QuestionsStore);
     projects.projects.set([projectRead()]);
     projects.select('project-1');
-    activateDocument(sourceImport, documentRead());
+    activateSource(sourceImport, sourceRead());
     questionsStore.questionJobs.set([questionJob({ status: 'running' })]);
 
     const fixture = TestBed.createComponent(QuestionsPanelComponent);
@@ -132,7 +132,7 @@ describe('QuestionsPanelComponent', () => {
     const questionsStore = TestBed.inject(QuestionsStore);
     projects.projects.set([projectRead()]);
     projects.select('project-1');
-    activateDocument(sourceImport, documentRead());
+    activateSource(sourceImport, sourceRead());
     questionsStore.questionJobs.set([
       questionJob({
         status: 'skipped_missing_model',
@@ -158,7 +158,7 @@ describe('QuestionsPanelComponent', () => {
     const questionsStore = TestBed.inject(QuestionsStore);
     projects.projects.set([projectRead()]);
     projects.select('project-1');
-    activateDocument(sourceImport, documentRead());
+    activateSource(sourceImport, sourceRead());
     questionsStore.questions.set([questionFixture()]);
 
     const fixture = TestBed.createComponent(QuestionsPanelComponent);
@@ -181,10 +181,10 @@ describe('QuestionsPanelComponent', () => {
     const questionsStore = TestBed.inject(QuestionsStore);
     projects.projects.set([projectRead()]);
     projects.select('project-1');
-    activateDocument(sourceImport, documentRead());
+    activateSource(sourceImport, sourceRead());
     questionsStore.questions.set([
       questionFixture({
-        question: 'Question without document evidence',
+        question: 'Question without source evidence',
         citation_page: null,
         source_excerpt: null,
       }),
@@ -194,7 +194,7 @@ describe('QuestionsPanelComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).not.toContain(
-      'Question without document evidence',
+      'Question without source evidence',
     );
     expect(fixture.nativeElement.textContent).toContain(
       'No questions are ready yet.',
@@ -207,7 +207,7 @@ describe('QuestionsPanelComponent', () => {
     const questionsStore = TestBed.inject(QuestionsStore);
     projects.projects.set([projectRead()]);
     projects.select('project-1');
-    activateDocument(sourceImport, documentRead());
+    activateSource(sourceImport, sourceRead());
     questionsStore.questions.set([
       questionFixture({
         question: 'Placeholder inferred from a source chunk',
@@ -232,7 +232,7 @@ describe('QuestionsPanelComponent', () => {
     const questionsStore = TestBed.inject(QuestionsStore);
     projects.projects.set([projectRead()]);
     projects.select('project-1');
-    activateDocument(sourceImport, documentRead());
+    activateSource(sourceImport, sourceRead());
     questionsStore.manualQuestionGeneration.set(
       manualQuestionGeneration({
         status: 'succeeded',
@@ -263,27 +263,27 @@ describe('QuestionsPanelComponent', () => {
     expect(text).not.toContain('generated_count');
   });
 
-  it('keeps the visible questions scoped to the active document', () => {
+  it('keeps the visible questions scoped to the active source', () => {
     const projects = TestBed.inject(ProjectStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const questionsStore = TestBed.inject(QuestionsStore);
-    const firstDocument = documentRead({
-      id: 'document-1',
+    const firstSource = sourceRead({
+      id: 'source-1',
       filename: 'first.pdf',
     });
-    const secondDocument = documentRead({
-      id: 'document-2',
+    const secondSource = sourceRead({
+      id: 'source-2',
       filename: 'second.pdf',
     });
     projects.projects.set([projectRead()]);
     projects.select('project-1');
-    sourceImport.documents.set([firstDocument, secondDocument]);
-    sourceImport.setActiveDocumentId(secondDocument.id);
+    sourceImport.sources.set([firstSource, secondSource]);
+    sourceImport.setActiveSourceId(secondSource.id);
     questionsStore.questions.set([
-      questionFixture({ id: 'active-question', document_id: secondDocument.id }),
+      questionFixture({ id: 'active-question', source_id: secondSource.id }),
       questionFixture({
         id: 'other-question',
-        document_id: firstDocument.id,
+        source_id: firstSource.id,
         question: 'Question from another PDF',
       }),
     ]);
@@ -304,7 +304,7 @@ describe('QuestionsPanelComponent', () => {
     const operations = TestBed.inject(OperationStore);
     projects.projects.set([projectRead()]);
     projects.select('project-1');
-    activateDocument(sourceImport, documentRead());
+    activateSource(sourceImport, sourceRead());
     questionsStore.questions.set([questionFixture()]);
     operations.status.set('Question saved');
 
@@ -333,13 +333,13 @@ function projectRead(): ProjectRead {
   };
 }
 
-function documentRead(overrides: Partial<DocumentRead> = {}): DocumentRead {
+function sourceRead(overrides: Partial<SourceRead> = {}): SourceRead {
   return {
-    id: 'document-1',
+    id: 'source-1',
     project_id: 'project-1',
     filename: 'jlpt-n1.pdf',
     source_kind: 'pdf',
-    sha256: 'document-sha',
+    sha256: 'source-sha',
     language_hint: 'ja',
     page_count: 46,
     has_text: true,
@@ -365,7 +365,7 @@ function questionJob(
   return {
     id: 'job-1',
     project_id: 'project-1',
-    document_id: 'document-1',
+    source_id: 'source-1',
     chunk_id: 'chunk-1',
     page_number: 1,
     strategy: 'hybrid_reasoning',
@@ -392,7 +392,7 @@ function questionFixture(
   return {
     id: 'question-1',
     project_id: 'project-1',
-    document_id: 'document-1',
+    source_id: 'source-1',
     chunk_id: 'chunk-1',
     question: 'Which answer is supported by the source?',
     choices: ['A', 'B'],
@@ -413,10 +413,10 @@ function questionFixture(
   };
 }
 
-function activateDocument(
+function activateSource(
   sourceImport: SourceImportStore,
-  document: DocumentRead,
+  source: SourceRead,
 ): void {
-  sourceImport.documents.set([document]);
-  sourceImport.setActiveDocumentId(document.id);
+  sourceImport.sources.set([source]);
+  sourceImport.setActiveSourceId(source.id);
 }

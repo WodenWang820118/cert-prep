@@ -34,7 +34,7 @@ with the Angular UI.
 The backend owns persistence and file I/O. The Angular application does not
 read SQLite or the local filesystem directly. Capture Runtime owns extraction
 and its wire protocol; Cert Prep owns the authenticated host proxy, review
-workflow, document mapping, and study features. Ollama is optional enrichment,
+workflow, Capture result mapping, and study features. Ollama is optional enrichment,
 not a prerequisite for manual review or deterministic tests.
 
 ## Repository map
@@ -42,7 +42,7 @@ not a prerequisite for manual review or deterministic tests.
 | Path | Responsibility |
 | --- | --- |
 | [`apps/cert-prep`](apps/cert-prep) | Angular standalone-component UI, workbench screens, signal stores, API services, and runtime status views. |
-| [`apps/cert-prep-backend`](apps/cert-prep-backend) | FastAPI sidecar, SQLite persistence, source-document handling, question generation, practice, wrong-answer review, and runtime integration. |
+| [`apps/cert-prep-backend`](apps/cert-prep-backend) | FastAPI sidecar, SQLite persistence, study material import, question generation, practice, wrong-answer review, and runtime integration. |
 | [`apps/cert-prep-desktop`](apps/cert-prep-desktop) | Tauri 2 Windows host, backend process management, sidecar installation/verification, packaging, and desktop smoke/QA scripts. |
 | [`apps/cert-prep-e2e`](apps/cert-prep-e2e) | Playwright browser tests of the UI against a route-mocked API. |
 | [`libs/cert-prep-api`](libs/cert-prep-api) | Generated TypeScript client and typed request helpers derived from the backend OpenAPI contract. |
@@ -150,6 +150,9 @@ corepack pnpm nx run cert-prep-desktop:build-windows-x64
 ## Contracts and generated code
 
 The backend REST/OpenAPI document is the contract between Python and Angular.
+Cert identifies imported PDFs, images, and recordings through the `/sources`
+resource and its `source_id` references. A capture review operation carries the
+same source identifier as `sourceId`.
 After changing backend routes or response models, regenerate the TypeScript
 client and run its checks:
 

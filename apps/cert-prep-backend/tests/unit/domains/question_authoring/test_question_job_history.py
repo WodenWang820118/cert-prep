@@ -9,32 +9,32 @@ from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.authoring.infrastructure import question_generation_jobs
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.bootstrap.study_projects import authoring_projects
-from cert_prep_backend.bootstrap.authoring_links import authoring_documents
+from cert_prep_backend.bootstrap.authoring_links import authoring_sources
 from cert_prep_backend.authoring.infrastructure.sources import SourceLibraryQuestionSources
-from cert_prep_backend.bootstrap.source_library_links import document_repository
+from cert_prep_backend.bootstrap.source_library_links import source_repository
 
 
 def test_detached_terminal_job_keeps_public_attribution_and_is_not_retried(
     tmp_path: Path,
 ) -> None:
     db = _database(tmp_path)
-    _seed_project_document_chunk(db, document_id="document", chunk_id="chunk")
+    _seed_project_source_chunk(db, source_id="document", chunk_id="chunk")
     job = question_generation_jobs.enqueue_chunk_job(
         db,
         project_id="project",
-        document_id="document",
+        source_id="document",
         chunk_id="chunk",
         page_number=1,
         strategy="hybrid_reasoning",
         provider="future-provider",
         model="qwen3.5:4b",
         projects=authoring_projects(db),
-        sources=SourceLibraryQuestionSources(document_repository(db)),
+        sources=SourceLibraryQuestionSources(source_repository(db)),
     )
     terminal_before = question_generation_jobs.mark_failed(db, job.id, detail="generation failed")
 
     with db.connect() as connection:
-        connection.execute("DELETE FROM document_chunks WHERE id = 'chunk'")
+        connection.execute("DELETE FROM source_chunks WHERE id = 'chunk'")
         raw = connection.execute(
             "SELECT * FROM question_generation_jobs WHERE id = ?",
             (job.id,),
@@ -44,13 +44,13 @@ def test_detached_terminal_job_keeps_public_attribution_and_is_not_retried(
     assert raw["chunk_id"] is None
     assert raw["source_chunk_id"] == "chunk"
     assert question_generation_jobs.get_job(db, job.id) == terminal_before
-    assert question_generation_jobs.retry_document_jobs(
+    assert question_generation_jobs.retry_source_jobs(
         db,
         project_id="project",
-        document_id="document",
+        source_id="document",
         provider="ollama",
         model="obsolete-model",
-        documents=authoring_documents(db),
+        sources=authoring_sources(db),
     ) == []
     assert question_generation_jobs.get_job(db, job.id) == terminal_before
 
@@ -61,18 +61,18 @@ def test_recovery_terminalizes_detached_nonterminal_jobs(
     detached_status: str,
 ) -> None:
     db = _database(tmp_path)
-    _seed_project_document_chunk(db, document_id="document", chunk_id="chunk")
+    _seed_project_source_chunk(db, source_id="document", chunk_id="chunk")
     job = question_generation_jobs.enqueue_chunk_job(
         db,
         project_id="project",
-        document_id="document",
+        source_id="document",
         chunk_id="chunk",
         page_number=1,
         strategy="deterministic_only",
         provider="future-provider",
         model="qwen3.5:4b",
         projects=authoring_projects(db),
-        sources=SourceLibraryQuestionSources(document_repository(db)),
+        sources=SourceLibraryQuestionSources(source_repository(db)),
     )
     with db.connect() as connection:
         connection.execute(
@@ -87,7 +87,7 @@ def test_recovery_terminalizes_detached_nonterminal_jobs(
                 job.id,
             ),
         )
-        connection.execute("DELETE FROM document_chunks WHERE id = 'chunk'")
+        connection.execute("DELETE FROM source_chunks WHERE id = 'chunk'")
 
     assert question_generation_jobs.recover_runnable_jobs(db) == []
     with db.connect() as connection:
@@ -105,19 +105,19 @@ def test_recovery_terminalizes_detached_nonterminal_jobs(
     assert recovered["source_chunk_id"] == "chunk"
 
 
-def test_question_job_attribution_constraints_reject_cross_document_drift(
+def test_question_job_attribution_constraints_reject_cross_source_drift(
     tmp_path: Path,
 ) -> None:
     db = _database(tmp_path)
-    _seed_project_document_chunk(db, document_id="document-a", chunk_id="chunk-a")
-    _seed_document_chunk(db, document_id="document-b", chunk_id="chunk-b")
+    _seed_project_source_chunk(db, source_id="document-a", chunk_id="chunk-a")
+    _seed_source_chunk(db, source_id="document-b", chunk_id="chunk-b")
 
     with db.connect() as connection:
         with pytest.raises(sqlite3.IntegrityError):
             _insert_raw_job(
                 connection,
                 job_id="cross-document",
-                document_id="document-a",
+                source_id="document-a",
                 chunk_id="chunk-b",
                 source_chunk_id="chunk-b",
             )
@@ -125,7 +125,7 @@ def test_question_job_attribution_constraints_reject_cross_document_drift(
             _insert_raw_job(
                 connection,
                 job_id="mismatched-source",
-                document_id="document-b",
+                source_id="document-b",
                 chunk_id="chunk-b",
                 source_chunk_id="different-source",
             )
@@ -133,14 +133,14 @@ def test_question_job_attribution_constraints_reject_cross_document_drift(
     job = question_generation_jobs.enqueue_chunk_job(
         db,
         project_id="project",
-        document_id="document-b",
+        source_id="document-b",
         chunk_id="chunk-b",
         page_number=1,
         strategy="deterministic_only",
         provider="future-provider",
         model="qwen3.5:4b",
         projects=authoring_projects(db),
-        sources=SourceLibraryQuestionSources(document_repository(db)),
+        sources=SourceLibraryQuestionSources(source_repository(db)),
     )
     with db.connect() as connection:
         with pytest.raises(sqlite3.IntegrityError):
@@ -157,10 +157,10 @@ def _database(tmp_path: Path) -> Database:
     return db
 
 
-def _seed_project_document_chunk(
+def _seed_project_source_chunk(
     db: Database,
     *,
-    document_id: str,
+    source_id: str,
     chunk_id: str,
 ) -> None:
     with db.connect() as connection:
@@ -170,35 +170,35 @@ def _seed_project_document_chunk(
             VALUES ('project', 'Project', '', '2026-07-14', '2026-07-14')
             """
         )
-    _seed_document_chunk(db, document_id=document_id, chunk_id=chunk_id)
+    _seed_source_chunk(db, source_id=source_id, chunk_id=chunk_id)
 
 
-def _seed_document_chunk(
+def _seed_source_chunk(
     db: Database,
     *,
-    document_id: str,
+    source_id: str,
     chunk_id: str,
 ) -> None:
     with db.connect() as connection:
         connection.execute(
             """
-            INSERT INTO documents(
+            INSERT INTO sources(
                 id, project_id, filename, sha256, storage_path, page_count,
                 has_text, status, created_at, updated_at, source_kind
             )
             VALUES (?, 'project', ?, ?, ?, 1, 1, 'ready', '2026-07-14', '2026-07-14', 'pdf')
             """,
-            (document_id, f"{document_id}.pdf", document_id, f"C:/{document_id}.pdf"),
+            (source_id, f"{source_id}.pdf", source_id, f"C:/{source_id}.pdf"),
         )
         connection.execute(
             """
-            INSERT INTO document_chunks(
-                id, project_id, document_id, page_number, chunk_index,
+            INSERT INTO source_chunks(
+                id, project_id, source_id, page_number, chunk_index,
                 text, source_excerpt, created_at
             )
             VALUES (?, 'project', ?, 1, 0, 'source text', 'source text', '2026-07-14')
             """,
-            (chunk_id, document_id),
+            (chunk_id, source_id),
         )
 
 
@@ -206,14 +206,14 @@ def _insert_raw_job(
     connection: sqlite3.Connection,
     *,
     job_id: str,
-    document_id: str,
+    source_id: str,
     chunk_id: str,
     source_chunk_id: str,
 ) -> None:
     connection.execute(
         """
         INSERT INTO question_generation_jobs(
-            id, project_id, document_id, chunk_id, source_chunk_id,
+            id, project_id, source_id, chunk_id, source_chunk_id,
             page_number, strategy, status, provider, model, created_at, updated_at
         )
         VALUES (
@@ -221,5 +221,5 @@ def _insert_raw_job(
             'future-provider', 'qwen3.5:4b', '2026-07-14', '2026-07-14'
         )
         """,
-        (job_id, document_id, chunk_id, source_chunk_id),
+        (job_id, source_id, chunk_id, source_chunk_id),
     )

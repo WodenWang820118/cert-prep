@@ -2,15 +2,15 @@
 
 from fastapi.testclient import TestClient
 
-from practice_test_support import _create_manual_question, _create_project, _upload_document
+from practice_test_support import _create_manual_question, _create_project, _upload_source
 
 
 def test_regrade_clears_a_wrong_answer_after_the_question_key_is_corrected(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    question = _create_manual_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    question = _create_manual_question(client, auth_headers, project_id, source_id)
     session = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
@@ -63,8 +63,8 @@ def test_a_corrected_key_reaches_the_wrong_answer_that_was_graded_against_the_ol
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    question = _create_manual_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    question = _create_manual_question(client, auth_headers, project_id, source_id)
     session = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,

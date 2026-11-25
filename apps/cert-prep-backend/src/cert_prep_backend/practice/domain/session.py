@@ -15,7 +15,7 @@ from cert_prep_backend.practice.domain.exceptions import (
 
 DEFAULT_RANDOM_QUESTION_COUNT = 10
 NO_PLAYABLE_QUESTIONS_MESSAGE = "No playable questions are available for practice."
-DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE = "Document id is required for full document practice."
+SOURCE_REQUIRED_FOR_FULL_SOURCE_MESSAGE = "Document id is required for full document practice."
 QUESTION_NOT_IN_SESSION_MESSAGE = "Question is not part of this practice session."
 SELECTED_ANSWER_NOT_AVAILABLE_MESSAGE = "Selected answer is not one of the available choices."
 
@@ -28,7 +28,7 @@ class PracticeSessionStatus(str, Enum):
 
 class PracticeSessionMode(str, Enum):
     RANDOM_DRAW = "random_draw"
-    FULL_DOCUMENT = "full_document"
+    FULL_SOURCE = "full_source"
     REVIEW_RETRY = "review_retry"
 
 
@@ -43,7 +43,7 @@ class PracticeQuestion:
     rationale: str | None = None
     citation_page: int | None = None
     source_excerpt: str | None = None
-    document_id: str | None = None
+    source_id: str | None = None
     answer_key_source: str | None = None
 
     def __post_init__(self) -> None:
@@ -79,7 +79,7 @@ class QuestionSelection:
     question_ids: tuple[str, ...]
     question_count: int
     random_seed: int | None
-    document_id: str | None
+    source_id: str | None
 
 
 def select_questions(
@@ -88,7 +88,7 @@ def select_questions(
     *,
     requested_count: int | None,
     random_seed: int | None,
-    document_id: str | None,
+    source_id: str | None,
     new_seed: Callable[[], int],
 ) -> QuestionSelection:
     """Choose a session's questions from the playable candidates of its mode.
@@ -99,7 +99,7 @@ def select_questions(
 
     if requested_count is not None:
         question_count = requested_count
-    elif mode in {PracticeSessionMode.FULL_DOCUMENT, PracticeSessionMode.REVIEW_RETRY}:
+    elif mode in {PracticeSessionMode.FULL_SOURCE, PracticeSessionMode.REVIEW_RETRY}:
         question_count = len(candidate_ids)
     else:
         question_count = DEFAULT_RANDOM_QUESTION_COUNT
@@ -113,7 +113,7 @@ def select_questions(
             question_ids=tuple(random.Random(seed).sample(tuple(candidate_ids), drawn)),
             question_count=question_count,
             random_seed=seed,
-            document_id=None,
+            source_id=None,
         )
 
     question_ids = tuple(candidate_ids[:question_count])
@@ -123,7 +123,7 @@ def select_questions(
         question_ids=question_ids,
         question_count=question_count,
         random_seed=None,
-        document_id=document_id if mode is PracticeSessionMode.FULL_DOCUMENT else None,
+        source_id=source_id if mode is PracticeSessionMode.FULL_SOURCE else None,
     )
 
 
@@ -138,7 +138,7 @@ class PracticeSession:
     created_at: str
     status: PracticeSessionStatus = PracticeSessionStatus.ACTIVE
     mode: PracticeSessionMode = PracticeSessionMode.RANDOM_DRAW
-    source_document_id: str | None = None
+    source_id: str | None = None
     requested_question_count: int = DEFAULT_RANDOM_QUESTION_COUNT
     random_seed: int | None = None
     completed_at: str | None = None
@@ -171,7 +171,7 @@ class PracticeSession:
             question_ids=selection.question_ids,
             created_at=now,
             mode=mode,
-            source_document_id=selection.document_id,
+            source_id=selection.source_id,
             requested_question_count=selection.question_count,
             random_seed=selection.random_seed,
             questions=tuple(by_id[question_id] for question_id in selection.question_ids),

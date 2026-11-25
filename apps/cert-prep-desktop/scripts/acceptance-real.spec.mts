@@ -5,7 +5,7 @@
 // (CERT_PREP_PACKAGE_SMOKE_LLM_PROVIDER=fake) so results are deterministic.
 //
 // 1. JPEG (packaged-image-upload-smoke): upload one scanned image, OCR it, and
-//    check the document becomes ready with chunks and the expected text.
+//    check the source becomes ready with chunks and the expected text.
 // 2. PDF (packaged-flow-smoke): consent to the Python runtime install, create a
 //    project, upload the scanned PDF and OCR it, edit a question, do a Whole source session
 //    and a Random draw (or the Markdown export), then restart the app and
@@ -70,8 +70,8 @@ test('real Cert Prep packaged PDF and JPEG acceptance journeys pass', async () =
       try {
         imageEvidence = await runPackagedImageUploadSmoke(imageOptions);
         expect(imageEvidence.status).toBe('completed');
-        expect(imageEvidence.document.status).toBe('ready');
-        expect(imageEvidence.document.chunks_count).toBeGreaterThan(0);
+        expect(imageEvidence.source.status).toBe('ready');
+        expect(imageEvidence.source.chunks_count).toBeGreaterThan(0);
         expect(imageEvidence.ocrTruth?.status).toBe('passed');
       } catch (error) {
         imageFailure = error instanceof Error ? error.message : String(error);
@@ -111,9 +111,9 @@ test('real Cert Prep packaged PDF and JPEG acceptance journeys pass', async () =
               ...acceptancePrivacyMasks(page),
               page.locator('time'),
               page.locator('.dynamic-id'),
-              page.locator('[data-testid="document-elapsed-time"]'),
-              page.locator('[data-testid="document-progress-metrics"]'),
-              page.locator('[data-testid="document-progress-bar"]'),
+              page.locator('[data-testid="source-elapsed-time"]'),
+              page.locator('[data-testid="source-progress-metrics"]'),
+              page.locator('[data-testid="source-progress-bar"]'),
               // Practice sessions display a dynamic session ID in the
               // session-details rail.
               page.locator('aside.practice-session-rail dd').first(),

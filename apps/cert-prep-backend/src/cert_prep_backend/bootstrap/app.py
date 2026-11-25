@@ -45,7 +45,7 @@ from cert_prep_backend.capture_integration.infrastructure.background import (
 from cert_prep_backend.capture_integration.infrastructure.coordinator import (
     CertPrepCaptureCoordinator,
 )
-from cert_prep_backend.capture_integration.infrastructure.document_extraction import (
+from cert_prep_backend.capture_integration.infrastructure.source_extraction import (
     CaptureSourceExtraction,
 )
 from cert_prep_backend.capture_integration.infrastructure.review_sessions import (
@@ -75,7 +75,7 @@ from cert_prep_backend.ai_providers.infrastructure.ollama_server import (
 )
 from cert_prep_backend.ai_providers.infrastructure.provider import lazy_provider_from_settings
 from cert_prep_backend.authoring.infrastructure.question_writing import ProviderQuestionWriting
-from cert_prep_backend.authoring.infrastructure.import_questions import ImportedDocumentQuestionGeneration
+from cert_prep_backend.authoring.infrastructure.import_questions import ImportedSourceQuestionGeneration
 from cert_prep_backend.authoring.infrastructure.sources import SourceLibraryQuestionSources
 from cert_prep_backend.authoring.infrastructure.sudachi_reading_lexicon import SudachiReadingLexicon
 from cert_prep_backend.authoring.infrastructure.question_jobs import (
@@ -85,17 +85,17 @@ from cert_prep_backend.authoring.infrastructure.question_jobs import (
 from cert_prep_backend.llm_provisioning.application import use_cases as llm_installations
 from cert_prep_backend.source_library.application import use_cases as source_library
 from cert_prep_backend.source_library.infrastructure.storage import LocalSourceFileStore
-from cert_prep_backend.source_library.infrastructure.worker_pool import PoolDocumentWork
-from cert_prep_backend.platform.document_worker_pool import (
-    DocumentWorkerPool,
+from cert_prep_backend.source_library.infrastructure.worker_pool import PoolSourceWork
+from cert_prep_backend.platform.source_worker_pool import (
+    SourceWorkerPool,
 )
 from cert_prep_backend.capture_integration.api import (
     runtime_router as capture_runtime,
     router as capture_workbench,
 )
 from cert_prep_backend.source_library.api import (
-    operation_events as document_operation_events,
-    router as documents,
+    operation_events as source_operation_events,
+    router as sources,
 )
 from cert_prep_backend.ai_providers.api import router as llm
 from cert_prep_backend.llm_provisioning.api import router as llm_provisioning
@@ -106,8 +106,8 @@ from cert_prep_backend.authoring.api import router as questions
 from cert_prep_backend.authoring.api import operation_events as question_generation_events
 from cert_prep_backend.practice.api import router as practice
 from cert_prep_backend.bootstrap.authoring_links import (
-    authoring_documents,
-    bind_document_question_count,
+    authoring_sources,
+    bind_source_question_count,
     question_generation_job_repository,
     question_repository,
 )
@@ -116,11 +116,11 @@ from cert_prep_backend.bootstrap.capture_links import (
     capture_operations,
     capture_publication,
 )
-from cert_prep_backend.bootstrap.practice_reads import bind_practice_reads, practice_documents
+from cert_prep_backend.bootstrap.practice_reads import bind_practice_reads, practice_sources
 from cert_prep_backend.bootstrap.source_library_links import (
     chunk_translator,
-    document_operation_repository,
-    document_repository,
+    source_operation_repository,
+    source_repository,
 )
 from cert_prep_backend.bootstrap.study_projects import authoring_projects
 from cert_prep_backend.practice.infrastructure.repository import SqlitePracticeStore
@@ -136,7 +136,7 @@ class HealthResponse(BaseModel):
     runtime_mode: str
 
 
-DOCUMENT_WORKER_JOIN_TIMEOUT_SECONDS = 2.0
+SOURCE_WORKER_JOIN_TIMEOUT_SECONDS = 2.0
 logger = logging.getLogger(__name__)
 
 
@@ -145,7 +145,7 @@ def create_app(
     llm_provider: LLMProvider | None = None,
     llm_installation_manager: LLMInstallation | None = None,
     llm_installation_async_jobs: bool = True,
-    document_processing_async_jobs: bool = True,
+    source_processing_async_jobs: bool = True,
     background_question_jobs: bool = True,
     capture_runtime_client: CaptureRuntimeClient | None = None,
 ) -> FastAPI:
@@ -154,13 +154,13 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
-            app.state.document_worker_pool.start()
+            app.state.source_worker_pool.start()
             yield
         finally:
             capture_reviews.recover_capture_reviews(app.state.capture_review_maintenance)
-            app.state.document_worker_pool.close(join_timeout_seconds=0)
-            close_result = app.state.document_worker_pool.close(
-                join_timeout_seconds=DOCUMENT_WORKER_JOIN_TIMEOUT_SECONDS
+            app.state.source_worker_pool.close(join_timeout_seconds=0)
+            close_result = app.state.source_worker_pool.close(
+                join_timeout_seconds=SOURCE_WORKER_JOIN_TIMEOUT_SECONDS
             )
             if close_result.unresolved_operation_ids:
                 logger.error(
@@ -196,13 +196,13 @@ def create_app(
     app.state.practice_store = SqlitePracticeStore(
         app.state.database,
         bind_reads=lambda connection: bind_practice_reads(app.state.database, connection),
-        documents=practice_documents(app.state.database),
+        sources=practice_sources(app.state.database),
     )
-    app.state.document_repository = document_repository(app.state.database)
-    app.state.document_operation_repository = document_operation_repository(app.state.database)
+    app.state.source_repository = source_repository(app.state.database)
+    app.state.source_operation_repository = source_operation_repository(app.state.database)
     app.state.source_file_store = LocalSourceFileStore(app_settings)
     source_library.recover_interrupted_work(
-        app.state.document_operation_repository, app.state.document_repository
+        app.state.source_operation_repository, app.state.source_repository
     )
     app.state.machine_inventory = OllamaMachineInventory(app_settings)
     app.state.device_preference_repository = SqliteDevicePreferenceRepository(app.state.database)
@@ -249,18 +249,18 @@ def create_app(
     app.state.capture_review_workflow = CaptureReviewWorkflowAdapter(
         app.state.database,
         app.state.capture_coordinator,
-        app.state.document_operation_repository,
-        documents=app.state.document_repository,
+        app.state.source_operation_repository,
+        sources=app.state.source_repository,
         publication=capture_publication(app.state.database),
         bind_commit=bind_capture_review_commit(),
         operations=capture_operations(
-            app.state.database, app.state.document_operation_repository
+            app.state.database, app.state.source_operation_repository
         ),
     )
     app.state.capture_review_maintenance = CaptureReviewMaintenanceAdapter(
         app.state.database,
         app.state.capture_coordinator,
-        app.state.document_operation_repository,
+        app.state.source_operation_repository,
     )
     app.state.capture_runtime = (
         CoordinatorCaptureRuntime(
@@ -272,12 +272,12 @@ def create_app(
     )
     app.state.capture_runtime_event_registry = capture_workbench.CaptureRuntimeEventRegistry()
     capture_reviews.recover_capture_reviews(app.state.capture_review_maintenance)
-    app.state.document_worker_pool = DocumentWorkerPool(
-        app_settings.document_processing_parallelism,
-        worker_name_prefix="capture-document-worker",
+    app.state.source_worker_pool = SourceWorkerPool(
+        app_settings.source_processing_parallelism,
+        worker_name_prefix="capture-source-worker",
     )
-    app.state.capture_background_work = PoolCaptureBackgroundWork(app.state.document_worker_pool)
-    app.state.document_work = PoolDocumentWork(app.state.document_worker_pool)
+    app.state.capture_background_work = PoolCaptureBackgroundWork(app.state.source_worker_pool)
+    app.state.source_work = PoolSourceWork(app.state.source_worker_pool)
     app.state.source_extraction = (
         CaptureSourceExtraction(
             app.state.capture_coordinator,
@@ -286,19 +286,19 @@ def create_app(
         if app.state.capture_coordinator is not None
         else None
     )
-    app.state.document_processing_async_jobs = document_processing_async_jobs
+    app.state.source_processing_async_jobs = source_processing_async_jobs
     app.state.llm_installation_async_jobs = llm_installation_async_jobs
     reading_lexicon = SudachiReadingLexicon() if app_settings.reading_solver_enabled else None
-    app.state.question_sources = SourceLibraryQuestionSources(app.state.document_repository)
+    app.state.question_sources = SourceLibraryQuestionSources(app.state.source_repository)
     app.state.question_job_scheduler = QuestionJobScheduler(
         settings=app_settings,
         provider=app.state.llm_provider,
         async_jobs=background_question_jobs,
         reading_lexicon=reading_lexicon,
-        question_count=bind_document_question_count(app.state.database),
+        question_count=bind_source_question_count(app.state.database),
         sources=app.state.question_sources,
         projects=authoring_projects(app.state.database),
-        documents=authoring_documents(app.state.database),
+        project_sources=authoring_sources(app.state.database),
     )
     app.state.question_job_scheduler.recover_jobs(app.state.database)
     app.state.question_repository = question_repository(app.state.database)
@@ -309,7 +309,7 @@ def create_app(
         app.state.question_job_scheduler, app.state.database
     )
     app.state.question_writing = ProviderQuestionWriting(reading_lexicon=reading_lexicon)
-    app.state.imported_question_generation = ImportedDocumentQuestionGeneration(
+    app.state.imported_question_generation = ImportedSourceQuestionGeneration(
         work=app.state.question_generation_work,
         questions=app.state.question_repository,
         sources=app.state.question_sources,
@@ -390,9 +390,9 @@ def create_app(
 
     protected_dependencies = [Depends(require_bearer_auth)]
     app.include_router(projects.router, dependencies=protected_dependencies)
-    app.include_router(documents.router, dependencies=protected_dependencies)
-    app.include_router(documents.operations_router, dependencies=protected_dependencies)
-    app.include_router(questions.documents_router, dependencies=protected_dependencies)
+    app.include_router(sources.router, dependencies=protected_dependencies)
+    app.include_router(sources.operations_router, dependencies=protected_dependencies)
+    app.include_router(questions.sources_router, dependencies=protected_dependencies)
     app.include_router(questions.question_jobs_router, dependencies=protected_dependencies)
     app.include_router(questions.manual_operations_router, dependencies=protected_dependencies)
     app.include_router(questions.questions_router, dependencies=protected_dependencies)
@@ -402,7 +402,7 @@ def create_app(
     app.include_router(capture_runtime.router, dependencies=protected_dependencies)
     app.include_router(capture_workbench.router, dependencies=protected_dependencies)
     # The operation event streams keep their place at the end of the API (D6).
-    app.include_router(document_operation_events.router, dependencies=protected_dependencies)
+    app.include_router(source_operation_events.router, dependencies=protected_dependencies)
     app.include_router(question_generation_events.router, dependencies=protected_dependencies)
     app.include_router(llm_installation_events.router, dependencies=protected_dependencies)
 

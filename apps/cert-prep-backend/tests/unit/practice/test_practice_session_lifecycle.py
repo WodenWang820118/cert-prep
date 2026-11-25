@@ -32,17 +32,17 @@ def _question(question_id: str) -> PracticeQuestion:
 def _session(*question_ids: str) -> PracticeSession:
     candidates = [_question(question_id) for question_id in question_ids]
     selection = select_questions(
-        PracticeSessionMode.FULL_DOCUMENT,
+        PracticeSessionMode.FULL_SOURCE,
         list(question_ids),
         requested_count=None,
         random_seed=None,
-        document_id="document-1",
+        source_id="document-1",
         new_seed=lambda: 0,
     )
     return PracticeSession.start(
         session_id="session-1",
         project_id="project-1",
-        mode=PracticeSessionMode.FULL_DOCUMENT,
+        mode=PracticeSessionMode.FULL_SOURCE,
         selection=selection,
         candidates=candidates,
         now=NOW,
@@ -57,20 +57,20 @@ def test_a_random_draw_asks_ten_questions_unless_told_otherwise_and_keeps_its_se
         candidates,
         requested_count=None,
         random_seed=None,
-        document_id="ignored",
+        source_id="ignored",
         new_seed=lambda: 1234,
     )
 
     assert selection.question_count == 10
     assert len(selection.question_ids) == 10
     assert selection.random_seed == 1234
-    assert selection.document_id is None
+    assert selection.source_id is None
     again = select_questions(
         PracticeSessionMode.RANDOM_DRAW,
         candidates,
         requested_count=None,
         random_seed=1234,
-        document_id=None,
+        source_id=None,
         new_seed=lambda: 0,
     )
     assert again.question_ids == selection.question_ids
@@ -82,7 +82,7 @@ def test_a_random_draw_asks_at_most_the_candidates_but_records_the_requested_cou
         ["q-1", "q-2"],
         requested_count=5,
         random_seed=7,
-        document_id=None,
+        source_id=None,
         new_seed=lambda: 0,
     )
 
@@ -97,7 +97,7 @@ def test_a_random_draw_without_candidates_cannot_start() -> None:
             [],
             requested_count=None,
             random_seed=1,
-            document_id=None,
+            source_id=None,
             new_seed=lambda: 0,
         )
 
@@ -108,7 +108,7 @@ def test_a_new_session_is_active_and_keeps_a_snapshot_of_its_questions() -> None
     assert session.status is PracticeSessionStatus.ACTIVE
     assert [question.id for question in session.questions] == ["q-1", "q-2"]
     assert session.requested_question_count == 2
-    assert session.source_document_id == "document-1"
+    assert session.source_id == "document-1"
 
 
 def test_a_session_completes_once_every_question_has_an_answer() -> None:

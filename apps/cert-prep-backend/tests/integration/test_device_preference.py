@@ -235,7 +235,7 @@ def _app(
     app = create_app(
         settings=settings,
         capture_runtime_client=TestCaptureRuntimeClient(),
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
     )
     procs = _own_the_server(app.state.ollama_server)
     with TestClient(app) as client:
@@ -328,7 +328,7 @@ def test_put_then_get_survives_a_new_app(tmp_path, monkeypatch: pytest.MonkeyPat
     first = create_app(
         settings=settings,
         capture_runtime_client=TestCaptureRuntimeClient(),
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
     )
     _own_the_server(first.state.ollama_server)
     with TestClient(first) as client:
@@ -342,7 +342,7 @@ def test_put_then_get_survives_a_new_app(tmp_path, monkeypatch: pytest.MonkeyPat
     second = create_app(
         settings=settings,
         capture_runtime_client=TestCaptureRuntimeClient(),
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
     )
     _own_the_server(second.state.ollama_server)
     with TestClient(second) as client:
@@ -641,7 +641,7 @@ def test_an_external_server_is_saved_and_cpu_requests_still_set_num_gpu(
     app = create_app(
         settings=settings,
         capture_runtime_client=TestCaptureRuntimeClient(),
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
     )
     spawned: list[object] = []
     app.state.ollama_server._api_probe = lambda _host: True
@@ -767,7 +767,7 @@ def test_put_refreshes_inventory_only_when_the_adapter_is_not_cached(
     app = create_app(
         settings=settings,
         capture_runtime_client=TestCaptureRuntimeClient(),
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
     )
     _own_the_server(app.state.ollama_server)
     with TestClient(app) as client:

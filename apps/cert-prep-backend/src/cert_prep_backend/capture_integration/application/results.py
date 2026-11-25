@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from cert_prep_backend.capture_integration.domain.review_session import CaptureReviewSession
-from cert_prep_backend.source_library.domain.document import DocumentChunk, SourceDocument
+from cert_prep_backend.source_library.domain.source import Source, SourceChunk
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,7 +21,7 @@ class QueuedCaptureCommit:
     """A commit that is already complete, or accepted for background publication."""
 
     replay_completed: bool
-    document: SourceDocument | None
+    source: Source | None
     last_event_sequence: int
 
 
@@ -30,16 +30,16 @@ class ReportedStructuringFailure:
     """A stored structuring failure, or a replay of a session that is no longer active."""
 
     replay: bool
-    document_id: str
+    source_id: str
     runtime_operation: object | None
 
 
 @dataclass(frozen=True, slots=True)
 class StartedCaptureReview:
-    """The session and document a newly accepted upload projects in its 202 response."""
+    """The session and source a newly accepted upload projects in its 202 response."""
 
     session: CaptureReviewSession
-    document: SourceDocument
+    source: Source
     content_length: int
     canonical_suffix: str
 
@@ -62,21 +62,21 @@ class RuntimeCancellation:
 
 @dataclass(frozen=True, slots=True)
 class ViewedCapture:
-    """The session and document a capture view projects, plus a runtime operation when shown."""
+    """The session and source a capture view projects, plus a runtime operation when shown."""
 
     session: CaptureReviewSession
-    document: SourceDocument
+    source: Source
     runtime_operation: object | None
     report_extracting: bool
 
 
 @dataclass(frozen=True, slots=True)
 class StoredCapture:
-    """A completed review's document and chunks, plus the source display already read."""
+    """A completed review's source and chunks, plus the source display already read."""
 
     session: CaptureReviewSession
-    document: SourceDocument
-    chunks: list[DocumentChunk]
+    source: Source
+    chunks: list[SourceChunk]
     content_length: int
     media_type: str
 

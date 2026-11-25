@@ -2,9 +2,9 @@
 
 Practice defines the ports. These adapters call the owning context's use cases.
 Passing the connection is the existing way to stay inside the caller's transaction
-(`insert_processing_document`, `begin_capture_review_commit_in_connection`): practice's
+(`insert_processing_source`, `begin_capture_review_commit_in_connection`): practice's
 BEGIN IMMEDIATE unit of work hands its connection in, and the read sees that transaction.
-Document membership stays on its own connection, as the old `require_document` did.
+Source membership stays on its own connection, as the old `require_source` did.
 """
 
 from __future__ import annotations
@@ -16,28 +16,28 @@ from cert_prep_backend.authoring.application import use_cases as authoring
 from cert_prep_backend.authoring.application.ports import QuestionRepository
 from cert_prep_backend.authoring.domain.question import Question
 from cert_prep_backend.bootstrap.authoring_links import question_repository
-from cert_prep_backend.bootstrap.source_library_links import document_repository
+from cert_prep_backend.bootstrap.source_library_links import source_repository
 from cert_prep_backend.bootstrap.study_projects import ProjectExistence
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.practice.application.ports import (
     PracticeSourceQuestion,
     PracticeQuestions,
-    ProjectDocuments,
+    ProjectSources,
     StudyProjects,
 )
 from cert_prep_backend.projects.infrastructure.repository import SqliteProjectRepository
 from cert_prep_backend.source_library.application import use_cases as source_library
-from cert_prep_backend.source_library.application.ports import DocumentRepository
+from cert_prep_backend.source_library.application.ports import SourceRepository
 
 
-class DocumentMembership:
-    """Source Library's `view_document`: the document belongs to the project, or NotFoundError."""
+class SourceMembership:
+    """Source Library's `view_source`: the source belongs to the project, or NotFoundError."""
 
-    def __init__(self, documents: DocumentRepository) -> None:
-        self._documents = documents
+    def __init__(self, sources: SourceRepository) -> None:
+        self._sources = sources
 
-    def require(self, project_id: str, document_id: str) -> None:
-        source_library.view_document(self._documents, project_id, document_id)
+    def require(self, project_id: str, source_id: str) -> None:
+        source_library.view_source(self._sources, project_id, source_id)
 
 
 class AuthoringPracticeQuestions:
@@ -46,11 +46,11 @@ class AuthoringPracticeQuestions:
     def __init__(self, questions: QuestionRepository) -> None:
         self._questions = questions
 
-    def for_source(self, project_id: str, *, document_id: str | None) -> list[PracticeSourceQuestion]:
+    def for_source(self, project_id: str, *, source_id: str | None) -> list[PracticeSourceQuestion]:
         return [
             _practice_source_question(authored_question)
             for authored_question in authoring.source_questions(
-                self._questions, project_id, document_id=document_id
+                self._questions, project_id, source_id=source_id
             )
         ]
 
@@ -76,10 +76,10 @@ def bind_practice_reads(
     )
 
 
-def practice_documents(db: Database) -> ProjectDocuments:
-    """Document membership on its own connection."""
+def practice_sources(db: Database) -> ProjectSources:
+    """Source membership on its own connection."""
 
-    return DocumentMembership(document_repository(db))
+    return SourceMembership(source_repository(db))
 
 
 def _practice_source_question(authored_question: Question) -> PracticeSourceQuestion:
@@ -94,6 +94,6 @@ def _practice_source_question(authored_question: Question) -> PracticeSourceQues
         rationale=authored_question.rationale,
         citation_page=authored_question.citation_page,
         source_excerpt=authored_question.source_excerpt,
-        document_id=authored_question.document_id,
+        source_id=authored_question.source_id,
         answer_key_source=answer_key_source,
     )

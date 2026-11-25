@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from capture_runtime_client import CaptureDocument
-from cert_prep_contracts.documents import SourceKind
+from cert_prep_contracts.sources import SourceKind
 
 from cert_prep_backend.capture_integration.application.ports import CapturePublication
 from cert_prep_backend.capture_integration.infrastructure.host_models import CaptureReview
@@ -13,13 +13,13 @@ from cert_prep_backend.capture_integration.infrastructure.mapping import (
     capture_document_to_audio_segments,
     capture_document_to_page_extraction,
 )
-from cert_prep_backend.source_library.domain.document import SourceDocument
+from cert_prep_backend.source_library.domain.source import Source
 
 
 def publish_capture_document(
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     operation_id: str,
     source_kind: SourceKind,
     expected_sha256: str,
@@ -28,7 +28,7 @@ def publish_capture_document(
     review: CaptureReview | None = None,
     ocr_projection: object | None = None,
     publication: CapturePublication,
-) -> SourceDocument:
+) -> Source:
     if document.source.sha256 != expected_sha256:
         raise ValueError("Capture Runtime result does not match the stored source digest")
 
@@ -45,7 +45,7 @@ def publish_capture_document(
         return publication.publish_audio_success(
             project_id=project_id,
             operation_id=operation_id,
-            document_id=document_id,
+            source_id=source_id,
             segments=tuple(
                 (segment.transcript, segment.target_text) for segment in mapped
             ),
@@ -67,7 +67,7 @@ def publish_capture_document(
     return publication.publish_success(
         project_id=project_id,
         operation_id=operation_id,
-        document_id=document_id,
+        source_id=source_id,
         extraction=extraction,
         extraction_provenance=extraction_provenance,
     )

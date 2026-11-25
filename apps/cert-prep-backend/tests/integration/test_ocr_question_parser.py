@@ -1,14 +1,14 @@
 from pathlib import Path
 
 from cert_prep_backend.authoring.domain.deterministic_parser import extract_jlpt_question_blocks
-from cert_prep_backend.authoring.domain.models import source_chunk_from_document_chunk
+from cert_prep_backend.authoring.domain.models import to_source_chunk
 from cert_prep_backend.authoring.domain.normalization import as_editable_question
 from cert_prep_backend.authoring.domain.reading_solver import section_asks_for_reading
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.database import Database
-from cert_prep_backend.source_library.domain.document import ExtractedPage
+from cert_prep_backend.source_library.domain.source import ExtractedPage
 from cert_prep_backend.source_library.domain.exam_content import classify_exam_text
-from cert_prep_backend.source_library.infrastructure.chunks import get_source_chunks, sync_document_chunks
+from cert_prep_backend.source_library.infrastructure.chunks import get_source_chunks, sync_source_chunks
 
 
 def test_persisted_ocr_keeps_original_text_and_reading_instruction(tmp_path: Path) -> None:
@@ -22,20 +22,20 @@ def test_persisted_ocr_keeps_original_text_and_reading_instruction(tmp_path: Pat
             "VALUES ('project', 'Project', '', '2026-01-01', '2026-01-01')"
         )
         connection.execute(
-            "INSERT INTO documents(id, project_id, filename, sha256, storage_path, "
+            "INSERT INTO sources(id, project_id, filename, sha256, storage_path, "
             "page_count, has_text, status, created_at, updated_at, source_kind) "
             "VALUES ('document', 'project', 'test.pdf', 'hash', 'test.pdf', "
             "1, 1, 'ready', '2026-01-01', '2026-01-01', 'pdf')"
         )
-        sync_document_chunks(
-            connection, project_id="project", document_id="document",
+        sync_source_chunks(
+            connection, project_id="project", source_id="document",
             pages=(ExtractedPage(
                 1, text, "", "ocr", raw_text=text,
                 content_profile=classify_exam_text(text).content_profile,
             ),),
             now="2026-01-01",
         )
-    chunks = [source_chunk_from_document_chunk(chunk)
+    chunks = [to_source_chunk(chunk)
               for chunk in get_source_chunks(db, "project", "document")]
     assert chunks[0].raw_or_text() == text
     suggestions = extract_jlpt_question_blocks(chunks, limit=10)

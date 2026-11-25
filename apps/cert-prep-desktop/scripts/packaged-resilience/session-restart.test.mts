@@ -11,7 +11,7 @@ import type {
 import { runSessionRestartScenario } from './session-restart.mts';
 
 const projectId = 'project-1';
-const documentId = 'document-1';
+const sourceId = 'source-1';
 const sessionId = 'session-1';
 const sessionsPath = `/projects/${projectId}/practice-sessions`;
 const sessionPath = `${sessionsPath}/${sessionId}`;
@@ -32,7 +32,7 @@ test('refreshes transport and page through the caller across two forced restarts
       'POST',
       sessionsPath,
       { status: 201, body: session('active', []) },
-      { data: { mode: 'full_document', document_id: documentId } },
+      { data: { mode: 'full_source', source_id: sourceId } },
     ),
     request(
       'POST',
@@ -76,7 +76,7 @@ test('refreshes transport and page through the caller across two forced restarts
     transport: initialTransport,
     page: unusedPage(),
     projectId,
-    documentId,
+    sourceId,
     timeoutMs: 1_000,
     restart: async (label) => {
       restartLabels.push(label);
@@ -134,7 +134,7 @@ test('refreshes transport and page through the caller across two forced restarts
   secondRestartTransport.assertConsumed();
 });
 
-test('rejects a new full-document session with fewer than two questions', async () => {
+test('rejects a new full-source session with fewer than two questions', async () => {
   const transport = new ScriptedTransport('one-question session', [
     request('GET', `/projects/${projectId}/questions`, {
       status: 200,
@@ -151,7 +151,7 @@ test('rejects a new full-document session with fewer than two questions', async 
       transport,
       page: unusedPage(),
       projectId,
-      documentId,
+      sourceId,
       timeoutMs: 1_000,
       restart: async () => {
         throw new Error('A one-question session must fail before restart.');
@@ -179,7 +179,7 @@ test('fails closed when a session response drifts to another project', async () 
       transport,
       page: unusedPage(),
       projectId,
-      documentId,
+      sourceId,
       timeoutMs: 1_000,
       restart: async () => {
         throw new Error('Project drift must fail before restart.');
@@ -238,7 +238,7 @@ async function assertResumeRejects(
       transport: initialTransport,
       page: unusedPage(),
       projectId,
-      documentId,
+      sourceId,
       timeoutMs: 1_000,
       restart: async (label) => {
         assert.equal(label, 'session-first-restart');
@@ -308,18 +308,18 @@ function request(
 interface TestQuestion {
   readonly id: string;
   readonly answer: string;
-  readonly document_id: string;
+  readonly source_id: string;
 }
 
 function question(id: string, answer: string): TestQuestion {
-  return { id, answer, document_id: documentId };
+  return { id, answer, source_id: sourceId };
 }
 
 function questionPayload(value: TestQuestion): Record<string, unknown> {
   return {
     id: value.id,
     project_id: projectId,
-    document_id: value.document_id,
+    source_id: value.source_id,
     answer: value.answer,
   };
 }
@@ -350,8 +350,8 @@ function session(
     project_id: overrides.projectId ?? projectId,
     question_ids: questions.map((value) => value.id),
     questions: questions.map((value) => ({ ...value })),
-    mode: 'full_document',
-    document_id: documentId,
+    mode: 'full_source',
+    source_id: sourceId,
     status,
     attempts: [...attempts],
   };
@@ -361,8 +361,8 @@ function activeSessionSummary(): Record<string, unknown> {
   return {
     id: sessionId,
     project_id: projectId,
-    mode: 'full_document',
-    document_id: documentId,
+    mode: 'full_source',
+    source_id: sourceId,
     status: 'active',
   };
 }

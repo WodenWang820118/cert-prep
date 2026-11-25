@@ -336,14 +336,14 @@ describe('CertPrepAuthenticatedTransport', () => {
     expect(response).toEqual(healthResponse);
   });
 
-  it('loads authenticated document audio as a Blob without putting the token in the URL', () => {
+  it('loads authenticated source audio as a Blob without putting the token in the URL', () => {
     const sourceBlob = new Blob(['audio'], { type: 'audio/mpeg' });
     let response: Blob | undefined;
-    api.getDocumentAudioSource('project-1', 'document-1').subscribe(
+    api.getSourceAudio('project-1', 'source-1').subscribe(
       (value) => (response = value),
     );
     const request = httpTesting.expectOne(
-      `${baseUrl}/projects/project-1/documents/document-1/source`,
+      `${baseUrl}/projects/project-1/sources/source-1/audio`,
     );
 
     expect(request.request.method).toBe('GET');
@@ -362,12 +362,12 @@ describe('CertPrepAuthenticatedTransport', () => {
     body.append('file', new Blob(['pdf']), 'study-material.pdf');
     let response: unknown;
     api
-      .uploadDocument('project-1', body, {
+      .uploadSource('project-1', body, {
         headers: { 'X-Cert-Prep-Operation-Id': 'operation-1' },
       })
       .subscribe((value) => (response = value));
     const request = httpTesting.expectOne(
-      `${baseUrl}/projects/project-1/documents`,
+      `${baseUrl}/projects/project-1/sources`,
     );
 
     expect(request.request.body).toBe(body);

@@ -1,13 +1,13 @@
 import { inject, Injectable } from '@angular/core';
-import type { DocumentOperationRead } from '../../core/domain';
-import type { DocumentOperationEvent } from '../../core/domain';
+import type { SourceOperationRead } from '../../core/domain';
+import type { SourceOperationEvent } from '../../core/domain';
 import { catchError, defer, of, switchMap, takeWhile, tap } from 'rxjs';
 import { DetachedOperationTombstoneHooks, DetachedTombstone } from '../domain';
-import { DocumentOperationSnapshotService } from './document-operation-snapshot.service';
+import { SourceOperationSnapshotService } from './source-operation-snapshot.service';
 
 @Injectable({ providedIn: 'root' })
 export class DetachedOperationTombstoneTracker {
-  private readonly snapshot = inject(DocumentOperationSnapshotService);
+  private readonly snapshot = inject(SourceOperationSnapshotService);
   private readonly tombstones = new Map<string, DetachedTombstone>();
   private hooks!: DetachedOperationTombstoneHooks;
 
@@ -46,7 +46,7 @@ export class DetachedOperationTombstoneTracker {
               ),
         ),
         tap((value) => {
-          const operation = isDocumentOperationEvent(value)
+          const operation = isSourceOperationEvent(value)
             ? value.operation
             : value;
           this.finishWhenDurable(tombstone, operation);
@@ -63,10 +63,10 @@ export class DetachedOperationTombstoneTracker {
 
   private finishWhenDurable(
     tombstone: DetachedTombstone,
-    operation: DocumentOperationRead,
+    operation: SourceOperationRead,
   ): boolean {
     if (
-      !this.snapshot.isExpectedDocumentOperation(
+      !this.snapshot.isExpectedSourceOperation(
         operation,
         tombstone.operationId,
         tombstone.projectId,
@@ -84,8 +84,8 @@ export class DetachedOperationTombstoneTracker {
   }
 }
 
-function isDocumentOperationEvent(
-  value: DocumentOperationRead | DocumentOperationEvent,
-): value is DocumentOperationEvent {
+function isSourceOperationEvent(
+  value: SourceOperationRead | SourceOperationEvent,
+): value is SourceOperationEvent {
   return 'operation' in value;
 }

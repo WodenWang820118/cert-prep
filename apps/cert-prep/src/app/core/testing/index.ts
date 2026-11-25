@@ -1,12 +1,12 @@
 export {
-  appDocument,
+  appSource,
   appProject,
   availableLlmHealth,
   backendHealth,
   buttonByText,
   editableAppQuestion,
   emptyWrongAnswerSummary,
-  secondAppDocument,
+  secondAppSource,
   secondAppProject,
 } from './app.spec-helpers';
 export { provideCertPrepHttpResourceClientFake } from './cert-prep-http-resource-client.fake';

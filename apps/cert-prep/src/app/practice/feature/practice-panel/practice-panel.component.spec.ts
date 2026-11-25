@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 import {
-  appDocument,
+  appSource,
   appProject,
   editableAppQuestion,
 } from '../../../core/testing';
@@ -50,7 +50,7 @@ describe('PracticePanelComponent', () => {
     expect(sessionDetail(fixture.nativeElement, 'Answered')?.textContent?.trim()).toBe('0 of 0');
   });
 
-  describe.each(['random_draw', 'full_document'] as const)('%s session details and choices', (mode) => {
+  describe.each(['random_draw', 'full_source'] as const)('%s session details and choices', (mode) => {
     it.each(['active', 'completed', 'abandoned'] as const)('shows the shortened id, %s status, and unique answered count', (status) => {
       const questions = Array.from({ length: 5 }, (_, index) => editableQuestion(`question-${index + 1}`));
       const store = arrangeActiveSession(questions);
@@ -210,25 +210,25 @@ describe('PracticePanelComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Question 1 of 1');
   });
 
-  it('loads project documents and questions before rendering whole source readiness', () => {
+  it('loads project sources and questions before rendering whole source readiness', () => {
     const projects = TestBed.inject(ProjectStore);
     projects.projects.set([appProject]);
     projects.select(appProject.id);
-    apiClient.listDocuments.mockReturnValue(of({ items: [appDocument] }));
-    apiClient.getDocument.mockReturnValue(of(appDocument));
+    apiClient.listSources.mockReturnValue(of({ items: [appSource] }));
+    apiClient.getSource.mockReturnValue(of(appSource));
     apiClient.listQuestions.mockReturnValue(
       of({ items: [editableAppQuestion] }),
     );
 
     const fixture = TestBed.createComponent(PracticePanelComponent);
-    fixture.componentRef.setInput('sessionMode', 'full_document');
+    fixture.componentRef.setInput('sessionMode', 'full_source');
     fixture.detectChanges();
     TestBed.tick();
     fixture.detectChanges();
 
-    expect(apiClient.listDocuments).toHaveBeenCalledWith(appProject.id);
+    expect(apiClient.listSources).toHaveBeenCalledWith(appProject.id);
     expect(apiClient.listQuestions).toHaveBeenCalledWith(appProject.id);
-    expect(metricValue(fixture.nativeElement, 'Documents')).toBe('1');
+    expect(metricValue(fixture.nativeElement, 'Sources')).toBe('1');
     expect(metricValue(fixture.nativeElement, 'Questions')).toBe('1');
     expect(buttonByText(fixture.nativeElement, 'Start whole source')?.disabled).toBe(
       false,
@@ -304,7 +304,7 @@ describe('PracticePanelComponent', () => {
           rationale: 'Snapshot rationale.',
           citation_page: 9,
           source_excerpt: 'Snapshot excerpt.',
-          document_id: editableAppQuestion.document_id,
+          source_id: editableAppQuestion.source_id,
           answer_key_source: null,
         },
       ],
@@ -463,7 +463,7 @@ function practiceSession(questionIds: readonly string[]): PracticeSessionRead {
     question_ids: [...questionIds],
     questions: [],
     mode: 'random_draw',
-    document_id: null,
+    source_id: null,
     question_count: questionIds.length,
     random_seed: 1234,
     status: 'active',
@@ -501,7 +501,7 @@ function snapshotQuestion(
     rationale: question.rationale,
     citation_page: question.citation_page,
     source_excerpt: question.source_excerpt,
-    document_id: question.document_id,
+    source_id: question.source_id,
     answer_key_source: answerKeySource,
   };
 }
@@ -536,8 +536,8 @@ function createApiClient() {
     recordPracticeAttempt: vi.fn(),
     listWrongAnswers: vi.fn().mockReturnValue(of({ items: [] })),
     listQuestions: vi.fn().mockReturnValue(of({ items: [] })),
-    listDocuments: vi.fn().mockReturnValue(of({ items: [] })),
-    getDocument: vi.fn().mockReturnValue(of(appDocument)),
-    listDocumentChunks: vi.fn().mockReturnValue(of({ items: [] })),
+    listSources: vi.fn().mockReturnValue(of({ items: [] })),
+    getSource: vi.fn().mockReturnValue(of(appSource)),
+    listSourceChunks: vi.fn().mockReturnValue(of({ items: [] })),
   };
 }

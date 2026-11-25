@@ -1,0 +1,859 @@
+from __future__ import annotations
+
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+import sqlite3
+from threading import Barrier
+
+import pytest
+from fastapi.testclient import TestClient
+
+from cert_prep_backend.bootstrap.app import create_app
+from cert_prep_backend.bootstrap.source_library_links import bind_source_question_jobs
+from cert_prep_backend.platform.config import Settings
+from cert_prep_backend.platform.errors import (
+    SourceOperationConflictError,
+    SourceOperationStateError,
+    SourceProcessingCanceledError,
+    OperationNotCancellableError,
+)
+from cert_prep_backend.source_library.domain.source import (
+    ExtractedPage,
+    PageExtraction,
+)
+from cert_prep_backend.authoring.infrastructure import question_generation_jobs
+from cert_prep_backend.source_library.infrastructure import operations
+from cert_prep_backend.platform.database import Database
+from cert_prep_backend.bootstrap.authoring_links import authoring_sources
+
+
+def test_concurrent_global_operation_claim_has_exactly_one_owner(tmp_path: Path) -> None:
+    db = _database(tmp_path)
+    _insert_project(db, "project")
+    barrier = Barrier(8)
+
+    def claim() -> operations.SourceOperationClaim:
+        barrier.wait()
+        return operations.claim_operation(
+            db,
+            project_id="project",
+            operation_id="shared-operation",
+        )
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        claims = list(executor.map(lambda _index: claim(), range(8)))
+
+    assert sum(claim.acquired for claim in claims) == 1
+    assert {claim.operation.id for claim in claims} == {"shared-operation"}
+    assert operations.get_operation(
+        db,
+        project_id="project",
+        operation_id="shared-operation",
+    ).status == "queued"
+
+
+def test_concurrent_post_claim_and_delete_tombstone_never_create_duplicate_work(
+    tmp_path: Path,
+) -> None:
+    db = _database(tmp_path)
+    _insert_project(db, "project")
+    barrier = Barrier(2)
+
+    def claim():
+        barrier.wait()
+        return operations.claim_operation(
+            db,
+            project_id="project",
+            operation_id="racing-operation",
+        )
+
+    def cancel():
+        barrier.wait()
+        return operations.cancel_operation(
+            db,
+            project_id="project",
+            operation_id="racing-operation",
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        claim_future = executor.submit(claim)
+        cancel_future = executor.submit(cancel)
+        claim_result = claim_future.result()
+        cancel_result = cancel_future.result()
+
+    assert claim_result.operation.id == "racing-operation"
+    assert cancel_result.status == "canceled"
+    assert operations.get_operation(
+        db,
+        project_id="project",
+        operation_id="racing-operation",
+    ).status == "canceled"
+    with db.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM sources").fetchone()[0] == 0
+
+
+def test_global_operation_id_collision_does_not_cross_project_boundary(
+    tmp_path: Path,
+) -> None:
+    db = _database(tmp_path)
+    _insert_project(db, "project-a")
+    _insert_project(db, "project-b")
+    operations.claim_operation(
+        db,
+        project_id="project-a",
+        operation_id="global-id",
+    )
+
+    with pytest.raises(SourceOperationConflictError):
+        operations.claim_operation(
+            db,
+            project_id="project-b",
+            operation_id="global-id",
+        )
+    with pytest.raises(SourceOperationConflictError):
+        operations.cancel_operation(
+            db,
+            project_id="project-b",
+            operation_id="global-id",
+        )
+
+    assert operations.get_operation(
+        db,
+        project_id="project-a",
+        operation_id="global-id",
+    ).status == "queued"
+
+
+def test_cancel_before_attach_is_terminal_and_creates_no_source(tmp_path: Path) -> None:
+    db = _database(tmp_path)
+    _insert_project(db, "project")
+    operations.claim_operation(db, project_id="project", operation_id="upload")
+    canceled = operations.cancel_operation(
+        db,
+        project_id="project",
+        operation_id="upload",
+    )
+
+    assert canceled.status == "canceled"
+    with pytest.raises(SourceProcessingCanceledError):
+        operations.create_and_attach_source(
+            db,
+            project_id="project",
+            operation_id="upload",
+            source_id="document",
+            filename="source.pdf",
+            source_kind="pdf",
+            sha256="sha",
+            language_hint="auto",
+            storage_path="C:/data/source.pdf",
+            page_count=1,
+        )
+    with db.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM sources").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize(
+    "terminal_status",
+    [
+        "succeeded",
+        "failed",
+        "skipped_provider_unavailable",
+        "skipped_missing_model",
+    ],
+)
+def test_cancel_first_rolls_back_late_publication_and_preserves_question_history(
+    tmp_path: Path,
+    terminal_status: str,
+) -> None:
+    db = _database(tmp_path)
+    _insert_project(db, "project")
+    _attach(db, operation_id="upload", source_id="document")
+    _seed_partial_work(db, "document")
+    _seed_terminal_question_history(db, "document", status=terminal_status)
+    with db.connect() as connection:
+        terminal_row = connection.execute(
+            "SELECT * FROM question_generation_jobs WHERE id = 'terminal-job'"
+        ).fetchone()
+    assert terminal_row is not None
+    terminal_before = dict(terminal_row)
+    public_terminal_before = question_generation_jobs.get_job(db, "terminal-job")
+
+    requested = operations.cancel_operation(
+        db,
+        project_id="project",
+        operation_id="upload",
+    )
+    assert requested.status == "cancel_requested"
+    with pytest.raises(SourceProcessingCanceledError):
+        operations.publish_success(
+            db,
+            project_id="project",
+            operation_id="upload",
+            source_id="document",
+            extraction=_ready_extraction(),
+        )
+    terminal = operations.acknowledge_cancellation(
+        db,
+        question_jobs=bind_source_question_jobs(db),
+        project_id="project",
+        operation_id="upload",
+    )
+
+    assert terminal.status == "canceled"
+    source = _source_row(db, "document")
+    assert source["status"] == "canceled"
+    assert source["storage_path"] == "C:/data/source.pdf"
+    assert source["sha256"] == "sha"
+    assert source["page_count"] == 1
+    assert source["has_text"] == 0
+    assert source["ocr_device"] is None
+    assert source["extraction_warnings"] is None
+    assert source["failure_message"] is None
+    assert source["processed_page_count"] == 0
+    # The source's questions outlive the canceled run, so it still counts them.
+    assert source["question_count"] == 3
+    with db.connect() as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM source_chunks WHERE source_id = 'document'"
+        ).fetchone()[0] == 0
+        remaining_jobs = connection.execute(
+            "SELECT * FROM question_generation_jobs WHERE source_id = 'document'"
+        ).fetchall()
+        assert len(remaining_jobs) == 1
+        terminal_after = dict(remaining_jobs[0])
+    assert terminal_before.pop("chunk_id") == "partial-chunk"
+    assert terminal_after.pop("chunk_id") is None
+    assert terminal_after == terminal_before
+    assert terminal_after["source_chunk_id"] == "partial-chunk"
+    assert question_generation_jobs.get_job(db, "terminal-job") == public_terminal_before
+    assert question_generation_jobs.retry_source_jobs(
+        db,
+        project_id="project",
+        source_id="document",
+        provider="ollama",
+        model="obsolete-model",
+        sources=authoring_sources(db),
+    ) == []
+    assert question_generation_jobs.recover_runnable_jobs(db) == []
+    assert question_generation_jobs.get_job(db, "terminal-job") == public_terminal_before
+
+
+@pytest.mark.parametrize(
+    ("request_cancel", "expected_operation_status", "expected_source_status"),
+    [
+        (False, "failed", "extraction_failed"),
+        (True, "canceled", "canceled"),
+    ],
+)
+def test_app_startup_recovers_durable_source_operations(
+    tmp_path: Path,
+    request_cancel: bool,
+    expected_operation_status: str,
+    expected_source_status: str,
+) -> None:
+    settings = Settings(data_dir=tmp_path, api_token="test-token")
+    db = Database(settings)
+    db.migrate()
+    _insert_project(db, "project")
+    _attach(db, operation_id="upload", source_id="document")
+    _seed_partial_work(db, "document")
+    if request_cancel:
+        operations.cancel_operation(
+            db,
+            project_id="project",
+            operation_id="upload",
+        )
+
+    with TestClient(
+        create_app(settings=settings, source_processing_async_jobs=False)
+    ) as client:
+        recovered_db = client.app.state.database
+        operation = operations.get_operation(
+            recovered_db,
+            project_id="project",
+            operation_id="upload",
+        )
+        source = _source_row(recovered_db, "document")
+        with recovered_db.connect() as connection:
+            active_count = connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM source_operations
+                WHERE status IN ('queued', 'running', 'cancel_requested')
+                """
+            ).fetchone()[0]
+
+    assert operation.status == expected_operation_status
+    assert source["status"] == expected_source_status
+    assert active_count == 0
+
+
+@pytest.mark.parametrize(
+    ("phase", "transcription_status", "expected_source_status"),
+    [
+        ("transcribing", "pending", "transcription_failed"),
+        ("translating", "succeeded", "ready"),
+    ],
+)
+def test_audio_recovery_preserves_incremental_transcript_and_sets_specific_state(
+    tmp_path: Path,
+    phase: str,
+    transcription_status: str,
+    expected_source_status: str,
+) -> None:
+    db = _database(tmp_path)
+    _insert_project(db, "project")
+    _attach_audio(db, operation_id="audio-upload", source_id="audio-document")
+    with db.connect() as connection:
+        connection.execute(
+            """
+            UPDATE source_operations SET phase = ?
+            WHERE id = 'audio-upload'
+            """,
+            (phase,),
+        )
+        connection.execute(
+            """
+            UPDATE sources
+            SET has_text = 1, extraction_method = 'transcription',
+                processed_page_count = 1, content_profile = 'study_material',
+                transcription_status = ?, translation_status = 'pending'
+            WHERE id = 'audio-document'
+            """,
+            (transcription_status,),
+        )
+        connection.execute(
+            """
+            INSERT INTO source_chunks(
+                id, project_id, source_id, page_number, chunk_index,
+                text, raw_text, source_excerpt, extraction_method,
+                content_profile, created_at, locator_kind, start_ms, end_ms,
+                source_revision
+            )
+            VALUES (
+                'audio-chunk', 'project', 'audio-document', 0, 0,
+                '途中までの日本語', '途中までの日本語', '途中までの日本語',
+                'transcription', 'study_material', '2026-07-19', 'time',
+                0, 1000, 1
+            )
+            """
+        )
+
+    assert operations.recover_operations(db, question_jobs=bind_source_question_jobs(db)) == 1
+    assert operations.recover_operations(db, question_jobs=bind_source_question_jobs(db)) == 0
+
+    operation = operations.get_operation(
+        db,
+        project_id="project",
+        operation_id="audio-upload",
+    )
+    source = _source_row(db, "audio-document")
+    with db.connect() as connection:
+        chunks_count = connection.execute(
+            "SELECT COUNT(*) FROM source_chunks WHERE source_id = 'audio-document'"
+        ).fetchone()[0]
+
+    assert operation.status == "failed"
+    assert source["status"] == expected_source_status
+    assert source["transcription_status"] == (
+        "succeeded" if transcription_status == "succeeded" else "failed"
+    )
+    assert source["translation_status"] == "failed"
+    assert source["has_text"] == 1
+    assert source["extraction_method"] == "transcription"
+    assert chunks_count == 1
+
+
+@pytest.mark.parametrize("stop", ["cancel", "fail"])
+@pytest.mark.parametrize(
+    ("transcription_status", "keeps_provenance"),
+    [("succeeded", True), ("pending", False)],
+)
+def test_stopped_audio_keeps_extraction_provenance_only_with_its_completed_transcript(
+    tmp_path: Path,
+    stop: str,
+    transcription_status: str,
+    keeps_provenance: bool,
+) -> None:
+    db = _database(tmp_path)
+    _insert_project(db, "project")
+    _attach_audio(db, operation_id="audio-upload", source_id="audio-document")
+    provenance = (
+        '{"engine": {"engine": "speech-recognition", "model": "fixture-model",'
+        ' "digest": "sha256:' + "b" * 64 + '"}, "runtime_version": "0.0.0-fixture"}'
+    )
+    with db.connect() as connection:
+        connection.execute(
+            """
+            UPDATE sources
+            SET has_text = 1, extraction_method = 'transcription',
+                processed_page_count = 1, content_profile = 'study_material',
+                transcription_status = ?, translation_status = 'pending',
+                extraction_provenance = ?
+            WHERE id = 'audio-document'
+            """,
+            (transcription_status, provenance),
+        )
+        connection.execute(
+            """
+            INSERT INTO source_chunks(
+                id, project_id, source_id, page_number, chunk_index,
+                text, raw_text, source_excerpt, extraction_method,
+                content_profile, created_at, locator_kind, start_ms, end_ms,
+                source_revision
+            )
+            VALUES (
+                'audio-chunk', 'project', 'audio-document', 0, 0,
+                'Transcript so far', 'Transcript so far', 'Transcript so far',
+                'transcription', 'study_material', '2026-07-19', 'time',
+                0, 1000, 1
+            )
+            """
+        )
+    jobs = bind_source_question_jobs(db)
+    if stop == "cancel":
+        operations.cancel_operation(db, project_id="project", operation_id="audio-upload")
+        stopped = operations.acknowledge_cancellation(
+            db, question_jobs=jobs, project_id="project", operation_id="audio-upload"
+        )
+        assert stopped.status == "canceled"
+    else:
+        stopped = operations.finish_failed(
+            db,
+            question_jobs=jobs,
+            project_id="project",
+            operation_id="audio-upload",
+            error="Transcription stopped.",
+        )
+        assert stopped.status == "failed"
+
+    source = _source_row(db, "audio-document")
+    # The time chunks stay either way; only a completed transcript keeps its provenance.
+    assert source["extraction_method"] == "transcription"
+    assert source["extraction_provenance"] == (provenance if keeps_provenance else None)
+
+
+def test_publication_is_atomic_and_terminal_finalizers_are_read_only(
+    tmp_path: Path,
+) -> None:
+    db = _database(tmp_path)
+    _insert_project(db, "project")
+    _attach(db, operation_id="upload", source_id="document")
+
+    published = operations.publish_success(
+        db,
+        project_id="project",
+        operation_id="upload",
+        source_id="document",
+        extraction=_ready_extraction(),
+    )
+    before = _terminal_snapshot(db, "upload", "document")
+
+    assert published.status == "ready"
+    assert operations.cancel_operation(
+        db,
+        project_id="project",
+        operation_id="upload",
+    ).status == "succeeded"
+    assert operations.finish_failed(
+        db,
+        question_jobs=bind_source_question_jobs(db),
+        project_id="project",
+        operation_id="upload",
+        error="late failure",
+    ).status == "succeeded"
+    assert operations.acknowledge_cancellation(
+        db,
+        question_jobs=bind_source_question_jobs(db),
+        project_id="project",
+        operation_id="upload",
+    ).status == "succeeded"
+    assert _terminal_snapshot(db, "upload", "document") == before
+
+
+def test_success_trigger_failure_rolls_back_commit_phase_source_and_chunks(
+    tmp_path: Path,
+) -> None:
+    db = _database(tmp_path)
+    _insert_project(db, "project")
+    _attach(db, operation_id="upload", source_id="document")
+    with db.connect() as connection:
+        connection.execute(
+            """
+            CREATE TRIGGER reject_source_operation_success
+            BEFORE UPDATE OF status ON source_operations
+            WHEN NEW.status = 'succeeded'
+            BEGIN
+                SELECT RAISE(ABORT, 'operation success rejected');
+            END;
+            """
+        )
+
+    with pytest.raises(sqlite3.IntegrityError, match="operation success rejected"):
+        operations.publish_success(
+            db,
+            project_id="project",
+            operation_id="upload",
+            source_id="document",
+            extraction=_ready_extraction(),
+        )
+
+    operation = operations.get_operation(
+        db,
+        project_id="project",
+        operation_id="upload",
+    )
+    assert (operation.status, operation.phase, operation.cancellable) == (
+        "running",
+        "processing",
+        True,
+    )
+    assert _source_row(db, "document")["status"] == "processing"
+    with db.connect() as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM source_chunks WHERE source_id = 'document'"
+        ).fetchone()[0] == 0
+
+
+def test_real_cancel_vs_publish_race_has_only_two_legal_outcomes(tmp_path: Path) -> None:
+    db = _database(tmp_path)
+    _insert_project(db, "project")
+    _attach(db, operation_id="upload", source_id="document")
+    barrier = Barrier(2)
+
+    def publish():
+        barrier.wait()
+        try:
+            operations.publish_success(
+                db,
+                project_id="project",
+                operation_id="upload",
+                source_id="document",
+                extraction=_ready_extraction(),
+            )
+            return "succeeded"
+        except SourceProcessingCanceledError:
+            return "canceled"
+
+    def cancel():
+        barrier.wait()
+        return operations.cancel_operation(
+            db,
+            project_id="project",
+            operation_id="upload",
+        ).status
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        publish_future = executor.submit(publish)
+        cancel_future = executor.submit(cancel)
+        publish_result = publish_future.result()
+        cancel_result = cancel_future.result()
+
+    operation = operations.get_operation(
+        db,
+        project_id="project",
+        operation_id="upload",
+    )
+    if operation.status == "succeeded":
+        assert publish_result == "succeeded"
+        assert cancel_result == "succeeded"
+        assert _source_row(db, "document")["status"] == "ready"
+    else:
+        assert operation.status == "cancel_requested"
+        assert publish_result == "canceled"
+        assert cancel_result == "cancel_requested"
+        operations.acknowledge_cancellation(
+            db,
+            question_jobs=bind_source_question_jobs(db),
+            project_id="project",
+            operation_id="upload",
+        )
+        assert _source_row(db, "document")["status"] == "canceled"
+
+
+def test_persisted_legacy_committing_state_rejects_cancel(tmp_path: Path) -> None:
+    db = _database(tmp_path)
+    _insert_project(db, "project")
+    _attach(db, operation_id="upload", source_id="document")
+    with db.connect() as connection:
+        connection.execute(
+            """
+            UPDATE source_operations
+            SET phase = 'committing', cancellable = 0
+            WHERE id = 'upload'
+            """
+        )
+
+    with pytest.raises(OperationNotCancellableError):
+        operations.cancel_operation(
+            db,
+            project_id="project",
+            operation_id="upload",
+        )
+
+
+def test_concurrent_retry_has_one_owner_and_recovery_is_idempotent(
+    tmp_path: Path,
+) -> None:
+    db = _database(tmp_path)
+    _insert_project(db, "project")
+    _attach(db, operation_id="first", source_id="document")
+    operations.cancel_operation(db, project_id="project", operation_id="first")
+    operations.acknowledge_cancellation(
+        db,
+        question_jobs=bind_source_question_jobs(db),
+        project_id="project",
+        operation_id="first",
+    )
+    barrier = Barrier(2)
+
+    def retry(operation_id: str):
+        barrier.wait()
+        try:
+            return operations.start_retry_operation(
+                db,
+                question_jobs=bind_source_question_jobs(db),
+                project_id="project",
+                source_id="document",
+                operation_id=operation_id,
+            ).id
+        except SourceOperationConflictError:
+            return "conflict"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(retry, ("retry-a", "retry-b")))
+
+    assert results.count("conflict") == 1
+    retry_id = next(result for result in results if result != "conflict")
+    _seed_partial_work(db, "document")
+    assert operations.recover_operations(db, question_jobs=bind_source_question_jobs(db)) == 1
+    first_recovery = _terminal_snapshot(db, retry_id, "document")
+    assert operations.recover_operations(db, question_jobs=bind_source_question_jobs(db)) == 0
+    assert _terminal_snapshot(db, retry_id, "document") == first_recovery
+    assert operations.get_operation(
+        db,
+        project_id="project",
+        operation_id=retry_id,
+    ).status == "failed"
+    source = _source_row(db, "document")
+    assert source["status"] == "extraction_failed"
+    assert source["storage_path"] == "C:/data/source.pdf"
+    with db.connect() as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM source_chunks WHERE source_id = 'document'"
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM question_generation_jobs WHERE source_id = 'document'"
+        ).fetchone()[0] == 0
+
+
+def test_cancel_names_an_unexpected_running_phase(tmp_path: Path) -> None:
+    db = _database(tmp_path)
+    _insert_project(db, "project")
+    _attach(db, operation_id="upload", source_id="document")
+    with db.connect() as connection:
+        connection.execute(
+            "UPDATE source_operations SET phase = 'committing', cancellable = 1 WHERE id = 'upload'"
+        )
+
+    with pytest.raises(
+        SourceOperationStateError,
+        match="^Document operation cannot be canceled from running/committing.$",
+    ):
+        operations.cancel_operation(db, project_id="project", operation_id="upload")
+
+
+def _database(tmp_path: Path) -> Database:
+    db = Database(Settings(data_dir=tmp_path, api_token="test-token"))
+    db.migrate()
+    return db
+
+
+def _insert_project(db: Database, project_id: str) -> None:
+    with db.connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO projects(id, name, description, created_at, updated_at)
+            VALUES (?, ?, '', '2026-07-14', '2026-07-14')
+            """,
+            (project_id, project_id),
+        )
+
+
+def _attach(db: Database, *, operation_id: str, source_id: str) -> None:
+    claim = operations.claim_operation(
+        db,
+        project_id="project",
+        operation_id=operation_id,
+    )
+    assert claim.acquired is True
+    operations.create_and_attach_source(
+        db,
+        project_id="project",
+        operation_id=operation_id,
+        source_id=source_id,
+        filename="source.pdf",
+        source_kind="pdf",
+        sha256="sha",
+        language_hint="auto",
+        storage_path="C:/data/source.pdf",
+        page_count=1,
+    )
+
+
+def _attach_audio(db: Database, *, operation_id: str, source_id: str) -> None:
+    claim = operations.claim_operation(
+        db,
+        project_id="project",
+        operation_id=operation_id,
+    )
+    assert claim.acquired is True
+    operations.create_and_attach_source(
+        db,
+        project_id="project",
+        operation_id=operation_id,
+        source_id=source_id,
+        filename="source.wav",
+        sha256="audio-sha",
+        language_hint="ja",
+        storage_path="C:/data/source.wav",
+        page_count=0,
+        source_kind="recording",
+        duration_ms=1000,
+    )
+
+
+def _ready_extraction() -> PageExtraction:
+    return PageExtraction(
+        page_count=1,
+        pages=(
+            ExtractedPage(
+                page_number=1,
+                text="Question source text",
+                source_excerpt="Question source text",
+                extraction_method="text_recognition",
+            ),
+        ),
+        status="ready",
+        extraction_method="text_recognition",
+        ocr_device="cpu",
+        extraction_warnings=None,
+        processed_page_count=1,
+    )
+
+
+def _seed_partial_work(db: Database, source_id: str) -> None:
+    with db.connect() as connection:
+        connection.execute(
+            """
+            UPDATE sources
+            SET has_text = 1, ocr_device = 'igpu', extraction_warnings = 'fallback',
+                failure_message = 'earlier failure',
+                processed_page_count = 1, question_count = 3,
+                content_profile = 'mixed', classification_detail = 'partial'
+            WHERE id = ?
+            """,
+            (source_id,),
+        )
+        # The three questions the count claims.
+        for number in range(3):
+            connection.execute(
+                """
+                INSERT INTO questions(
+                    id, project_id, source_id, question, choices_json, created_at,
+                    updated_at
+                )
+                VALUES (?, 'project', ?, 'Earlier?', '["A", "B"]', '2026-07-14', '2026-07-14')
+                """,
+                (f"{source_id}-question-{number}", source_id),
+            )
+        connection.execute(
+            """
+            INSERT INTO source_chunks(
+                id, project_id, source_id, page_number, chunk_index,
+                text, source_excerpt, created_at
+            )
+            VALUES (
+                'partial-chunk', 'project', ?, 1, 0,
+                'partial text', 'partial text', '2026-07-14'
+            )
+            """,
+            (source_id,),
+        )
+        connection.execute(
+            """
+            INSERT INTO question_generation_jobs(
+                id, project_id, source_id, chunk_id, source_chunk_id,
+                page_number, strategy, status, provider, model,
+                created_at, updated_at
+            )
+            VALUES (
+                'partial-job', 'project', ?, 'partial-chunk', 'partial-chunk', 1,
+                'hybrid_reasoning', 'pending', 'future-provider', 'qwen3.5:4b',
+                '2026-07-14', '2026-07-14'
+            )
+            """,
+            (source_id,),
+        )
+
+
+def _seed_terminal_question_history(
+    db: Database,
+    source_id: str,
+    *,
+    status: str,
+) -> None:
+    phase = "completed" if status == "succeeded" else "failed"
+    with db.connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO question_generation_jobs(
+                id, project_id, source_id, chunk_id, page_number, strategy,
+                source_chunk_id, status, phase, cancellable, provider, model,
+                effective_provider, effective_model, fallback_reason,
+                generated_count, retry_count, last_error, created_at, updated_at
+            )
+            VALUES (
+                'terminal-job', 'project', ?, 'partial-chunk', 1,
+                'deterministic_only', 'partial-chunk', ?, ?, 0,
+                'future-provider', 'qwen3.5:4b', 'future-provider', 'qwen3.5:4b',
+                'configured', 3, 1, 'historical detail',
+                '2026-07-13', '2026-07-14'
+            )
+            """,
+            (source_id, status, phase),
+        )
+
+
+def _source_row(db: Database, source_id: str) -> sqlite3.Row:
+    with db.connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM sources WHERE id = ?",
+            (source_id,),
+        ).fetchone()
+    assert row is not None
+    return row
+
+
+def _terminal_snapshot(db: Database, operation_id: str, source_id: str) -> tuple:
+    with db.connect() as connection:
+        operation = connection.execute(
+            "SELECT * FROM source_operations WHERE id = ?",
+            (operation_id,),
+        ).fetchone()
+        source = connection.execute(
+            "SELECT * FROM sources WHERE id = ?",
+            (source_id,),
+        ).fetchone()
+        chunks = connection.execute(
+            """
+            SELECT page_number, chunk_index, text, source_excerpt
+            FROM source_chunks
+            WHERE source_id = ?
+            ORDER BY page_number, chunk_index
+            """,
+            (source_id,),
+        ).fetchall()
+    assert operation is not None
+    assert source is not None
+    return tuple(operation), tuple(source), tuple(tuple(row) for row in chunks)

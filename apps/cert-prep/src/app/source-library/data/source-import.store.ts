@@ -8,26 +8,26 @@ import {
 } from '@angular/core';
 import { forkJoin, from, map, Subscription } from 'rxjs';
 import { CERT_PREP_API } from '../../core/data';
-import type { ChunkRead, DocumentRead } from '../../core/domain';
-import { isDocumentOperationEventTerminal } from '../../core/domain';
-import type { DocumentOperationEvent } from '../../core/domain';
+import type { ChunkRead, SourceRead } from '../../core/domain';
+import { isSourceOperationEventTerminal } from '../../core/domain';
+import type { SourceOperationEvent } from '../../core/domain';
 import { CertPrepHttpResourceClient } from '../../core/data';
 import { CertPrepSseClient } from '../../core/data';
 import type {
   LanguageHint,
-  SourceDocumentActivity,
+  SourceActivity,
   SourceFileSelectionOptions,
   SourceUploadItem,
   UploadTransportRun,
 } from '../domain';
-import { DocumentParsingMetricsService } from './document-parsing-metrics.service';
-import { DocumentLibraryStore } from './document-library.store';
+import { SourcePreparationMetricsService } from './source-preparation-metrics.service';
+import { SourceLibraryStore } from './source-library.store';
 import { OperationStore } from '../../core/data';
 import { ProjectStore } from '../../projects/data';
 import { SourceUploadLifecycle } from './source-upload-lifecycle';
 import {
   DEFAULT_UPLOAD_BATCH_SIZE,
-  FINAL_DOCUMENT_STATUSES,
+  FINAL_SOURCE_STATUSES,
   MAX_UPLOAD_BATCH_SIZE,
   MIN_UPLOAD_BATCH_SIZE,
   SOURCE_FILE_ACCEPT,
@@ -39,34 +39,34 @@ import {
 @Injectable({ providedIn: 'root' })
 export class SourceImportStore {
   private readonly api = inject(CERT_PREP_API);
-  private readonly library = inject(DocumentLibraryStore);
-  private readonly metrics = inject(DocumentParsingMetricsService);
+  private readonly library = inject(SourceLibraryStore);
+  private readonly metrics = inject(SourcePreparationMetricsService);
   private readonly operations = inject(OperationStore);
   private readonly projects = inject(ProjectStore);
   private readonly resources = inject(CertPrepHttpResourceClient);
   private readonly sse = inject(CertPrepSseClient);
-  private readonly documentQueryEnabled = signal(false);
-  private readonly documentsResource = this.resources.documents(() =>
-    this.documentQueryEnabled() ? this.projects.selectedProjectId() : null,
+  private readonly sourceQueryEnabled = signal(false);
+  private readonly sourcesResource = this.resources.sources(() =>
+    this.sourceQueryEnabled() ? this.projects.selectedProjectId() : null,
   );
-  private readonly activeDocumentResource = this.resources.document(
+  private readonly activeSourceResource = this.resources.source(
     () =>
-      this.documentQueryEnabled() ? this.projects.selectedProjectId() : null,
+      this.sourceQueryEnabled() ? this.projects.selectedProjectId() : null,
     () =>
-      this.documentQueryEnabled() ? this.library.activeDocumentId() : null,
+      this.sourceQueryEnabled() ? this.library.activeSourceId() : null,
   );
-  private readonly chunksResource = this.resources.documentChunks(
+  private readonly chunksResource = this.resources.sourceChunks(
     () =>
-      this.documentQueryEnabled() ? this.projects.selectedProjectId() : null,
+      this.sourceQueryEnabled() ? this.projects.selectedProjectId() : null,
     () =>
-      this.documentQueryEnabled() ? this.library.activeDocumentId() : null,
+      this.sourceQueryEnabled() ? this.library.activeSourceId() : null,
   );
-  private documentStreamSubscription: Subscription | null = null;
-  private documentStreamKey: string | null = null;
-  private documentStreamOperationId: string | null = null;
-  private documentStreamTerminalSeen = false;
-  private documentChunksSubscription: Subscription | null = null;
-  private documentChunksRequestRevision = 0;
+  private sourceStreamSubscription: Subscription | null = null;
+  private sourceStreamKey: string | null = null;
+  private sourceStreamOperationId: string | null = null;
+  private sourceStreamTerminalSeen = false;
+  private sourceChunksSubscription: Subscription | null = null;
+  private sourceChunksRequestRevision = 0;
   private contextEpoch = 0;
   private uploadItemCounter = 0;
   private readonly pendingAutoUploadItemIds = new Set<string>();
@@ -81,25 +81,25 @@ export class SourceImportStore {
       current: (projectId, contextEpoch) =>
         this.isCurrentUploadContext(projectId, contextEpoch),
       patch: (itemId, patch) => this.updateUploadItem(itemId, patch),
-      accept: (document, operationId) =>
-        this.acceptLifecycleDocument(document, operationId),
+      accept: (source, operationId) =>
+        this.acceptLifecycleSource(source, operationId),
       upload: (projectId, item, operationId, signal) => {
         const formData = new FormData();
         formData.append('file', item.file, item.file.name);
         formData.append('language_hint', this.languageHint());
-        return from(this.api.uploadDocument(projectId, formData, {
+        return from(this.api.uploadSource(projectId, formData, {
           headers: { 'X-Cert-Prep-Operation-Id': operationId },
           signal,
         }));
       },
-      getDocument: (projectId, documentId) =>
-        from(this.api.getDocument(projectId, documentId)),
+      getSource: (projectId, sourceId) =>
+        from(this.api.getSource(projectId, sourceId)),
       getOperation: (projectId, operationId) =>
-        from(this.api.getDocumentOperation(projectId, operationId)),
+        from(this.api.getSourceOperation(projectId, operationId)),
       streamOperation: (projectId, operationId) =>
-        this.streamDocumentOperation(projectId, '', operationId),
+        this.streamSourceOperation(projectId, '', operationId),
       cancelOperation: (projectId, operationId) =>
-        from(this.api.cancelDocumentOperation(projectId, operationId)),
+        from(this.api.cancelSourceOperation(projectId, operationId)),
       newOperationId: () => this.newOperationId(),
       errorMessage: (error) => this.getUploadErrorMessage(error),
     });
@@ -122,17 +122,17 @@ export class SourceImportStore {
   readonly uploadBatchSize = signal(DEFAULT_UPLOAD_BATCH_SIZE);
   readonly uploadItems = signal<SourceUploadItem[]>([]);
   readonly streamError = signal<string | null>(null);
-  private readonly latestDocumentActivity =
-    signal<SourceDocumentActivity | null>(null);
+  private readonly latestSourceActivity =
+    signal<SourceActivity | null>(null);
   /**
-   * The selected project's latest source document activity: an upload, a
-   * document selection (re-selecting the same document included) or a
-   * document becoming active (an upload can finish after the first question
+   * The selected project's latest source activity: an upload, a
+   * source selection (re-selecting the same source included) or a
+   * source becoming active (an upload can finish after the first question
    * query ran). Source Library is upstream of Question Authoring and does not
    * know about questions; Authoring's `QuestionsStore` reloads the project's
    * questions on every activity (D19).
    */
-  readonly documentActivity = this.latestDocumentActivity.asReadonly();
+  readonly sourceActivity = this.latestSourceActivity.asReadonly();
   readonly selectedFiles = computed(() =>
     this.uploadItems().map((item) => item.file),
   );
@@ -167,37 +167,37 @@ export class SourceImportStore {
   readonly selectedFileLabel = computed(() => {
     const files = this.selectedFiles();
     if (files.length === 0) {
-      return this.activeDocument()?.filename ?? 'No source file selected';
+      return this.activeSource()?.filename ?? 'No source file selected';
     }
     if (files.length === 1) {
       return files[0]?.name ?? 'No source file selected';
     }
     return `${files.length} files selected`;
   });
-  readonly documents = this.library.documents;
-  readonly documentsLoading = this.documentsResource.isLoading;
-  readonly documentsError = this.documentsResource.error;
-  readonly activeDocumentId = this.library.activeDocumentId;
-  readonly uploadedDocument = this.library.uploadedDocument;
+  readonly sources = this.library.sources;
+  readonly sourcesLoading = this.sourcesResource.isLoading;
+  readonly sourcesError = this.sourcesResource.error;
+  readonly activeSourceId = this.library.activeSourceId;
+  readonly uploadedSource = this.library.uploadedSource;
   readonly chunks = this.library.chunks;
   readonly visibleChunkLimit = this.library.visibleChunkLimit;
-  readonly activeDocument = this.library.activeDocument;
-  readonly activeDocumentSelectValue = this.library.activeDocumentSelectValue;
+  readonly activeSource = this.library.activeSource;
+  readonly activeSourceSelectValue = this.library.activeSourceSelectValue;
   readonly previewChunks = this.library.previewChunks;
   readonly hiddenChunkCount = this.library.hiddenChunkCount;
   readonly isParsing = computed(() =>
     ['processing', 'cancel_requested'].includes(
-      this.activeDocument()?.status ?? '',
+      this.activeSource()?.status ?? '',
     ),
   );
   readonly progressPercent = computed(() =>
-    this.metrics.progressPercent(this.activeDocument()),
+    this.metrics.progressPercent(this.activeSource()),
   );
   readonly progressLabel = computed(() =>
-    this.metrics.progressLabel(this.activeDocument()),
+    this.metrics.progressLabel(this.activeSource()),
   );
   readonly elapsedTime = computed(() =>
-    this.metrics.elapsedTime(this.activeDocument()),
+    this.metrics.elapsedTime(this.activeSource()),
   );
   readonly canUpload = computed(
     () =>
@@ -210,38 +210,38 @@ export class SourceImportStore {
       !this.isUploading(),
   );
   readonly canGenerateQuestions = computed(() => {
-    const document = this.activeDocument();
+    const source = this.activeSource();
     return (
       this.projects.selectedProject() !== null &&
-      document !== null &&
-      document.has_text &&
-      document.chunks_count > 0
+      source !== null &&
+      source.has_text &&
+      source.chunks_count > 0
     );
   });
 
   constructor() {
     this.configureUploadLifecycle();
     effect(() => {
-      if (this.isResourceSettled(this.documentsResource.status())) {
-        const documents = this.documentsResource.value();
+      if (this.isResourceSettled(this.sourcesResource.status())) {
+        const sources = this.sourcesResource.value();
         untracked(() => {
-          this.library.setDocuments(this.mergeDocumentResourceValue(documents));
-          this.setActiveDocument(this.library.chooseActiveFromDocuments());
+          this.library.setSources(this.mergeSourceResourceValue(sources));
+          this.setActiveSource(this.library.chooseActiveFromSources());
         });
       }
 
-      if (this.isResourceSettled(this.activeDocumentResource.status())) {
-        const document = this.activeDocumentResource.value();
-        if (document !== null) {
+      if (this.isResourceSettled(this.activeSourceResource.status())) {
+        const source = this.activeSourceResource.value();
+        if (source !== null) {
           untracked(() => {
-            this.library.upsertDocument(document);
-            if (this.activeDocumentId() === document.id) {
-              this.setActiveDocument(document);
+            this.library.upsertSource(source);
+            if (this.activeSourceId() === source.id) {
+              this.setActiveSource(source);
               if (
-                ['processing', 'cancel_requested'].includes(document.status) &&
-                this.documentStreamSubscription === null
+                ['processing', 'cancel_requested'].includes(source.status) &&
+                this.sourceStreamSubscription === null
               ) {
-                this.startDocumentStream(document.project_id, document.id, null);
+                this.startSourceStream(source.project_id, source.id, null);
               }
             }
           });
@@ -254,9 +254,9 @@ export class SourceImportStore {
     });
     effect(() => {
       const projectId = this.projects.selectedProject()?.id ?? null;
-      const documentId = this.activeDocumentId();
-      if (projectId !== null && documentId !== null) {
-        untracked(() => this.latestDocumentActivity.set({ projectId }));
+      const sourceId = this.activeSourceId();
+      if (projectId !== null && sourceId !== null) {
+        untracked(() => this.latestSourceActivity.set({ projectId }));
       }
     });
   }
@@ -283,7 +283,7 @@ export class SourceImportStore {
       id: `source-upload-${++this.uploadItemCounter}`,
       file,
       status: 'queued',
-      document: null,
+      source: null,
       error: null,
     }));
     const appendSelection = options.append ?? this.shouldAppendNewSelection();
@@ -293,9 +293,9 @@ export class SourceImportStore {
     } else {
       this.invalidateUploadContext();
       this.uploadItems.set(nextItems);
-      this.library.clearActiveDocument();
-      this.stopDocumentStream();
-      this.resetDocumentStreamError();
+      this.library.clearActiveSource();
+      this.stopSourceStream();
+      this.resetSourceStreamError();
     }
     if (autoUpload) {
       this.rememberPendingAutoUploads(nextItems.map((item) => item.id));
@@ -328,7 +328,7 @@ export class SourceImportStore {
     this.invalidateUploadContext();
     this.uploadItems.set([]);
     this.library.reset();
-    this.resetDocumentStreamError();
+    this.resetSourceStreamError();
   }
 
   setLanguageHint(value: string): void {
@@ -352,13 +352,13 @@ export class SourceImportStore {
     this.library.showMoreChunks();
   }
 
-  uploadDocument(): void {
-    this.uploadDocuments();
+  uploadSource(): void {
+    this.uploadSources();
   }
 
-  uploadDocuments(): void {
+  uploadSources(): void {
     this.startUploads();
-    this.reportDocumentActivity();
+    this.reportSourceActivity();
   }
 
   private startUploads(): void {
@@ -433,17 +433,17 @@ export class SourceImportStore {
     this.operations
       .run(
         'upload',
-        (documents) => this.uploadOutcomeMessage(run.itemIds, documents),
-        () => run.done.pipe(map(() => [...run.documents])),
+        (sources) => this.uploadOutcomeMessage(run.itemIds, sources),
+        () => run.done.pipe(map(() => [...run.sources])),
         () => this.isCurrentUploadContext(projectId, run.contextEpoch),
       )
       .subscribe((result) => {
         if (!this.isCurrentUploadContext(projectId, run.contextEpoch)) return;
-        const documents = result ?? [];
-        const activeDocument = documents[documents.length - 1] ?? null;
-        if (activeDocument !== null) {
-          this.setActiveDocument(activeDocument);
-          this.refreshUploadedDocument(projectId, activeDocument.id);
+        const sources = result ?? [];
+        const activeSource = sources[sources.length - 1] ?? null;
+        if (activeSource !== null) {
+          this.setActiveSource(activeSource);
+          this.refreshUploadedSource(projectId, activeSource.id);
         }
         const failedCount = this.failedUploadCount();
         if (failedCount > 0) this.operations.error.set(failedCount === 1 ? '1 source file failed to upload.' : `${failedCount} source files failed to upload.`);
@@ -453,9 +453,9 @@ export class SourceImportStore {
 
   private uploadOutcomeMessage(
     itemIds: readonly string[],
-    documents: readonly DocumentRead[],
+    sources: readonly SourceRead[],
   ): string {
-    const acceptedCount = documents.length;
+    const acceptedCount = sources.length;
     const incompleteCount = Math.max(0, itemIds.length - acceptedCount);
     if (acceptedCount > 0) {
       const accepted =
@@ -481,108 +481,108 @@ export class SourceImportStore {
       : 'No source file uploads completed';
   }
 
-  loadLatestDocument(projectId: string): void {
+  loadLatestSource(projectId: string): void {
     if (this.projects.selectedProjectId() !== projectId) {
       return;
     }
-    if (!this.documentQueryEnabled()) {
-      this.documentQueryEnabled.set(true);
+    if (!this.sourceQueryEnabled()) {
+      this.sourceQueryEnabled.set(true);
       return;
     }
-    this.documentsResource.reload();
+    this.sourcesResource.reload();
   }
 
-  setActiveDocumentId(documentId: string | null): void {
-    if (this.library.setActiveDocumentId(documentId)) {
-      this.stopDocumentStream();
-      this.resetDocumentStreamError();
+  setActiveSourceId(sourceId: string | null): void {
+    if (this.library.setActiveSourceId(sourceId)) {
+      this.stopSourceStream();
+      this.resetSourceStreamError();
     }
   }
 
-  selectDocument(documentId: string): void {
-    this.showDocument(documentId);
-    this.reportDocumentActivity();
+  selectSource(sourceId: string): void {
+    this.showSource(sourceId);
+    this.reportSourceActivity();
   }
 
-  private showDocument(documentId: string): void {
+  private showSource(sourceId: string): void {
     const projectId = this.projects.selectedProject()?.id;
-    const previousDocumentId = this.activeDocumentId();
-    this.setActiveDocumentId(documentId);
-    if (projectId === undefined || this.activeDocumentId() !== documentId) {
+    const previousSourceId = this.activeSourceId();
+    this.setActiveSourceId(sourceId);
+    if (projectId === undefined || this.activeSourceId() !== sourceId) {
       return;
     }
-    if (previousDocumentId !== documentId) {
+    if (previousSourceId !== sourceId) {
       this.library.clearChunks();
-      this.stopDocumentStream();
+      this.stopSourceStream();
     }
 
-    if (!this.documentQueryEnabled()) {
-      this.documentQueryEnabled.set(true);
+    if (!this.sourceQueryEnabled()) {
+      this.sourceQueryEnabled.set(true);
       return;
     }
-    this.activeDocumentResource.reload();
+    this.activeSourceResource.reload();
     this.chunksResource.reload();
   }
 
-  private reportDocumentActivity(): void {
+  private reportSourceActivity(): void {
     const project = this.projects.selectedProject();
     if (project !== null) {
-      this.latestDocumentActivity.set({ projectId: project.id });
+      this.latestSourceActivity.set({ projectId: project.id });
     }
   }
 
-  refreshUploadedDocument(
+  refreshUploadedSource(
     projectId?: string,
-    documentId?: string,
+    sourceId?: string,
   ): void {
     const project = projectId ?? this.projects.selectedProject()?.id;
-    const document =
-      documentId ?? this.activeDocumentId() ?? this.activeDocument()?.id;
-    if (project === undefined || document === undefined) {
+    const source =
+      sourceId ?? this.activeSourceId() ?? this.activeSource()?.id;
+    if (project === undefined || source === undefined) {
       return;
     }
-    if (documentId !== undefined && this.activeDocumentId() !== documentId) {
-      this.activeDocumentId.set(documentId);
+    if (sourceId !== undefined && this.activeSourceId() !== sourceId) {
+      this.activeSourceId.set(sourceId);
     }
 
     forkJoin({
-      document: from(this.api.getDocument(project, document)),
-      chunks: this.loadDocumentChunks(project, document),
+      source: from(this.api.getSource(project, source)),
+      chunks: this.loadSourceChunks(project, source),
     }).subscribe({
-      next: ({ document: nextDocument, chunks }) => {
-        this.library.upsertDocument(nextDocument);
-        if (!this.isCurrentProjectDocument(project, document)) return;
-        this.setActiveDocument(nextDocument);
+      next: ({ source: nextSource, chunks }) => {
+        this.library.upsertSource(nextSource);
+        if (!this.isCurrentProjectSource(project, source)) return;
+        this.setActiveSource(nextSource);
         this.library.setChunks(chunks);
-        this.updateUploadDocumentSnapshot(nextDocument);
-        this.resetDocumentStreamError();
+        this.updateUploadSourceSnapshot(nextSource);
+        this.resetSourceStreamError();
         if (
-          ['processing', 'cancel_requested'].includes(nextDocument.status) &&
-          this.documentStreamSubscription === null
+          ['processing', 'cancel_requested'].includes(nextSource.status) &&
+          this.sourceStreamSubscription === null
         ) {
           const operationId =
-            this.documentStreamKey === `${project}:${document}`
-              ? this.documentStreamOperationId
+            this.sourceStreamKey === `${project}:${source}`
+              ? this.sourceStreamOperationId
               : null;
-          this.startDocumentStream(project, document, operationId);
+          this.startSourceStream(project, source, operationId);
         }
       },
-      error: () => this.streamError.set('Document progress could not be refreshed. Retry the event stream.'),
+      error: () => this.streamError.set('Source progress could not be refreshed. Retry the event stream.'),
     });
   }
 
-  retryDocumentStream(): void {
+  retrySourceStream(): void {
     const projectId = this.projects.selectedProject()?.id;
-    const documentId = this.activeDocumentId();
-    if (projectId === undefined || documentId === null) {
+    const sourceId = this.activeSourceId();
+    if (projectId === undefined || sourceId === null) {
       return;
     }
 
-    this.resetDocumentStreamError();
-    if (this.documentStreamOperationId !== null) {
-      this.startDocumentStream(projectId, documentId, this.documentStreamOperationId);
+    this.resetSourceStreamError();
+    if (this.sourceStreamOperationId !== null) {
+      this.startSourceStream(projectId, sourceId, this.sourceStreamOperationId);
     } else {
-      this.refreshUploadedDocument(projectId, documentId);
+      this.refreshUploadedSource(projectId, sourceId);
     }
   }
 
@@ -590,14 +590,14 @@ export class SourceImportStore {
     return (
       ['queued', 'uploading', 'cancel_requested'].includes(item.status) ||
       (item.status === 'uploaded' &&
-        ['processing', 'cancel_requested'].includes(item.document?.status ?? ''))
+        ['processing', 'cancel_requested'].includes(item.source?.status ?? ''))
     );
   }
 
   canRetryUploadItem(item: SourceUploadItem): boolean {
     return (
       item.status === 'status_unavailable' ||
-      (item.document === null && ['failed', 'canceled'].includes(item.status))
+      (item.source === null && ['failed', 'canceled'].includes(item.status))
     );
   }
 
@@ -616,8 +616,8 @@ export class SourceImportStore {
       this.uploadLifecycle.cancel(item.id);
       return;
     }
-    const document = item.document;
-    if (document === null) {
+    const source = item.source;
+    if (source === null) {
       return;
     }
 
@@ -625,9 +625,9 @@ export class SourceImportStore {
       status: 'cancel_requested',
       error: null,
     });
-    from(this.api.cancelDocumentProcessing(projectId, document.id)).subscribe({
+    from(this.api.cancelSourceProcessing(projectId, source.id)).subscribe({
       next: (operation) => {
-        this.startDocumentStream(projectId, document.id, operation.id);
+        this.startSourceStream(projectId, source.id, operation.id);
       },
       error: (error: unknown) => this.updateUploadItem(item.id, { status: 'failed', error: this.getUploadErrorMessage(error) }),
     });
@@ -676,179 +676,179 @@ export class SourceImportStore {
     this.runUploadTransports(projectId, [item.id]);
   }
 
-  cancelActiveDocumentProcessing(): void {
+  cancelActiveSourceProcessing(): void {
     const projectId = this.projects.selectedProject()?.id;
-    const document = this.activeDocument();
+    const source = this.activeSource();
     if (
       projectId === undefined ||
-      document === null ||
-      !['processing', 'cancel_requested'].includes(document.status)
+      source === null ||
+      !['processing', 'cancel_requested'].includes(source.status)
     ) {
       return;
     }
     this.operations
-      .run('document-cancel', 'Parsing cancellation requested', (signal) =>
-        this.api.cancelDocumentProcessing(projectId, document.id, { signal }),
+      .run('source-cancel', 'Parsing cancellation requested', (signal) =>
+        this.api.cancelSourceProcessing(projectId, source.id, { signal }),
       )
       .subscribe((canceled) => {
         if (canceled !== null) {
-          this.startDocumentStream(projectId, document.id, canceled.id);
+          this.startSourceStream(projectId, source.id, canceled.id);
         }
       });
   }
 
-  retryActiveDocumentProcessing(): void {
+  retryActiveSourceProcessing(): void {
     const projectId = this.projects.selectedProject()?.id;
-    const document = this.activeDocument();
+    const source = this.activeSource();
     if (
       projectId === undefined ||
-      document === null ||
+      source === null ||
       ![
         'canceled',
         'extraction_failed',
         'transcription_failed',
         'no_text_detected',
-      ].includes(document.status)
+      ].includes(source.status)
     ) {
       return;
     }
     this.operations
-      .run('document-retry', 'Parsing restarted', (signal) =>
-        this.api.retryDocumentProcessing(projectId, document.id, { signal }),
+      .run('source-retry', 'Parsing restarted', (signal) =>
+        this.api.retrySourceProcessing(projectId, source.id, { signal }),
       )
       .subscribe((retried) => {
         if (retried !== null) {
-          this.resetDocumentStreamError();
-          this.startDocumentStream(projectId, document.id, retried.id);
+          this.resetSourceStreamError();
+          this.startSourceStream(projectId, source.id, retried.id);
         }
       });
   }
 
   updateTranscriptChunk(chunkId: string, text: string): void {
     const projectId = this.projects.selectedProject()?.id;
-    const documentId = this.activeDocumentId();
+    const sourceId = this.activeSourceId();
     if (
       projectId === undefined ||
-      documentId === null ||
+      sourceId === null ||
       this.isTranscriptMutationBusy()
     ) {
       return;
     }
     this.operations
       .run('transcript-edit', 'Transcript saved', (signal) =>
-        this.api.updateDocumentChunk(projectId, documentId, chunkId, { text }, { signal }),
-        () => this.isCurrentProjectDocument(projectId, documentId),
+        this.api.updateSourceChunk(projectId, sourceId, chunkId, { text }, { signal }),
+        () => this.isCurrentProjectSource(projectId, sourceId),
       )
       .subscribe((updated) => {
-        if (updated !== null && this.isCurrentProjectDocument(projectId, documentId)) {
+        if (updated !== null && this.isCurrentProjectSource(projectId, sourceId)) {
           this.library.setChunks(this.chunks().map((chunk) => chunk.id === chunkId ? updated : chunk));
-          this.refreshDocumentMetadata(projectId, documentId);
+          this.refreshSourceMetadata(projectId, sourceId);
         }
       });
   }
 
   translateTranscriptChunk(chunkId: string): void {
     const projectId = this.projects.selectedProject()?.id;
-    const documentId = this.activeDocumentId();
+    const sourceId = this.activeSourceId();
     if (
       projectId === undefined ||
-      documentId === null ||
+      sourceId === null ||
       this.isTranscriptMutationBusy()
     ) {
       return;
     }
     this.operations
       .run('transcript-translate', 'Traditional Chinese translation updated', (signal) =>
-        this.api.translateDocumentChunk(projectId, documentId, chunkId, { signal }),
-        () => this.isCurrentProjectDocument(projectId, documentId),
+        this.api.translateSourceChunk(projectId, sourceId, chunkId, { signal }),
+        () => this.isCurrentProjectSource(projectId, sourceId),
       )
       .subscribe((translated) => {
-        if (translated !== null && this.isCurrentProjectDocument(projectId, documentId)) {
+        if (translated !== null && this.isCurrentProjectSource(projectId, sourceId)) {
           this.library.setChunks(this.chunks().map((chunk) => chunk.id === chunkId ? translated : chunk));
-          this.refreshDocumentMetadata(projectId, documentId);
+          this.refreshSourceMetadata(projectId, sourceId);
         }
       });
   }
 
   translateStaleTranscriptChunks(): void {
     const projectId = this.projects.selectedProject()?.id;
-    const documentId = this.activeDocumentId();
+    const sourceId = this.activeSourceId();
     if (
       projectId === undefined ||
-      documentId === null ||
+      sourceId === null ||
       this.isTranscriptMutationBusy()
     ) {
       return;
     }
     this.operations
       .run('transcript-translate-all', 'Stale translations updated', (signal) =>
-        this.api.translateDocumentStaleChunks(projectId, documentId, { signal }),
-        () => this.isCurrentProjectDocument(projectId, documentId),
+        this.api.translateSourceStaleChunks(projectId, sourceId, { signal }),
+        () => this.isCurrentProjectSource(projectId, sourceId),
       )
       .subscribe((translated) => {
-        if (translated !== null && this.isCurrentProjectDocument(projectId, documentId)) {
+        if (translated !== null && this.isCurrentProjectSource(projectId, sourceId)) {
           const byId = new Map(translated.items.map((chunk) => [chunk.id, chunk]));
           this.library.setChunks(this.chunks().map((chunk) => byId.get(chunk.id) ?? chunk));
-          this.refreshDocumentMetadata(projectId, documentId);
+          this.refreshSourceMetadata(projectId, sourceId);
         }
       });
   }
 
-  private refreshDocumentMetadata(
+  private refreshSourceMetadata(
     projectId: string,
-    documentId: string,
+    sourceId: string,
   ): void {
-    from(this.api.getDocument(projectId, documentId)).subscribe({
-      next: (document) => {
-        if (!this.isCurrentProjectDocument(projectId, documentId)) return;
-        this.library.upsertDocument(document);
-        this.setActiveDocument(document);
-        this.updateUploadDocumentSnapshot(document);
+    from(this.api.getSource(projectId, sourceId)).subscribe({
+      next: (source) => {
+        if (!this.isCurrentProjectSource(projectId, sourceId)) return;
+        this.library.upsertSource(source);
+        this.setActiveSource(source);
+        this.updateUploadSourceSnapshot(source);
       },
-      error: (error: unknown) => console.warn('Unable to refresh document metadata after a transcript mutation.', error),
+      error: (error: unknown) => console.warn('Unable to refresh source metadata after a transcript mutation.', error),
     });
   }
 
-  private loadDocumentChunks(
+  private loadSourceChunks(
     projectId: string,
-    documentId: string,
+    sourceId: string,
   ): import('rxjs').Observable<ChunkRead[]> {
-    return from(this.api.listDocumentChunks(projectId, documentId)).pipe(map((chunks) => chunks.items));
+    return from(this.api.listSourceChunks(projectId, sourceId)).pipe(map((chunks) => chunks.items));
   }
 
-  private refreshDocumentChunksFromEvent(
+  private refreshSourceChunksFromEvent(
     projectId: string,
-    documentId: string,
+    sourceId: string,
   ): void {
-    const requestRevision = ++this.documentChunksRequestRevision;
-    this.documentChunksSubscription?.unsubscribe();
-    this.documentChunksSubscription = this.loadDocumentChunks(
+    const requestRevision = ++this.sourceChunksRequestRevision;
+    this.sourceChunksSubscription?.unsubscribe();
+    this.sourceChunksSubscription = this.loadSourceChunks(
       projectId,
-      documentId,
+      sourceId,
     ).subscribe({
       next: (chunks) => {
         if (
-          requestRevision !== this.documentChunksRequestRevision ||
-          !this.isCurrentProjectDocument(projectId, documentId)
+          requestRevision !== this.sourceChunksRequestRevision ||
+          !this.isCurrentProjectSource(projectId, sourceId)
         ) {
           return;
         }
         this.library.setChunks(chunks);
-        this.resetDocumentStreamError();
+        this.resetSourceStreamError();
       },
       error: () => {
         if (
-          requestRevision === this.documentChunksRequestRevision &&
-          this.isCurrentProjectDocument(projectId, documentId)
+          requestRevision === this.sourceChunksRequestRevision &&
+          this.isCurrentProjectSource(projectId, sourceId)
         ) {
           this.streamError.set(
-            'Document chunks could not be refreshed from the event. Retry the event stream.',
+            'Source chunks could not be refreshed from the event. Retry the event stream.',
           );
         }
       },
       complete: () => {
-        if (requestRevision === this.documentChunksRequestRevision) {
-          this.documentChunksSubscription = null;
+        if (requestRevision === this.sourceChunksRequestRevision) {
+          this.sourceChunksSubscription = null;
         }
       },
     });
@@ -1002,22 +1002,22 @@ export class SourceImportStore {
     return updated;
   }
 
-  private acceptLifecycleDocument(
-    document: DocumentRead,
+  private acceptLifecycleSource(
+    source: SourceRead,
     operationId: string,
   ): void {
-    this.library.upsertDocument(document);
-    this.setActiveDocument(document);
-    this.updateUploadDocumentSnapshot(document);
-    if (!FINAL_DOCUMENT_STATUSES.has(document.status)) {
-      this.startDocumentStream(document.project_id, document.id, operationId);
+    this.library.upsertSource(source);
+    this.setActiveSource(source);
+    this.updateUploadSourceSnapshot(source);
+    if (!FINAL_SOURCE_STATUSES.has(source.status)) {
+      this.startSourceStream(source.project_id, source.id, operationId);
     }
   }
 
-  private updateUploadDocumentSnapshot(document: DocumentRead): void {
+  private updateUploadSourceSnapshot(source: SourceRead): void {
     this.uploadItems.update((items) =>
       items.map((item) =>
-        item.document?.id === document.id ? { ...item, document } : item,
+        item.source?.id === source.id ? { ...item, source } : item,
       ),
     );
   }
@@ -1025,7 +1025,7 @@ export class SourceImportStore {
   private invalidateUploadContext(): void {
     this.contextEpoch += 1;
     this.clearPendingAutoUploads();
-    this.stopDocumentStream();
+    this.stopSourceStream();
     this.uploadLifecycle.invalidate();
   }
 
@@ -1039,23 +1039,23 @@ export class SourceImportStore {
     );
   }
 
-  private mergeDocumentResourceValue(
-    documents: readonly DocumentRead[],
-  ): DocumentRead[] {
+  private mergeSourceResourceValue(
+    sources: readonly SourceRead[],
+  ): SourceRead[] {
     const projectId = this.projects.selectedProjectId();
-    const knownDocuments = this.library
-      .documents()
-      .filter((document) => document.project_id === projectId);
-    const resourceDocumentIds = new Set(documents.map((document) => document.id));
+    const knownSources = this.library
+      .sources()
+      .filter((source) => source.project_id === projectId);
+    const loadedSourceIds = new Set(sources.map((source) => source.id));
     return [
-      ...knownDocuments.filter((document) => !resourceDocumentIds.has(document.id)),
-      ...documents,
+      ...knownSources.filter((source) => !loadedSourceIds.has(source.id)),
+      ...sources,
     ];
   }
 
-  private setActiveDocument(document: DocumentRead | null): void {
-    if (this.library.setActiveDocument(document)) {
-      this.stopDocumentStream();
+  private setActiveSource(source: SourceRead | null): void {
+    if (this.library.setActiveSource(source)) {
+      this.stopSourceStream();
     }
   }
 
@@ -1085,98 +1085,98 @@ export class SourceImportStore {
     );
   }
 
-  private startDocumentStream(
+  private startSourceStream(
     projectId: string,
-    documentId: string,
+    sourceId: string,
     operationId: string | null,
   ): void {
-    const key = `${projectId}:${documentId}`;
-    if (this.documentStreamKey === key && this.documentStreamSubscription !== null) {
+    const key = `${projectId}:${sourceId}`;
+    if (this.sourceStreamKey === key && this.sourceStreamSubscription !== null) {
       return;
     }
-    this.stopDocumentStream();
-    this.documentStreamKey = key;
-    this.documentStreamOperationId = operationId;
-    this.documentStreamTerminalSeen = false;
-    this.resetDocumentStreamError();
-    this.documentStreamSubscription = this.streamDocumentOperation(
+    this.stopSourceStream();
+    this.sourceStreamKey = key;
+    this.sourceStreamOperationId = operationId;
+    this.sourceStreamTerminalSeen = false;
+    this.resetSourceStreamError();
+    this.sourceStreamSubscription = this.streamSourceOperation(
       projectId,
-      documentId,
+      sourceId,
       operationId,
     ).subscribe({
       next: (event) => {
-        this.documentStreamTerminalSeen ||= isDocumentOperationEventTerminal(event);
-        this.applyDocumentOperationEvent(projectId, documentId, event);
+        this.sourceStreamTerminalSeen ||= isSourceOperationEventTerminal(event);
+        this.applySourceOperationEvent(projectId, sourceId, event);
       },
       error: () => {
-        if (this.documentStreamKey === key) {
-          this.documentStreamSubscription = null;
-          this.streamError.set('Document progress could not be refreshed. Retry the event stream.');
+        if (this.sourceStreamKey === key) {
+          this.sourceStreamSubscription = null;
+          this.streamError.set('Source progress could not be refreshed. Retry the event stream.');
         }
       },
       complete: () => {
-        if (this.documentStreamKey !== key) return;
-        this.documentStreamSubscription = null;
-        if (!this.documentStreamTerminalSeen) {
-          this.streamError.set('Document progress could not be refreshed. Retry the event stream.');
+        if (this.sourceStreamKey !== key) return;
+        this.sourceStreamSubscription = null;
+        if (!this.sourceStreamTerminalSeen) {
+          this.streamError.set('Source progress could not be refreshed. Retry the event stream.');
         }
       },
     });
   }
 
-  private streamDocumentOperation(
+  private streamSourceOperation(
     projectId: string,
-    documentId: string,
+    sourceId: string,
     operationId: string | null,
-  ): import('rxjs').Observable<DocumentOperationEvent> {
+  ): import('rxjs').Observable<SourceOperationEvent> {
     const path =
       operationId === null
-        ? `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/document-operation/events`
-        : `/projects/${encodeURIComponent(projectId)}/document-operations/${encodeURIComponent(operationId)}/events`;
-    return this.sse.streamJson<DocumentOperationEvent>(
+        ? `/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/source-operation/events`
+        : `/projects/${encodeURIComponent(projectId)}/source-operations/${encodeURIComponent(operationId)}/events`;
+    return this.sse.streamJson<SourceOperationEvent>(
       path,
-      'document-operation',
-      { isTerminal: isDocumentOperationEventTerminal },
+      'source-operation',
+      { isTerminal: isSourceOperationEventTerminal },
     );
   }
 
-  private applyDocumentOperationEvent(
+  private applySourceOperationEvent(
     projectId: string,
-    documentId: string,
-    event: DocumentOperationEvent,
+    sourceId: string,
+    event: SourceOperationEvent,
   ): void {
-    if (!this.isCurrentProjectDocument(projectId, documentId)) return;
-    this.documentStreamOperationId = event.operation.id;
-    const document = event.document;
-    if (document === null) return;
-    this.library.upsertDocument(document);
-    this.setActiveDocument(document);
-    this.updateUploadDocumentSnapshot(document);
-    this.refreshDocumentChunksFromEvent(projectId, document.id);
+    if (!this.isCurrentProjectSource(projectId, sourceId)) return;
+    this.sourceStreamOperationId = event.operation.id;
+    const source = event.source;
+    if (source === null) return;
+    this.library.upsertSource(source);
+    this.setActiveSource(source);
+    this.updateUploadSourceSnapshot(source);
+    this.refreshSourceChunksFromEvent(projectId, source.id);
   }
 
-  private resetDocumentStreamError(): void {
+  private resetSourceStreamError(): void {
     this.streamError.set(null);
   }
 
-  private stopDocumentStream(): void {
-    this.documentStreamSubscription?.unsubscribe();
-    this.documentStreamSubscription = null;
-    this.cancelDocumentChunksRefresh();
-    this.documentStreamKey = null;
-    this.documentStreamOperationId = null;
+  private stopSourceStream(): void {
+    this.sourceStreamSubscription?.unsubscribe();
+    this.sourceStreamSubscription = null;
+    this.cancelSourceChunksRefresh();
+    this.sourceStreamKey = null;
+    this.sourceStreamOperationId = null;
   }
 
-  private cancelDocumentChunksRefresh(): void {
-    this.documentChunksRequestRevision += 1;
-    this.documentChunksSubscription?.unsubscribe();
-    this.documentChunksSubscription = null;
+  private cancelSourceChunksRefresh(): void {
+    this.sourceChunksRequestRevision += 1;
+    this.sourceChunksSubscription?.unsubscribe();
+    this.sourceChunksSubscription = null;
   }
 
-  private isCurrentProjectDocument(projectId: string, documentId: string): boolean {
+  private isCurrentProjectSource(projectId: string, sourceId: string): boolean {
     return (
       this.projects.selectedProjectId() === projectId &&
-      this.activeDocumentId() === documentId
+      this.activeSourceId() === sourceId
     );
   }
 

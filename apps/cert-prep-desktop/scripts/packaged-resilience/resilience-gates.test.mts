@@ -11,7 +11,7 @@ import {
   exactOllamaTags,
   exactProviderSelection,
   exactOllamaLLMRequirement,
-  waitForExactDocumentQuestions,
+  waitForExactSourceQuestions,
 } from './resilience-runner.mts';
 
 test('remaining provider selection accepts only exact raw Ollama 4b scope', async () => {
@@ -252,14 +252,14 @@ test('isolated Ollama tags and backend health prove the missing-to-installed mod
 
 test('upload-triggered jobs drain without questions before manual questions publish', async () => {
   const projectId = 'project-1';
-  const documentId = 'document-1';
+  const sourceId = 'source-1';
   const transport = new ScriptedTransport([
-    response(`/projects/${projectId}/documents/${documentId}/question-jobs`, {
+    response(`/projects/${projectId}/sources/${sourceId}/question-jobs`, {
       items: [
         {
           id: 'auto-job-1',
           project_id: projectId,
-          document_id: documentId,
+          source_id: sourceId,
           status: 'skipped_missing_model',
         },
       ],
@@ -267,8 +267,8 @@ test('upload-triggered jobs drain without questions before manual questions publ
     response(`/projects/${projectId}/questions`, { items: [] }),
     response(`/projects/${projectId}/questions`, {
       items: [
-        question('question-1', projectId, documentId),
-        question('question-2', projectId, documentId),
+        question('question-1', projectId, sourceId),
+        question('question-2', projectId, sourceId),
       ],
     }),
   ]);
@@ -276,12 +276,12 @@ test('upload-triggered jobs drain without questions before manual questions publ
   const drained = await drainUploadTriggeredQuestionJobs(
     transport,
     projectId,
-    documentId,
+    sourceId,
     1_000,
   );
   assert.equal(drained.usableQuestionCount, 0);
   assert.equal(
-    await waitForExactDocumentQuestions(transport, projectId, documentId, 1_000),
+    await waitForExactSourceQuestions(transport, projectId, sourceId, 1_000),
     2,
   );
   transport.assertConsumed();
@@ -329,12 +329,12 @@ function jsonResponse(body: unknown): Response {
 function question(
   id: string,
   projectId: string,
-  documentId: string,
+  sourceId: string,
 ): Record<string, unknown> {
   return {
     id,
     project_id: projectId,
-    document_id: documentId,
+    source_id: sourceId,
     answer: 'answer',
   };
 }

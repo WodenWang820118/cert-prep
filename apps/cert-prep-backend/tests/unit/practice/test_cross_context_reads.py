@@ -8,7 +8,7 @@ import pytest
 
 from cert_prep_backend.authoring.domain.question import Question
 from cert_prep_backend.bootstrap.practice_reads import (
-    DocumentMembership,
+    SourceMembership,
     AuthoringPracticeQuestions,
     ProjectExistence,
 )
@@ -23,7 +23,7 @@ def _question(
     return Question(
         id=question_id,
         project_id="project",
-        document_id="document",
+        source_id="document",
         chunk_id=None,
         question="Which access model?",
         choices=("Least privilege", "Open access"),
@@ -49,11 +49,11 @@ def _question(
 class QuestionRepository:
     def __init__(self, questions: list[Question]) -> None:
         self.questions = questions
-        self.source_document_id: str | None = None
+        self.source_id: str | None = None
 
-    def for_source(self, project_id: str, *, document_id: str | None) -> list[Question]:
+    def for_source(self, project_id: str, *, source_id: str | None) -> list[Question]:
         assert project_id == "project"
-        self.source_document_id = document_id
+        self.source_id = source_id
         return self.questions
 
     def find(self, project_id: str, question_id: str) -> Question | None:
@@ -82,13 +82,13 @@ class Projects:
         )
 
 
-class Documents:
+class Sources:
     def __init__(self, found: bool) -> None:
         self.found = found
         self.calls: list[tuple[str, str]] = []
 
-    def document(self, project_id: str, document_id: str) -> object:
-        self.calls.append((project_id, document_id))
+    def source(self, project_id: str, source_id: str) -> object:
+        self.calls.append((project_id, source_id))
         if not self.found:
             raise NotFoundError("Document not found.")
         return object()
@@ -99,13 +99,13 @@ def test_project_existence_uses_the_study_project() -> None:
     assert ProjectExistence(Projects("project")).exists("other") is False
 
 
-def test_document_membership_requires_the_source_document() -> None:
-    missing = Documents(found=False)
+def test_source_membership_requires_the_source() -> None:
+    missing = Sources(found=False)
     with pytest.raises(NotFoundError, match="^Document not found.$"):
-        DocumentMembership(missing).require("project", "document")
+        SourceMembership(missing).require("project", "document")
     assert missing.calls == [("project", "document")]
 
-    DocumentMembership(Documents(found=True)).require("project", "document")
+    SourceMembership(Sources(found=True)).require("project", "document")
 
 
 def test_questions_are_read_as_practice_questions_without_reordering() -> None:
@@ -113,9 +113,9 @@ def test_questions_are_read_as_practice_questions_without_reordering() -> None:
     repository = QuestionRepository([first, second])
     questions = AuthoringPracticeQuestions(repository)
 
-    source_questions = questions.for_source("project", document_id="document")
+    source_questions = questions.for_source("project", source_id="document")
     assert [authored_question.id for authored_question in source_questions] == ["second", "first"]
-    assert repository.source_document_id == "document"
+    assert repository.source_id == "document"
     assert questions.current("project", "missing") is None
     assert questions.current_many("project", ["missing", "first"])[0].id == "first"
 
@@ -129,7 +129,7 @@ def test_a_question_standing_in_for_a_snapshot_preserves_evidence() -> None:
         rationale=None,
         citation_page=1,
         source_excerpt=None,
-        document_id="document",
+        source_id="document",
         answer_key_source="source",
     )
 
@@ -140,7 +140,7 @@ def test_a_question_standing_in_for_a_snapshot_preserves_evidence() -> None:
 
     assert shown.answer_key_source == "source"
     assert current is not None
-    assert current.as_question().document_id == "document"
+    assert current.as_question().source_id == "document"
 
 
 def test_a_non_text_answer_key_source_is_left_out() -> None:

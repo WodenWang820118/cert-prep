@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TypeAlias
 
-from cert_prep_backend.source_library.domain.document import DocumentChunk
+from cert_prep_backend.source_library.domain import source
 from cert_prep_backend.source_library.domain.exam_content import (
     ContentProfileValue,
     QuestionItemKind,
@@ -44,7 +44,7 @@ class SourceChunk:
     line_end: int | None = None
     line_count: int = 0
     content_profile: ContentProfileValue = "unknown"
-    document_id: str | None = None
+    source_id: str | None = None
 
     def excerpt_or_text_prefix(self, max_chars: int = 500) -> str:
         return self.source_excerpt or self.text[:max_chars]
@@ -53,7 +53,7 @@ class SourceChunk:
         return self.raw_text or self.text
 
 
-def source_chunk_from_document_chunk(chunk: DocumentChunk) -> SourceChunk:
+def to_source_chunk(chunk: source.SourceChunk) -> SourceChunk:
     """The Source Library chunk as a question source, keeping edited audio text canonical."""
 
     return SourceChunk(
@@ -67,7 +67,7 @@ def source_chunk_from_document_chunk(chunk: DocumentChunk) -> SourceChunk:
         line_end=chunk.line_end,
         line_count=chunk.line_count,
         content_profile=chunk.content_profile,
-        document_id=chunk.document_id,
+        source_id=chunk.source_id,
     )
 
 

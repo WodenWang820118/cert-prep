@@ -9,14 +9,14 @@ from cert_prep_backend.authoring.domain.deterministic_parser import (
 )
 from cert_prep_backend.authoring.domain.models import (
     SourceChunk,
-    source_chunk_from_document_chunk,
+    to_source_chunk,
 )
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.database import Database
-from cert_prep_backend.source_library.domain.document import DocumentChunk, ExtractedPage
+from cert_prep_backend.source_library.domain.source import SourceChunk as StoredSourceChunk, ExtractedPage
 from cert_prep_backend.source_library.infrastructure.chunks import (
     get_source_chunks,
-    sync_document_chunks,
+    sync_source_chunks,
 )
 
 
@@ -50,10 +50,10 @@ def test_formal_extractor_keeps_notice_rejection_even_with_question_like_text() 
 
 
 def _stored_chunk(chunk_id: str, page: int, text: str) -> SourceChunk:
-    return source_chunk_from_document_chunk(
-        DocumentChunk(
+    return to_source_chunk(
+        StoredSourceChunk(
             id=chunk_id,
-            document_id="document",
+            source_id="document",
             page_number=page,
             chunk_index=page - 1,
             text=text,
@@ -70,7 +70,7 @@ def _stored_chunk(chunk_id: str, page: int, text: str) -> SourceChunk:
 
 
 @pytest.mark.parametrize("delimiter", [" ", "、"])
-def test_formal_extractor_completes_visible_options_across_same_document_pages(
+def test_formal_extractor_completes_visible_options_across_same_source_pages(
     delimiter: str,
 ) -> None:
     first = _stored_chunk(
@@ -117,11 +117,11 @@ def test_formal_extractor_rejects_unproven_cross_page_continuations(case: str) -
     left = _stored_chunk("left", 20, "56.問い。\n1 甲\n2 乙\n3 丙")
     right = _stored_chunk("right", 21, "4 丁")
     if case == "other-document":
-        right = replace(right, document_id="other")
+        right = replace(right, source_id="other")
     elif case == "unknown-left":
-        left = replace(left, document_id=None)
+        left = replace(left, source_id=None)
     elif case == "unknown-right":
-        right = replace(right, document_id=None)
+        right = replace(right, source_id=None)
     elif case == "page-gap":
         right = replace(right, page_number=22)
     elif case == "reversed-pages":
@@ -143,7 +143,7 @@ def test_formal_extractor_keeps_wrapped_option_text_that_mentions_questions() ->
     suggestions = extract_jlpt_question_blocks([left, right], limit=10)
     assert len(suggestions) == 1
     assert suggestions[0].choices[-1] == "4 自ら 問題を考える人"
-    assert left.document_id == right.document_id == "document"
+    assert left.source_id == right.source_id == "document"
 
 
 def test_formal_extractor_honors_limit_without_duplicate_completed_questions() -> None:
@@ -186,20 +186,20 @@ def test_formal_extractor_reads_actual_persisted_page_indices(tmp_path: Path) ->
             "VALUES ('project', 'Project', '', '2026-01-01', '2026-01-01')"
         )
         connection.execute(
-            "INSERT INTO documents(id, project_id, filename, sha256, storage_path, "
+            "INSERT INTO sources(id, project_id, filename, sha256, storage_path, "
             "page_count, has_text, status, created_at, updated_at, source_kind) "
             "VALUES ('document', 'project', 'test.pdf', 'hash', 'test.pdf', "
             "16, 1, 'ready', '2026-01-01', '2026-01-01', 'pdf')"
         )
-        sync_document_chunks(
+        sync_source_chunks(
             connection,
             project_id="project",
-            document_id="document",
+            source_id="document",
             pages=pages,
             now="2026-01-01",
         )
     chunks = [
-        source_chunk_from_document_chunk(chunk)
+        to_source_chunk(chunk)
         for chunk in get_source_chunks(db, "project", "document")
     ]
 

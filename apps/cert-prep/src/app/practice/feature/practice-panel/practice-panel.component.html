@@ -69,19 +69,19 @@
     <div class="practice-setup-main">
       <div>
         <h3 class="practice-section-label" id="practice-setup-title">
-          {{ sessionMode() === 'full_document' ? 'Source document' : 'Random draw' }}
+          {{ sessionMode() === 'full_source' ? 'Source' : 'Random draw' }}
         </h3>
-        @if (sessionMode() === 'full_document') {
+        @if (sessionMode() === 'full_source') {
           <label class="practice-select-field">
             <app-icon name="lucideFile" />
             <select
-              [ngModel]="practice.wholeSourceDocumentSelectValue()"
-              (ngModelChange)="practice.setSelectedDocumentId($event)"
+              [ngModel]="practice.wholeSourceSelectValue()"
+              (ngModelChange)="practice.setSelectedSourceId($event)"
             >
-              @for (document of practice.wholeSourceDocuments(); track document.id) {
-                <option [value]="document.id">
-                  {{ document.filename }} -
-                  {{ practice.questionCountForDocument(document.id) }} questions
+              @for (source of practice.wholeSources(); track source.id) {
+                <option [value]="source.id">
+                  {{ source.filename }} -
+                  {{ practice.questionCountForSource(source.id) }} questions
                 </option>
               }
             </select>
@@ -114,21 +114,21 @@
 
     <dl class="practice-metrics">
       <div>
-        <dt>{{ sessionMode() === 'full_document' ? 'Documents' : 'Available' }}</dt>
+        <dt>{{ sessionMode() === 'full_source' ? 'Sources' : 'Available' }}</dt>
         <dd>
           {{
-            sessionMode() === 'full_document'
-              ? practice.wholeSourceDocuments().length
+            sessionMode() === 'full_source'
+              ? practice.wholeSources().length
               : practice.questionCount()
           }}
         </dd>
       </div>
       <div>
-        <dt>{{ sessionMode() === 'full_document' ? 'Questions' : 'Draw size' }}</dt>
+        <dt>{{ sessionMode() === 'full_source' ? 'Questions' : 'Draw size' }}</dt>
         <dd>
           {{
-            sessionMode() === 'full_document'
-              ? practice.selectedDocumentQuestionCount()
+            sessionMode() === 'full_source'
+              ? practice.selectedSourceQuestionCount()
               : practice.effectiveRandomQuestionCount()
           }}
         </dd>

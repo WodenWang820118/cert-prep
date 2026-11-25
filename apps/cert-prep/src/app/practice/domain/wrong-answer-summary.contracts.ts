@@ -12,7 +12,7 @@ export interface WrongAnswerSummaryMetric {
 
 export interface WeakAreaView {
   readonly key: string;
-  readonly documentLabel: string;
+  readonly sourceLabel: string;
   readonly pageLabel: string;
   readonly currentWrongCount: number;
   readonly clearedCount: number;
@@ -23,7 +23,7 @@ export interface WeakAreaView {
 export interface RepeatedMissView {
   readonly questionId: string;
   readonly question: string;
-  readonly documentLabel: string;
+  readonly sourceLabel: string;
   readonly pageLabel: string;
   readonly sourceExcerpt: string | null;
   readonly missCount: number;

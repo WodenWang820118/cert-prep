@@ -12,7 +12,7 @@ from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.source_library.infrastructure import chunks as chunk_repository
 from cert_prep_backend.platform import database as database_module
 from cert_prep_backend.platform.database import MIGRATIONS, Database
-from cert_prep_backend.source_library.infrastructure.documents import insert_processing_document
+from cert_prep_backend.source_library.infrastructure.sources import insert_processing_source
 
 
 # Text only Capture Runtime could have written; migration 30 must not keep it.
@@ -44,24 +44,24 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
     db.migrate()
 
     with db.connect() as connection:
-        document_columns = _columns(connection, "documents")
-        chunk_columns = _columns(connection, "document_chunks")
+        source_columns = _columns(connection, "sources")
+        chunk_columns = _columns(connection, "source_chunks")
         question_columns = _columns(connection, "questions")
         question_job_columns = _columns(connection, "question_generation_jobs")
         manual_generation_columns = _columns(connection, "manual_question_generations")
         session_columns = _columns(connection, "practice_sessions")
         session_question_columns = _columns(connection, "practice_session_questions")
-        document_operation_columns = _columns(connection, "document_operations")
+        source_operation_columns = _columns(connection, "source_operations")
         llm_installation_columns = _columns(connection, "llm_installation_jobs")
         capture_review_columns = _columns(connection, "capture_review_sessions")
 
-    assert document_columns["extraction_provenance"] is None
+    assert source_columns["extraction_provenance"] is None
     assert capture_review_columns["runtime_ingestion_id"] is None
-    assert document_columns["content_profile"] == "'unknown'"
-    assert "classification_detail" in document_columns
-    assert {"extraction_warnings", "failure_message"} <= set(document_columns)
-    assert RETIRED_DOCUMENT_COLUMNS.isdisjoint(document_columns)
-    assert document_columns["extraction_method"] == "'none'"
+    assert source_columns["content_profile"] == "'unknown'"
+    assert "classification_detail" in source_columns
+    assert {"extraction_warnings", "failure_message"} <= set(source_columns)
+    assert RETIRED_DOCUMENT_COLUMNS.isdisjoint(source_columns)
+    assert source_columns["extraction_method"] == "'none'"
     assert chunk_columns["extraction_method"] == "'none'"
     assert {"raw_text", "line_start", "line_end", "line_count", "content_profile"} <= set(
         chunk_columns
@@ -76,14 +76,14 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
     } <= set(question_columns)
     assert session_columns["mode"] == "'random_draw'"
     assert {
-        "source_document_id",
+        "source_id",
         "requested_question_count",
         "random_seed",
         "abandoned_at",
     } <= set(session_columns)
     assert {
         "project_id",
-        "document_id",
+        "source_id",
         "chunk_id",
         "page_number",
         "strategy",
@@ -101,7 +101,7 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
     } <= set(question_job_columns)
     assert {
         "project_id",
-        "document_id",
+        "source_id",
         "limit_count",
         "strategy",
         "status",
@@ -129,19 +129,19 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
         "citation_page",
         "source_excerpt",
         "created_at",
-        "document_id",
+        "source_id",
     } <= set(session_question_columns)
     assert {
         "id",
         "project_id",
-        "document_id",
+        "source_id",
         "status",
         "phase",
         "cancellable",
         "error",
         "created_at",
         "updated_at",
-    } <= set(document_operation_columns)
+    } <= set(source_operation_columns)
     assert {
         "id",
         "kind",
@@ -286,13 +286,13 @@ def test_migration_20_repairs_populated_v19_duplicate_active_operations(
         operations = {
             row["id"]: row
             for row in connection.execute(
-                "SELECT * FROM document_operations ORDER BY id"
+                "SELECT * FROM source_operations ORDER BY id"
             ).fetchall()
         }
         indexes = {
             row["name"]: row
             for row in connection.execute(
-                "PRAGMA index_list(document_operations)"
+                "PRAGMA index_list(source_operations)"
             ).fetchall()
         }
         applied = connection.execute(
@@ -301,8 +301,8 @@ def test_migration_20_repairs_populated_v19_duplicate_active_operations(
         with pytest.raises(sqlite3.IntegrityError):
             connection.execute(
                 """
-                INSERT INTO document_operations(
-                    id, project_id, document_id, status, phase, cancellable,
+                INSERT INTO source_operations(
+                    id, project_id, source_id, status, phase, cancellable,
                     created_at, updated_at
                 )
                 VALUES (
@@ -313,7 +313,7 @@ def test_migration_20_repairs_populated_v19_duplicate_active_operations(
             )
 
     assert applied == 1
-    active_index = indexes["idx_document_operations_one_active_document"]
+    active_index = indexes["idx_source_operations_one_active_source"]
     assert active_index["unique"] == 1
     assert active_index["partial"] == 1
     assert operations["cancel-requested"]["status"] == "cancel_requested"
@@ -393,16 +393,16 @@ def test_audio_migrations_preserve_pdf_defaults_and_install_time_citation_trigge
 
     with db.connect() as connection:
         pdf_document = connection.execute(
-            "SELECT * FROM documents WHERE id = 'pdf-document'"
+            "SELECT * FROM sources WHERE id = 'pdf-document'"
         ).fetchone()
         pdf_chunk = connection.execute(
-            "SELECT * FROM document_chunks WHERE id = 'pdf-chunk'"
+            "SELECT * FROM source_chunks WHERE id = 'pdf-chunk'"
         ).fetchone()
         assert pdf_document is not None
         assert pdf_chunk is not None
         connection.execute(
             """
-            INSERT INTO documents(
+            INSERT INTO sources(
                 id, project_id, filename, sha256, storage_path, page_count,
                 has_text, status, created_at, updated_at, source_kind,
                 duration_ms, transcription_status, translation_status
@@ -416,8 +416,8 @@ def test_audio_migrations_preserve_pdf_defaults_and_install_time_citation_trigge
         )
         connection.execute(
             """
-            INSERT INTO document_chunks(
-                id, project_id, document_id, page_number, chunk_index,
+            INSERT INTO source_chunks(
+                id, project_id, source_id, page_number, chunk_index,
                 text, raw_text, source_excerpt, extraction_method,
                 content_profile, created_at, locator_kind, start_ms, end_ms,
                 source_revision, translated_text, translation_source_revision
@@ -433,7 +433,7 @@ def test_audio_migrations_preserve_pdf_defaults_and_install_time_citation_trigge
         connection.execute(
             """
             INSERT INTO questions(
-                id, project_id, document_id, chunk_id, question,
+                id, project_id, source_id, chunk_id, question,
                 choices_json, citation_page, created_at, updated_at
             )
             VALUES (
@@ -920,6 +920,17 @@ def _create_v19_duplicate_operation_fixture(database_path: Path) -> None:
 def _columns(connection, table_name: str) -> dict[str, str | None]:
     rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
     return {row["name"]: row["dflt_value"] for row in rows}
+
+
+def _stop_at(monkeypatch: pytest.MonkeyPatch, version: int) -> None:
+    """Later opens in this test apply the migrations up to `version` only, so a test of one
+    migration reads the schema that migration leaves, not the names later ones give it."""
+
+    monkeypatch.setattr(
+        database_module,
+        "MIGRATIONS",
+        tuple(migration for migration in MIGRATIONS if migration[0] <= version),
+    )
 
 
 def test_migration_29_stores_one_device_preference_row(tmp_path: Path) -> None:
@@ -1477,6 +1488,7 @@ def test_migration_31_preserves_existing_source_without_provenance(
                    )"""
             )
 
+    _stop_at(monkeypatch, 31)
     with Database(settings).connect() as connection:
         row = connection.execute(
             "SELECT filename, extraction_provenance FROM documents WHERE id = 'd'"
@@ -1580,6 +1592,8 @@ def test_migration_32_classifies_sources_and_preserves_references(
                 [(str(index), str(index)) for index in range(len(cases))],
             )
 
+    _stop_at(monkeypatch, 32)
+
     def snapshot() -> tuple[dict[str, str], tuple[str, ...], str]:
         with Database(settings).connect() as connection:
             assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
@@ -1609,9 +1623,9 @@ def test_fresh_database_persists_new_source_kinds(tmp_path: Path) -> None:
                VALUES ('p', 'Project', '2026-01-01', '2026-01-01')"""
         )
         for kind in ("pdf", "image", "recording"):
-            document = insert_processing_document(
+            source = insert_processing_source(
                 connection,
-                document_id=kind,
+                source_id=kind,
                 project_id="p",
                 filename="upload",
                 sha256="digest",
@@ -1621,9 +1635,9 @@ def test_fresh_database_persists_new_source_kinds(tmp_path: Path) -> None:
                 now="2026-01-01",
                 source_kind=kind,
             )
-            assert document.source_kind == kind
+            assert source.source_kind == kind
 
-        assert {row[0] for row in connection.execute("SELECT source_kind FROM documents")} == {
+        assert {row[0] for row in connection.execute("SELECT source_kind FROM sources")} == {
             "pdf", "image", "recording",
         }
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
@@ -1793,6 +1807,7 @@ def test_migration_33_renames_questions_and_generation_tables_and_keeps_every_ro
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     settings = _version_32_settings(tmp_path, monkeypatch, _populate_version_32_questions)
+    _stop_at(monkeypatch, 33)
     with closing(sqlite3.connect(settings.database_path)) as connection:
         before_counts = _row_counts(connection)
         before = {table: _rows(connection, table) for table in MIGRATION_33_TABLES}
@@ -1889,6 +1904,7 @@ def test_migration_33_triggers_and_keys_still_hold_on_the_renamed_tables(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     settings = _version_32_settings(tmp_path, monkeypatch, _populate_version_32_questions)
+    _stop_at(monkeypatch, 33)
     with Database(settings).connect() as connection:
         # A question written from a recording's chunk cites the chunk's time span.
         connection.execute(
@@ -1967,6 +1983,7 @@ def test_migration_33_runs_once_and_a_fresh_database_has_the_same_schema(
     settings = _version_32_settings(
         tmp_path / "upgraded", monkeypatch, _populate_version_32_questions
     )
+    _stop_at(monkeypatch, 33)
     with Database(settings).connect() as connection:
         schema = _normalised_schema(connection)
         rows = {table: _rows(connection, table) for table in MIGRATION_33_TABLES.values()}
@@ -2103,6 +2120,7 @@ def test_migration_33_keeps_every_constraint_index_and_trigger_of_the_tables_it_
     # and so cannot see a constraint it drops: the schema before migration 33, renamed and
     # without the two dropped columns, must be what the schema after it enforces.
     settings = _version_32_settings(tmp_path, monkeypatch, _populate_version_32_questions)
+    _stop_at(monkeypatch, 33)
     with closing(sqlite3.connect(settings.database_path)) as connection:
         before = _schema_meaning(connection, _MIGRATION_33_NAMES, _MIGRATION_33_DROPPED)
     with Database(settings).connect() as connection:
@@ -2150,6 +2168,8 @@ def test_migration_33_keeps_the_queue_and_one_active_rules_working(
         enqueue_chunk_job,
     )
 
+    # Live code writes the jobs, so the database is migrated to the end: the rules
+    # migration 33 created must hold under the names the later migrations give them.
     settings = _version_32_settings(tmp_path, monkeypatch, _populate_version_32_questions)
     database = Database(settings)
 
@@ -2158,12 +2178,12 @@ def test_migration_33_keeps_the_queue_and_one_active_rules_working(
             return project_id == "p"
 
     class Sources:
-        def chunk(self, project_id: str, document_id: str, chunk_id: str) -> None:
+        def chunk(self, project_id: str, source_id: str, chunk_id: str) -> None:
             return None
 
     # Enqueueing a chunk that already has a job of that strategy returns that job.
     job = enqueue_chunk_job(
-        database, project_id="p", document_id="pages", chunk_id="page-1", page_number=1,
+        database, project_id="p", source_id="pages", chunk_id="page-1", page_number=1,
         strategy="deterministic_only", provider="ollama", model="model",
         projects=Projects(), sources=Sources(),
     )
@@ -2176,7 +2196,7 @@ def test_migration_33_keeps_the_queue_and_one_active_rules_working(
     def manual(connection: sqlite3.Connection, operation_id: str, status: str) -> None:
         connection.execute(
             """INSERT INTO manual_question_generations(
-                   id, project_id, document_id, limit_count, strategy, status, phase,
+                   id, project_id, source_id, limit_count, strategy, status, phase,
                    cancellable, provider, model, created_at, updated_at
                ) VALUES (?, 'p', 'pages', 5, 'hybrid_reasoning', ?, 'completed', 0,
                          'ollama', 'model', '2026-02-01', '2026-02-01')""",
@@ -2206,7 +2226,7 @@ def test_migration_33_keeps_the_queue_and_one_active_rules_working(
         with pytest.raises(sqlite3.IntegrityError, match="UNIQUE"):
             installation(connection, "second-active", "queued")
         assert connection.execute(
-            "SELECT COUNT(*) FROM manual_question_generations WHERE document_id = 'pages'"
+            "SELECT COUNT(*) FROM manual_question_generations WHERE source_id = 'pages'"
         ).fetchone()[0] == 5
         assert connection.execute(
             "SELECT COUNT(*) FROM llm_installation_jobs WHERE kind = 'model'"
@@ -2241,6 +2261,7 @@ def test_migration_33_deletes_rejected_questions_and_keeps_every_other_status(
         )
 
     settings = _version_32_settings(tmp_path, monkeypatch, populate)
+    _stop_at(monkeypatch, 33)
     with closing(sqlite3.connect(settings.database_path)) as connection:
         before = _rows(connection, "question_drafts")
         before_attempts = _rows(connection, "practice_attempts")
@@ -2288,3 +2309,478 @@ def test_migration_33_deletes_rejected_questions_and_keeps_every_other_status(
         ).fetchone()[0] == "kept"
         assert _rows(connection, "questions") == questions
         assert _rows(connection, "practice_attempts") == attempts
+
+
+# Migration 34 renames these tables; the values are their names afterwards.
+MIGRATION_34_TABLES = {
+    "documents": "sources",
+    "document_chunks": "source_chunks",
+    "document_operations": "source_operations",
+}
+# Every name migration 34 changes, old to new: tables, the columns that referred to a
+# document, and the indexes that said document. Triggers keep their names.
+_MIGRATION_34_NAMES = {
+    **MIGRATION_34_TABLES,
+    "document_id": "source_id",
+    "source_document_id": "source_id",
+    "idx_documents_project": "idx_sources_project",
+    "idx_chunks_document": "idx_chunks_source",
+    "idx_document_operations_project": "idx_source_operations_project",
+    "idx_document_operations_document": "idx_source_operations_source",
+    "idx_document_operations_one_active_document": "idx_source_operations_one_active_source",
+    "idx_question_generation_jobs_document": "idx_question_generation_jobs_source",
+    "idx_manual_question_generations_document": "idx_manual_question_generations_source",
+}
+# The tables whose rows migration 34 copies into a rebuilt table, under their old names.
+_MIGRATION_34_COPIED = (
+    "documents", "document_chunks", "document_operations", "capture_review_sessions",
+    "questions", "question_generation_jobs", "manual_question_generations",
+    "practice_sessions", "practice_session_questions", "practice_attempts",
+)
+
+
+def _version_33_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, populate: Any
+) -> Settings:
+    """A database migrated to version 33 by the real migrations, then filled by `populate`."""
+
+    settings = Settings(data_dir=tmp_path, api_token="test-token")
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            database_module,
+            "MIGRATIONS",
+            tuple(migration for migration in MIGRATIONS if migration[0] <= 33),
+        )
+        with Database(settings).connect() as connection:
+            assert "documents" in _row_counts(connection)
+            populate(connection)
+    return settings
+
+
+def _populate_version_33_sources(connection: sqlite3.Connection) -> None:
+    """Rows in every table migration 34 rebuilds: a PDF, an image and a recording with their
+    chunks, operations ended and active, questions, jobs, generations, a capture review, and
+    practice sessions of each mode with their questions and attempts."""
+
+    connection.execute(
+        """INSERT INTO projects(id, name, description, created_at, updated_at)
+           VALUES ('p', 'Project', '', '2026-01-01', '2026-01-01')"""
+    )
+    for document_id, kind, pages, processed, duration in (
+        ("pages", "pdf", 2, 2, None),
+        ("photo", "image", 1, 1, None),
+        ("talk", "recording", 0, 2, 6000),
+    ):
+        connection.execute(
+            """INSERT INTO documents(
+                   id, project_id, filename, sha256, storage_path, page_count, has_text,
+                   status, created_at, extraction_method, question_count, ocr_device,
+                   processed_page_count, language_hint, updated_at, content_profile,
+                   classification_detail, source_kind, duration_ms, transcription_status,
+                   translation_status, extraction_provenance
+               ) VALUES (?, 'p', ?, 'digest', ?, ?, 1, 'ready', '2026-01-01', 'text_layer', 2,
+                         'cpu', ?, 'ja', '2026-01-02', 'study_material', 'detail', ?, ?,
+                         'not_applicable', 'not_applicable', '{"status": "recorded"}')""",
+            (document_id, f"{document_id}.src", f"{document_id}.src", pages, processed, kind,
+             duration),
+        )
+    for chunk_id, document_id, page, locator, start_ms, end_ms in (
+        ("page-1", "pages", 1, "page", None, None),
+        ("page-2", "pages", 2, "page", None, None),
+        ("photo-1", "photo", 1, "page", None, None),
+        ("talk-1", "talk", 0, "time", 0, 3000),
+        ("talk-2", "talk", 0, "time", 3000, 6000),
+    ):
+        connection.execute(
+            """INSERT INTO document_chunks(
+                   id, project_id, document_id, page_number, chunk_index, text, raw_text,
+                   source_excerpt, created_at, locator_kind, start_ms, end_ms,
+                   translated_text, translation_source_revision
+               ) VALUES (?, 'p', ?, ?, 0, 'text', 'raw', 'excerpt', '2026-01-01', ?, ?, ?,
+                         'translated', 1)""",
+            (chunk_id, document_id, page, locator, start_ms, end_ms),
+        )
+    for operation_id, document_id, status, phase, error in (
+        ("op-pages-done", "pages", "succeeded", "completed", None),
+        ("op-pages-failed", "pages", "failed", "failed", "Document processing failed."),
+        ("op-pages-active", "pages", "running", "extracting", None),
+        ("op-photo-done", "photo", "succeeded", "completed", None),
+        ("op-talk-canceled", "talk", "canceled", "canceled", None),
+        ("op-talk-active", "talk", "cancel_requested", "canceling", None),
+        ("op-unattached", None, "queued", "queued", None),
+    ):
+        connection.execute(
+            """INSERT INTO document_operations(
+                   id, project_id, document_id, status, phase, cancellable, error,
+                   created_at, updated_at
+               ) VALUES (?, 'p', ?, ?, ?, 0, ?, '2026-01-02', '2026-01-03')""",
+            (operation_id, document_id, status, phase, error),
+        )
+    connection.execute(
+        """INSERT INTO capture_review_sessions(
+               id, project_id, document_id, operation_id, runtime_capture_id, status,
+               review_revision, expires_at, created_at, updated_at, confirm_request_id,
+               confirm_review_digest, last_event_sequence, runtime_ingestion_id
+           ) VALUES ('review', 'p', 'photo', 'op-photo-done', 'capture', 'completed', 3,
+                     '2026-01-09', '2026-01-02', '2026-01-03', 'request', 'digest', 7,
+                     'ingestion')"""
+    )
+    for question_id, document_id, chunk_id in (
+        ("q-page", "pages", "page-1"),
+        ("q-page-2", "pages", "page-2"),
+        ("q-talk", "talk", "talk-1"),
+        ("q-typed", "pages", None),
+        ("q-loose", None, None),
+    ):
+        connection.execute(
+            """INSERT INTO questions(
+                   id, project_id, document_id, chunk_id, question, choices_json, answer,
+                   answer_key_source, rationale, citation_page, source_excerpt, confidence,
+                   source_order, source_question_number, item_kind, group_key, group_prompt,
+                   created_at, updated_at
+               ) VALUES (?, 'p', ?, ?, ?, '["A", "B"]', 'A', 'source', 'Because A.', 1,
+                         'excerpt', 0.5, 1, '1', 'single_choice', 'group', 'Read.',
+                         '2026-01-02', '2026-01-03')""",
+            (question_id, document_id, chunk_id, f"Question {question_id}?"),
+        )
+    for job_id, document_id, chunk_id, page, status in (
+        ("job-page", "pages", "page-1", 1, "succeeded"),
+        ("job-page-running", "pages", "page-2", 2, "running"),
+        ("job-talk", "talk", "talk-1", 0, "pending"),
+    ):
+        connection.execute(
+            """INSERT INTO question_generation_jobs(
+                   id, project_id, document_id, chunk_id, source_chunk_id, page_number,
+                   strategy, status, phase, cancellable, provider, model, generated_count,
+                   retry_count, last_error, created_at, updated_at
+               ) VALUES (?, 'p', ?, ?, ?, ?, 'deterministic_only', ?, 'queued', 1, 'ollama',
+                         'model', 1, 0, NULL, '2026-01-02', '2026-01-03')""",
+            (job_id, document_id, chunk_id, chunk_id, page, status),
+        )
+    for generation_id, document_id, status in (
+        ("manual-done", "pages", "succeeded"),
+        ("manual-active", "pages", "running"),
+        ("manual-talk", "talk", "canceled"),
+    ):
+        connection.execute(
+            """INSERT INTO manual_question_generations(
+                   id, project_id, document_id, limit_count, strategy, status, phase,
+                   cancellable, provider, model, generated_count, unavailable_blocks_json,
+                   created_at, updated_at
+               ) VALUES (?, 'p', ?, 5, 'hybrid_reasoning', ?, 'writing', 1, 'ollama',
+                         'model', 2, '[{"page_number": 2, "reason": "unreadable"}]',
+                         '2026-01-02', '2026-01-03')""",
+            (generation_id, document_id, status),
+        )
+    for session_id, status, mode, document_id in (
+        ("drawn", "completed", "random_draw", None),
+        ("whole", "abandoned", "full_document", "pages"),
+        ("whole-talk", "active", "full_document", "talk"),
+        ("retry", "completed", "review_retry", None),
+    ):
+        connection.execute(
+            """INSERT INTO practice_sessions(
+                   id, project_id, question_ids_json, status, created_at, completed_at, mode,
+                   source_document_id, requested_question_count, random_seed, abandoned_at
+               ) VALUES (?, 'p', '["q-page", "q-talk"]', ?, '2026-01-04', NULL, ?, ?, 2, 7,
+                         NULL)""",
+            (session_id, status, mode, document_id),
+        )
+        for order, question_id, question_document in (
+            (0, "q-page", "pages"),
+            (1, "q-talk", "talk"),
+        ):
+            connection.execute(
+                """INSERT INTO practice_session_questions(
+                       session_id, project_id, question_id, question_order, question,
+                       choices_json, correct_answer, rationale, citation_page, source_excerpt,
+                       created_at, document_id
+                   ) VALUES (?, 'p', ?, ?, 'Question?', '["A", "B"]', 'A', 'Because A.', 1,
+                             'excerpt', '2026-01-04', ?)""",
+                (session_id, question_id, order, question_document),
+            )
+        connection.execute(
+            """INSERT INTO practice_attempts(
+                   id, session_id, project_id, question_id, selected_answer, is_correct,
+                   created_at
+               ) VALUES (?, ?, 'p', 'q-page', 'B', 0, '2026-01-05')""",
+            (f"attempt-{session_id}", session_id),
+        )
+
+
+def _keyed_rows(
+    connection: sqlite3.Connection, table: str, names: dict[str, str]
+) -> dict[str, dict[str, Any]]:
+    """A table's rows by primary key, with each column name mapped through `names`."""
+
+    cursor = connection.execute(f"SELECT * FROM {table}")
+    columns = [names.get(column[0], column[0]) for column in cursor.description]
+    rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    if "question_order" in columns:
+        # practice_session_questions: the session and the question.
+        return {f"{row['session_id']}/{row['question_id']}": row for row in rows}
+    return {str(row["id"]): row for row in rows}
+
+
+def _source_rows(connection: sqlite3.Connection, migrated: bool) -> dict[str, Any]:
+    """Every row migration 34 copies, under the names it has after migration 34."""
+
+    return {
+        MIGRATION_34_TABLES.get(table, table): _keyed_rows(
+            connection,
+            MIGRATION_34_TABLES.get(table, table) if migrated else table,
+            {} if migrated else _MIGRATION_34_NAMES,
+        )
+        for table in _MIGRATION_34_COPIED
+    }
+
+
+def test_migration_34_renames_the_source_tables_and_keeps_every_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _version_33_settings(tmp_path, monkeypatch, _populate_version_33_sources)
+    with closing(sqlite3.connect(settings.database_path)) as connection:
+        before_counts = _row_counts(connection)
+        before = _source_rows(connection, migrated=False)
+
+    with Database(settings).connect() as connection:
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        after_counts = _row_counts(connection)
+        after = _source_rows(connection, migrated=True)
+        schema_sql = " ".join(
+            str(row[0])
+            for row in connection.execute("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL")
+        )
+        objects = {str(row[0]) for row in connection.execute("SELECT name FROM sqlite_master")}
+
+    # Every row is kept under the new table names; nothing else is added or lost.
+    renamed_counts = {
+        MIGRATION_34_TABLES.get(table, table): count for table, count in before_counts.items()
+    }
+    renamed_counts["schema_migrations"] += 1
+    assert after_counts == renamed_counts
+    assert set(MIGRATION_34_TABLES).isdisjoint(after_counts)
+    assert after_counts["source_operations"] == 7
+    assert after_counts["practice_session_questions"] == 8
+
+    # Each value is kept; the only rewritten value is the whole-source practice mode.
+    expected = {table: {key: dict(row) for key, row in rows.items()} for table, rows in before.items()}
+    for row in expected["practice_sessions"].values():
+        if row["mode"] == "full_document":
+            row["mode"] = "full_source"
+    assert after == expected
+    assert {row["mode"] for row in after["practice_sessions"].values()} == {
+        "random_draw", "full_source", "review_retry",
+    }
+    assert after["practice_sessions"]["whole-talk"]["source_id"] == "talk"
+    assert after["practice_session_questions"]["whole/q-talk"]["source_id"] == "talk"
+    assert after["sources"]["talk"]["source_kind"] == "recording"
+
+    # No table, column, index or trigger keeps a name of the old aggregate. The word is left
+    # only in the two chunk triggers' unchanged error text ("... belong to its document").
+    for old in ("documents", "document_chunks", "document_operations", "document_id"):
+        assert re.search(rf"\b{old}\b", schema_sql) is None, old
+    assert [name for name in objects if "document" in name] == []
+    assert schema_sql.count("document") == 2
+
+
+def test_migration_34_keeps_every_constraint_index_and_trigger_of_the_tables_it_rebuilds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Independent of the fresh-database comparison, which goes through migration 34 twice:
+    # the version-33 schema with the old names mapped to the new ones must be what the
+    # schema after migration 34 enforces, apart from the one difference allowed here.
+    settings = _version_33_settings(tmp_path, monkeypatch, _populate_version_33_sources)
+    with closing(sqlite3.connect(settings.database_path)) as connection:
+        before = _schema_meaning(connection, _MIGRATION_34_NAMES, set())
+    with Database(settings).connect() as connection:
+        after = _schema_meaning(connection, {}, set())
+
+    # The one allowed difference: source_kind loses the default 'document', which no source
+    # has had since migration 32; every writer names the kind.
+    old_kind = ("source_kind", "TEXT", 1, "'document'", 0, 0)
+    new_kind = ("source_kind", "TEXT", 1, None, 0, 0)
+    assert old_kind in before["table sources"]["columns"]
+    assert new_kind in after["table sources"]["columns"]
+    before["table sources"]["columns"] = (
+        before["table sources"]["columns"] - {old_kind}
+    ) | {new_kind}
+
+    # What the one-active rules, the cascades and the triggers depend on, spelled out.
+    operations = after["table source_operations"]
+    assert ("sources", "source_id", "id", "NO ACTION", "CASCADE", "NONE") in operations[
+        "foreign_keys"
+    ]
+    assert (
+        "idx_source_operations_one_active_source", 1, "c", 1,
+        (("project_id", 0, "BINARY", 1), ("source_id", 0, "BINARY", 1)),
+        "source_id IS NOT NULL AND status IN ('queued', 'running', 'cancel_requested')",
+    ) in operations["indexes"]
+    assert (
+        "idx_chunks_source", 0, "c", 0,
+        (("source_id", 0, "BINARY", 1), ("page_number", 0, "BINARY", 1)), None,
+    ) in after["table source_chunks"]["indexes"]
+    reviews = after["table capture_review_sessions"]
+    assert {
+        ("sources", "source_id", "id", "NO ACTION", "CASCADE", "NONE"),
+        ("source_operations", "operation_id", "id", "NO ACTION", "CASCADE", "NONE"),
+    } <= reviews["foreign_keys"]
+    assert reviews["checks"] == ["(last_event_sequence >= 0)"]
+    assert any(
+        index[2] == "u" and [column[0] for column in index[4]] == ["project_id", "source_id"]
+        for index in reviews["indexes"]
+    )
+    assert ("sources", "source_id", "id", "NO ACTION", "SET NULL", "NONE") in after[
+        "table practice_sessions"
+    ]["foreign_keys"]
+    assert {
+        ("sources", "source_id", "id", "NO ACTION", "SET NULL", "NONE"),
+        ("source_chunks", "chunk_id", "id", "NO ACTION", "SET NULL", "NONE"),
+    } <= after["table questions"]["foreign_keys"]
+    assert any(
+        index[2] == "u" and [column[0] for column in index[4]] == [
+            "source_id", "chunk_id", "strategy",
+        ]
+        for index in after["table question_generation_jobs"]["indexes"]
+    )
+    assert sorted(key for key in after if key.startswith("trigger ")) == [
+        "trigger trg_question_generation_jobs_immutable_attribution",
+        "trigger trg_question_generation_jobs_validate_chunk_insert",
+        "trigger trg_question_generation_jobs_validate_chunk_update",
+        "trigger trg_questions_audio_locator_insert",
+    ]
+    assert after == before
+
+
+def test_migration_34_keeps_the_one_active_rules_triggers_and_cascades_working(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _version_33_settings(tmp_path, monkeypatch, _populate_version_33_sources)
+
+    def operation(
+        connection: sqlite3.Connection, operation_id: str, source_id: str | None, status: str
+    ) -> None:
+        connection.execute(
+            """INSERT INTO source_operations(
+                   id, project_id, source_id, status, phase, cancellable, created_at,
+                   updated_at
+               ) VALUES (?, 'p', ?, ?, 'queued', 1, '2026-02-01', '2026-02-01')""",
+            (operation_id, source_id, status),
+        )
+
+    with Database(settings).connect() as connection:
+        # The migrated running operation is the active one of its source: a second active
+        # one is refused, ended ones are not, and neither is an active one with no source.
+        with pytest.raises(sqlite3.IntegrityError, match="UNIQUE"):
+            operation(connection, "second-active", "pages", "queued")
+        operation(connection, "second-ended", "pages", "succeeded")
+        operation(connection, "another-ended", "pages", "failed")
+        operation(connection, "photo-active", "photo", "running")
+        operation(connection, "unattached-too", None, "running")
+        # One active manual generation per source still holds.
+        with pytest.raises(sqlite3.IntegrityError, match="UNIQUE"):
+            connection.execute(
+                """INSERT INTO manual_question_generations(
+                       id, project_id, source_id, limit_count, strategy, status, phase,
+                       cancellable, provider, model, created_at, updated_at
+                   ) VALUES ('again', 'p', 'pages', 5, 'hybrid_reasoning', 'queued',
+                             'queued', 1, 'ollama', 'model', '2026-02-01', '2026-02-01')"""
+            )
+        # One capture review per source.
+        with pytest.raises(sqlite3.IntegrityError, match="UNIQUE"):
+            connection.execute(
+                """INSERT INTO capture_review_sessions(
+                       id, project_id, source_id, operation_id, status, expires_at,
+                       created_at, updated_at
+                   ) VALUES ('again', 'p', 'photo', 'photo-active', 'open', '2026-02-09',
+                             '2026-02-01', '2026-02-01')"""
+            )
+        # The triggers read the renamed chunk table and columns.
+        connection.execute(
+            """INSERT INTO questions(
+                   id, project_id, source_id, chunk_id, question, choices_json,
+                   citation_page, created_at, updated_at
+               ) VALUES ('spoken', 'p', 'talk', 'talk-2', 'Spoken?', '["A", "B"]', 3,
+                         '2026-02-01', '2026-02-01')"""
+        )
+        assert tuple(connection.execute(
+            """SELECT citation_locator_kind, citation_start_ms, citation_end_ms, citation_page
+               FROM questions WHERE id = 'spoken'"""
+        ).fetchone()) == ("time", 3000, 6000, None)
+        with pytest.raises(sqlite3.IntegrityError, match="must belong to its document"):
+            connection.execute(
+                """INSERT INTO question_generation_jobs(
+                       id, project_id, source_id, chunk_id, source_chunk_id, page_number,
+                       strategy, status, created_at, updated_at
+                   ) VALUES ('stray', 'p', 'pages', 'talk-1', 'talk-1', 1,
+                             'deterministic_only', 'pending', '2026-02-01', '2026-02-01')"""
+            )
+        with pytest.raises(sqlite3.IntegrityError, match="must belong to its document"):
+            connection.execute(
+                "UPDATE question_generation_jobs SET chunk_id = 'talk-1' WHERE id = 'job-page'"
+            )
+        with pytest.raises(sqlite3.IntegrityError, match="attribution is immutable"):
+            connection.execute(
+                "UPDATE question_generation_jobs SET source_id = 'talk' WHERE id = 'job-page'"
+            )
+
+    with Database(settings).connect() as connection:
+        # Deleting a source deletes what belongs to it and unlinks what only cites it.
+        connection.execute("DELETE FROM sources WHERE id = 'talk'")
+        for table in (
+            "source_chunks", "source_operations", "question_generation_jobs",
+            "manual_question_generations",
+        ):
+            assert connection.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE source_id = 'talk'"
+            ).fetchone()[0] == 0, table
+        assert tuple(connection.execute(
+            "SELECT source_id, chunk_id FROM questions WHERE id = 'q-talk'"
+        ).fetchone()) == (None, None)
+        assert connection.execute(
+            "SELECT source_id FROM practice_sessions WHERE id = 'whole-talk'"
+        ).fetchone()[0] is None
+        # The practice snapshot keeps the id it recorded: that column has no foreign key.
+        assert connection.execute(
+            """SELECT source_id FROM practice_session_questions
+               WHERE session_id = 'whole' AND question_id = 'q-talk'"""
+        ).fetchone()[0] == "talk"
+        # Deleting the photo's operation deletes its capture review.
+        connection.execute("DELETE FROM source_operations WHERE id = 'op-photo-done'")
+        assert connection.execute(
+            "SELECT COUNT(*) FROM capture_review_sessions"
+        ).fetchone()[0] == 0
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+        # Deleting the project deletes every row that belongs to it.
+        connection.execute("DELETE FROM projects WHERE id = 'p'")
+        for table in (
+            "sources", "source_chunks", "source_operations", "questions",
+            "question_generation_jobs", "manual_question_generations", "practice_sessions",
+            "practice_session_questions", "practice_attempts",
+        ):
+            assert connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0, table
+
+
+def test_migration_34_runs_once_and_a_fresh_database_has_the_same_schema(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _version_33_settings(
+        tmp_path / "upgraded", monkeypatch, _populate_version_33_sources
+    )
+    with Database(settings).connect() as connection:
+        schema = _normalised_schema(connection)
+        rows = _source_rows(connection, migrated=True)
+        connection.execute("UPDATE schema_migrations SET applied_at = 'kept' WHERE version = 34")
+
+    # A second open is a no-op: migration 34 does not run again and nothing changes.
+    with Database(settings).connect() as connection:
+        assert connection.execute(
+            "SELECT applied_at FROM schema_migrations WHERE version = 34"
+        ).fetchone()[0] == "kept"
+        assert _normalised_schema(connection) == schema
+        assert _source_rows(connection, migrated=True) == rows
+
+    fresh = Settings(data_dir=tmp_path / "fresh", api_token="test-token")
+    with Database(fresh).connect() as connection:
+        assert _normalised_schema(connection) == schema

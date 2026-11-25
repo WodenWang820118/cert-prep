@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     max_pdf_pages: int = 250
     max_page_text_chars: int = 20_000
     max_total_text_chars: int = 500_000
-    document_processing_parallelism: int = Field(default=2, ge=1, le=4)
+    source_processing_parallelism: int = Field(default=2, ge=1, le=4)
     write_questions_on_upload: bool = False
     write_questions_on_upload_limit: int = 50
     question_jobs_on_upload: bool = False

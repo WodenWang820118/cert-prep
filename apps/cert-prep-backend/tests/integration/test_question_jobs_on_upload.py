@@ -1,4 +1,4 @@
-"""Uploading a document queues background question jobs for its exam-like chunks."""
+"""Uploading a source queues background question jobs for its exam-like chunks."""
 
 from __future__ import annotations
 
@@ -29,21 +29,21 @@ def test_upload_queues_a_question_job_for_each_exam_chunk(tmp_path: Path) -> Non
         create_app(
             settings=settings,
             capture_runtime_client=TestCaptureRuntimeClient(),
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
             background_question_jobs=False,
         )
     ) as client:
         project_id = client.post("/projects", headers=headers, json={"name": "Exam"}).json()["id"]
-        document = client.post(
-            f"/projects/{project_id}/documents",
+        source = client.post(
+            f"/projects/{project_id}/sources",
             headers=headers,
             files={"file": ("exam.pdf", minimal_pdf(EXAM_PAGE, "Page two."), "application/pdf")},
         ).json()
         chunks = client.get(
-            f"/projects/{project_id}/documents/{document['id']}/chunks", headers=headers
+            f"/projects/{project_id}/sources/{source['id']}/chunks", headers=headers
         ).json()["items"]
         jobs = client.get(
-            f"/projects/{project_id}/documents/{document['id']}/question-jobs", headers=headers
+            f"/projects/{project_id}/sources/{source['id']}/question-jobs", headers=headers
         ).json()["items"]
 
     exam_chunk = next(chunk for chunk in chunks if chunk["page_number"] == 1)

@@ -9,10 +9,10 @@ import {
   PACKAGED_STATIC_IMAGE_SHA256,
   PACKAGED_STATIC_IMAGE_WIDTH,
   packagedStaticImage,
-  requireExpectedOcrImageDocument,
-  requireExpectedTerminalImageDocument,
-  waitForExpectedOcrImageDocument,
-  waitForExpectedTerminalImageDocument,
+  requireExpectedOcrImageSource,
+  requireExpectedTerminalImageSource,
+  waitForExpectedOcrImageSource,
+  waitForExpectedTerminalImageSource,
 } from './image-contract.mts';
 import { packagedImageFailureEvidence } from './runner.mts';
 
@@ -38,29 +38,29 @@ test('packaged image fixture is a deterministic static 256x128 PNG', () => {
 });
 
 test('terminal image evidence requires one fully processed no-text page', () => {
-  const document = terminalDocument();
+  const source = terminalSource();
 
-  assert.deepEqual(requireExpectedTerminalImageDocument(document), document);
+  assert.deepEqual(requireExpectedTerminalImageSource(source), source);
   assert.throws(
     () =>
-      requireExpectedTerminalImageDocument({
-        ...document,
+      requireExpectedTerminalImageSource({
+        ...source,
         processed_page_count: 0,
       }),
     /processed_page_count expected 1/,
   );
   assert.throws(
     () =>
-      requireExpectedTerminalImageDocument({
-        ...document,
+      requireExpectedTerminalImageSource({
+        ...source,
         status: 'extraction_failed',
       }),
     /status expected no_text_detected/,
   );
   assert.throws(
     () =>
-      requireExpectedTerminalImageDocument({
-        ...document,
+      requireExpectedTerminalImageSource({
+        ...source,
         ocr_device: null,
       }),
     /did not report the OCR device/,
@@ -70,58 +70,58 @@ test('terminal image evidence requires one fully processed no-text page', () => 
 test('terminal image polling waits through processing and validates evidence', async () => {
   const responses: unknown[] = [
     { status: 'processing' },
-    terminalDocument(),
+    terminalSource(),
   ];
   let reads = 0;
 
-  const document = await waitForExpectedTerminalImageDocument(
+  const source = await waitForExpectedTerminalImageSource(
     async () => responses[reads++] ?? responses.at(-1),
     { timeoutMs: 1_000, delay: async () => undefined },
   );
 
   assert.equal(reads, 2);
-  assert.equal(document.page_count, 1);
-  assert.equal(document.processed_page_count, 1);
+  assert.equal(source.page_count, 1);
+  assert.equal(source.processed_page_count, 1);
 });
 
-test('OCR image evidence requires a ready document with provenance and chunks', () => {
-  const document = ocrDocument();
+test('OCR image evidence requires a ready source with provenance and chunks', () => {
+  const source = ocrSource();
 
   assert.deepEqual(
-    requireExpectedOcrImageDocument(document, {
+    requireExpectedOcrImageSource(source, {
       filename: 'ocr_test_image.jpeg',
       sha256: 'a'.repeat(64),
     }),
-    document,
+    source,
   );
   assert.throws(
     () =>
-      requireExpectedOcrImageDocument(
-        { ...document, chunks_count: 0 },
+      requireExpectedOcrImageSource(
+        { ...source, chunks_count: 0 },
         { filename: 'ocr_test_image.jpeg', sha256: 'a'.repeat(64) },
       ),
     /at least one text chunk/,
   );
   assert.throws(
     () =>
-      requireExpectedOcrImageDocument(
-        { ...document, extraction_method: 'text_layer' },
+      requireExpectedOcrImageSource(
+        { ...source, extraction_method: 'text_layer' },
         { filename: 'ocr_test_image.jpeg', sha256: 'a'.repeat(64) },
       ),
     /extraction_method expected text_recognition/,
   );
   assert.deepEqual(
-    requireExpectedOcrImageDocument(
-      { ...document, ocr_device: 'cpu' },
+    requireExpectedOcrImageSource(
+      { ...source, ocr_device: 'cpu' },
       { filename: 'ocr_test_image.jpeg', sha256: 'a'.repeat(64) },
     ),
-    { ...document, ocr_device: 'cpu' },
+    { ...source, ocr_device: 'cpu' },
   );
   for (const device of ['dml', 'directml:0', '', null]) {
     assert.throws(
       () =>
-        requireExpectedOcrImageDocument(
-          { ...document, ocr_device: device },
+        requireExpectedOcrImageSource(
+          { ...source, ocr_device: device },
           { filename: 'ocr_test_image.jpeg', sha256: 'a'.repeat(64) },
         ),
       /OCR device expected directml or cpu/,
@@ -130,10 +130,10 @@ test('OCR image evidence requires a ready document with provenance and chunks', 
 });
 
 test('OCR image polling waits through processing and validates the supplied fixture', async () => {
-  const responses: unknown[] = [{ status: 'processing' }, ocrDocument()];
+  const responses: unknown[] = [{ status: 'processing' }, ocrSource()];
   let reads = 0;
 
-  const document = await waitForExpectedOcrImageDocument(
+  const source = await waitForExpectedOcrImageSource(
     async () => responses[reads++] ?? responses.at(-1),
     {
       timeoutMs: 1_000,
@@ -143,8 +143,8 @@ test('OCR image polling waits through processing and validates the supplied fixt
   );
 
   assert.equal(reads, 2);
-  assert.equal(document.status, 'ready');
-  assert.equal(document.chunks_count, 3);
+  assert.equal(source.status, 'ready');
+  assert.equal(source.chunks_count, 3);
 });
 
 test('packaged image CLI keeps fresh app data beside timestamped evidence', () => {
@@ -203,9 +203,9 @@ test('failed image evidence preserves observed cleanup independently of the pars
   );
 });
 
-function terminalDocument(): Record<string, unknown> {
+function terminalSource(): Record<string, unknown> {
   return {
-    id: 'document-1',
+    id: 'source-1',
     project_id: 'project-1',
     filename: PACKAGED_STATIC_IMAGE_FILENAME,
     sha256: PACKAGED_STATIC_IMAGE_SHA256,
@@ -221,9 +221,9 @@ function terminalDocument(): Record<string, unknown> {
   };
 }
 
-function ocrDocument(): Record<string, unknown> {
+function ocrSource(): Record<string, unknown> {
   return {
-    id: 'document-ocr-1',
+    id: 'source-ocr-1',
     project_id: 'project-1',
     filename: 'ocr_test_image.jpeg',
     sha256: 'a'.repeat(64),

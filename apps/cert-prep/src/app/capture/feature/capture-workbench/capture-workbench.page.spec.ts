@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { computed, signal } from '@angular/core';
-import type { DocumentRead } from '@cert-prep/api';
+import type { SourceRead } from '@cert-prep/api';
 import { CAPTURE_RUNTIME_VERSION } from '@cert-prep/capture-runtime-version';
 import { of, Subject } from 'rxjs';
 import type { CaptureCompletedEvent } from '@gx-capture/capture-workbench-ui';
@@ -14,27 +14,27 @@ import { CaptureWorkbenchPage } from './capture-workbench.page';
 import { CaptureRuntimePreflightStore } from '../../data';
 
 describe('CaptureWorkbenchPage', () => {
-  const activeDocument = signal<DocumentRead | null>(null);
+  const activeSource = signal<SourceRead | null>(null);
   const selectedProjectId = signal<string | null>(null);
   let captureClient: {
-    documentIdForSourceSha256: ReturnType<typeof vi.fn>;
+    sourceIdForSha256: ReturnType<typeof vi.fn>;
     extractionProvenanceForSourceSha256: ReturnType<typeof vi.fn>;
-    getDocumentMarkdown: ReturnType<typeof vi.fn>;
+    getSourceMarkdown: ReturnType<typeof vi.fn>;
   };
-  let refreshUploadedDocument: ReturnType<typeof vi.fn>;
-  let loadLatestDocument: ReturnType<typeof vi.fn>;
+  let refreshUploadedSource: ReturnType<typeof vi.fn>;
+  let loadLatestSource: ReturnType<typeof vi.fn>;
   let preflightStore: ReturnType<typeof fakePreflightStore>;
 
   beforeEach(() => {
-    activeDocument.set(null);
+    activeSource.set(null);
     selectedProjectId.set(null);
     captureClient = {
-      documentIdForSourceSha256: vi.fn().mockReturnValue(null),
+      sourceIdForSha256: vi.fn().mockReturnValue(null),
       extractionProvenanceForSourceSha256: vi.fn().mockReturnValue(null),
-      getDocumentMarkdown: vi.fn().mockReturnValue(of(new Blob(['# scan']))),
+      getSourceMarkdown: vi.fn().mockReturnValue(of(new Blob(['# scan']))),
     };
-    refreshUploadedDocument = vi.fn();
-    loadLatestDocument = vi.fn();
+    refreshUploadedSource = vi.fn();
+    loadLatestSource = vi.fn();
     preflightStore = fakePreflightStore('gpu');
     TestBed.configureTestingModule({
       imports: [CaptureWorkbenchPage],
@@ -50,9 +50,9 @@ describe('CaptureWorkbenchPage', () => {
         {
           provide: SourceImportStore,
           useValue: {
-            activeDocument,
-            refreshUploadedDocument,
-            loadLatestDocument,
+            activeSource,
+            refreshUploadedSource,
+            loadLatestSource,
           },
         },
         { provide: CaptureRuntimePreflightStore, useValue: preflightStore },
@@ -294,14 +294,14 @@ describe('CaptureWorkbenchPage', () => {
   });
 
   it('shows and downloads Markdown only after the saved PDF is ready', async () => {
-    activeDocument.set({
-      id: 'document-1',
+    activeSource.set({
+      id: 'source-1',
       project_id: 'project-1',
       filename: 'scan.pdf',
       status: 'ready',
       source_kind: 'pdf',
       chunks_count: 46,
-    } as DocumentRead);
+    } as SourceRead);
     const fixture = TestBed.createComponent(CaptureWorkbenchPage);
     const page = fixture.componentInstance as unknown as {
       lastCompleted: { set(value: CaptureCompletedEvent): void };
@@ -330,9 +330,9 @@ describe('CaptureWorkbenchPage', () => {
     page.downloadMarkdown();
     await fixture.whenStable();
 
-    expect(captureClient.getDocumentMarkdown).toHaveBeenCalledWith(
+    expect(captureClient.getSourceMarkdown).toHaveBeenCalledWith(
       'project-1',
-      'document-1',
+      'source-1',
     );
     expect(createObjectUrl).toHaveBeenCalledWith(expect.any(Blob));
     expect(anchorClick).toHaveBeenCalled();
@@ -380,9 +380,9 @@ describe('CaptureWorkbenchPage', () => {
     expect(fixture.nativeElement.textContent).toContain(status);
   });
 
-  it('refreshes the saved document after Capture Workbench completion', () => {
+  it('refreshes the saved source after Capture Workbench completion', () => {
     selectedProjectId.set('project-1');
-    captureClient.documentIdForSourceSha256.mockReturnValue('document-1');
+    captureClient.sourceIdForSha256.mockReturnValue('source-1');
     const fixture = TestBed.createComponent(CaptureWorkbenchPage);
     const page = fixture.componentInstance as unknown as {
       onCompleted(event: Event): void;
@@ -402,11 +402,11 @@ describe('CaptureWorkbenchPage', () => {
       }),
     );
 
-    expect(refreshUploadedDocument).toHaveBeenCalledWith(
+    expect(refreshUploadedSource).toHaveBeenCalledWith(
       'project-1',
-      'document-1',
+      'source-1',
     );
-    expect(loadLatestDocument).toHaveBeenCalledWith('project-1');
+    expect(loadLatestSource).toHaveBeenCalledWith('project-1');
   });
 });
 

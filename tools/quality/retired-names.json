@@ -3057,12 +3057,6 @@
     "allowed": []
   },
   {
-    "name": "Ready for practice",
-    "match": "word",
-    "replacement": "question editor card and practice eligibility",
-    "allowed": []
-  },
-  {
     "name": "recordStreamingApiPollError",
     "match": "word",
     "replacement": "recordQuestionGenerationApiPollError",
@@ -3156,6 +3150,12 @@
     "name": "Step 02: Exam Questions",
     "match": "word",
     "replacement": "Questions",
+    "allowed": []
+  },
+  {
+    "name": "first_streamed_question_visible",
+    "match": "word",
+    "replacement": "first_question_visible",
     "allowed": []
   },
   {
@@ -3648,6 +3648,3213 @@
     "name": "UnapprovedQuestionsError",
     "match": "word",
     "replacement": "migration 33 deletes rejected questions and keeps the rest",
+    "allowed": []
+  },
+  {
+    "name": "SourceDocument",
+    "match": "word",
+    "replacement": "Source",
+    "allowed": []
+  },
+  {
+    "name": "SourceDocumentStatus",
+    "match": "word",
+    "replacement": "SourceStatus",
+    "allowed": [
+      {
+        "glob": "packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json",
+        "reason": "Retired concepts preserve their original identity and mapping."
+      }
+    ]
+  },
+  {
+    "name": "SourceDocumentStatusValue",
+    "match": "word",
+    "replacement": "SourceStatusValue",
+    "allowed": []
+  },
+  {
+    "name": "SourceDocumentUnavailable",
+    "match": "word",
+    "replacement": "SourceUnavailable",
+    "allowed": []
+  },
+  {
+    "name": "SourceDocumentLifecyclePolicy",
+    "match": "word",
+    "replacement": "Source.status_after_import_questions",
+    "allowed": []
+  },
+  {
+    "name": "DocumentChunk",
+    "match": "word",
+    "replacement": "SourceChunk",
+    "allowed": []
+  },
+  {
+    "name": "DocumentChunkTranslator",
+    "match": "word",
+    "replacement": "SourceChunkTranslator",
+    "allowed": []
+  },
+  {
+    "name": "DocumentFailureState",
+    "match": "word",
+    "replacement": "SourceFailureState",
+    "allowed": []
+  },
+  {
+    "name": "DocumentList",
+    "match": "word",
+    "replacement": "SourceList",
+    "allowed": []
+  },
+  {
+    "name": "DocumentMembership",
+    "match": "word",
+    "replacement": "SourceMembership",
+    "allowed": []
+  },
+  {
+    "name": "DocumentOperation",
+    "match": "word",
+    "replacement": "SourceOperation",
+    "allowed": []
+  },
+  {
+    "name": "DocumentOperationClaim",
+    "match": "word",
+    "replacement": "SourceOperationClaim",
+    "allowed": []
+  },
+  {
+    "name": "DocumentOperationConflictError",
+    "match": "word",
+    "replacement": "SourceOperationConflictError",
+    "allowed": []
+  },
+  {
+    "name": "DocumentOperationPhase",
+    "match": "word",
+    "replacement": "SourceOperationPhase",
+    "allowed": [
+      {
+        "glob": "packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json",
+        "reason": "Retired concepts preserve their original identity and mapping."
+      }
+    ]
+  },
+  {
+    "name": "DocumentOperationRead",
+    "match": "word",
+    "replacement": "SourceOperationRead",
+    "allowed": [
+      {
+        "glob": "packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json",
+        "reason": "Retired concepts preserve their original identity and mapping."
+      }
+    ]
+  },
+  {
+    "name": "DocumentOperationRepository",
+    "match": "word",
+    "replacement": "SourceOperationRepository",
+    "allowed": []
+  },
+  {
+    "name": "DocumentOperationStateError",
+    "match": "word",
+    "replacement": "SourceOperationStateError",
+    "allowed": []
+  },
+  {
+    "name": "DocumentOperationStatus",
+    "match": "word",
+    "replacement": "SourceOperationStatus",
+    "allowed": [
+      {
+        "glob": "packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json",
+        "reason": "Retired concepts preserve their original identity and mapping."
+      }
+    ]
+  },
+  {
+    "name": "DocumentProcessingCanceledError",
+    "match": "word",
+    "replacement": "SourceProcessingCanceledError",
+    "allowed": []
+  },
+  {
+    "name": "DocumentQuestionCount",
+    "match": "word",
+    "replacement": "SourceQuestionCount",
+    "allowed": []
+  },
+  {
+    "name": "DocumentQuestionJobs",
+    "match": "word",
+    "replacement": "SourceQuestionJobs",
+    "allowed": []
+  },
+  {
+    "name": "DocumentRead",
+    "match": "word",
+    "replacement": "SourceRead",
+    "allowed": [
+      {
+        "glob": "packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json",
+        "reason": "Retired concepts preserve their original identity and mapping."
+      }
+    ]
+  },
+  {
+    "name": "DocumentRepository",
+    "match": "word",
+    "replacement": "SourceRepository",
+    "allowed": []
+  },
+  {
+    "name": "DocumentStatus",
+    "match": "word",
+    "replacement": "SourceStatus",
+    "allowed": []
+  },
+  {
+    "name": "DocumentWork",
+    "match": "word",
+    "replacement": "SourceWork",
+    "allowed": []
+  },
+  {
+    "name": "DocumentWorkerCloseResult",
+    "match": "word",
+    "replacement": "SourceWorkerCloseResult",
+    "allowed": []
+  },
+  {
+    "name": "DocumentWorkerPool",
+    "match": "word",
+    "replacement": "SourceWorkerPool",
+    "allowed": []
+  },
+  {
+    "name": "DocumentWorkerPoolSnapshot",
+    "match": "word",
+    "replacement": "SourceWorkerPoolSnapshot",
+    "allowed": []
+  },
+  {
+    "name": "DocumentWorkItem",
+    "match": "word",
+    "replacement": "SourceWorkItem",
+    "allowed": []
+  },
+  {
+    "name": "BindDocumentQuestionCount",
+    "match": "word",
+    "replacement": "BindSourceQuestionCount",
+    "allowed": []
+  },
+  {
+    "name": "CaptureDocuments",
+    "match": "word",
+    "replacement": "CaptureSources",
+    "allowed": []
+  },
+  {
+    "name": "ImportedDocumentQuestionGeneration",
+    "match": "word",
+    "replacement": "ImportedSourceQuestionGeneration",
+    "allowed": []
+  },
+  {
+    "name": "ProjectDocuments",
+    "match": "word",
+    "replacement": "ProjectSources",
+    "allowed": []
+  },
+  {
+    "name": "QuestionJobsOfDocument",
+    "match": "word",
+    "replacement": "QuestionJobsOfSource",
+    "allowed": []
+  },
+  {
+    "name": "SqliteDocumentOperationRepository",
+    "match": "word",
+    "replacement": "SqliteSourceOperationRepository",
+    "allowed": []
+  },
+  {
+    "name": "SqliteDocumentRepository",
+    "match": "word",
+    "replacement": "SqliteSourceRepository",
+    "allowed": []
+  },
+  {
+    "name": "PoolDocumentWork",
+    "match": "word",
+    "replacement": "PoolSourceWork",
+    "allowed": []
+  },
+  {
+    "name": "QueuedDocumentWork",
+    "match": "word",
+    "replacement": "QueuedSourceWork",
+    "allowed": []
+  },
+  {
+    "name": "FakeDocuments",
+    "match": "word",
+    "replacement": "FakeSources",
+    "allowed": []
+  },
+  {
+    "name": "RecordingDocuments",
+    "match": "word",
+    "replacement": "RecordingSources",
+    "allowed": []
+  },
+  {
+    "name": "_capture_documents",
+    "match": "word",
+    "replacement": "_capture_sources",
+    "allowed": []
+  },
+  {
+    "name": "_document_operations",
+    "match": "word",
+    "replacement": "_source_operations",
+    "allowed": []
+  },
+  {
+    "name": "_document_projection",
+    "match": "word",
+    "replacement": "_source_projection",
+    "allowed": []
+  },
+  {
+    "name": "_document_question_count",
+    "match": "word",
+    "replacement": "_source_question_count",
+    "allowed": []
+  },
+  {
+    "name": "_document_source_missing_error",
+    "match": "word",
+    "replacement": "_source_file_missing_error",
+    "allowed": []
+  },
+  {
+    "name": "_operation_from_document",
+    "match": "word",
+    "replacement": "_operation_from_source",
+    "allowed": []
+  },
+  {
+    "name": "_process_document",
+    "match": "word",
+    "replacement": "_process_source",
+    "allowed": []
+  },
+  {
+    "name": "_record_stopped_document",
+    "match": "word",
+    "replacement": "_record_stopped_source",
+    "allowed": []
+  },
+  {
+    "name": "_reset_document_derived_state",
+    "match": "word",
+    "replacement": "_reset_source_derived_state",
+    "allowed": []
+  },
+  {
+    "name": "_create_full_document_session",
+    "match": "word",
+    "replacement": "_create_full_source_session",
+    "allowed": []
+  },
+  {
+    "name": "_document_row",
+    "match": "word",
+    "replacement": "_source_row",
+    "allowed": []
+  },
+  {
+    "name": "_ready_document",
+    "match": "word",
+    "replacement": "_ready_source",
+    "allowed": []
+  },
+  {
+    "name": "_seed_document_chunk",
+    "match": "word",
+    "replacement": "_seed_source_chunk",
+    "allowed": []
+  },
+  {
+    "name": "_seed_project_document_chunk",
+    "match": "word",
+    "replacement": "_seed_project_source_chunk",
+    "allowed": []
+  },
+  {
+    "name": "_upload_document",
+    "match": "word",
+    "replacement": "_upload_source",
+    "allowed": []
+  },
+  {
+    "name": "_wait_for_document_progress",
+    "match": "word",
+    "replacement": "_wait_for_source_progress",
+    "allowed": []
+  },
+  {
+    "name": "_wait_for_document_status",
+    "match": "word",
+    "replacement": "_wait_for_source_status",
+    "allowed": []
+  },
+  {
+    "name": "attach_document",
+    "match": "word",
+    "replacement": "attach_source",
+    "allowed": []
+  },
+  {
+    "name": "authoring_documents",
+    "match": "word",
+    "replacement": "authoring_sources",
+    "allowed": []
+  },
+  {
+    "name": "bind_document_question_count",
+    "match": "word",
+    "replacement": "bind_source_question_count",
+    "allowed": []
+  },
+  {
+    "name": "bind_document_question_jobs",
+    "match": "word",
+    "replacement": "bind_source_question_jobs",
+    "allowed": []
+  },
+  {
+    "name": "cancel_document_operation",
+    "match": "word",
+    "replacement": "cancel_source_operation",
+    "allowed": []
+  },
+  {
+    "name": "cancel_document_processing",
+    "match": "word",
+    "replacement": "cancel_source_processing",
+    "allowed": []
+  },
+  {
+    "name": "cancel_document_question_job",
+    "match": "word",
+    "replacement": "cancel_source_question_job",
+    "allowed": []
+  },
+  {
+    "name": "complete_document_extraction_in_transaction",
+    "match": "word",
+    "replacement": "complete_source_extraction_in_transaction",
+    "allowed": []
+  },
+  {
+    "name": "create_and_attach_document",
+    "match": "word",
+    "replacement": "create_and_attach_source",
+    "allowed": []
+  },
+  {
+    "name": "current_document_operation_events",
+    "match": "word",
+    "replacement": "current_source_operation_events",
+    "allowed": []
+  },
+  {
+    "name": "document_classification",
+    "match": "word",
+    "replacement": "source_classification",
+    "allowed": []
+  },
+  {
+    "name": "document_classification_from_db",
+    "match": "word",
+    "replacement": "source_classification_from_db",
+    "allowed": []
+  },
+  {
+    "name": "document_error",
+    "match": "word",
+    "replacement": "source_error",
+    "allowed": []
+  },
+  {
+    "name": "document_extraction",
+    "match": "word",
+    "replacement": "source_extraction",
+    "allowed": []
+  },
+  {
+    "name": "document_filename",
+    "match": "word",
+    "replacement": "source_filename",
+    "allowed": []
+  },
+  {
+    "name": "document_from_row",
+    "match": "word",
+    "replacement": "source_from_row",
+    "allowed": []
+  },
+  {
+    "name": "document_ids",
+    "match": "word",
+    "replacement": "source_ids",
+    "allowed": []
+  },
+  {
+    "name": "document_jobs",
+    "match": "word",
+    "replacement": "source_jobs",
+    "allowed": []
+  },
+  {
+    "name": "document_operation_events",
+    "match": "word",
+    "replacement": "source_operation_events",
+    "allowed": []
+  },
+  {
+    "name": "document_operation_repository",
+    "match": "word",
+    "replacement": "source_operation_repository",
+    "allowed": []
+  },
+  {
+    "name": "document_processing_async_jobs",
+    "match": "word",
+    "replacement": "source_processing_async_jobs",
+    "allowed": []
+  },
+  {
+    "name": "document_processing_parallelism",
+    "match": "word",
+    "replacement": "source_processing_parallelism",
+    "allowed": []
+  },
+  {
+    "name": "document_properties",
+    "match": "word",
+    "replacement": "source_properties",
+    "allowed": []
+  },
+  {
+    "name": "document_query",
+    "match": "word",
+    "replacement": "source_query",
+    "allowed": []
+  },
+  {
+    "name": "document_questions",
+    "match": "word",
+    "replacement": "source_questions",
+    "allowed": []
+  },
+  {
+    "name": "document_repository",
+    "match": "word",
+    "replacement": "source_repository",
+    "allowed": []
+  },
+  {
+    "name": "document_retry_conflict",
+    "match": "word",
+    "replacement": "source_retry_conflict",
+    "allowed": []
+  },
+  {
+    "name": "document_retry_not_allowed",
+    "match": "word",
+    "replacement": "source_retry_not_allowed",
+    "allowed": []
+  },
+  {
+    "name": "document_source_missing",
+    "match": "word",
+    "replacement": "source_file_missing",
+    "allowed": []
+  },
+  {
+    "name": "document_status",
+    "match": "word",
+    "replacement": "source_status",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "document_test_helpers",
+    "match": "word",
+    "replacement": "source_test_helpers",
+    "allowed": []
+  },
+  {
+    "name": "document_test_llm_fakes",
+    "match": "word",
+    "replacement": "source_test_llm_fakes",
+    "allowed": []
+  },
+  {
+    "name": "document_work",
+    "match": "word",
+    "replacement": "source_work",
+    "allowed": []
+  },
+  {
+    "name": "document_worker_pool",
+    "match": "word",
+    "replacement": "source_worker_pool",
+    "allowed": []
+  },
+  {
+    "name": "documents_of",
+    "match": "word",
+    "replacement": "sources_of",
+    "allowed": []
+  },
+  {
+    "name": "documents_router",
+    "match": "word",
+    "replacement": "sources_router",
+    "allowed": []
+  },
+  {
+    "name": "enqueue_document",
+    "match": "word",
+    "replacement": "enqueue_source",
+    "allowed": []
+  },
+  {
+    "name": "ensure_document_exists",
+    "match": "word",
+    "replacement": "ensure_source_exists",
+    "allowed": []
+  },
+  {
+    "name": "expected_document_ids",
+    "match": "word",
+    "replacement": "expected_source_ids",
+    "allowed": []
+  },
+  {
+    "name": "expected_document_status",
+    "match": "word",
+    "replacement": "expected_source_status",
+    "allowed": []
+  },
+  {
+    "name": "foreign_document_id",
+    "match": "word",
+    "replacement": "foreign_source_id",
+    "allowed": []
+  },
+  {
+    "name": "full_document",
+    "match": "word",
+    "replacement": "full_source",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      },
+      {
+        "glob": "packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json",
+        "reason": "Retired concepts preserve their original identity and mapping."
+      }
+    ]
+  },
+  {
+    "name": "FULL_DOCUMENT",
+    "match": "word",
+    "replacement": "FULL_SOURCE",
+    "allowed": [
+      {
+        "glob": "packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json",
+        "reason": "Retired concepts preserve their original identity and mapping."
+      }
+    ]
+  },
+  {
+    "name": "generate_document_questions",
+    "match": "word",
+    "replacement": "generate_source_questions",
+    "allowed": []
+  },
+  {
+    "name": "get_active_operation_for_document",
+    "match": "word",
+    "replacement": "get_active_operation_for_source",
+    "allowed": []
+  },
+  {
+    "name": "get_capture_documents",
+    "match": "word",
+    "replacement": "get_capture_sources",
+    "allowed": []
+  },
+  {
+    "name": "get_document",
+    "match": "word",
+    "replacement": "get_source",
+    "allowed": []
+  },
+  {
+    "name": "get_document_audio_source",
+    "match": "word",
+    "replacement": "get_source_audio",
+    "allowed": []
+  },
+  {
+    "name": "get_document_markdown",
+    "match": "word",
+    "replacement": "get_source_markdown",
+    "allowed": []
+  },
+  {
+    "name": "get_document_operation",
+    "match": "word",
+    "replacement": "get_source_operation",
+    "allowed": []
+  },
+  {
+    "name": "get_document_operation_repository",
+    "match": "word",
+    "replacement": "get_source_operation_repository",
+    "allowed": []
+  },
+  {
+    "name": "get_document_repository",
+    "match": "word",
+    "replacement": "get_source_repository",
+    "allowed": []
+  },
+  {
+    "name": "get_document_work",
+    "match": "word",
+    "replacement": "get_source_work",
+    "allowed": []
+  },
+  {
+    "name": "import_document",
+    "match": "word",
+    "replacement": "import_source",
+    "allowed": []
+  },
+  {
+    "name": "insert_processing_document",
+    "match": "word",
+    "replacement": "insert_processing_source",
+    "allowed": []
+  },
+  {
+    "name": "list_document_chunks",
+    "match": "word",
+    "replacement": "list_source_chunks",
+    "allowed": []
+  },
+  {
+    "name": "list_document_jobs",
+    "match": "word",
+    "replacement": "list_source_jobs",
+    "allowed": []
+  },
+  {
+    "name": "list_document_question_jobs",
+    "match": "word",
+    "replacement": "list_source_question_jobs",
+    "allowed": []
+  },
+  {
+    "name": "list_documents",
+    "match": "word",
+    "replacement": "list_sources",
+    "allowed": []
+  },
+  {
+    "name": "missing_document",
+    "match": "word",
+    "replacement": "missing_source",
+    "allowed": []
+  },
+  {
+    "name": "next_document_id",
+    "match": "word",
+    "replacement": "next_source_id",
+    "allowed": []
+  },
+  {
+    "name": "other_document_id",
+    "match": "word",
+    "replacement": "other_source_id",
+    "allowed": []
+  },
+  {
+    "name": "owner_document_id",
+    "match": "word",
+    "replacement": "owner_source_id",
+    "allowed": []
+  },
+  {
+    "name": "pending_document",
+    "match": "word",
+    "replacement": "pending_source",
+    "allowed": []
+  },
+  {
+    "name": "practice_documents",
+    "match": "word",
+    "replacement": "practice_sources",
+    "allowed": []
+  },
+  {
+    "name": "queued_document_id",
+    "match": "word",
+    "replacement": "queued_source_id",
+    "allowed": []
+  },
+  {
+    "name": "reconcile_document_status",
+    "match": "word",
+    "replacement": "reconcile_source_status",
+    "allowed": []
+  },
+  {
+    "name": "reconcile_document_translation_status",
+    "match": "word",
+    "replacement": "reconcile_source_translation_status",
+    "allowed": []
+  },
+  {
+    "name": "recover_processing_documents",
+    "match": "word",
+    "replacement": "recover_processing_sources",
+    "allowed": []
+  },
+  {
+    "name": "reject_document_operation_success",
+    "match": "word",
+    "replacement": "reject_source_operation_success",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "require_document",
+    "match": "word",
+    "replacement": "require_source",
+    "allowed": []
+  },
+  {
+    "name": "retry_document_jobs",
+    "match": "word",
+    "replacement": "retry_source_jobs",
+    "allowed": []
+  },
+  {
+    "name": "retry_document_processing",
+    "match": "word",
+    "replacement": "retry_source_processing",
+    "allowed": []
+  },
+  {
+    "name": "retry_document_question_jobs",
+    "match": "word",
+    "replacement": "retry_source_question_jobs",
+    "allowed": []
+  },
+  {
+    "name": "source_chunk_from_document_chunk",
+    "match": "word",
+    "replacement": "to_source_chunk",
+    "allowed": []
+  },
+  {
+    "name": "source_document",
+    "match": "word",
+    "replacement": "make_source",
+    "allowed": []
+  },
+  {
+    "name": "source_document_id",
+    "match": "word",
+    "replacement": "source_id",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "sync_document_chunks",
+    "match": "word",
+    "replacement": "sync_source_chunks",
+    "allowed": []
+  },
+  {
+    "name": "translate_document_chunk",
+    "match": "word",
+    "replacement": "translate_source_chunk",
+    "allowed": []
+  },
+  {
+    "name": "translate_document_stale_chunks",
+    "match": "word",
+    "replacement": "translate_source_stale_chunks",
+    "allowed": []
+  },
+  {
+    "name": "update_document_chunk",
+    "match": "word",
+    "replacement": "update_source_chunk",
+    "allowed": []
+  },
+  {
+    "name": "upload_document",
+    "match": "word",
+    "replacement": "upload_source",
+    "allowed": []
+  },
+  {
+    "name": "view_document",
+    "match": "word",
+    "replacement": "view_source",
+    "allowed": []
+  },
+  {
+    "name": "DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE",
+    "match": "word",
+    "replacement": "SOURCE_REQUIRED_FOR_FULL_SOURCE_MESSAGE",
+    "allowed": []
+  },
+  {
+    "name": "DOCUMENT_STATUS_VALUES",
+    "match": "word",
+    "replacement": "SOURCE_STATUS_VALUES",
+    "allowed": []
+  },
+  {
+    "name": "DOCUMENT_WORKER_JOIN_TIMEOUT_SECONDS",
+    "match": "word",
+    "replacement": "SOURCE_WORKER_JOIN_TIMEOUT_SECONDS",
+    "allowed": []
+  },
+  {
+    "name": "RETRYABLE_DOCUMENT_STATUSES",
+    "match": "word",
+    "replacement": "RETRYABLE_SOURCE_STATUSES",
+    "allowed": []
+  },
+  {
+    "name": "CERT_PREP_DOCUMENT_PROCESSING_PARALLELISM",
+    "match": "word",
+    "replacement": "CERT_PREP_SOURCE_PROCESSING_PARALLELISM",
+    "allowed": []
+  },
+  {
+    "name": "CERT_PREP_RESILIENCE_DOCUMENT_OUTPUT_ROOT",
+    "match": "word",
+    "replacement": "CERT_PREP_RESILIENCE_SOURCE_OUTPUT_ROOT",
+    "allowed": []
+  },
+  {
+    "name": "capture-document-worker",
+    "match": "word",
+    "replacement": "capture-source-worker",
+    "allowed": []
+  },
+  {
+    "name": "source-library.document-status.",
+    "match": "substring",
+    "replacement": "source-library.source-status.",
+    "allowed": [
+      {
+        "glob": "packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json",
+        "reason": "Retired concepts preserve their original identity and mapping."
+      }
+    ]
+  },
+  {
+    "name": "source-library.operation-status.",
+    "match": "substring",
+    "replacement": "source-library.source-operation-status.",
+    "allowed": [
+      {
+        "glob": "packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json",
+        "reason": "Retired concepts preserve their original identity and mapping."
+      }
+    ]
+  },
+  {
+    "name": "source-library.operation-phase.",
+    "match": "substring",
+    "replacement": "source-library.source-operation-phase.",
+    "allowed": [
+      {
+        "glob": "packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json",
+        "reason": "Retired concepts preserve their original identity and mapping."
+      }
+    ]
+  },
+  {
+    "name": "practice.session-mode.full-document",
+    "match": "substring",
+    "replacement": "practice.session-mode.full-source",
+    "allowed": [
+      {
+        "glob": "packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json",
+        "reason": "Retired concepts preserve their original identity and mapping."
+      }
+    ]
+  },
+  {
+    "name": "document_chunks",
+    "match": "word",
+    "replacement": "source_chunks",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "document_operations",
+    "match": "word",
+    "replacement": "source_operations",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "idx_documents_project",
+    "match": "word",
+    "replacement": "idx_sources_project",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "idx_chunks_document",
+    "match": "word",
+    "replacement": "idx_chunks_source",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "idx_document_operations_project",
+    "match": "word",
+    "replacement": "idx_source_operations_project",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "idx_document_operations_document",
+    "match": "word",
+    "replacement": "idx_source_operations_source",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "idx_document_operations_one_active_document",
+    "match": "word",
+    "replacement": "idx_source_operations_one_active_source",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "idx_question_generation_jobs_document",
+    "match": "word",
+    "replacement": "idx_question_generation_jobs_source",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "idx_manual_question_generations_document",
+    "match": "word",
+    "replacement": "idx_manual_question_generations_source",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "FROM documents",
+    "match": "word",
+    "replacement": "FROM sources",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "JOIN documents",
+    "match": "word",
+    "replacement": "JOIN sources",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "UPDATE documents",
+    "match": "word",
+    "replacement": "UPDATE sources",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "INSERT INTO documents",
+    "match": "word",
+    "replacement": "INSERT INTO sources",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "DELETE FROM documents",
+    "match": "word",
+    "replacement": "DELETE FROM sources",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "CREATE TABLE documents",
+    "match": "word",
+    "replacement": "CREATE TABLE sources",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "ALTER TABLE documents",
+    "match": "word",
+    "replacement": "ALTER TABLE sources",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "DROP TABLE documents",
+    "match": "word",
+    "replacement": "DROP TABLE sources",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "REFERENCES documents",
+    "match": "word",
+    "replacement": "REFERENCES sources",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "ON documents",
+    "match": "word",
+    "replacement": "ON sources",
+    "allowed": [
+      {
+        "glob": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+        "reason": "Append-only migrations preserve the historical schema."
+      },
+      {
+        "glob": "apps/cert-prep-backend/tests/integration/test_database_migrations.py",
+        "reason": "Migration tests preserve historical SQL and expectations."
+      }
+    ]
+  },
+  {
+    "name": "/documents",
+    "match": "substring",
+    "replacement": "/sources",
+    "allowed": []
+  },
+  {
+    "name": "document-operation",
+    "match": "substring",
+    "replacement": "source-operation",
+    "allowed": []
+  },
+  {
+    "name": "document-operations",
+    "match": "substring",
+    "replacement": "source-operations",
+    "allowed": []
+  },
+  {
+    "name": "document_retry_",
+    "match": "substring",
+    "replacement": "source_retry_",
+    "allowed": []
+  },
+  {
+    "name": "cert_prep_contracts.documents",
+    "match": "substring",
+    "replacement": "cert_prep_contracts.sources",
+    "allowed": []
+  },
+  {
+    "name": "source_library.domain.document",
+    "match": "word",
+    "replacement": "source_library.domain.source",
+    "allowed": []
+  },
+  {
+    "name": "source_library.infrastructure.documents",
+    "match": "substring",
+    "replacement": "source_library.infrastructure.sources",
+    "allowed": []
+  },
+  {
+    "name": "domain/document.py",
+    "match": "substring",
+    "replacement": "domain/source.py",
+    "allowed": []
+  },
+  {
+    "name": "infrastructure/documents.py",
+    "match": "substring",
+    "replacement": "infrastructure/sources.py",
+    "allowed": []
+  },
+  {
+    "name": "routers/documents",
+    "match": "substring",
+    "replacement": "source_library/api/router.py",
+    "allowed": []
+  },
+  {
+    "name": "source_documents",
+    "match": "substring",
+    "replacement": "sources",
+    "allowed": []
+  },
+  {
+    "name": "test_a_cited_source_names_both_document_and_chunk",
+    "match": "word",
+    "replacement": "test_a_cited_source_names_both_source_and_chunk",
+    "allowed": []
+  },
+  {
+    "name": "test_a_claimed_upload_is_queued_cancellable_and_has_no_document",
+    "match": "word",
+    "replacement": "test_a_claimed_upload_is_queued_cancellable_and_has_no_source",
+    "allowed": []
+  },
+  {
+    "name": "test_a_commit_needs_its_own_document_and_cancellable_processing",
+    "match": "word",
+    "replacement": "test_a_commit_needs_its_own_source_and_cancellable_processing",
+    "allowed": []
+  },
+  {
+    "name": "test_a_committed_manual_operation_records_the_document_question_count",
+    "match": "word",
+    "replacement": "test_a_committed_manual_operation_records_the_source_question_count",
+    "allowed": []
+  },
+  {
+    "name": "test_a_committed_question_job_records_the_document_question_count",
+    "match": "word",
+    "replacement": "test_a_committed_question_job_records_the_source_question_count",
+    "allowed": []
+  },
+  {
+    "name": "test_a_document_attaches_only_to_a_fresh_upload_claim",
+    "match": "word",
+    "replacement": "test_a_source_attaches_only_to_a_fresh_upload_claim",
+    "allowed": []
+  },
+  {
+    "name": "test_a_document_language_hint_names_capture_spoken_language_only_outside_chinese",
+    "match": "word",
+    "replacement": "test_a_source_language_hint_names_capture_spoken_language_only_outside_chinese",
+    "allowed": []
+  },
+  {
+    "name": "test_a_document_load_stays_outside_extraction_failure_handling",
+    "match": "word",
+    "replacement": "test_a_source_load_stays_outside_extraction_failure_handling",
+    "allowed": []
+  },
+  {
+    "name": "test_a_document_that_ends_without_text_gets_the_no_text_reason_and_keeps_its_warnings",
+    "match": "word",
+    "replacement": "test_a_source_that_ends_without_text_gets_the_no_text_reason_and_keeps_its_warnings",
+    "allowed": []
+  },
+  {
+    "name": "test_a_document_without_text_gets_no_questions",
+    "match": "word",
+    "replacement": "test_a_source_without_text_gets_no_questions",
+    "allowed": []
+  },
+  {
+    "name": "test_a_failed_page_document_keeps_its_reason_and_a_canceled_one_resets",
+    "match": "word",
+    "replacement": "test_a_failed_page_source_keeps_its_reason_and_a_canceled_one_resets",
+    "allowed": []
+  },
+  {
+    "name": "test_a_missing_document_records_nothing",
+    "match": "word",
+    "replacement": "test_a_missing_source_records_nothing",
+    "allowed": []
+  },
+  {
+    "name": "test_a_missing_session_or_document_is_not_found_before_the_claim",
+    "match": "word",
+    "replacement": "test_a_missing_session_or_source_is_not_found_before_the_claim",
+    "allowed": []
+  },
+  {
+    "name": "test_a_question_job_without_new_questions_still_counts_the_document_questions",
+    "match": "word",
+    "replacement": "test_a_question_job_without_new_questions_still_counts_the_source_questions",
+    "allowed": []
+  },
+  {
+    "name": "test_a_restart_settles_operations_before_documents",
+    "match": "word",
+    "replacement": "test_a_restart_settles_operations_before_sources",
+    "allowed": []
+  },
+  {
+    "name": "test_a_synchronous_upload_without_text_returns_its_document",
+    "match": "word",
+    "replacement": "test_a_synchronous_upload_without_text_returns_its_source",
+    "allowed": []
+  },
+  {
+    "name": "test_an_upload_canceled_while_it_was_validated_stops_without_a_document",
+    "match": "word",
+    "replacement": "test_an_upload_canceled_while_it_was_validated_stops_without_a_source",
+    "allowed": []
+  },
+  {
+    "name": "test_an_upload_waits_only_while_its_operation_is_queued_without_a_document",
+    "match": "word",
+    "replacement": "test_an_upload_waits_only_while_its_operation_is_queued_without_a_source",
+    "allowed": []
+  },
+  {
+    "name": "test_app_startup_recovers_durable_document_operations",
+    "match": "word",
+    "replacement": "test_app_startup_recovers_durable_source_operations",
+    "allowed": []
+  },
+  {
+    "name": "test_attaching_the_document_starts_processing",
+    "match": "word",
+    "replacement": "test_attaching_the_source_starts_processing",
+    "allowed": []
+  },
+  {
+    "name": "test_authoring_documents_adapter",
+    "match": "word",
+    "replacement": "test_authoring_sources_adapter",
+    "allowed": []
+  },
+  {
+    "name": "test_cancel_before_attach_is_terminal_and_creates_no_document",
+    "match": "word",
+    "replacement": "test_cancel_before_attach_is_terminal_and_creates_no_source",
+    "allowed": []
+  },
+  {
+    "name": "test_canceling_a_document_finds_its_running_or_last_canceled_operation",
+    "match": "word",
+    "replacement": "test_canceling_a_source_finds_its_running_or_last_canceled_operation",
+    "allowed": []
+  },
+  {
+    "name": "test_capture_source_kind_reads_the_document_kind",
+    "match": "word",
+    "replacement": "test_capture_source_kind_reads_the_source_kind",
+    "allowed": []
+  },
+  {
+    "name": "test_document_membership_requires_the_source_document",
+    "match": "word",
+    "replacement": "test_source_membership_requires_the_source",
+    "allowed": []
+  },
+  {
+    "name": "test_document_operation_events_active_route_does_not_expose_recovered_operation",
+    "match": "word",
+    "replacement": "test_source_operation_events_active_route_does_not_expose_recovered_operation",
+    "allowed": []
+  },
+  {
+    "name": "test_document_operation_events_route_streams_authenticated_terminal_snapshot",
+    "match": "word",
+    "replacement": "test_source_operation_events_route_streams_authenticated_terminal_snapshot",
+    "allowed": []
+  },
+  {
+    "name": "test_document_operation_events_streams_an_active_operation",
+    "match": "word",
+    "replacement": "test_source_operation_events_streams_an_active_operation",
+    "allowed": []
+  },
+  {
+    "name": "test_document_operation_routes_and_upload_header_are_documented",
+    "match": "word",
+    "replacement": "test_source_operation_routes_and_upload_header_are_documented",
+    "allowed": []
+  },
+  {
+    "name": "test_document_status_values_preserve_serialized_order",
+    "match": "word",
+    "replacement": "test_source_status_values_preserve_serialized_order",
+    "allowed": []
+  },
+  {
+    "name": "test_document_upload_fails_closed_without_capture_runtime",
+    "match": "word",
+    "replacement": "test_source_upload_fails_closed_without_capture_runtime",
+    "allowed": []
+  },
+  {
+    "name": "test_document_upload_reports_unreachable_capture_runtime",
+    "match": "word",
+    "replacement": "test_source_upload_reports_unreachable_capture_runtime",
+    "allowed": []
+  },
+  {
+    "name": "test_extraction_goes_on_only_while_the_operation_processes_that_document",
+    "match": "word",
+    "replacement": "test_extraction_goes_on_only_while_the_operation_processes_that_source",
+    "allowed": []
+  },
+  {
+    "name": "test_extraction_without_text_fails_the_operation_and_marks_the_document",
+    "match": "word",
+    "replacement": "test_extraction_without_text_fails_the_operation_and_marks_the_source",
+    "allowed": []
+  },
+  {
+    "name": "test_formal_extractor_completes_visible_options_across_same_document_pages",
+    "match": "word",
+    "replacement": "test_formal_extractor_completes_visible_options_across_same_source_pages",
+    "allowed": []
+  },
+  {
+    "name": "test_full_document_session_uses_source_order_for_document_questions",
+    "match": "word",
+    "replacement": "test_full_source_session_uses_source_order_for_source_questions",
+    "allowed": []
+  },
+  {
+    "name": "test_generating_questions_twice_records_the_documents_total",
+    "match": "word",
+    "replacement": "test_generating_questions_twice_records_the_sources_total",
+    "allowed": []
+  },
+  {
+    "name": "test_generation_ends_once_every_job_of_the_document_has_ended",
+    "match": "word",
+    "replacement": "test_generation_ends_once_every_job_of_the_source_has_ended",
+    "allowed": []
+  },
+  {
+    "name": "test_markdown_rejects_unready_or_non_pdf_documents",
+    "match": "word",
+    "replacement": "test_markdown_rejects_unready_or_non_pdf_sources",
+    "allowed": []
+  },
+  {
+    "name": "test_question_job_attribution_constraints_reject_cross_document_drift",
+    "match": "word",
+    "replacement": "test_question_job_attribution_constraints_reject_cross_source_drift",
+    "allowed": []
+  },
+  {
+    "name": "test_questions_the_learner_asked_for_leave_the_document_ready_unless_it_is_processing",
+    "match": "word",
+    "replacement": "test_questions_the_learner_asked_for_leave_the_source_ready_unless_it_is_processing",
+    "allowed": []
+  },
+  {
+    "name": "test_questions_written_at_import_leave_the_document_ready_only_with_text",
+    "match": "word",
+    "replacement": "test_questions_written_at_import_leave_the_source_ready_only_with_text",
+    "allowed": []
+  },
+  {
+    "name": "test_require_document_accepts_a_committed_document_of_that_project",
+    "match": "word",
+    "replacement": "test_require_source_accepts_a_committed_source_of_that_project",
+    "allowed": []
+  },
+  {
+    "name": "test_session_question_document_id_falls_back_for_old_snapshots",
+    "match": "word",
+    "replacement": "test_session_question_source_id_falls_back_for_old_snapshots",
+    "allowed": []
+  },
+  {
+    "name": "test_source_questions_use_id_order_or_document_source_order",
+    "match": "word",
+    "replacement": "test_source_questions_use_id_order_or_source_order",
+    "allowed": []
+  },
+  {
+    "name": "test_success_trigger_failure_rolls_back_commit_phase_document_and_chunks",
+    "match": "word",
+    "replacement": "test_success_trigger_failure_rolls_back_commit_phase_source_and_chunks",
+    "allowed": []
+  },
+  {
+    "name": "test_the_document_question_count_rolls_back_with_the_question_commit",
+    "match": "word",
+    "replacement": "test_the_source_question_count_rolls_back_with_the_question_commit",
+    "allowed": []
+  },
+  {
+    "name": "test_view_capture_propagates_a_missing_session_or_document",
+    "match": "word",
+    "replacement": "test_view_capture_propagates_a_missing_session_or_source",
+    "allowed": []
+  },
+  {
+    "name": "test_writing_at_import_twice_records_the_documents_total",
+    "match": "word",
+    "replacement": "test_writing_at_import_twice_records_the_sources_total",
+    "allowed": []
+  },
+  {
+    "name": "test_capture_runtime_documents",
+    "match": "word",
+    "replacement": "test_capture_runtime_sources",
+    "allowed": []
+  },
+  {
+    "name": "test_documents_markdown",
+    "match": "word",
+    "replacement": "test_sources_markdown",
+    "allowed": []
+  },
+  {
+    "name": "test_document_import",
+    "match": "word",
+    "replacement": "test_source_import",
+    "allowed": []
+  },
+  {
+    "name": "test_document_operation_aggregate",
+    "match": "word",
+    "replacement": "test_source_operation_aggregate",
+    "allowed": []
+  },
+  {
+    "name": "test_document_question_count",
+    "match": "word",
+    "replacement": "test_source_question_count",
+    "allowed": []
+  },
+  {
+    "name": "test_document_operation_review_phase",
+    "match": "word",
+    "replacement": "test_source_operation_review_phase",
+    "allowed": []
+  },
+  {
+    "name": "acceptLifecycleDocument",
+    "match": "word",
+    "replacement": "acceptLifecycleSource",
+    "allowed": []
+  },
+  {
+    "name": "activateDocument",
+    "match": "word",
+    "replacement": "activateSource",
+    "allowed": []
+  },
+  {
+    "name": "activateLatestDocument",
+    "match": "word",
+    "replacement": "activateLatestSource",
+    "allowed": []
+  },
+  {
+    "name": "activeDocument",
+    "match": "word",
+    "replacement": "activeSource",
+    "allowed": []
+  },
+  {
+    "name": "activeDocumentId",
+    "match": "word",
+    "replacement": "activeSourceId",
+    "allowed": []
+  },
+  {
+    "name": "activeDocumentPlayableQuestions",
+    "match": "word",
+    "replacement": "activeSourcePlayableQuestions",
+    "allowed": []
+  },
+  {
+    "name": "activeDocumentQuestions",
+    "match": "word",
+    "replacement": "activeSourceQuestions",
+    "allowed": []
+  },
+  {
+    "name": "activeDocumentResource",
+    "match": "word",
+    "replacement": "activeSourceResource",
+    "allowed": []
+  },
+  {
+    "name": "activeDocumentSelectValue",
+    "match": "word",
+    "replacement": "activeSourceSelectValue",
+    "allowed": []
+  },
+  {
+    "name": "alternateDocument",
+    "match": "word",
+    "replacement": "alternateSource",
+    "allowed": []
+  },
+  {
+    "name": "app-source-document-status",
+    "match": "word",
+    "replacement": "app-source-status",
+    "allowed": []
+  },
+  {
+    "name": "appDocument",
+    "match": "word",
+    "replacement": "appSource",
+    "allowed": []
+  },
+  {
+    "name": "applyDocumentOperationEvent",
+    "match": "word",
+    "replacement": "applySourceOperationEvent",
+    "allowed": []
+  },
+  {
+    "name": "assertCanceledDocumentIsEmpty",
+    "match": "word",
+    "replacement": "assertCanceledSourceIsEmpty",
+    "allowed": []
+  },
+  {
+    "name": "audioDocument",
+    "match": "word",
+    "replacement": "audioSource",
+    "allowed": []
+  },
+  {
+    "name": "baseDocument",
+    "match": "word",
+    "replacement": "baseSource",
+    "allowed": []
+  },
+  {
+    "name": "cancelActiveDocumentProcessing",
+    "match": "word",
+    "replacement": "cancelActiveSourceProcessing",
+    "allowed": []
+  },
+  {
+    "name": "cancelDocumentChunksRefresh",
+    "match": "word",
+    "replacement": "cancelSourceChunksRefresh",
+    "allowed": []
+  },
+  {
+    "name": "cancelDocumentOperation",
+    "match": "word",
+    "replacement": "cancelSourceOperation",
+    "allowed": []
+  },
+  {
+    "name": "cancelDocumentProcessing",
+    "match": "word",
+    "replacement": "cancelSourceProcessing",
+    "allowed": []
+  },
+  {
+    "name": "cancelDocumentQuestionJob",
+    "match": "word",
+    "replacement": "cancelSourceQuestionJob",
+    "allowed": []
+  },
+  {
+    "name": "canceledDocument",
+    "match": "word",
+    "replacement": "canceledSource",
+    "allowed": []
+  },
+  {
+    "name": "canceledDocumentMetrics",
+    "match": "word",
+    "replacement": "canceledSourceMetrics",
+    "allowed": []
+  },
+  {
+    "name": "captureDocumentOcrEvidence",
+    "match": "word",
+    "replacement": "captureSourceOcrEvidence",
+    "allowed": []
+  },
+  {
+    "name": "Choose a parsed document with generated questions.",
+    "match": "word",
+    "replacement": "Choose a parsed source with generated questions.",
+    "allowed": []
+  },
+  {
+    "name": "chooseActiveFromDocuments",
+    "match": "word",
+    "replacement": "chooseActiveFromSources",
+    "allowed": []
+  },
+  {
+    "name": "chunksDocument",
+    "match": "word",
+    "replacement": "chunksSource",
+    "allowed": []
+  },
+  {
+    "name": "clearActiveDocument",
+    "match": "word",
+    "replacement": "clearActiveSource",
+    "allowed": []
+  },
+  {
+    "name": "completedDocumentId",
+    "match": "word",
+    "replacement": "completedSourceId",
+    "allowed": []
+  },
+  {
+    "name": "completedDocuments",
+    "match": "word",
+    "replacement": "completedSources",
+    "allowed": []
+  },
+  {
+    "name": "createAdditionalUploadDocument",
+    "match": "word",
+    "replacement": "createAdditionalUploadSource",
+    "allowed": []
+  },
+  {
+    "name": "createWorkspaceWithUploadedDocument",
+    "match": "word",
+    "replacement": "createWorkspaceWithUploadedSource",
+    "allowed": []
+  },
+  {
+    "name": "currentDocumentId",
+    "match": "word",
+    "replacement": "currentSourceId",
+    "allowed": []
+  },
+  {
+    "name": "currentExactDocumentQuestionCount",
+    "match": "word",
+    "replacement": "currentExactSourceQuestionCount",
+    "allowed": []
+  },
+  {
+    "name": "defaultDocument",
+    "match": "word",
+    "replacement": "defaultSource",
+    "allowed": []
+  },
+  {
+    "name": "Document chunks",
+    "match": "word",
+    "replacement": "Source chunks",
+    "allowed": []
+  },
+  {
+    "name": "Document chunks could not be refreshed from the event. Retry the event stream.",
+    "match": "word",
+    "replacement": "Source chunks could not be refreshed from the event. Retry the event stream.",
+    "allowed": []
+  },
+  {
+    "name": "Document progress could not be refreshed. Retry the event stream.",
+    "match": "word",
+    "replacement": "Source progress could not be refreshed. Retry the event stream.",
+    "allowed": []
+  },
+  {
+    "name": "DOCUMENT_CHECKS",
+    "match": "word",
+    "replacement": "SOURCE_CHECKS",
+    "allowed": []
+  },
+  {
+    "name": "document-cancel",
+    "match": "word",
+    "replacement": "source-cancel",
+    "allowed": []
+  },
+  {
+    "name": "document-cancellation",
+    "match": "word",
+    "replacement": "source-cancellation",
+    "allowed": []
+  },
+  {
+    "name": "document-chip",
+    "match": "word",
+    "replacement": "source-chip",
+    "allowed": []
+  },
+  {
+    "name": "document-chunks",
+    "match": "word",
+    "replacement": "source-chunks",
+    "allowed": []
+  },
+  {
+    "name": "document-elapsed-time",
+    "match": "word",
+    "replacement": "source-elapsed-time",
+    "allowed": []
+  },
+  {
+    "name": "document-library",
+    "match": "word",
+    "replacement": "source-library",
+    "allowed": []
+  },
+  {
+    "name": "document-parsing-metrics",
+    "match": "word",
+    "replacement": "source-preparation-metrics",
+    "allowed": []
+  },
+  {
+    "name": "document-progress-bar",
+    "match": "word",
+    "replacement": "source-progress-bar",
+    "allowed": []
+  },
+  {
+    "name": "document-progress-metrics",
+    "match": "word",
+    "replacement": "source-progress-metrics",
+    "allowed": []
+  },
+  {
+    "name": "document-retry",
+    "match": "word",
+    "replacement": "source-retry",
+    "allowed": []
+  },
+  {
+    "name": "document-runner",
+    "match": "word",
+    "replacement": "source-runner",
+    "allowed": []
+  },
+  {
+    "name": "documentActivity",
+    "match": "word",
+    "replacement": "sourceActivity",
+    "allowed": []
+  },
+  {
+    "name": "documentArtifacts",
+    "match": "word",
+    "replacement": "sourceArtifacts",
+    "allowed": []
+  },
+  {
+    "name": "DocumentCancellationOptions",
+    "match": "word",
+    "replacement": "SourceCancellationOptions",
+    "allowed": []
+  },
+  {
+    "name": "DocumentCancellationOptionsLoader",
+    "match": "word",
+    "replacement": "SourceCancellationOptionsLoader",
+    "allowed": []
+  },
+  {
+    "name": "DocumentCancellationProofs",
+    "match": "word",
+    "replacement": "SourceCancellationProofs",
+    "allowed": []
+  },
+  {
+    "name": "documentCancellationRoot",
+    "match": "word",
+    "replacement": "sourceCancellationRoot",
+    "allowed": []
+  },
+  {
+    "name": "DocumentCancellationRunnerOptions",
+    "match": "word",
+    "replacement": "SourceCancellationRunnerOptions",
+    "allowed": []
+  },
+  {
+    "name": "DocumentCancellationRunResult",
+    "match": "word",
+    "replacement": "SourceCancellationRunResult",
+    "allowed": []
+  },
+  {
+    "name": "DocumentCheck",
+    "match": "word",
+    "replacement": "SourceCheck",
+    "allowed": []
+  },
+  {
+    "name": "documentChunks",
+    "match": "word",
+    "replacement": "sourceChunks",
+    "allowed": []
+  },
+  {
+    "name": "documentChunksRequestRevision",
+    "match": "word",
+    "replacement": "sourceChunksRequestRevision",
+    "allowed": []
+  },
+  {
+    "name": "documentChunksSubscription",
+    "match": "word",
+    "replacement": "sourceChunksSubscription",
+    "allowed": []
+  },
+  {
+    "name": "documentCompletedAt",
+    "match": "word",
+    "replacement": "sourceCompletedAt",
+    "allowed": []
+  },
+  {
+    "name": "documentCreated",
+    "match": "word",
+    "replacement": "sourceCreated",
+    "allowed": []
+  },
+  {
+    "name": "documentIdForSourceSha256",
+    "match": "word",
+    "replacement": "sourceIdForSha256",
+    "allowed": []
+  },
+  {
+    "name": "documentIdSha256",
+    "match": "word",
+    "replacement": "sourceIdSha256",
+    "allowed": []
+  },
+  {
+    "name": "documentKey",
+    "match": "word",
+    "replacement": "sourceKey",
+    "allowed": []
+  },
+  {
+    "name": "documentLabel",
+    "match": "word",
+    "replacement": "sourceLabel",
+    "allowed": []
+  },
+  {
+    "name": "documentLibrary",
+    "match": "word",
+    "replacement": "sourceLibrary",
+    "allowed": []
+  },
+  {
+    "name": "DocumentLibraryStore",
+    "match": "word",
+    "replacement": "SourceLibraryStore",
+    "allowed": []
+  },
+  {
+    "name": "documentObservations",
+    "match": "word",
+    "replacement": "sourceObservations",
+    "allowed": []
+  },
+  {
+    "name": "DocumentOperationEvent",
+    "match": "word",
+    "replacement": "SourceOperationEvent",
+    "allowed": []
+  },
+  {
+    "name": "DocumentOperationSnapshotService",
+    "match": "word",
+    "replacement": "SourceOperationSnapshotService",
+    "allowed": []
+  },
+  {
+    "name": "documentOutputRoot",
+    "match": "word",
+    "replacement": "sourceOutputRoot",
+    "allowed": []
+  },
+  {
+    "name": "DocumentParsingMetricsService",
+    "match": "word",
+    "replacement": "SourcePreparationMetricsService",
+    "allowed": []
+  },
+  {
+    "name": "documentProofs",
+    "match": "word",
+    "replacement": "sourceProofs",
+    "allowed": []
+  },
+  {
+    "name": "documentQueryEnabled",
+    "match": "word",
+    "replacement": "sourceQueryEnabled",
+    "allowed": []
+  },
+  {
+    "name": "documentRead",
+    "match": "word",
+    "replacement": "sourceRead",
+    "allowed": []
+  },
+  {
+    "name": "documentRecordSha256",
+    "match": "word",
+    "replacement": "sourceRecordSha256",
+    "allowed": []
+  },
+  {
+    "name": "DocumentRunnerDependencies",
+    "match": "word",
+    "replacement": "SourceRunnerDependencies",
+    "allowed": []
+  },
+  {
+    "name": "documentScenarioTransport",
+    "match": "word",
+    "replacement": "sourceScenarioTransport",
+    "allowed": []
+  },
+  {
+    "name": "documentSelect",
+    "match": "word",
+    "replacement": "sourceSelect",
+    "allowed": []
+  },
+  {
+    "name": "documentsError",
+    "match": "word",
+    "replacement": "sourcesError",
+    "allowed": []
+  },
+  {
+    "name": "documentsLoading",
+    "match": "word",
+    "replacement": "sourcesLoading",
+    "allowed": []
+  },
+  {
+    "name": "documentsResource",
+    "match": "word",
+    "replacement": "sourcesResource",
+    "allowed": []
+  },
+  {
+    "name": "documentStartedAt",
+    "match": "word",
+    "replacement": "sourceStartedAt",
+    "allowed": []
+  },
+  {
+    "name": "documentStatus",
+    "match": "word",
+    "replacement": "sourceStatus",
+    "allowed": []
+  },
+  {
+    "name": "documentStatusLabel",
+    "match": "word",
+    "replacement": "sourceStatusLabel",
+    "allowed": []
+  },
+  {
+    "name": "documentStatusModel",
+    "match": "word",
+    "replacement": "sourceStatusModel",
+    "allowed": []
+  },
+  {
+    "name": "documentStatusSeverity",
+    "match": "word",
+    "replacement": "sourceStatusSeverity",
+    "allowed": []
+  },
+  {
+    "name": "documentStreamKey",
+    "match": "word",
+    "replacement": "sourceStreamKey",
+    "allowed": []
+  },
+  {
+    "name": "documentStreamOperationId",
+    "match": "word",
+    "replacement": "sourceStreamOperationId",
+    "allowed": []
+  },
+  {
+    "name": "documentStreamSubscription",
+    "match": "word",
+    "replacement": "sourceStreamSubscription",
+    "allowed": []
+  },
+  {
+    "name": "documentStreamTerminalSeen",
+    "match": "word",
+    "replacement": "sourceStreamTerminalSeen",
+    "allowed": []
+  },
+  {
+    "name": "documentUploaded",
+    "match": "word",
+    "replacement": "sourceUploaded",
+    "allowed": []
+  },
+  {
+    "name": "effectiveWholeSourceDocumentId",
+    "match": "word",
+    "replacement": "effectiveWholeSourceId",
+    "allowed": []
+  },
+  {
+    "name": "exactDocument",
+    "match": "word",
+    "replacement": "exactSource",
+    "allowed": []
+  },
+  {
+    "name": "expectDocumentLibraryOption",
+    "match": "word",
+    "replacement": "expectSourceLibraryOption",
+    "allowed": []
+  },
+  {
+    "name": "expectedDocumentId",
+    "match": "word",
+    "replacement": "expectedSourceId",
+    "allowed": []
+  },
+  {
+    "name": "expectedDocumentStatus",
+    "match": "word",
+    "replacement": "expectedSourceStatus",
+    "allowed": []
+  },
+  {
+    "name": "expectWholeSourceDocumentOptions",
+    "match": "word",
+    "replacement": "expectWholeSourceOptions",
+    "allowed": []
+  },
+  {
+    "name": "expectWholeSourceSessionToUseOnlyDocument",
+    "match": "word",
+    "replacement": "expectWholeSourceSessionToUseOnlySource",
+    "allowed": []
+  },
+  {
+    "name": "fallbackDocumentId",
+    "match": "word",
+    "replacement": "fallbackSourceId",
+    "allowed": []
+  },
+  {
+    "name": "fallbackDocumentWrongAnswer",
+    "match": "word",
+    "replacement": "fallbackSourceWrongAnswer",
+    "allowed": []
+  },
+  {
+    "name": "FINAL_DOCUMENT_STATUSES",
+    "match": "word",
+    "replacement": "FINAL_SOURCE_STATUSES",
+    "allowed": []
+  },
+  {
+    "name": "firstDocument",
+    "match": "word",
+    "replacement": "firstSource",
+    "allowed": []
+  },
+  {
+    "name": "generateDocumentQuestions",
+    "match": "word",
+    "replacement": "generateSourceQuestions",
+    "allowed": []
+  },
+  {
+    "name": "getDocument",
+    "match": "word",
+    "replacement": "getSource",
+    "allowed": []
+  },
+  {
+    "name": "getDocumentAudioSource",
+    "match": "word",
+    "replacement": "getSourceAudio",
+    "allowed": []
+  },
+  {
+    "name": "getDocumentMarkdown",
+    "match": "word",
+    "replacement": "getSourceMarkdown",
+    "allowed": []
+  },
+  {
+    "name": "getDocumentOperation",
+    "match": "word",
+    "replacement": "getSourceOperation",
+    "allowed": []
+  },
+  {
+    "name": "grouped by source document and page",
+    "match": "word",
+    "replacement": "grouped by source and page",
+    "allowed": []
+  },
+  {
+    "name": "handoffDocument",
+    "match": "word",
+    "replacement": "handoffSource",
+    "allowed": []
+  },
+  {
+    "name": "isCurrentProjectDocument",
+    "match": "word",
+    "replacement": "isCurrentProjectSource",
+    "allowed": []
+  },
+  {
+    "name": "isDocumentOperationEvent",
+    "match": "word",
+    "replacement": "isSourceOperationEvent",
+    "allowed": []
+  },
+  {
+    "name": "isDocumentOperationEventTerminal",
+    "match": "word",
+    "replacement": "isSourceOperationEventTerminal",
+    "allowed": []
+  },
+  {
+    "name": "isExpectedDocumentOperation",
+    "match": "word",
+    "replacement": "isExpectedSourceOperation",
+    "allowed": []
+  },
+  {
+    "name": "isProjectDocumentsCollectionResponse",
+    "match": "word",
+    "replacement": "isProjectSourcesCollectionResponse",
+    "allowed": []
+  },
+  {
+    "name": "isTerminalImageDocument",
+    "match": "word",
+    "replacement": "isTerminalImageSource",
+    "allowed": []
+  },
+  {
+    "name": "knownDocuments",
+    "match": "word",
+    "replacement": "knownSources",
+    "allowed": []
+  },
+  {
+    "name": "latestDocument",
+    "match": "word",
+    "replacement": "latestSource",
+    "allowed": []
+  },
+  {
+    "name": "latestDocumentActivity",
+    "match": "word",
+    "replacement": "latestSourceActivity",
+    "allowed": []
+  },
+  {
+    "name": "latestDocumentId",
+    "match": "word",
+    "replacement": "latestSourceId",
+    "allowed": []
+  },
+  {
+    "name": "listDocumentChunks",
+    "match": "word",
+    "replacement": "listSourceChunks",
+    "allowed": []
+  },
+  {
+    "name": "listDocumentQuestionJobs",
+    "match": "word",
+    "replacement": "listSourceQuestionJobs",
+    "allowed": []
+  },
+  {
+    "name": "listDocuments",
+    "match": "word",
+    "replacement": "listSources",
+    "allowed": []
+  },
+  {
+    "name": "loadDocumentCancellationOptions",
+    "match": "word",
+    "replacement": "loadSourceCancellationOptions",
+    "allowed": []
+  },
+  {
+    "name": "loadDocumentChunks",
+    "match": "word",
+    "replacement": "loadSourceChunks",
+    "allowed": []
+  },
+  {
+    "name": "loadLatestDocument",
+    "match": "word",
+    "replacement": "loadLatestSource",
+    "allowed": []
+  },
+  {
+    "name": "loadOperationDocument",
+    "match": "word",
+    "replacement": "loadOperationSource",
+    "allowed": []
+  },
+  {
+    "name": "matchedDocument",
+    "match": "word",
+    "replacement": "matchedSource",
+    "allowed": []
+  },
+  {
+    "name": "matchesDocumentScope",
+    "match": "word",
+    "replacement": "matchesSourceScope",
+    "allowed": []
+  },
+  {
+    "name": "mergeDocumentResourceValue",
+    "match": "word",
+    "replacement": "mergeSourceResourceValue",
+    "allowed": []
+  },
+  {
+    "name": "nextDocument",
+    "match": "word",
+    "replacement": "nextSource",
+    "allowed": []
+  },
+  {
+    "name": "nextDocumentId",
+    "match": "word",
+    "replacement": "nextSourceId",
+    "allowed": []
+  },
+  {
+    "name": "nextUploadDocument",
+    "match": "word",
+    "replacement": "nextUploadSource",
+    "allowed": []
+  },
+  {
+    "name": "No source document",
+    "match": "word",
+    "replacement": "No source",
+    "allowed": []
+  },
+  {
+    "name": "observeDocument",
+    "match": "word",
+    "replacement": "observeSource",
+    "allowed": []
+  },
+  {
+    "name": "ocrDocumentRecord",
+    "match": "word",
+    "replacement": "ocrSourceRecord",
+    "allowed": []
+  },
+  {
+    "name": "OcrDocumentRecordIdentity",
+    "match": "word",
+    "replacement": "OcrSourceRecordIdentity",
+    "allowed": []
+  },
+  {
+    "name": "otherDocument",
+    "match": "word",
+    "replacement": "otherSource",
+    "allowed": []
+  },
+  {
+    "name": "PackagedImageDocumentEvidence",
+    "match": "word",
+    "replacement": "PackagedImageSourceEvidence",
+    "allowed": []
+  },
+  {
+    "name": "partialDocument",
+    "match": "word",
+    "replacement": "partialSource",
+    "allowed": []
+  },
+  {
+    "name": "persistedDocumentVisible",
+    "match": "word",
+    "replacement": "persistedSourceVisible",
+    "allowed": []
+  },
+  {
+    "name": "playableQuestionsForDocument",
+    "match": "word",
+    "replacement": "playableQuestionsForSource",
+    "allowed": []
+  },
+  {
+    "name": "previousDocumentId",
+    "match": "word",
+    "replacement": "previousSourceId",
+    "allowed": []
+  },
+  {
+    "name": "questionCountForDocument",
+    "match": "word",
+    "replacement": "questionCountForSource",
+    "allowed": []
+  },
+  {
+    "name": "questionJobsDocumentKey",
+    "match": "word",
+    "replacement": "questionJobsSourceKey",
+    "allowed": []
+  },
+  {
+    "name": "questions in selected document",
+    "match": "word",
+    "replacement": "questions in selected source",
+    "allowed": []
+  },
+  {
+    "name": "questions.store.document-activity.spec.ts",
+    "match": "word",
+    "replacement": "questions.store.source-activity.spec.ts",
+    "allowed": []
+  },
+  {
+    "name": "questionsByDocument",
+    "match": "word",
+    "replacement": "questionsBySource",
+    "allowed": []
+  },
+  {
+    "name": "questionWorkDocument",
+    "match": "word",
+    "replacement": "questionWorkSource",
+    "allowed": []
+  },
+  {
+    "name": "readDocumentChunks",
+    "match": "word",
+    "replacement": "readSourceChunks",
+    "allowed": []
+  },
+  {
+    "name": "readUploadedDocument",
+    "match": "word",
+    "replacement": "readUploadedSource",
+    "allowed": []
+  },
+  {
+    "name": "readyDocument",
+    "match": "word",
+    "replacement": "readySource",
+    "allowed": []
+  },
+  {
+    "name": "readyDocumentResponse",
+    "match": "word",
+    "replacement": "readySourceResponse",
+    "allowed": []
+  },
+  {
+    "name": "recordDocumentOcrCompletionEvidence",
+    "match": "word",
+    "replacement": "recordSourceOcrCompletionEvidence",
+    "allowed": []
+  },
+  {
+    "name": "refreshDocumentChunksFromEvent",
+    "match": "word",
+    "replacement": "refreshSourceChunksFromEvent",
+    "allowed": []
+  },
+  {
+    "name": "refreshDocumentMetadata",
+    "match": "word",
+    "replacement": "refreshSourceMetadata",
+    "allowed": []
+  },
+  {
+    "name": "refreshedDocument",
+    "match": "word",
+    "replacement": "refreshedSource",
+    "allowed": []
+  },
+  {
+    "name": "refreshUploadedDocument",
+    "match": "word",
+    "replacement": "refreshUploadedSource",
+    "allowed": []
+  },
+  {
+    "name": "remainingDocument",
+    "match": "word",
+    "replacement": "remainingSource",
+    "allowed": []
+  },
+  {
+    "name": "reportDocumentActivity",
+    "match": "word",
+    "replacement": "reportSourceActivity",
+    "allowed": []
+  },
+  {
+    "name": "requestedDocument",
+    "match": "word",
+    "replacement": "requestedSource",
+    "allowed": []
+  },
+  {
+    "name": "requiredDocumentLabel",
+    "match": "word",
+    "replacement": "requiredSourceLabel",
+    "allowed": []
+  },
+  {
+    "name": "requireExpectedOcrImageDocument",
+    "match": "word",
+    "replacement": "requireExpectedOcrImageSource",
+    "allowed": []
+  },
+  {
+    "name": "requireExpectedTerminalImageDocument",
+    "match": "word",
+    "replacement": "requireExpectedTerminalImageSource",
+    "allowed": []
+  },
+  {
+    "name": "resetDocumentStreamError",
+    "match": "word",
+    "replacement": "resetSourceStreamError",
+    "allowed": []
+  },
+  {
+    "name": "resourceDocumentIds",
+    "match": "word",
+    "replacement": "loadedSourceIds",
+    "allowed": []
+  },
+  {
+    "name": "retryActiveDocumentProcessing",
+    "match": "word",
+    "replacement": "retryActiveSourceProcessing",
+    "allowed": []
+  },
+  {
+    "name": "retryDocumentProcessing",
+    "match": "word",
+    "replacement": "retrySourceProcessing",
+    "allowed": []
+  },
+  {
+    "name": "retryDocumentQuestionJobs",
+    "match": "word",
+    "replacement": "retrySourceQuestionJobs",
+    "allowed": []
+  },
+  {
+    "name": "retryDocumentStream",
+    "match": "word",
+    "replacement": "retrySourceStream",
+    "allowed": []
+  },
+  {
+    "name": "Review questions from the uploaded document",
+    "match": "word",
+    "replacement": "Review questions from the uploaded source",
+    "allowed": []
+  },
+  {
+    "name": "runCaptureDocumentFlow",
+    "match": "word",
+    "replacement": "runCaptureSourceFlow",
+    "allowed": []
+  },
+  {
+    "name": "runDocumentCancellationAcceptance",
+    "match": "word",
+    "replacement": "runSourceCancellationAcceptance",
+    "allowed": []
+  },
+  {
+    "name": "runDocumentCancelRetryScenario",
+    "match": "word",
+    "replacement": "runSourceCancelRetryScenario",
+    "allowed": []
+  },
+  {
+    "name": "runDocumentScenario",
+    "match": "word",
+    "replacement": "runSourceScenario",
+    "allowed": []
+  },
+  {
+    "name": "runUploadBeforeDocumentIdCancellation",
+    "match": "word",
+    "replacement": "runUploadBeforeSourceIdCancellation",
+    "allowed": []
+  },
+  {
+    "name": "sameDocumentRetry",
+    "match": "word",
+    "replacement": "sameSourceRetry",
+    "allowed": []
+  },
+  {
+    "name": "savedDocument",
+    "match": "word",
+    "replacement": "savedSource",
+    "allowed": []
+  },
+  {
+    "name": "secondAppDocument",
+    "match": "word",
+    "replacement": "secondAppSource",
+    "allowed": []
+  },
+  {
+    "name": "secondaryDocument",
+    "match": "word",
+    "replacement": "secondarySource",
+    "allowed": []
+  },
+  {
+    "name": "secondaryDocuments",
+    "match": "word",
+    "replacement": "secondarySources",
+    "allowed": []
+  },
+  {
+    "name": "secondDocument",
+    "match": "word",
+    "replacement": "secondSource",
+    "allowed": []
+  },
+  {
+    "name": "Select a parsed document before retrying question generation.",
+    "match": "word",
+    "replacement": "Select a parsed source before retrying question generation.",
+    "allowed": []
+  },
+  {
+    "name": "Select a source document to begin generating questions.",
+    "match": "word",
+    "replacement": "Select a source to begin generating questions.",
+    "allowed": []
+  },
+  {
+    "name": "select-document",
+    "match": "word",
+    "replacement": "select-source",
+    "allowed": []
+  },
+  {
+    "name": "selectActiveDocument",
+    "match": "word",
+    "replacement": "selectActiveSource",
+    "allowed": []
+  },
+  {
+    "name": "selectDocument",
+    "match": "word",
+    "replacement": "selectSource",
+    "allowed": []
+  },
+  {
+    "name": "selectDocumentFromLibrary",
+    "match": "word",
+    "replacement": "selectSourceFromLibrary",
+    "allowed": []
+  },
+  {
+    "name": "selectedDocumentId",
+    "match": "word",
+    "replacement": "selectedSourceId",
+    "allowed": []
+  },
+  {
+    "name": "selectedDocumentQuestionCount",
+    "match": "word",
+    "replacement": "selectedSourceQuestionCount",
+    "allowed": []
+  },
+  {
+    "name": "selectedDocumentQuestions",
+    "match": "word",
+    "replacement": "selectedSourceQuestions",
+    "allowed": []
+  },
+  {
+    "name": "setActiveDocument",
+    "match": "word",
+    "replacement": "setActiveSource",
+    "allowed": []
+  },
+  {
+    "name": "setActiveDocumentId",
+    "match": "word",
+    "replacement": "setActiveSourceId",
+    "allowed": []
+  },
+  {
+    "name": "setDocuments",
+    "match": "word",
+    "replacement": "setSources",
+    "allowed": []
+  },
+  {
+    "name": "setSelectedDocumentId",
+    "match": "word",
+    "replacement": "setSelectedSourceId",
+    "allowed": []
+  },
+  {
+    "name": "showDocument",
+    "match": "word",
+    "replacement": "showSource",
+    "allowed": []
+  },
+  {
+    "name": "Source document",
+    "match": "word",
+    "replacement": "Source",
+    "allowed": []
+  },
+  {
+    "name": "Source Document",
+    "match": "word",
+    "replacement": "Source",
+    "allowed": []
+  },
+  {
+    "name": "source-document-status",
+    "match": "word",
+    "replacement": "source-status",
+    "allowed": []
+  },
+  {
+    "name": "source-import.store.document-activity.spec.ts",
+    "match": "word",
+    "replacement": "source-import.store.source-activity.spec.ts",
+    "allowed": []
+  },
+  {
+    "name": "SourceDocumentActivity",
+    "match": "word",
+    "replacement": "SourceActivity",
+    "allowed": []
+  },
+  {
+    "name": "SourceDocumentLabel",
+    "match": "word",
+    "replacement": "SourceLabel",
+    "allowed": []
+  },
+  {
+    "name": "SourceDocumentStatusComponent",
+    "match": "word",
+    "replacement": "SourceStatusComponent",
+    "allowed": []
+  },
+  {
+    "name": "SourceDocumentStatusViewModel",
+    "match": "word",
+    "replacement": "SourceStatusViewModel",
+    "allowed": []
+  },
+  {
+    "name": "startDocumentStream",
+    "match": "word",
+    "replacement": "startSourceStream",
+    "allowed": []
+  },
+  {
+    "name": "stopDocumentStream",
+    "match": "word",
+    "replacement": "stopSourceStream",
+    "allowed": []
+  },
+  {
+    "name": "storeWithActiveDocument",
+    "match": "word",
+    "replacement": "storeWithActiveSource",
+    "allowed": []
+  },
+  {
+    "name": "streamDocumentKey",
+    "match": "word",
+    "replacement": "streamSourceKey",
+    "allowed": []
+  },
+  {
+    "name": "streamDocumentOperation",
+    "match": "word",
+    "replacement": "streamSourceOperation",
+    "allowed": []
+  },
+  {
+    "name": "targetDocumentRoot",
+    "match": "word",
+    "replacement": "targetSourceRoot",
+    "allowed": []
+  },
+  {
+    "name": "terminalDocument",
+    "match": "word",
+    "replacement": "terminalSource",
+    "allowed": []
+  },
+  {
+    "name": "The document operation failed.",
+    "match": "word",
+    "replacement": "The source operation failed.",
+    "allowed": []
+  },
+  {
+    "name": "translateDocumentChunk",
+    "match": "word",
+    "replacement": "translateSourceChunk",
+    "allowed": []
+  },
+  {
+    "name": "translateDocumentStaleChunks",
+    "match": "word",
+    "replacement": "translateSourceStaleChunks",
+    "allowed": []
+  },
+  {
+    "name": "Unexpected document operation event.",
+    "match": "word",
+    "replacement": "Unexpected source operation event.",
+    "allowed": []
+  },
+  {
+    "name": "updateDocumentChunk",
+    "match": "word",
+    "replacement": "updateSourceChunk",
+    "allowed": []
+  },
+  {
+    "name": "updateUploadDocumentSnapshot",
+    "match": "word",
+    "replacement": "updateUploadSourceSnapshot",
+    "allowed": []
+  },
+  {
+    "name": "uploadDocument",
+    "match": "word",
+    "replacement": "uploadSource",
+    "allowed": []
+  },
+  {
+    "name": "uploadDocumentAndExpectQuestion",
+    "match": "word",
+    "replacement": "uploadSourceAndExpectQuestion",
+    "allowed": []
+  },
+  {
+    "name": "uploadDocumentIdSha256",
+    "match": "word",
+    "replacement": "uploadSourceIdSha256",
+    "allowed": []
+  },
+  {
+    "name": "uploadDocumentResponse",
+    "match": "word",
+    "replacement": "uploadSourceResponse",
+    "allowed": []
+  },
+  {
+    "name": "uploadDocuments",
+    "match": "word",
+    "replacement": "uploadSources",
+    "allowed": []
+  },
+  {
+    "name": "uploadedDocument",
+    "match": "word",
+    "replacement": "uploadedSource",
+    "allowed": []
+  },
+  {
+    "name": "UploadedDocumentRef",
+    "match": "word",
+    "replacement": "UploadedSourceRef",
+    "allowed": []
+  },
+  {
+    "name": "uploadedDocumentRefFromResponse",
+    "match": "word",
+    "replacement": "uploadedSourceRefFromResponse",
+    "allowed": []
+  },
+  {
+    "name": "uploadedDocuments",
+    "match": "word",
+    "replacement": "uploadedSources",
+    "allowed": []
+  },
+  {
+    "name": "uploadResponseMatchedDocument",
+    "match": "word",
+    "replacement": "uploadResponseMatchedSource",
+    "allowed": []
+  },
+  {
+    "name": "upsertDocument",
+    "match": "word",
+    "replacement": "upsertSource",
+    "allowed": []
+  },
+  {
+    "name": "verifyPersistedDocument",
+    "match": "word",
+    "replacement": "verifyPersistedSource",
+    "allowed": []
+  },
+  {
+    "name": "visibleProjectDocuments",
+    "match": "word",
+    "replacement": "visibleProjectSources",
+    "allowed": []
+  },
+  {
+    "name": "waitForExactDocumentQuestions",
+    "match": "word",
+    "replacement": "waitForExactSourceQuestions",
+    "allowed": []
+  },
+  {
+    "name": "waitForExpectedOcrImageDocument",
+    "match": "word",
+    "replacement": "waitForExpectedOcrImageSource",
+    "allowed": []
+  },
+  {
+    "name": "waitForExpectedOcrImageDocumentWithOneRetry",
+    "match": "word",
+    "replacement": "waitForExpectedOcrImageSourceWithOneRetry",
+    "allowed": []
+  },
+  {
+    "name": "waitForExpectedTerminalImageDocument",
+    "match": "word",
+    "replacement": "waitForExpectedTerminalImageSource",
+    "allowed": []
+  },
+  {
+    "name": "waitForImageDocumentToLeaveFailure",
+    "match": "word",
+    "replacement": "waitForImageSourceToLeaveFailure",
+    "allowed": []
+  },
+  {
+    "name": "waitForPersistedCaptureDocument",
+    "match": "word",
+    "replacement": "waitForPersistedCaptureSource",
+    "allowed": []
+  },
+  {
+    "name": "waitForUploadDocumentResponse",
+    "match": "word",
+    "replacement": "waitForUploadSourceResponse",
+    "allowed": []
+  },
+  {
+    "name": "Waiting for saved document refresh",
+    "match": "word",
+    "replacement": "Waiting for saved source refresh",
+    "allowed": []
+  },
+  {
+    "name": "wholeSourceDocument",
+    "match": "word",
+    "replacement": "wholeSource",
+    "allowed": []
+  },
+  {
+    "name": "wholeSourceDocumentId",
+    "match": "word",
+    "replacement": "wholeSourceId",
+    "allowed": []
+  },
+  {
+    "name": "wholeSourceDocuments",
+    "match": "word",
+    "replacement": "wholeSources",
+    "allowed": []
+  },
+  {
+    "name": "wholeSourceDocumentSelectValue",
+    "match": "word",
+    "replacement": "wholeSourceSelectValue",
+    "allowed": []
+  },
+  {
+    "name": "wrongDocument",
+    "match": "word",
+    "replacement": "wrongSource",
+    "allowed": []
+  },
+  {
+    "name": "wrongResponseDocument",
+    "match": "word",
+    "replacement": "wrongResponseSource",
+    "allowed": []
+  },
+  {
+    "name": "frozen_extraction_residue",
+    "match": "substring",
+    "replacement": "pyinstaller_unpack_residue",
+    "allowed": []
+  },
+  {
+    "name": "sweep_stale_extractions",
+    "match": "word",
+    "replacement": "sweep_stale_unpack_dirs",
+    "allowed": []
+  },
+  {
+    "name": "start_stale_extraction_sweep",
+    "match": "word",
+    "replacement": "start_stale_unpack_sweep",
+    "allowed": []
+  },
+  {
+    "name": "_is_backend_extraction",
+    "match": "word",
+    "replacement": "_is_backend_unpack_dir",
+    "allowed": []
+  },
+  {
+    "name": "cert-prep-extraction-sweep",
+    "match": "word",
+    "replacement": "cert-prep-unpack-sweep",
+    "allowed": []
+  },
+  {
+    "name": "gpu-selection-step3",
+    "match": "substring",
+    "replacement": "docs/domain/ai_providers.md",
+    "allowed": []
+  },
+  {
+    "name": "desktop-cdp-stack-overflow",
+    "match": "substring",
+    "replacement": "desktop-main-thread-stack",
+    "allowed": []
+  },
+  {
+    "name": "capture-workbench-cert-prep-pdf",
+    "match": "substring",
+    "replacement": "packaged-capture-smoke",
     "allowed": []
   }
 ]

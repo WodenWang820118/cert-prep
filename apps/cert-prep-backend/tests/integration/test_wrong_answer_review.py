@@ -4,20 +4,20 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from cert_prep_backend.practice.api import router as practice_router
-from practice_test_support import _create_manual_question, _create_project, _upload_document
+from practice_test_support import _create_manual_question, _create_project, _upload_source
 
 
 def test_wrong_answer_summary_counts_current_cleared_and_repeated_misses(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    first = _create_manual_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    first = _create_manual_question(client, auth_headers, project_id, source_id)
     second = _create_manual_question(
         client,
         auth_headers,
         project_id,
-        document_id,
+        source_id,
         question="Which review habit is grounded?",
         choices=["Check the source", "Guess from memory"],
         answer="Check the source",
@@ -55,7 +55,7 @@ def test_wrong_answer_summary_counts_current_cleared_and_repeated_misses(
     assert body["repeated_misses"][0]["miss_count"] == 2
     assert body["clusters"] == [
         {
-            "document_id": document_id,
+            "source_id": source_id,
             "citation_page": 1,
             "current_wrong_count": 1,
             "cleared_count": 1,
@@ -72,13 +72,13 @@ def test_wrong_answer_summary_groups_same_timestamp_attempts_by_insert_sequence(
         lambda: "2026-07-16T00:00:00+00:00",
     )
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    repeated_question = _create_manual_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    repeated_question = _create_manual_question(client, auth_headers, project_id, source_id)
     cleared_question = _create_manual_question(
         client,
         auth_headers,
         project_id,
-        document_id,
+        source_id,
         question="Which credential lifetime is preferred?",
         choices=["Short-lived", "Permanent"],
         answer="Short-lived",
@@ -87,7 +87,7 @@ def test_wrong_answer_summary_groups_same_timestamp_attempts_by_insert_sequence(
     session = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
-        json={"mode": "full_document", "document_id": document_id},
+        json={"mode": "full_source", "source_id": source_id},
     ).json()
     for _ in range(2):
         response = client.post(
@@ -126,7 +126,7 @@ def test_wrong_answer_summary_groups_same_timestamp_attempts_by_insert_sequence(
         {
             "question_id": repeated_question["id"],
             "question": repeated_question["question"],
-            "document_id": document_id,
+            "source_id": source_id,
             "citation_page": 1,
             "source_excerpt": repeated_question["source_excerpt"],
             "miss_count": 2,
@@ -135,7 +135,7 @@ def test_wrong_answer_summary_groups_same_timestamp_attempts_by_insert_sequence(
     ]
     assert summary["clusters"] == [
         {
-            "document_id": document_id,
+            "source_id": source_id,
             "citation_page": 1,
             "current_wrong_count": 1,
             "cleared_count": 1,
@@ -147,8 +147,8 @@ def test_wrong_answer_review_uses_latest_attempt_session_snapshot(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    question = _create_manual_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    question = _create_manual_question(client, auth_headers, project_id, source_id)
     old_key_session = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
@@ -211,12 +211,12 @@ def test_wrong_answers_do_not_join_questions_across_projects(
 ) -> None:
     owner_project_id = _create_project(client, auth_headers)
     foreign_project_id = _create_project(client, auth_headers)
-    foreign_document_id = _upload_document(client, auth_headers, foreign_project_id)
+    foreign_source_id = _upload_source(client, auth_headers, foreign_project_id)
     foreign_question = _create_manual_question(
         client,
         auth_headers,
         foreign_project_id,
-        foreign_document_id,
+        foreign_source_id,
     )
     session_id = str(uuid4())
     attempt_id = str(uuid4())
@@ -226,7 +226,7 @@ def test_wrong_answers_do_not_join_questions_across_projects(
         connection.execute(
             """
             INSERT INTO practice_sessions(
-                id, project_id, question_ids_json, mode, source_document_id,
+                id, project_id, question_ids_json, mode, source_id,
                 requested_question_count, random_seed, status, created_at, completed_at
             )
             VALUES (?, ?, ?, 'random_draw', NULL, 1, NULL, 'active', ?, NULL)

@@ -45,7 +45,7 @@
 classDiagram
   class Question {
     id
-    document_id
+    source_id
     chunk_id
     question
     choices
@@ -54,7 +54,7 @@ classDiagram
     edited(edit, now) Question
   }
   class NewQuestion {
-    document_id
+    source_id
     chunk_id
     ensure_source_is_complete()
   }
@@ -131,7 +131,7 @@ stateDiagram-v2
 | 查看這些題目     | `questions_for`                | 這些 id 目前的題目；沒有題目的 id 不在結果裡                             |
 | 手寫題目         | `write_question`                        | 寫一題題目，可以引用一份教材的一個段落                                   |
 | 編修題目         | `edit_question`                         | 修正題目；只改有給的欄位                                                 |
-| 為教材產生題目   | `generate_document_questions`           | 立即用整份教材的段落產生題目，略過重複的，並記錄教材的題目數             |
+| 為教材產生題目   | `generate_source_questions`           | 立即用整份教材的段落產生題目，略過重複的，並記錄教材的題目數             |
 | 列出產生工作     | `list_generation_jobs`               | 教材各段落的產生工作與狀態                                               |
 | 重試產生工作     | `retry_generation_jobs`              | 讓因模型或供應者跳過、失敗或取消的工作重新排隊並執行                     |
 | 取消產生工作     | `cancel_generation_job`              | 等待中的工作立即取消，執行中的要求停止；開始提交後不能取消               |
@@ -141,7 +141,7 @@ stateDiagram-v2
 | 取消手動產生     | `cancel_manual_generation`           | 排隊中的作業立即取消，執行中的要求停止；提交後不能取消                   |
 | 匯入後產生題目       | `generate_imported_questions`            | 匯入後有段落的教材：排入產生工作，或依設定立即寫出題目                   |
 
-教材來源的 `import_document` 與 `retry_document_processing` 擷取出段落後，經教材來源的 port `ImportedQuestionGeneration.start_question_generation` 呼叫 `generate_imported_questions`；實作這個 port 的是 `infrastructure/import_questions.py` 的 `ImportedDocumentQuestionGeneration`，它依設定（`question_jobs_on_upload`、`question_jobs_strategy`、`question_jobs_chunk_limit`、`question_job_workers`、`write_questions_on_upload`、`write_questions_on_upload_limit`）呼叫用例。匯入時直接產生題目時，模型無法使用就不寫題目；之後記錄教材的題目數，有文字與段落的教材記為可用，否則記為 `no_text_detected`（`SourceDocument.status_after_import_questions`）。
+教材來源的 `import_source` 與 `retry_source_processing` 擷取出段落後，經教材來源的 port `ImportedQuestionGeneration.start_question_generation` 呼叫 `generate_imported_questions`；實作這個 port 的是 `infrastructure/import_questions.py` 的 `ImportedSourceQuestionGeneration`，它依設定（`question_jobs_on_upload`、`question_jobs_strategy`、`question_jobs_chunk_limit`、`question_job_workers`、`write_questions_on_upload`、`write_questions_on_upload_limit`）呼叫用例。匯入時直接產生題目時，模型無法使用就不寫題目；之後記錄教材的題目數，有文字與段落的教材記為可用，否則記為 `no_text_detected`（`Source.status_after_import_questions`）。
 
 ## 主要流程
 
@@ -162,9 +162,9 @@ sequenceDiagram
   Manager->>Questions: append_generated_questions_and_complete_job（同一個交易寫題目、更新教材題目數、工作成功）
 ```
 
-提交題目的交易以 `BEGIN IMMEDIATE` 開始：寫入題目、數出教材的題目數，再經 port `DocumentQuestionCount` 請教材來源記錄題目數與教材狀態（工作用 `record_import_question_count`，手動作業用 `record_question_count`），最後把工作或作業標為成功。`bootstrap/authoring_links.py` 的 `bind_document_question_count` 把這個交易的連線交給教材來源的 repository，任何一步失敗時全部復原。以前這是題目編寫自己的一個 `UPDATE documents`，題目數在同一句裡數；現在數和寫在同一個寫入鎖裡，結果相同。
+提交題目的交易以 `BEGIN IMMEDIATE` 開始：寫入題目、數出教材的題目數，再經 port `SourceQuestionCount` 請教材來源記錄題目數與教材狀態（工作用 `record_import_question_count`，手動作業用 `record_question_count`），最後把工作或作業標為成功。`bootstrap/authoring_links.py` 的 `bind_source_question_count` 把這個交易的連線交給教材來源的 repository，任何一步失敗時全部復原。以前這是題目編寫自己的一個 SQL 更新，題目數在同一句裡數；現在數和寫在同一個寫入鎖裡，結果相同。
 
-`create_app` 建立 `QuestionJobScheduler`（接上 `bind_document_question_count`、`authoring_projects` 與 `authoring_documents`）、`SqliteQuestionRepository`、`SqliteQuestionGenerationJobRepository`、`QuestionJobWork`、`SourceLibraryQuestionSources`、`ProviderQuestionWriting`、`ImportedDocumentQuestionGeneration`，放在 `app.state.question_repository`、`question_generation_job_repository`、`question_generation_work`、`question_sources`、`question_writing`、`imported_question_generation`；題目編寫對專案與教材的檢查分別經 port `StudyProjects`、`ProjectDocuments` 與 `QuestionSources`，不直接引用其他上下文的 infrastructure；router 只依 `application/ports.py` 的 port 呼叫用例。
+`create_app` 建立 `QuestionJobScheduler`（接上 `bind_source_question_count`、`authoring_projects` 與 `authoring_sources`）、`SqliteQuestionRepository`、`SqliteQuestionGenerationJobRepository`、`QuestionJobWork`、`SourceLibraryQuestionSources`、`ProviderQuestionWriting`、`ImportedSourceQuestionGeneration`，放在 `app.state.question_repository`、`question_generation_job_repository`、`question_generation_work`、`question_sources`、`question_writing`、`imported_question_generation`；題目編寫對專案與教材的檢查分別經 port `StudyProjects`、`ProjectSources` 與 `QuestionSources`，不直接引用其他上下文的 infrastructure；router 只依 `application/ports.py` 的 port 呼叫用例。
 
 ### 漢字讀音解答
 
@@ -227,8 +227,8 @@ flowchart TD
 
 ## 與其他上下文的關係
 
-- 教材來源：為教材產生題目時，經 `source_library.application` 的 `list_chunks` 與 `view_document` 讀段落與教材。背景工作與手動作業提交題目時，經 port `DocumentQuestionCount` 在同一個交易裡呼叫教材來源的 `record_import_question_count`、`record_question_count`。`SourceLibraryQuestionSources` 更新題目數與背景產生讀段落仍直接呼叫教材來源的儲存函式（已知例外，C5 第三部分改經教材來源的用例：https://github.com/gx-capture/capture-workbench/issues/200）。
-- 教材來源：教材的作業失敗、取消或重試時，教材來源經它的 port `DocumentQuestionJobs` 呼叫 `discard_unfinished_generation_jobs`；`bootstrap/source_library_links.py` 把作業交易的連線交給 `SqliteQuestionGenerationJobRepository`，工作和教材的重設一起寫入或一起復原。
+- 教材來源：為教材產生題目時，經 `source_library.application` 的 `list_chunks` 與 `view_source` 讀段落與教材。背景工作與手動作業提交題目時，經 port `SourceQuestionCount` 在同一個交易裡呼叫教材來源的 `record_import_question_count`、`record_question_count`。`SourceLibraryQuestionSources` 更新題目數與背景產生讀段落仍直接呼叫教材來源的儲存函式（已知例外，C5 第三部分改經教材來源的用例：https://github.com/gx-capture/capture-workbench/issues/200）。
+- 教材來源：教材的作業失敗、取消或重試時，教材來源經它的 port `SourceQuestionJobs` 呼叫 `discard_unfinished_generation_jobs`；`bootstrap/source_library_links.py` 把作業交易的連線交給 `SqliteQuestionGenerationJobRepository`，工作和教材的重設一起寫入或一起復原。
 - AI 供應：`question_writer_for` 依設定的供應者挑選題目編寫器；Ollama 經 JSON 對話寫題目；背景產生使用背景產生參數、產生歸屬與釋放資源（見 [ai_providers.md](ai_providers.md)）。
 - 學習專案：確認專案存在仍直接呼叫 `projects.infrastructure`（已知例外，C5 處理）。
 - 練習與複習：練習經自己的 port `PracticeQuestions` 呼叫 `source_questions`、`find_question`、`questions_for`。實作把練習交易的連線交給 `SqliteQuestionRepository`，所以讀到的是這次交易裡的題目。
@@ -238,9 +238,9 @@ flowchart TD
 
 ## 規則與資料來源
 
-- 資料表：`questions`、`question_generation_jobs`、`manual_question_generations` 屬題目編寫；migration 在 `platform/database.py`。題目編寫的 SQL 不再寫 `documents` 或讀 `document_chunks`。
+- 資料表：`questions`、`question_generation_jobs`、`manual_question_generations` 屬題目編寫；migration 在 `platform/database.py`。題目編寫的 SQL 不再寫 `sources` 或讀 `source_chunks`。
 - 確定性解析：`domain/deterministic_parser.py` 與教材來源的 `exam_content`。
-- HTTP：`/projects/{project_id}/questions`、`/projects/{project_id}/documents/{document_id}/questions`、`…/question-jobs`、`…/question-generations`（DTO 在 `authoring/api/schemas.py`）；產生工作與手動作業的即時狀態經 `authoring/api/operation_events.py` 的 server-sent events（`…/question-jobs/events`、`…/question-generations/{operation_id}/events`）；事件名稱為 `question-jobs` 與 `question-generation`。串流與心跳由 `platform/sse.py` 提供，快照來自 `list_generation_jobs` 與 `view_manual_generation`，所有工作都結束時（`all_jobs_ended`）或作業結束時串流結束。
+- HTTP：`/projects/{project_id}/questions`、`/projects/{project_id}/sources/{source_id}/questions`、`…/question-jobs`、`…/question-generations`（DTO 在 `authoring/api/schemas.py`）；產生工作與手動作業的即時狀態經 `authoring/api/operation_events.py` 的 server-sent events（`…/question-jobs/events`、`…/question-generations/{operation_id}/events`）；事件名稱為 `question-jobs` 與 `question-generation`。串流與心跳由 `platform/sse.py` 提供，快照來自 `list_generation_jobs` 與 `view_manual_generation`，所有工作都結束時（`all_jobs_ended`）或作業結束時串流結束。
 - API 的 `AnswerKeySource`、`QuestionGenerationStrategy`、`QuestionGenerationJobStatus`、`ManualQuestionGenerationStatus` 列舉值對應到概念集的 `authoring.*`。
 
 ## 前端
@@ -261,7 +261,7 @@ flowchart TD
 `題目 store 的載入方法` 載入目前專案的題目：第一次打開查詢，之後重新查詢。它在這些時候被呼叫：
 
 - 殼層的 `WorkspaceFacade` 切換專案時。
-- 教材來源的 `SourceImportStore.documentActivity` 換成新的值時：學習者上傳、選教材（再選同一份也算），以及有教材變成目前的教材。上傳在第一次查詢題目之後才完成時，教材變成目前的教材，題目再查一次，所以不會被當成專案沒有題目（[決策 D19](../../.agents/PLANS/ddd-refactor/decisions.md)）。
+- 教材來源的 `SourceImportStore.sourceActivity` 換成新的值時：學習者上傳、選教材（再選同一份也算），以及有教材變成目前的教材。上傳在第一次查詢題目之後才完成時，教材變成目前的教材，題目再查一次，所以不會被當成專案沒有題目（[決策 D19](../../.agents/PLANS/ddd-refactor/decisions.md)）。
 - 手動產生或重試完成，以及背景產生工作的事件串流報告進度時。
 - 練習的 `PracticeStore` 與練習面板需要最新的題目時。
 

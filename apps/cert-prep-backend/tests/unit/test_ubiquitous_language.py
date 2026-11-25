@@ -23,7 +23,7 @@ def _concepts() -> list[dict]:
 
 def _domain_enums(schemas: dict[str, Any] | None = None) -> dict[str, type[Enum]]:
     """Enums a modelled domain defines, or takes from cert_prep_contracts (as Source Library's
-    document and operation statuses), keyed by the name OpenAPI gives them."""
+    source and operation statuses), keyed by the name OpenAPI gives them."""
 
     enums: dict[str, type[Enum]] = {}
     for context in documented_contexts():

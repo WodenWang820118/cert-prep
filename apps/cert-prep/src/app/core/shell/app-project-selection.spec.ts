@@ -5,13 +5,13 @@ import { App } from './app.component';
 import { appRoutes } from './app-routes.constants';
 import { CERT_PREP_API } from '../data';
 import {
-  appDocument,
+  appSource,
   appProject,
   editableAppQuestion,
   availableLlmHealth,
   backendHealth,
   emptyWrongAnswerSummary,
-  secondAppDocument,
+  secondAppSource,
   secondAppProject,
 } from '../testing';
 import { ProjectStore } from '../../projects/data';
@@ -40,13 +40,13 @@ describe('App project selection', () => {
     apiClient.listProjects.mockReturnValue(of({
       items: [appProject, secondAppProject],
     }));
-    apiClient.listDocuments.mockImplementation((projectId: string) => of({
+    apiClient.listSources.mockImplementation((projectId: string) => of({
       items: [
-        projectId === secondAppProject.id ? secondAppDocument : appDocument,
+        projectId === secondAppProject.id ? secondAppSource : appSource,
       ],
     }));
-    apiClient.getDocument.mockImplementation((projectId: string) =>
-      of(projectId === secondAppProject.id ? secondAppDocument : appDocument),
+    apiClient.getSource.mockImplementation((projectId: string) =>
+      of(projectId === secondAppProject.id ? secondAppSource : appSource),
     );
     apiClient.listQuestions.mockReturnValue(of({ items: [] }));
 
@@ -60,7 +60,7 @@ describe('App project selection', () => {
       expect(localStorage.getItem('certPrepLastProjectId')).toBe(
         secondAppProject.id,
       );
-      expect(apiClient.listDocuments).toHaveBeenCalledWith(
+      expect(apiClient.listSources).toHaveBeenCalledWith(
         secondAppProject.id,
       );
     });
@@ -94,7 +94,7 @@ describe('App project selection', () => {
     return vi.waitFor(() => {
       fixture.detectChanges();
       expect(projects.selectedProjectId()).toBe(appProject.id);
-      expect(apiClient.listDocuments).toHaveBeenCalledWith(appProject.id);
+      expect(apiClient.listSources).toHaveBeenCalledWith(appProject.id);
       expect(localStorage.getItem('certPrepLastProjectId')).toBe(appProject.id);
     });
   });
@@ -108,9 +108,9 @@ function createApiClient() {
     startLlmInstallation: vi.fn(),
     getLlmInstallation: vi.fn(),
     listProjects: vi.fn().mockReturnValue(of({ items: [appProject] })),
-    listDocuments: vi.fn().mockReturnValue(of({ items: [appDocument] })),
-    getDocument: vi.fn().mockReturnValue(of(appDocument)),
-    listDocumentChunks: vi.fn().mockReturnValue(of({ items: [] })),
+    listSources: vi.fn().mockReturnValue(of({ items: [appSource] })),
+    getSource: vi.fn().mockReturnValue(of(appSource)),
+    listSourceChunks: vi.fn().mockReturnValue(of({ items: [] })),
     listQuestions: vi.fn().mockReturnValue(of({ items: [editableAppQuestion] })),
     listWrongAnswers: vi.fn().mockReturnValue(of({ items: [] })),
     summarizeWrongAnswers: vi.fn().mockReturnValue(of(emptyWrongAnswerSummary())),

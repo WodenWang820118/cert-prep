@@ -180,7 +180,7 @@ test('manual question terminal with zero generated questions fails before public
       {
         id: 'operation-commit',
         project_id: 'project-1',
-        document_id: 'document-1',
+        source_id: 'source-1',
         strategy: 'hybrid_reasoning',
         status: 'succeeded',
         phase: 'completed',
@@ -197,7 +197,7 @@ test('manual question terminal with zero generated questions fails before public
         operationId: 'operation-commit',
         commitStartedAt: '2026-07-15T12:00:00.000Z',
         projectId: 'project-1',
-        documentId: 'document-1',
+        sourceId: 'source-1',
       },
       10_000,
     ),

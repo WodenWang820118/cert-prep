@@ -40,15 +40,15 @@ export function createCertPrepHttpResourceClientFake(api: FakeApi): CertPrepHttp
     llmHealth: (trigger: CertPrepResourceTrigger | undefined) => fakeResource(gated(trigger), null, () => invoke('llmHealth')),
     providerSelection: (trigger: CertPrepResourceTrigger | undefined) => fakeResource(gated(trigger), null, () => invoke('llmProviderSelection')),
     llmRequirements: (trigger: CertPrepResourceTrigger | undefined) => fakeResource(gated(trigger), [], () => invoke('llmRequirements').pipe(mapItems(items))),
-    documents: (projectId: CertPrepResourceKey) => fakeResource(key(projectId), [], (id) => invoke('listDocuments', id).pipe(mapItems(items))),
-    document: (projectId: CertPrepResourceKey, documentId: CertPrepResourceKey) => fakeResource(() => {
-      const project = projectId(); const document = documentId();
-      return project !== null && project !== undefined && document !== null && document !== undefined ? `${project}:${document}` : undefined;
-    }, null, (compoundId) => { const [project, document] = String(compoundId).split(':'); return invoke('getDocument', project, document); }),
-    documentChunks: (projectId: CertPrepResourceKey, documentId: CertPrepResourceKey) => fakeResource(() => {
-      const project = projectId(); const document = documentId();
-      return project !== null && project !== undefined && document !== null && document !== undefined ? `${project}:${document}` : undefined;
-    }, [], (compoundId) => { const [project, document] = String(compoundId).split(':'); return invoke('listDocumentChunks', project, document).pipe(mapItems(items)); }),
+    sources: (projectId: CertPrepResourceKey) => fakeResource(key(projectId), [], (id) => invoke('listSources', id).pipe(mapItems(items))),
+    source: (projectId: CertPrepResourceKey, sourceId: CertPrepResourceKey) => fakeResource(() => {
+      const project = projectId(); const source = sourceId();
+      return project !== null && project !== undefined && source !== null && source !== undefined ? `${project}:${source}` : undefined;
+    }, null, (compoundId) => { const [project, source] = String(compoundId).split(':'); return invoke('getSource', project, source); }),
+    sourceChunks: (projectId: CertPrepResourceKey, sourceId: CertPrepResourceKey) => fakeResource(() => {
+      const project = projectId(); const source = sourceId();
+      return project !== null && project !== undefined && source !== null && source !== undefined ? `${project}:${source}` : undefined;
+    }, [], (compoundId) => { const [project, source] = String(compoundId).split(':'); return invoke('listSourceChunks', project, source).pipe(mapItems(items)); }),
     questions: (projectId: CertPrepResourceKey) => fakeResource(key(projectId), [], (id) => invoke('listQuestions', id).pipe(mapItems(items))),
     activePracticeSessions: (projectId: CertPrepResourceKey) => fakeResource(key(projectId), [], (id) => invoke('listActivePracticeSessions', id).pipe(mapItems(items))),
     wrongAnswers: (projectId: CertPrepResourceKey) => fakeResource(key(projectId), [], (id) => invoke('listWrongAnswers', id).pipe(mapItems(items))),

@@ -6,7 +6,7 @@
 
 負責：學習者上傳 PDF 或圖片後，請 Capture Runtime 擷取文字、在確認前檢閱、確認後寫成教材段落，並在有段落時排入題目。也負責這個程序裡 runtime 的就緒、來源證明、需求與安裝。
 
-不負責：教材與段落怎麼存（教材來源）、題目怎麼寫（題目編寫）、專案本身（學習專案）、Capture Runtime 的協定與傳輸。SDK 型別留在 infrastructure。不經檢閱的上傳屬教材來源（`import_document`），擷取整合只替它擷取文字。
+不負責：教材與段落怎麼存（教材來源）、題目怎麼寫（題目編寫）、專案本身（學習專案）、Capture Runtime 的協定與傳輸。SDK 型別留在 infrastructure。不經檢閱的上傳屬教材來源（`import_source`），擷取整合只替它擷取文字。
 
 ## 用語
 
@@ -18,7 +18,7 @@
 | 擷取檢閱無法轉換      | `CaptureReviewTransitionError`        | 檢閱的狀態不允許這次轉換                           |
 | 準備好的擷取來源      | `PreparedCaptureSource`               | 準備後的種類、副檔名與頁數                         |
 | 擷取檢閱儲存庫        | `CaptureReviewStore`                  | 讀出、建立、觀察序號與結束檢閱                     |
-| 擷取用的教材          | `CaptureDocuments`                    | 讀教材、來源檔與段落，並在建立時掛上教材           |
+| 擷取用的教材          | `CaptureSources`                    | 讀教材、來源檔與段落，並在建立時掛上教材           |
 | 擷取用的匯入作業      | `CaptureOperations`                   | 佔用、取消、失敗與讀出匯入作業                     |
 | 擷取用的檔案庫        | `CaptureFileStore`                    | 準備、存放與讀取上傳檔                             |
 | 擷取檢閱流程          | `CaptureReviewWorkflow`               | 摘要、佔用確認、開始擷取與寫入                     |
@@ -74,7 +74,7 @@ classDiagram
   class CaptureReviewSession {
     id
     project_id
-    document_id
+    source_id
     operation_id
     runtime_capture_id
     runtime_ingestion_id
@@ -165,7 +165,7 @@ stateDiagram-v2
 | 查看 runtime 安裝     | `view_runtime_installation`   | 讀一筆安裝；終態會清掉 discovery 快取             |
 | 取消 runtime 安裝     | `cancel_runtime_installation` | 取消一筆安裝                                      |
 
-不經檢閱的上傳是教材來源的 `import_document`；擷取整合以 `infrastructure/document_extraction.py` 的 `CaptureSourceExtraction` 實作它的 port `SourceExtraction`（擷取、寫成段落、刪除 runtime 的副本，把 Capture 的錯誤轉成教材來源的錯誤），不是上表的用例。建立擷取時讀上傳檔案用教材來源的 `receive_upload`。
+不經檢閱的上傳是教材來源的 `import_source`；擷取整合以 `infrastructure/source_extraction.py` 的 `CaptureSourceExtraction` 實作它的 port `SourceExtraction`（擷取、寫成段落、刪除 runtime 的副本，把 Capture 的錯誤轉成教材來源的錯誤），不是上表的用例。建立擷取時讀上傳檔案用教材來源的 `receive_upload`。
 
 ## 主要流程
 
@@ -195,7 +195,7 @@ sequenceDiagram
 
 ## 與其他上下文的關係
 
-- 教材來源：經擷取整合自己的 `CaptureDocuments`、`CaptureOperations`、`CaptureFileStore`、`CapturePublication` 與 `BindCaptureReviewCommit`。教材來源的 adapter 滿足這些 Protocol，教材來源不 import 擷取整合。`review_workflow` 停止作業（檢閱確認失敗、復原檢閱）時經教材來源的 port `DocumentOperationRepository`（`create_app` 傳入 `app.state.document_operation_repository`），所以作業停止時也刪掉教材未結束的題目產生工作；`persistence` 與 `review_workflow` 的成果發布與確認提交經 `CapturePublication`、`BindCaptureReviewCommit` 與 `CaptureOperations`（由 `bootstrap/capture_links.py` 組裝），不直接呼叫教材來源的 infrastructure。
+- 教材來源：經擷取整合自己的 `CaptureSources`、`CaptureOperations`、`CaptureFileStore`、`CapturePublication` 與 `BindCaptureReviewCommit`。教材來源的 adapter 滿足這些 Protocol，教材來源不 import 擷取整合。`review_workflow` 停止作業（檢閱確認失敗、復原檢閱）時經教材來源的 port `SourceOperationRepository`（`create_app` 傳入 `app.state.source_operation_repository`），所以作業停止時也刪掉教材未結束的題目產生工作；`persistence` 與 `review_workflow` 的成果發布與確認提交經 `CapturePublication`、`BindCaptureReviewCommit` 與 `CaptureOperations`（由 `bootstrap/capture_links.py` 組裝），不直接呼叫教材來源的 infrastructure。
 - 題目編寫：寫入後經 `CaptureQuestionGeneration` 排入題目。
 - 學習專案：建立擷取時用 `require_project` 確認專案存在。
 - Capture Runtime：anticorruption layer（D8）。`application` 不得 import `capture_runtime_client`。SDK 型別留在 infrastructure，以及 router 的回應模型。
@@ -205,11 +205,11 @@ sequenceDiagram
 
 ## 規則與資料來源
 
-- 資料表：`capture_review_sessions`。migration 25 建立表，26 加上 `confirm_request_id` 與 `confirm_review_digest`，28 加上 `last_event_sequence`，31 加上 `runtime_ingestion_id`（同一個 migration 也給 `documents` 加上 `extraction_provenance`；兩欄在舊資料列都是 NULL）。都在 `platform/database.py`。
+- 資料表：`capture_review_sessions`。migration 25 建立表，26 加上 `confirm_request_id` 與 `confirm_review_digest`，28 加上 `last_event_sequence`，31 加上 `runtime_ingestion_id`（同一個 migration 也加入教材的 `extraction_provenance`；兩欄在舊資料列都是 NULL）。都在 `platform/database.py`。
 - HTTP：`/projects/{project_id}/capture-reviews` 與 `/capture-runtime`。事件是工作台下的 `GET /{capture_id}/events`，`text/event-stream`。
-- OpenAPI 標籤是 `capture-reviews`。宿主的 `captureId` 是擷取檢閱的 id；`ingestionId` 在 runtime 回報攝取 id 時就是它，否則是擷取檢閱的 id，從不是教材 id（教材 id 是 `documentId`）。
-- `capture_runtime_unavailable` 只表示 Capture Runtime 沒有設定或連不上；`capture_requirement_unavailable` 表示 runtime 在執行，但來源需要的擷取引擎沒有安裝。擷取檢閱失敗時的代碼是 `capture_review_failed`，帶已儲存的文件作業階段與失敗訊息；沒有儲存的原因時才用固定句子。
-- 擷取結果附上 Cert 自己的 `extractionProvenance`：`recorded` 是擷取寫成教材時存下的引擎、模型、裝置與 runtime 版本（`documents.extraction_provenance`）；`reconstructed` 是 migration 31 之前的教材，引擎由擷取方式推回，模型與 runtime 版本為空，不編造版本。Capture 的 `CaptureEngine.model` 不接受空值，所以這些舊教材在工作台的 `extractionEngine.model` 是 `unknown`。
+- OpenAPI 標籤是 `capture-reviews`。宿主的 `captureId` 是擷取檢閱的 id；`ingestionId` 在 runtime 回報攝取 id 時就是它，否則是擷取檢閱的 id，從不是教材 id（教材 id 是 `sourceId`）。
+- `capture_runtime_unavailable` 只表示 Capture Runtime 沒有設定或連不上；`capture_requirement_unavailable` 表示 runtime 在執行，但來源需要的擷取引擎沒有安裝。擷取檢閱失敗時的代碼是 `capture_review_failed`，帶已儲存的教材作業階段與失敗訊息；沒有儲存的原因時才用固定句子。
+- 擷取結果附上 Cert 自己的 `extractionProvenance`：`recorded` 是擷取寫成教材時存下的引擎、模型、裝置與 runtime 版本（`sources.extraction_provenance`）；`reconstructed` 是 migration 31 之前的教材，引擎由擷取方式推回，模型與 runtime 版本為空，不編造版本。Capture 的 `CaptureEngine.model` 不接受空值，所以這些舊教材在工作台的 `extractionEngine.model` 是 `unknown`。
 - 安裝請求的 `consent: true` 與 UUID `X-Idempotency-Key` 留在 router。安裝進入 `completed`、`failed`、`cancelled` 或 `manual_action_required` 時，client 清掉 discovery 快取。
 - `CaptureReviewStatus` 不是 OpenAPI 的列舉，概念集沒有對應項目。
 - 已知例外仍在 `apps/cert-prep-backend/pyproject.toml`：runtime router 對 `host_models`（`RuntimeReady` 也由 infrastructure 的 Capture SDK client 解析）；`persistence` 與 `review_workflow` 對教材來源的 infrastructure。
@@ -226,7 +226,7 @@ sequenceDiagram
 
 沒有 `ui`：畫面是工作台套件的 Web Component。
 
-擷取整合只引用自己、教材來源（`source-library/data` 的 `SourceImportStore`：擷取完成後 `refreshUploadedDocument` 與 `loadLatestDocument`）、學習專案（`projects/data` 的 `ProjectStore`）、執行環境（`runtime/data` 的 `DesktopRuntimeStore`：桌面端 Capture Runtime 的狀態、安裝與啟動）與 `core`。它不引用題目編寫或練習，所以沒有要反轉的呼叫。
+擷取整合只引用自己、教材來源（`source-library/data` 的 `SourceImportStore`：擷取完成後 `refreshUploadedSource` 與 `loadLatestSource`）、學習專案（`projects/data` 的 `ProjectStore`）、執行環境（`runtime/data` 的 `DesktopRuntimeStore`：桌面端 Capture Runtime 的狀態、安裝與啟動）與 `core`。它不引用題目編寫或練習，所以沒有要反轉的呼叫。
 
 Capture Runtime 的就緒、來源證明、需求與安裝屬於擷取整合（見上文「負責與不負責」），所以 OCR 預檢的 store 在 `capture/data`，不在 `runtime`。它原本在 `stores/capture-runtime`，反向引用擷取頁的 client 與型別（最後兩項 Sheriff 已知例外）；client 搬到同一層、型別搬到 `capture/domain` 後，store 經同層與 `../domain` 引用，兩項例外移除。
 

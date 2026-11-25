@@ -37,18 +37,18 @@ def test_mixed_pages_are_saved_with_actual_model_attribution(tmp_path, monkeypat
         settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN,
                           reading_solver_enabled=dictionary_enabled),
         llm_provider=provider, capture_runtime_client=TestCaptureRuntimeClient(),
-        document_processing_async_jobs=False, background_question_jobs=False,
+        source_processing_async_jobs=False, background_question_jobs=False,
     )) as client:
         project_id = client.post("/projects", headers=headers, json={"name": "Widgets"}).json()["id"]
         response = client.post(
-            f"/projects/{project_id}/documents", headers=headers,
+            f"/projects/{project_id}/sources", headers=headers,
             files={"file": ("widgets.pdf", minimal_pdf("Synthetic widgets."), "application/pdf")},
         )
         assert response.status_code == 201
-        document_id = response.json()["id"]
+        source_id = response.json()["id"]
         database = client.app.state.database
         operation = client.app.state.question_job_scheduler.start_manual_operation(
-            database, project_id=project_id, document_id=document_id, limit=2,
+            database, project_id=project_id, source_id=source_id, limit=2,
             strategy=QuestionGenerationStrategy.HYBRID_REASONING,
         )
         assert operation.status == "succeeded"
@@ -99,18 +99,18 @@ def test_mixed_pages_preserve_saved_and_practice_order(tmp_path, monkeypatch):
             data_dir=tmp_path, api_token=AUTH_TOKEN, reading_solver_enabled=False,
         ),
         llm_provider=provider, capture_runtime_client=TestCaptureRuntimeClient(),
-        document_processing_async_jobs=False, background_question_jobs=False,
+        source_processing_async_jobs=False, background_question_jobs=False,
     )) as client:
         project_id = client.post("/projects", headers=headers, json={"name": "Widgets"}).json()["id"]
         response = client.post(
-            f"/projects/{project_id}/documents", headers=headers,
+            f"/projects/{project_id}/sources", headers=headers,
             files={"file": ("widgets.pdf", minimal_pdf("Synthetic widgets."), "application/pdf")},
         )
         assert response.status_code == 201
-        document_id = response.json()["id"]
+        source_id = response.json()["id"]
         database = client.app.state.database
         operation = client.app.state.question_job_scheduler.start_manual_operation(
-            database, project_id=project_id, document_id=document_id, limit=3,
+            database, project_id=project_id, source_id=source_id, limit=3,
             strategy=QuestionGenerationStrategy.HYBRID_REASONING,
         )
         assert operation.status == "succeeded"
@@ -126,6 +126,6 @@ def test_mixed_pages_preserve_saved_and_practice_order(tmp_path, monkeypatch):
             projects, questions_of = bind_practice_reads(database, connection)
             practice_questions = SqlitePracticeRepository(
                 connection, projects=projects, questions=questions_of
-            ).source_questions(project_id, document_id=document_id)
+            ).source_questions(project_id, source_id=source_id)
         assert [item.id for item in practice_questions] == [item.id for item in questions]
     assert fake_client.pull_calls == 0

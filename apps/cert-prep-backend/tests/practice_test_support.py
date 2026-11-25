@@ -12,9 +12,9 @@ def _create_project(client: TestClient, auth_headers) -> str:
     assert response.status_code == 201
     return response.json()["id"]
 
-def _upload_document(client: TestClient, auth_headers, project_id: str) -> str:
+def _upload_source(client: TestClient, auth_headers, project_id: str) -> str:
     response = client.post(
-        f"/projects/{project_id}/documents",
+        f"/projects/{project_id}/sources",
         headers=auth_headers,
         files={
             "file": (
@@ -31,10 +31,10 @@ def _generate_playable_question(
     client: TestClient,
     auth_headers,
     project_id: str,
-    document_id: str,
+    source_id: str,
 ) -> dict:
     response = client.post(
-        f"/projects/{project_id}/documents/{document_id}/questions",
+        f"/projects/{project_id}/sources/{source_id}/questions",
         headers=auth_headers,
         json={"limit": 1, "strategy": "hybrid_reasoning"},
     )
@@ -46,7 +46,7 @@ def _create_manual_question(
     client: TestClient,
     auth_headers,
     project_id: str,
-    document_id: str,
+    source_id: str,
     *,
     question: str = "Which access model should be applied?",
     choices: list[str] | None = None,
@@ -57,7 +57,7 @@ def _create_manual_question(
     source_order: int | None = None,
 ) -> dict:
     chunks_response = client.get(
-        f"/projects/{project_id}/documents/{document_id}/chunks",
+        f"/projects/{project_id}/sources/{source_id}/chunks",
         headers=auth_headers,
     )
     assert chunks_response.status_code == 200
@@ -70,7 +70,7 @@ def _create_manual_question(
             "choices": choices or ["Use least privilege", "Allow unrestricted access"],
             "answer": answer,
             "rationale": rationale,
-            "document_id": document_id,
+            "source_id": source_id,
             "chunk_id": chunk["id"],
             "citation_page": (
                 chunk["page_number"]

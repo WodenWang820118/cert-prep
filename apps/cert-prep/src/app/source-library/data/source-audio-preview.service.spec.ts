@@ -5,7 +5,7 @@ import { SourceAudioPreviewService } from './source-audio-preview.service';
 
 describe('SourceAudioPreviewService', () => {
   const api = {
-    getDocumentAudioSource: vi.fn(),
+    getSourceAudio: vi.fn(),
   };
   let service: SourceAudioPreviewService;
   let objectUrlCounter = 0;
@@ -31,10 +31,10 @@ describe('SourceAudioPreviewService', () => {
     vi.restoreAllMocks();
   });
 
-  it('replaces the object URL when the active document changes', () => {
+  it('replaces the object URL when the active source changes', () => {
     const firstRequest = of(new Blob(['first'], { type: 'audio/mpeg' }));
     const secondRequest = new Subject<Blob>();
-    api.getDocumentAudioSource
+    api.getSourceAudio
       .mockReturnValueOnce(firstRequest)
       .mockReturnValueOnce(secondRequest);
 
@@ -56,12 +56,12 @@ describe('SourceAudioPreviewService', () => {
   it('aborts a pending request and ignores its stale response after a context switch', () => {
     const firstRequest = new Subject<Blob>();
     const secondRequest = new Subject<Blob>();
-    api.getDocumentAudioSource
+    api.getSourceAudio
       .mockReturnValueOnce(firstRequest)
       .mockReturnValueOnce(secondRequest);
 
     service.load('project-1', 'audio-1');
-    const firstSignal = api.getDocumentAudioSource.mock.calls[0][2].signal as AbortSignal;
+    const firstSignal = api.getSourceAudio.mock.calls[0][2].signal as AbortSignal;
     service.load('project-2', 'audio-2');
     expect(firstSignal.aborted).toBe(true);
 
@@ -72,7 +72,7 @@ describe('SourceAudioPreviewService', () => {
   });
 
   it('exposes a retry after a failed authenticated source request', () => {
-    api.getDocumentAudioSource
+    api.getSourceAudio
       .mockReturnValueOnce(throwError(() => new Error('network down')))
       .mockReturnValueOnce(of(new Blob(['retry'], { type: 'audio/mpeg' })));
 
@@ -84,15 +84,15 @@ describe('SourceAudioPreviewService', () => {
     });
 
     service.retry();
-    expect(api.getDocumentAudioSource).toHaveBeenCalledTimes(2);
+    expect(api.getSourceAudio).toHaveBeenCalledTimes(2);
     expect(service.state().url).toBe('blob:audio-preview-1');
   });
 
   it('aborts an active request on destroy and ignores a late response', () => {
     const pendingRequest = new Subject<Blob>();
-    api.getDocumentAudioSource.mockReturnValue(pendingRequest);
+    api.getSourceAudio.mockReturnValue(pendingRequest);
     service.load('project-1', 'audio-1');
-    const signal = api.getDocumentAudioSource.mock.calls[0][2].signal as AbortSignal;
+    const signal = api.getSourceAudio.mock.calls[0][2].signal as AbortSignal;
 
     service.destroy();
     expect(signal.aborted).toBe(true);
@@ -101,7 +101,7 @@ describe('SourceAudioPreviewService', () => {
   });
 
   it('revokes the current object URL on destroy', () => {
-    api.getDocumentAudioSource.mockReturnValue(of(new Blob(['ready'])));
+    api.getSourceAudio.mockReturnValue(of(new Blob(['ready'])));
     service.load('project-1', 'audio-1');
     expect(service.state().url).toBe('blob:audio-preview-1');
     service.destroy();
