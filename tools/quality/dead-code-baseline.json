@@ -3,7 +3,6 @@
   "default|devDependencies|package.json|@tauri-apps/cli",
   "default|devDependencies|package.json|angular-eslint",
   "default|devDependencies|package.json|prettier",
-  "default|devDependencies|package.json|typescript-eslint",
   "default|duplicates|tools/capture-runtime-version.mts|CAPTURE_RUNTIME_VERSION+CAPTURE_SIDECAR_LAUNCHER_VERSION",
   "default|exports|apps/cert-prep-desktop/scripts/packaged-capture-workbench-smoke/runner.mts|runPackagedCaptureWorkbenchSmoke",
   "default|files|apps/cert-prep-desktop/scripts/packaged-capture-workbench-smoke.mts|apps/cert-prep-desktop/scripts/packaged-capture-workbench-smoke.mts",
