@@ -1,0 +1,468 @@
+from fastapi.testclient import TestClient
+
+from conftest import TestCaptureRuntimeClient, minimal_pdf
+from cert_prep_backend.bootstrap.app import create_app
+from cert_prep_backend.platform.config import DEFAULT_OLLAMA_MODEL, Settings
+from cert_prep_backend.authoring.domain.models import (
+    AnswerKeySource,
+    QuestionSuggestion,
+)
+from cert_prep_backend.authoring.infrastructure import repository as questions_repository
+from cert_prep_backend.bootstrap.study_projects import authoring_projects
+from cert_prep_backend.platform.errors import NotFoundError, LanguageModelUnavailable
+from cert_prep_backend.ai_providers.domain.provider import ProviderHealth
+from cert_prep_backend.authoring.api.schemas import QuestionGenerateRequest
+
+
+def test_generation_defaults_to_deterministic_only_without_provider_call(
+    tmp_path, auth_headers
+) -> None:
+    provider = RecordingQuestionWriter()
+    client = TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            capture_runtime_client=TestCaptureRuntimeClient(),
+            llm_provider=provider,
+            document_processing_async_jobs=False,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+
+    assert QuestionGenerateRequest().strategy.value == "deterministic_only"
+    response = client.post(
+        f"/projects/{project_id}/documents/{document_id}/questions",
+        headers=auth_headers,
+        json={"limit": 1},
+    )
+
+    assert response.status_code == 201
+    assert provider.generate_calls == 0
+    questions = response.json()["items"]
+    assert questions == []
+
+
+def test_hybrid_reasoning_provider_output_is_saved_as_playable_question(
+    tmp_path, auth_headers
+) -> None:
+    provider = RecordingQuestionWriter()
+    client = TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            capture_runtime_client=TestCaptureRuntimeClient(),
+            llm_provider=provider,
+            document_processing_async_jobs=False,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+
+    response = client.post(
+        f"/projects/{project_id}/documents/{document_id}/questions",
+        headers=auth_headers,
+        json={"limit": 1, "strategy": "hybrid_reasoning"},
+    )
+
+    assert response.status_code == 201
+    assert provider.generate_calls == 1
+    authored_question = response.json()["items"][0]
+    assert authored_question["answer_key_source"] == "ai_inferred"
+    assert authored_question["confidence"] == 0.73
+    assert authored_question["rationale"] == "The cited source supports the correct answer."
+
+
+def test_created_question_is_playable_and_editable(
+    client: TestClient, auth_headers
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    question = client.post(
+        f"/projects/{project_id}/documents/{document_id}/questions",
+        headers=auth_headers,
+        json={"limit": 1, "strategy": "hybrid_reasoning"},
+    ).json()["items"][0]
+
+
+    patched = client.patch(
+        f"/projects/{project_id}/questions/{question['id']}",
+        headers=auth_headers,
+        json={"question": "Edited playable question?"},
+    )
+
+    assert patched.status_code == 200
+    assert patched.json()["question"] == "Edited playable question?"
+
+
+def test_generation_preserves_existing_source_questions(
+    client: TestClient, auth_headers
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    chunks = client.get(
+        f"/projects/{project_id}/documents/{document_id}/chunks",
+        headers=auth_headers,
+    ).json()["items"]
+    chunk = chunks[0]
+    created = client.post(
+        f"/projects/{project_id}/questions",
+        headers=auth_headers,
+        json={
+            "document_id": document_id,
+            "chunk_id": chunk["id"],
+            "question": "Which action applies?",
+            "choices": ["Apply least privilege", "Grant all access"],
+            "answer": "Apply least privilege",
+            "answer_key_source": "ai_inferred",
+            "rationale": "The cited source limits access.",
+            "citation_page": chunk["page_number"],
+            "source_excerpt": chunk["source_excerpt"],
+            "confidence": 0.91,
+        },
+    )
+    assert created.status_code == 201
+
+    generated = client.post(
+        f"/projects/{project_id}/documents/{document_id}/questions",
+        headers=auth_headers,
+        json={"limit": 1},
+    )
+
+    assert generated.status_code == 201
+    listed = client.get(f"/projects/{project_id}/questions", headers=auth_headers)
+    assert any(
+        item["id"] == created.json()["id"]
+        for item in listed.json()["items"]
+    )
+
+
+def test_generating_twice_leaves_the_sources_total_question_count(
+    tmp_path, auth_headers
+) -> None:
+    client = TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            capture_runtime_client=TestCaptureRuntimeClient(),
+            llm_provider=RecordingQuestionWriter(),
+            document_processing_async_jobs=False,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    chunk = client.get(
+        f"/projects/{project_id}/documents/{document_id}/chunks",
+        headers=auth_headers,
+    ).json()["items"][0]
+    written = client.post(
+        f"/projects/{project_id}/questions",
+        headers=auth_headers,
+        json={
+            "document_id": document_id,
+            "chunk_id": chunk["id"],
+            "question": "Which action applies?",
+            "choices": ["Apply least privilege", "Grant all access"],
+            "answer": "Apply least privilege",
+            "rationale": "The cited source limits access.",
+            "citation_page": chunk["page_number"],
+            "source_excerpt": chunk["source_excerpt"],
+        },
+    )
+    assert written.status_code == 201
+
+    def source_questions() -> int:
+        items = client.get(f"/projects/{project_id}/questions", headers=auth_headers).json()
+        return sum(1 for item in items["items"] if item["document_id"] == document_id)
+
+    def question_count() -> int:
+        document = client.get(
+            f"/projects/{project_id}/documents/{document_id}", headers=auth_headers
+        )
+        return document.json()["question_count"]
+
+    added = []
+    for _ in range(2):
+        generated = client.post(
+            f"/projects/{project_id}/documents/{document_id}/questions",
+            headers=auth_headers,
+            json={"limit": 1, "strategy": "hybrid_reasoning"},
+        )
+        assert generated.status_code == 201
+        added.append(len(generated.json()["items"]))
+        # The count is every question of the source, the one written by hand included, not
+        # the number this run added.
+        assert question_count() == source_questions()
+    # The second run finds its question already there and adds none; the total stays.
+    assert added == [1, 0]
+    assert question_count() == 2
+
+
+def test_create_question_rejects_partial_source_reference(
+    client: TestClient, auth_headers
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+
+    response = client.post(
+        f"/projects/{project_id}/questions",
+        headers=auth_headers,
+        json={
+            "document_id": document_id,
+            "question": "Which action applies?",
+            "choices": ["Apply least privilege", "Grant all access"],
+            "answer": "Apply least privilege",
+            "answer_key_source": "manual",
+            "rationale": "The cited source limits access.",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "validation_error"
+
+
+def _append_generated_questions(
+    db,
+    *,
+    project_id: str,
+    document_id: str,
+    suggestions: list[QuestionSuggestion],
+):
+    if not authoring_projects(db).exists(project_id):
+        raise NotFoundError("Project not found.")
+    with db.connect() as connection:
+        rows = questions_repository._append_generated_questions(
+            connection,
+            project_id=project_id,
+            document_id=document_id,
+            suggestions=suggestions,
+        )
+    return [questions_repository._question_from_row(row) for row in rows]
+
+
+def test_background_append_preserves_existing_questions_and_dedupes_retries(
+    client: TestClient, auth_headers
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    chunk = client.get(
+        f"/projects/{project_id}/documents/{document_id}/chunks",
+        headers=auth_headers,
+    ).json()["items"][0]
+    existing = client.post(
+        f"/projects/{project_id}/questions",
+        headers=auth_headers,
+        json={
+            "document_id": document_id,
+            "chunk_id": chunk["id"],
+            "question": "Existing edited question",
+            "choices": ["A", "B"],
+            "answer": "A",
+            "answer_key_source": "manual",
+            "rationale": "Edited by reviewer.",
+            "citation_page": chunk["page_number"],
+            "source_excerpt": chunk["source_excerpt"],
+        },
+    ).json()
+    suggestion = QuestionSuggestion(
+        chunk_id=chunk["id"],
+        question="Which action best applies the cited exam concept?",
+        choices=["Apply the cited concept", "Ignore the cited source"],
+        answer="Apply the cited concept",
+        answer_key_source=AnswerKeySource.AI_INFERRED,
+        rationale="The cited source supports the correct answer.",
+        citation_page=chunk["page_number"],
+        source_excerpt=chunk["source_excerpt"],
+        source_question_number="1",
+    )
+
+    first = _append_generated_questions(
+        client.app.state.database,
+        project_id=project_id,
+        document_id=document_id,
+        suggestions=[suggestion],
+    )
+    second = _append_generated_questions(
+        client.app.state.database,
+        project_id=project_id,
+        document_id=document_id,
+        suggestions=[suggestion],
+    )
+
+    assert len(first) == 1
+    assert second == []
+    listed = client.get(f"/projects/{project_id}/questions", headers=auth_headers)
+    question_ids = {item["id"] for item in listed.json()["items"]}
+    assert existing["id"] in question_ids
+    assert first[0].id in question_ids
+
+
+def test_custom_answer_key_source_remains_backward_compatible(
+    client: TestClient, auth_headers
+) -> None:
+    project_id = _create_project(client, auth_headers)
+
+    created = client.post(
+        f"/projects/{project_id}/questions",
+        headers=auth_headers,
+        json={
+            "question": "Which source should be trusted?",
+            "choices": ["A", "B"],
+            "answer": "A",
+            "answer_key_source": "legacy_custom",
+            "rationale": "Existing databases may contain custom source labels.",
+        },
+    )
+
+    assert created.status_code == 201
+    question_id = created.json()["id"]
+    assert created.json()["answer_key_source"] == "legacy_custom"
+
+    patched = client.patch(
+        f"/projects/{project_id}/questions/{question_id}",
+        headers=auth_headers,
+        json={"answer_key_source": "legacy_custom_patch"},
+    )
+
+    assert patched.status_code == 200
+    assert patched.json()["answer_key_source"] == "legacy_custom_patch"
+
+    listed = client.get(f"/projects/{project_id}/questions", headers=auth_headers)
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["answer_key_source"] == "legacy_custom_patch"
+
+
+def test_bad_question_source_ids_return_error_envelope(client: TestClient, auth_headers) -> None:
+    project_id = _create_project(client, auth_headers)
+
+    response = client.post(
+        f"/projects/{project_id}/questions",
+        headers=auth_headers,
+        json={
+            "question": "Which control applies?",
+            "choices": ["A", "B"],
+            "answer": "A",
+            "rationale": "Because it matches the control objective.",
+            "citation_page": 1,
+            "source_excerpt": "A source.",
+            "document_id": "missing-document",
+            "chunk_id": "missing-chunk",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"code": "not_found", "message": "Document chunk not found."}
+
+
+def test_explicit_generation_returns_provider_unavailable_error_envelope(
+    tmp_path, auth_headers
+) -> None:
+    client = TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            capture_runtime_client=TestCaptureRuntimeClient(),
+            llm_provider=UnavailableQuestionWriter(),
+            document_processing_async_jobs=False,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    document = client.get(
+        f"/projects/{project_id}/documents/{document_id}", headers=auth_headers
+    )
+    assert document.status_code == 200
+    assert document.json()["status"] == "ready"
+    assert document.json()["question_count"] == 0
+
+    response = client.post(
+        f"/projects/{project_id}/documents/{document_id}/questions",
+        headers=auth_headers,
+        json={"limit": 1, "strategy": "hybrid_reasoning"},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "code": "provider_unavailable",
+        "message": "provider offline",
+    }
+
+
+def _create_project(client: TestClient, auth_headers) -> str:
+    response = client.post("/projects", headers=auth_headers, json={"name": "Cloud"})
+    assert response.status_code == 201
+    return response.json()["id"]
+
+
+class UnavailableQuestionWriter:
+    provider = "unavailable"
+    model = DEFAULT_OLLAMA_MODEL
+
+    def health(self) -> ProviderHealth:
+        return ProviderHealth(
+            provider=self.provider,
+            model=self.model,
+            available=False,
+            detail="provider offline",
+        )
+
+    def write_questions(self, _chunks, _limit):
+        raise LanguageModelUnavailable("provider offline")
+
+
+class RecordingQuestionWriter:
+    provider = "recording"
+    model = DEFAULT_OLLAMA_MODEL
+
+    def __init__(self) -> None:
+        self.generate_calls = 0
+
+    def health(self) -> ProviderHealth:
+        return ProviderHealth(
+            provider=self.provider,
+            model=self.model,
+            available=True,
+            detail="recording provider",
+        )
+
+    def write_questions(self, chunks, limit):
+        self.generate_calls += 1
+        chunk = chunks[0]
+        excerpt = chunk.excerpt_or_text_prefix()
+        return [
+            QuestionSuggestion(
+                chunk_id=chunk.id,
+                question="Which action best applies the cited exam concept?",
+                choices=[
+                    "Apply the cited concept",
+                    "Ignore the cited source",
+                    "Choose an unrelated control",
+                    "Remove all safeguards",
+                ],
+                answer="Apply the cited concept",
+                answer_key_source=AnswerKeySource.AI_INFERRED,
+                rationale="The cited source supports the correct answer.",
+                citation_page=chunk.page_number,
+                source_excerpt=excerpt,
+                confidence=0.73,
+                source_order=(chunk.page_number * 10_000) + 1,
+            )
+        ][:limit]
+
+
+def _upload_document(
+    client: TestClient,
+    auth_headers,
+    project_id: str,
+    *,
+    text: str = "Least privilege limits access to required permissions.",
+) -> str:
+    response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={
+            "file": (
+                "cloud.pdf",
+                minimal_pdf(text),
+                "application/pdf",
+            )
+        },
+    )
+    assert response.status_code == 201
+    return response.json()["id"]

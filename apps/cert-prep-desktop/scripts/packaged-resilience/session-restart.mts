@@ -28,12 +28,12 @@ export async function runSessionRestartScenario({
 }: SessionRestartScenarioOptions): Promise<Record<string, unknown>> {
   let transport = initialTransport;
   let page = initialPage;
-  const draftsPath = `/projects/${encoded(projectId)}/question-drafts`;
+  const questionsPath = `/projects/${encoded(projectId)}/questions`;
   await pollJson(
     transport,
-    draftsPath,
+    questionsPath,
     (body) => usableQuestions(body, projectId, documentId).length >= 2,
-    { timeoutMs, label: 'session restart question drafts' },
+    { timeoutMs, label: 'session restart questions' },
   );
   const sessionsPath = `/projects/${encoded(projectId)}/practice-sessions`;
   const created = exactSession(
@@ -369,7 +369,7 @@ function usableQuestions(
   documentId: string,
 ): unknown[] {
   if (!Array.isArray(body.items)) {
-    throw new Error('Question draft response was invalid.');
+    throw new Error('Question response was invalid.');
   }
   for (const raw of body.items) {
     if (
@@ -377,7 +377,7 @@ function usableQuestions(
       raw === null ||
       (raw as Record<string, unknown>).project_id !== projectId
     ) {
-      throw new Error('Question draft response scope did not match.');
+      throw new Error('Question response scope did not match.');
     }
   }
   return body.items.filter(

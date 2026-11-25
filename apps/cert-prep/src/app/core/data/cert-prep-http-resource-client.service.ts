@@ -15,7 +15,7 @@ import type {
   LLMProviderSelectionRead,
   PracticeSessionSummaryRead,
   ProjectRead,
-  QuestionDraftRead,
+  QuestionRead,
   LLMRequirementRead,
   WrongAnswerRead,
   WrongAnswerSummaryRead,
@@ -126,15 +126,15 @@ export class CertPrepHttpResourceClient {
     );
   }
 
-  questionDrafts(projectId: CertPrepResourceKey): CertPrepHttpResource<QuestionDraftRead[]> {
+  questions(projectId: CertPrepResourceKey): CertPrepHttpResource<QuestionRead[]> {
     return this.collectionResource(
       () => {
         const id = projectId();
         return id === undefined || id === null
           ? undefined
-          : this.requests.listQuestionDrafts(id);
+          : this.requests.listQuestions(id);
       },
-      'question-drafts',
+      'questions',
     );
   }
 

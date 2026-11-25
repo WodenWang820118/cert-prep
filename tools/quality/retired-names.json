@@ -1411,5 +1411,2243 @@
         "reason": "Migration fixtures represent pre-upgrade databases."
       }
     ]
+  },
+  {
+    "name": "StreamingDraftGenerationManager",
+    "match": "substring",
+    "replacement": "QuestionJobScheduler",
+    "allowed": []
+  },
+  {
+    "name": "StreamingDraftGenerationWork",
+    "match": "word",
+    "replacement": "QuestionJobWork",
+    "allowed": []
+  },
+  {
+    "name": "StreamingGenerationOptionsProvider",
+    "match": "word",
+    "replacement": "BackgroundGenerationOptionsProvider",
+    "allowed": []
+  },
+  {
+    "name": "streaming_generation_kwargs",
+    "match": "word",
+    "replacement": "background_generation_kwargs",
+    "allowed": []
+  },
+  {
+    "name": "STREAMING_RELEASE_KEEP_ALIVE",
+    "match": "word",
+    "replacement": "RELEASE_AFTER_JOB_KEEP_ALIVE",
+    "allowed": []
+  },
+  {
+    "name": "STREAMING_PREWARM_KEEP_ALIVE",
+    "match": "word",
+    "replacement": "PREWARM_KEEP_ALIVE",
+    "allowed": []
+  },
+  {
+    "name": "STREAMING_FAST_FIRST_",
+    "match": "substring",
+    "replacement": "FAST_FIRST_",
+    "allowed": []
+  },
+  {
+    "name": "STREAMING_DRAFTS_PER_JOB_LIMIT",
+    "match": "word",
+    "replacement": "QUESTIONS_PER_JOB_LIMIT",
+    "allowed": []
+  },
+  {
+    "name": "_should_enqueue_streaming_chunk",
+    "match": "word",
+    "replacement": "_should_enqueue_chunk",
+    "allowed": []
+  },
+  {
+    "name": "_generate_streaming_fast_first_drafts",
+    "match": "word",
+    "replacement": "_generate_fast_first_questions",
+    "allowed": []
+  },
+  {
+    "name": "_call_streaming_provider_method",
+    "match": "word",
+    "replacement": "_call_background_provider_method",
+    "allowed": []
+  },
+  {
+    "name": "streaming_draft_generation_async_jobs",
+    "match": "word",
+    "replacement": "background_question_jobs",
+    "allowed": []
+  },
+  {
+    "name": "streaming_draft_generation_manager",
+    "match": "word",
+    "replacement": "question_job_scheduler",
+    "allowed": []
+  },
+  {
+    "name": "streaming_draft_generation_on_upload",
+    "match": "substring",
+    "replacement": "question_jobs_on_upload",
+    "allowed": []
+  },
+  {
+    "name": "streaming_draft_generation_strategy",
+    "match": "word",
+    "replacement": "question_jobs_strategy",
+    "allowed": []
+  },
+  {
+    "name": "streaming_draft_generation_page_limit",
+    "match": "word",
+    "replacement": "question_jobs_chunk_limit",
+    "allowed": []
+  },
+  {
+    "name": "streaming_draft_workers",
+    "match": "word",
+    "replacement": "question_job_workers",
+    "allowed": []
+  },
+  {
+    "name": "auto_generate_exam_on_upload",
+    "match": "word",
+    "replacement": "write_questions_on_upload",
+    "allowed": []
+  },
+  {
+    "name": "auto_generate_exam_limit",
+    "match": "word",
+    "replacement": "write_questions_on_upload_limit",
+    "allowed": []
+  },
+  {
+    "name": "CERT_PREP_AUTO_GENERATE_EXAM_ON_UPLOAD",
+    "match": "word",
+    "replacement": "CERT_PREP_WRITE_QUESTIONS_ON_UPLOAD",
+    "allowed": []
+  },
+  {
+    "name": "CERT_PREP_AUTO_GENERATE_EXAM_LIMIT",
+    "match": "word",
+    "replacement": "CERT_PREP_WRITE_QUESTIONS_ON_UPLOAD_LIMIT",
+    "allowed": []
+  },
+  {
+    "name": "CERT_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD",
+    "match": "word",
+    "replacement": "CERT_PREP_QUESTION_JOBS_ON_UPLOAD",
+    "allowed": []
+  },
+  {
+    "name": "CERT_PREP_STREAMING_DRAFT_GENERATION_STRATEGY",
+    "match": "word",
+    "replacement": "CERT_PREP_QUESTION_JOBS_STRATEGY",
+    "allowed": []
+  },
+  {
+    "name": "CERT_PREP_STREAMING_DRAFT_GENERATION_PAGE_LIMIT",
+    "match": "word",
+    "replacement": "CERT_PREP_QUESTION_JOBS_CHUNK_LIMIT",
+    "allowed": []
+  },
+  {
+    "name": "CERT_PREP_STREAMING_DRAFT_WORKERS",
+    "match": "word",
+    "replacement": "CERT_PREP_QUESTION_JOB_WORKERS",
+    "allowed": []
+  },
+  {
+    "name": "ManualDraftGenerationOperationRead",
+    "match": "word",
+    "replacement": "ManualQuestionGenerationRead",
+    "allowed": []
+  },
+  {
+    "name": "ManualDraftOperation",
+    "match": "substring",
+    "replacement": "ManualQuestionGeneration",
+    "allowed": []
+  },
+  {
+    "name": "manual_draft_generation_operations",
+    "match": "substring",
+    "replacement": "manual_question_generations",
+    "allowed": []
+  },
+  {
+    "name": "/draft-operations",
+    "match": "word",
+    "replacement": "/question-generations",
+    "allowed": []
+  },
+  {
+    "name": "draft-operation",
+    "match": "substring",
+    "replacement": "question-generation",
+    "allowed": []
+  },
+  {
+    "name": "draft-jobs",
+    "match": "substring",
+    "replacement": "question-jobs",
+    "allowed": []
+  },
+  {
+    "name": "question-drafts",
+    "match": "substring",
+    "replacement": "questions",
+    "allowed": []
+  },
+  {
+    "name": "DraftGenerationProvider",
+    "match": "word",
+    "replacement": "QuestionWriter",
+    "allowed": []
+  },
+  {
+    "name": "DraftWriter",
+    "match": "word",
+    "replacement": "QuestionWriter",
+    "allowed": []
+  },
+  {
+    "name": "draft_writer_for",
+    "match": "word",
+    "replacement": "question_writer_for",
+    "allowed": []
+  },
+  {
+    "name": "DraftGenerateRequest",
+    "match": "word",
+    "replacement": "QuestionGenerateRequest",
+    "allowed": []
+  },
+  {
+    "name": "DraftGeneration",
+    "match": "substring",
+    "replacement": "QuestionGeneration",
+    "allowed": []
+  },
+  {
+    "name": "draft_generation",
+    "match": "substring",
+    "replacement": "question_generation",
+    "allowed": []
+  },
+  {
+    "name": "QuestionDraft",
+    "match": "substring",
+    "replacement": "Question",
+    "allowed": []
+  },
+  {
+    "name": "question_drafts_for",
+    "match": "word",
+    "replacement": "questions_for",
+    "allowed": []
+  },
+  {
+    "name": "question_draft",
+    "match": "substring",
+    "replacement": "question",
+    "allowed": []
+  },
+  {
+    "name": "DraftedQuestion",
+    "match": "word",
+    "replacement": "PracticeSourceQuestion",
+    "allowed": []
+  },
+  {
+    "name": "DraftsAsPracticeQuestions",
+    "match": "word",
+    "replacement": "AuthoringPracticeQuestions",
+    "allowed": []
+  },
+  {
+    "name": "DraftJob",
+    "match": "substring",
+    "replacement": "QuestionJob",
+    "allowed": []
+  },
+  {
+    "name": "draft_jobs",
+    "match": "word",
+    "replacement": "question_generation_jobs",
+    "allowed": []
+  },
+  {
+    "name": "DocumentDraftJobs",
+    "match": "word",
+    "replacement": "DocumentQuestionJobs",
+    "allowed": []
+  },
+  {
+    "name": "BindDraftJobs",
+    "match": "word",
+    "replacement": "BindQuestionJobs",
+    "allowed": []
+  },
+  {
+    "name": "bind_document_draft_jobs",
+    "match": "word",
+    "replacement": "bind_document_question_jobs",
+    "allowed": []
+  },
+  {
+    "name": "DraftSources",
+    "match": "word",
+    "replacement": "QuestionSources",
+    "allowed": []
+  },
+  {
+    "name": "draft_sources",
+    "match": "word",
+    "replacement": "question_sources",
+    "allowed": []
+  },
+  {
+    "name": "DraftWriting",
+    "match": "word",
+    "replacement": "QuestionWriting",
+    "allowed": []
+  },
+  {
+    "name": "draft_writing",
+    "match": "substring",
+    "replacement": "question_writing",
+    "allowed": []
+  },
+  {
+    "name": "DraftEdit",
+    "match": "word",
+    "replacement": "QuestionEdit",
+    "allowed": []
+  },
+  {
+    "name": "DraftSuggestion",
+    "match": "word",
+    "replacement": "QuestionSuggestion",
+    "allowed": []
+  },
+  {
+    "name": "UnavailableDraftBlock",
+    "match": "word",
+    "replacement": "UnavailableQuestionBlock",
+    "allowed": []
+  },
+  {
+    "name": "import_drafting",
+    "match": "substring",
+    "replacement": "import_questions",
+    "allowed": []
+  },
+  {
+    "name": "ImportedDocumentDrafting",
+    "match": "word",
+    "replacement": "ImportedQuestionGeneration",
+    "allowed": []
+  },
+  {
+    "name": "ImportedDocumentDrafts",
+    "match": "word",
+    "replacement": "ImportedDocumentQuestionGeneration",
+    "allowed": []
+  },
+  {
+    "name": "imported_document_drafting",
+    "match": "word",
+    "replacement": "imported_question_generation",
+    "allowed": []
+  },
+  {
+    "name": "CaptureQuestionDrafting",
+    "match": "word",
+    "replacement": "CaptureQuestionGeneration",
+    "allowed": []
+  },
+  {
+    "name": "capture_question_drafting",
+    "match": "word",
+    "replacement": "capture_question_generation",
+    "allowed": []
+  },
+  {
+    "name": "draft_imported_document",
+    "match": "word",
+    "replacement": "generate_imported_questions",
+    "allowed": []
+  },
+  {
+    "name": "generate_document_drafts",
+    "match": "word",
+    "replacement": "generate_document_questions",
+    "allowed": []
+  },
+  {
+    "name": "generate_fast_first_draft",
+    "match": "word",
+    "replacement": "write_fast_first_question",
+    "allowed": []
+  },
+  {
+    "name": "generate_reasoning_drafts",
+    "match": "word",
+    "replacement": "write_reasoning_questions",
+    "allowed": []
+  },
+  {
+    "name": "generate_drafts",
+    "match": "substring",
+    "replacement": "write_questions",
+    "allowed": []
+  },
+  {
+    "name": "FastFirstDraftProvider",
+    "match": "word",
+    "replacement": "FastFirstQuestionWriter",
+    "allowed": []
+  },
+  {
+    "name": "ReasoningDraftProvider",
+    "match": "word",
+    "replacement": "ReasoningQuestionWriter",
+    "allowed": []
+  },
+  {
+    "name": "ollama_drafts",
+    "match": "substring",
+    "replacement": "ollama_question_writer",
+    "allowed": []
+  },
+  {
+    "name": "placeholder_drafts",
+    "match": "substring",
+    "replacement": "placeholder_question_writer",
+    "allowed": []
+  },
+  {
+    "name": "list_drafts",
+    "match": "word",
+    "replacement": "list_questions",
+    "allowed": []
+  },
+  {
+    "name": "write_draft",
+    "match": "word",
+    "replacement": "write_question",
+    "allowed": []
+  },
+  {
+    "name": "edit_draft",
+    "match": "word",
+    "replacement": "edit_question",
+    "allowed": []
+  },
+  {
+    "name": "draft_id",
+    "match": "substring",
+    "replacement": "question_id",
+    "allowed": []
+  },
+  {
+    "name": "append_generated_drafts_and_complete_job",
+    "match": "word",
+    "replacement": "append_generated_questions_and_complete_job",
+    "allowed": []
+  },
+  {
+    "name": "record_import_draft_count",
+    "match": "word",
+    "replacement": "record_import_question_count",
+    "allowed": []
+  },
+  {
+    "name": "record_draft_count",
+    "match": "word",
+    "replacement": "record_question_count",
+    "allowed": []
+  },
+  {
+    "name": "status_after_import_drafts",
+    "match": "word",
+    "replacement": "status_after_import_questions",
+    "allowed": []
+  },
+  {
+    "name": "status_after_drafts",
+    "match": "word",
+    "replacement": "status_after_questions",
+    "allowed": []
+  },
+  {
+    "name": "approved_questions",
+    "match": "word",
+    "replacement": "source_questions",
+    "allowed": []
+  },
+  {
+    "name": "DocumentExamState",
+    "match": "word",
+    "replacement": "DocumentQuestionCount",
+    "allowed": []
+  },
+  {
+    "name": "SourceLibraryExamState",
+    "match": "word",
+    "replacement": "SourceLibraryQuestionCount",
+    "allowed": []
+  },
+  {
+    "name": "bind_document_exam_state",
+    "match": "word",
+    "replacement": "bind_document_question_count",
+    "allowed": []
+  },
+  {
+    "name": "record_exam_state",
+    "match": "word",
+    "replacement": "record_question_count",
+    "allowed": []
+  },
+  {
+    "name": "update_exam_state",
+    "match": "word",
+    "replacement": "update_question_count",
+    "allowed": []
+  },
+  {
+    "name": "set_exam_state",
+    "match": "word",
+    "replacement": "set_question_count",
+    "allowed": []
+  },
+  {
+    "name": "exam_item_count",
+    "match": "word",
+    "replacement": "question_count",
+    "allowed": []
+  },
+  {
+    "name": "not_an_exam_item",
+    "match": "word",
+    "replacement": "not_a_question_item",
+    "allowed": []
+  },
+  {
+    "name": "NOT_AN_EXAM_ITEM",
+    "match": "word",
+    "replacement": "NOT_A_QUESTION_ITEM",
+    "allowed": []
+  },
+  {
+    "name": "EXAM_ITEMS_SCHEMA",
+    "match": "word",
+    "replacement": "QUESTION_ITEMS_SCHEMA",
+    "allowed": []
+  },
+  {
+    "name": "runtime_installation_jobs",
+    "match": "substring",
+    "replacement": "llm_installation_jobs",
+    "allowed": []
+  },
+  {
+    "name": "AnswerKeySource.PDF",
+    "match": "word",
+    "replacement": "AnswerKeySource.SOURCE",
+    "allowed": []
+  },
+  {
+    "name": "DraftStatus",
+    "match": "substring",
+    "replacement": "remove question approval status",
+    "allowed": []
+  },
+  {
+    "name": "draft_status_from_value",
+    "match": "word",
+    "replacement": "remove question approval status coercion",
+    "allowed": []
+  },
+  {
+    "name": "GENERATED_DRAFT_STATUS",
+    "match": "word",
+    "replacement": "remove question approval status",
+    "allowed": []
+  },
+  {
+    "name": "rejection_reason",
+    "match": "word",
+    "replacement": "remove the unwritten question column",
+    "allowed": []
+  },
+  {
+    "name": "idx_question_drafts_project_status",
+    "match": "word",
+    "replacement": "idx_questions_project_created",
+    "allowed": []
+  },
+  {
+    "name": "drafts_router",
+    "match": "word",
+    "replacement": "questions_router",
+    "allowed": []
+  },
+  {
+    "name": "draft_operation_events",
+    "match": "word",
+    "replacement": "question_generation_events",
+    "allowed": []
+  },
+  {
+    "name": "draft_suggestion_from_item",
+    "match": "word",
+    "replacement": "question_suggestion_from_item",
+    "allowed": []
+  },
+  {
+    "name": "draft_ids",
+    "match": "word",
+    "replacement": "question_ids",
+    "allowed": []
+  },
+  {
+    "name": "create_draft",
+    "match": "word",
+    "replacement": "create_question",
+    "allowed": []
+  },
+  {
+    "name": "update_draft",
+    "match": "word",
+    "replacement": "update_question",
+    "allowed": []
+  },
+  {
+    "name": "get_draft",
+    "match": "word",
+    "replacement": "get_question",
+    "allowed": []
+  },
+  {
+    "name": "_draft_query",
+    "match": "word",
+    "replacement": "_question_query",
+    "allowed": []
+  },
+  {
+    "name": "_draft_from_row",
+    "match": "word",
+    "replacement": "_question_from_row",
+    "allowed": []
+  },
+  {
+    "name": "_drafts_for_ids",
+    "match": "word",
+    "replacement": "_questions_for_ids",
+    "allowed": []
+  },
+  {
+    "name": "_drafts_by_id",
+    "match": "word",
+    "replacement": "_questions_by_id",
+    "allowed": []
+  },
+  {
+    "name": "_drafted_question",
+    "match": "word",
+    "replacement": "_practice_source_question",
+    "allowed": []
+  },
+  {
+    "name": "create_generated_drafts",
+    "match": "word",
+    "replacement": "create_generated_questions",
+    "allowed": []
+  },
+  {
+    "name": "append_generated_drafts",
+    "match": "substring",
+    "replacement": "append_generated_questions",
+    "allowed": []
+  },
+  {
+    "name": "_insert_generated_draft",
+    "match": "word",
+    "replacement": "_insert_generated_question",
+    "allowed": []
+  },
+  {
+    "name": "_document_draft_count",
+    "match": "word",
+    "replacement": "_document_question_count",
+    "allowed": []
+  },
+  {
+    "name": "_matching_generated_draft_exists",
+    "match": "word",
+    "replacement": "_matching_generated_question_exists",
+    "allowed": []
+  },
+  {
+    "name": "streams_drafts",
+    "match": "word",
+    "replacement": "schedules_question_jobs",
+    "allowed": []
+  },
+  {
+    "name": "writes_drafts",
+    "match": "word",
+    "replacement": "writes_questions",
+    "allowed": []
+  },
+  {
+    "name": "_extract_and_draft",
+    "match": "word",
+    "replacement": "_extract_and_generate_questions",
+    "allowed": []
+  },
+  {
+    "name": "generate_drafts_for_strategy",
+    "match": "word",
+    "replacement": "write_questions_for_strategy",
+    "allowed": []
+  },
+  {
+    "name": "generate_drafts_with_annotations_for_strategy",
+    "match": "word",
+    "replacement": "write_questions_with_annotations_for_strategy",
+    "allowed": []
+  },
+  {
+    "name": "_list_document_draft_jobs",
+    "match": "word",
+    "replacement": "list_generation_jobs",
+    "allowed": []
+  },
+  {
+    "name": "manual_draft_operation",
+    "match": "substring",
+    "replacement": "manual_question_generation",
+    "allowed": []
+  },
+  {
+    "name": "idx_manual_draft_operations",
+    "match": "substring",
+    "replacement": "idx_manual_question_generations",
+    "allowed": []
+  },
+  {
+    "name": "authoring/domain/draft.py",
+    "match": "word",
+    "replacement": "authoring/domain/question.py",
+    "allowed": []
+  },
+  {
+    "name": "authoring.domain.draft",
+    "match": "substring",
+    "replacement": "authoring.domain.question",
+    "allowed": []
+  },
+  {
+    "name": "authoring/infrastructure/streaming.py",
+    "match": "word",
+    "replacement": "authoring/infrastructure/question_jobs.py",
+    "allowed": []
+  },
+  {
+    "name": "authoring.infrastructure.streaming",
+    "match": "substring",
+    "replacement": "authoring.infrastructure.question_jobs",
+    "allowed": []
+  },
+  {
+    "name": "test_document_exam_state",
+    "match": "word",
+    "replacement": "test_document_question_count",
+    "allowed": []
+  },
+  {
+    "name": "test_mock_exams_domain",
+    "match": "word",
+    "replacement": "test_question_generation_domain",
+    "allowed": []
+  },
+  {
+    "name": "test_llm_draft_parsing",
+    "match": "word",
+    "replacement": "test_llm_question_parsing",
+    "allowed": []
+  },
+  {
+    "name": "test_streaming_drafts_on_upload",
+    "match": "word",
+    "replacement": "test_question_jobs_on_upload",
+    "allowed": []
+  },
+  {
+    "name": "test_generated_draft_insert",
+    "match": "word",
+    "replacement": "test_generated_question_insert",
+    "allowed": []
+  },
+  {
+    "name": "test_imported_document_drafts",
+    "match": "word",
+    "replacement": "test_imported_question_generation",
+    "allowed": []
+  },
+  {
+    "name": "test_question_draft_aggregate",
+    "match": "word",
+    "replacement": "test_question_aggregate",
+    "allowed": []
+  },
+  {
+    "name": "mock_exams",
+    "match": "word",
+    "replacement": "question_authoring (historical test context)",
+    "allowed": []
+  },
+  {
+    "name": "authoring.answer-key-source.pdf",
+    "match": "word",
+    "replacement": "authoring.answer-key-source.source",
+    "allowed": []
+  },
+  {
+    "name": "authoring.draft-status.approved",
+    "match": "word",
+    "replacement": "remove question approval status",
+    "allowed": []
+  },
+  {
+    "name": "authoring.generation-strategy.",
+    "match": "substring",
+    "replacement": "authoring.question-generation-strategy.",
+    "allowed": []
+  },
+  {
+    "name": "authoring.generation-job-status.",
+    "match": "substring",
+    "replacement": "authoring.question-generation-job-status.",
+    "allowed": []
+  },
+  {
+    "name": "authoring.manual-operation-status.",
+    "match": "substring",
+    "replacement": "authoring.manual-question-generation-status.",
+    "allowed": []
+  },
+  {
+    "name": "question_drafts",
+    "match": "word",
+    "replacement": "questions",
+    "allowed": []
+  },
+  {
+    "name": "/documents/{document_id}/drafts",
+    "match": "word",
+    "replacement": "/documents/{document_id}/questions",
+    "allowed": []
+  },
+  {
+    "name": "/drafts",
+    "match": "word",
+    "replacement": "/questions",
+    "allowed": []
+  },
+  {
+    "name": "DraftGenerationWork",
+    "match": "word",
+    "replacement": "QuestionGenerationWork",
+    "allowed": []
+  },
+  {
+    "name": "drafts_of",
+    "match": "word",
+    "replacement": "questions_of",
+    "allowed": []
+  },
+  {
+    "name": "reasoning_drafts",
+    "match": "word",
+    "replacement": "reasoning_questions",
+    "allowed": []
+  },
+  {
+    "name": "draft_writing.py",
+    "match": "word",
+    "replacement": "question_writing.py",
+    "allowed": []
+  },
+  {
+    "name": "import_drafting.py",
+    "match": "word",
+    "replacement": "import_questions.py",
+    "allowed": []
+  },
+  {
+    "name": "draft_jobs.py",
+    "match": "word",
+    "replacement": "question_generation_jobs.py",
+    "allowed": []
+  },
+  {
+    "name": "append_generated_drafts_and_complete_manual_operation",
+    "match": "word",
+    "replacement": "append_generated_questions_and_complete_manual_operation",
+    "allowed": []
+  },
+  {
+    "name": "test_draft_job_history",
+    "match": "substring",
+    "replacement": "test_question_job_history",
+    "allowed": []
+  },
+  {
+    "name": "test_draft_generation_aggregate",
+    "match": "substring",
+    "replacement": "test_question_generation_aggregate",
+    "allowed": []
+  },
+  {
+    "name": "test_question_drafts",
+    "match": "substring",
+    "replacement": "test_questions",
+    "allowed": []
+  },
+  {
+    "name": "test_draft_job_attribution",
+    "match": "substring",
+    "replacement": "test_question_job_attribution",
+    "allowed": []
+  },
+  {
+    "name": "--streaming-complete-timeout-ms",
+    "match": "word",
+    "replacement": "--question-jobs-complete-timeout-ms",
+    "allowed": []
+  },
+  {
+    "name": "--streaming-draft-page-limit",
+    "match": "word",
+    "replacement": "--question-jobs-chunk-limit",
+    "allowed": []
+  },
+  {
+    "name": "--streaming-draft-workers",
+    "match": "word",
+    "replacement": "--question-job-workers",
+    "allowed": []
+  },
+  {
+    "name": "--verify-streaming-practice-ready",
+    "match": "word",
+    "replacement": "--verify-generated-questions-practice-ready",
+    "allowed": []
+  },
+  {
+    "name": "--wait-for-streaming-complete",
+    "match": "word",
+    "replacement": "--wait-for-question-jobs",
+    "allowed": []
+  },
+  {
+    "name": "activeDocumentDrafts",
+    "match": "word",
+    "replacement": "activeDocumentQuestions",
+    "allowed": []
+  },
+  {
+    "name": "answerForDraft",
+    "match": "word",
+    "replacement": "answerForQuestion",
+    "allowed": []
+  },
+  {
+    "name": "app-draft-review-panel",
+    "match": "word",
+    "replacement": "app-questions-panel",
+    "allowed": []
+  },
+  {
+    "name": "assertManualDraftTerminalEvidence",
+    "match": "word",
+    "replacement": "assertManualQuestionGenerationTerminalEvidence",
+    "allowed": []
+  },
+  {
+    "name": "assertSuccessfulStreamingBaseline",
+    "match": "word",
+    "replacement": "assertSuccessfulQuestionGenerationBaseline",
+    "allowed": []
+  },
+  {
+    "name": "AUTO_DRAFT_TERMINAL_STATUSES",
+    "match": "word",
+    "replacement": "UPLOAD_QUESTION_JOB_TERMINAL_STATUSES",
+    "allowed": []
+  },
+  {
+    "name": "autoDrafts",
+    "match": "word",
+    "replacement": "uploadTriggeredJobs",
+    "allowed": []
+  },
+  {
+    "name": "build-route-draft-reload.spec.ts",
+    "match": "word",
+    "replacement": "questions-route-reload.spec.ts",
+    "allowed": []
+  },
+  {
+    "name": "build.page",
+    "match": "word",
+    "replacement": "questions.page",
+    "allowed": []
+  },
+  {
+    "name": "BuildPage",
+    "match": "word",
+    "replacement": "QuestionsPage",
+    "allowed": []
+  },
+  {
+    "name": "buildStreamingBaselineReport",
+    "match": "word",
+    "replacement": "buildQuestionGenerationBaselineReport",
+    "allowed": []
+  },
+  {
+    "name": "cancelDocumentDraftJob",
+    "match": "word",
+    "replacement": "cancelDocumentQuestionJob",
+    "allowed": []
+  },
+  {
+    "name": "cancelManualDraftOperation",
+    "match": "word",
+    "replacement": "cancelManualQuestionGeneration",
+    "allowed": []
+  },
+  {
+    "name": "canGenerateDrafts",
+    "match": "word",
+    "replacement": "canGenerateQuestions",
+    "allowed": []
+  },
+  {
+    "name": "capturesDraftJobs",
+    "match": "word",
+    "replacement": "capturesQuestionJobs",
+    "allowed": []
+  },
+  {
+    "name": "capturesQuestionDrafts",
+    "match": "word",
+    "replacement": "capturesQuestions",
+    "allowed": []
+  },
+  {
+    "name": "CERT_PREP_PACKAGE_SMOKE_STREAMING_COMPLETE_TIMEOUT_MS",
+    "match": "word",
+    "replacement": "CERT_PREP_PACKAGE_SMOKE_QUESTION_JOBS_COMPLETE_TIMEOUT_MS",
+    "allowed": []
+  },
+  {
+    "name": "CERT_PREP_PACKAGE_SMOKE_STREAMING_DRAFT_PAGE_LIMIT",
+    "match": "word",
+    "replacement": "CERT_PREP_PACKAGE_SMOKE_QUESTION_JOBS_CHUNK_LIMIT",
+    "allowed": []
+  },
+  {
+    "name": "CERT_PREP_PACKAGE_SMOKE_STREAMING_DRAFT_WORKERS",
+    "match": "word",
+    "replacement": "CERT_PREP_PACKAGE_SMOKE_QUESTION_JOB_WORKERS",
+    "allowed": []
+  },
+  {
+    "name": "classifyStreamingQuestionStatus",
+    "match": "word",
+    "replacement": "classifyQuestionGenerationStatus",
+    "allowed": []
+  },
+  {
+    "name": "completeDraft",
+    "match": "word",
+    "replacement": "completeQuestion",
+    "allowed": []
+  },
+  {
+    "name": "CompleteQuestionDraft",
+    "match": "word",
+    "replacement": "CompleteQuestion",
+    "allowed": []
+  },
+  {
+    "name": "CompleteQuestionDraftWithExcerpt",
+    "match": "word",
+    "replacement": "CompleteQuestionWithExcerpt",
+    "allowed": []
+  },
+  {
+    "name": "createQuestionDraft",
+    "match": "word",
+    "replacement": "createQuestion",
+    "allowed": []
+  },
+  {
+    "name": "currentExactDocumentDraftCount",
+    "match": "word",
+    "replacement": "currentExactDocumentQuestionCount",
+    "allowed": []
+  },
+  {
+    "name": "DEFAULT_STREAMING_COMPLETE_TIMEOUT_MS",
+    "match": "word",
+    "replacement": "DEFAULT_QUESTION_JOBS_COMPLETE_TIMEOUT_MS",
+    "allowed": []
+  },
+  {
+    "name": "Draft Review",
+    "match": "word",
+    "replacement": "Questions",
+    "allowed": []
+  },
+  {
+    "name": "draft-cancel",
+    "match": "word",
+    "replacement": "question-cancel",
+    "allowed": []
+  },
+  {
+    "name": "draft-edit",
+    "match": "substring",
+    "replacement": "question-edit",
+    "allowed": []
+  },
+  {
+    "name": "draft-edit-session",
+    "match": "word",
+    "replacement": "question-edit-session",
+    "allowed": []
+  },
+  {
+    "name": "draft-generate",
+    "match": "word",
+    "replacement": "question-generate",
+    "allowed": []
+  },
+  {
+    "name": "draft-generation-status",
+    "match": "substring",
+    "replacement": "question-generation-status",
+    "allowed": []
+  },
+  {
+    "name": "draft-job",
+    "match": "word",
+    "replacement": "question-job",
+    "allowed": []
+  },
+  {
+    "name": "draft-operations",
+    "match": "word",
+    "replacement": "question-generations",
+    "allowed": []
+  },
+  {
+    "name": "draft-playability",
+    "match": "substring",
+    "replacement": "question-playability",
+    "allowed": []
+  },
+  {
+    "name": "draft-practice-link",
+    "match": "word",
+    "replacement": "question-practice-link",
+    "allowed": []
+  },
+  {
+    "name": "draft-practice-next-step",
+    "match": "word",
+    "replacement": "question-practice-next-step",
+    "allowed": []
+  },
+  {
+    "name": "draft-question-card",
+    "match": "word",
+    "replacement": "question-card",
+    "allowed": []
+  },
+  {
+    "name": "draft-question-editor-card",
+    "match": "substring",
+    "replacement": "question-editor-card",
+    "allowed": []
+  },
+  {
+    "name": "draft-question-id",
+    "match": "word",
+    "replacement": "removed; the internal question ID is not rendered",
+    "allowed": []
+  },
+  {
+    "name": "draft-retry",
+    "match": "word",
+    "replacement": "question-retry",
+    "allowed": []
+  },
+  {
+    "name": "draft-review",
+    "match": "substring",
+    "replacement": "questions",
+    "allowed": []
+  },
+  {
+    "name": "draft-review-evidence",
+    "match": "word",
+    "replacement": "questions-evidence",
+    "allowed": []
+  },
+  {
+    "name": "draft-review-panel",
+    "match": "substring",
+    "replacement": "questions-panel",
+    "allowed": []
+  },
+  {
+    "name": "draft-review.constants.ts",
+    "match": "word",
+    "replacement": "removed; question content determines practice eligibility",
+    "allowed": []
+  },
+  {
+    "name": "draft-review.store.streaming-jobs.spec.ts",
+    "match": "word",
+    "replacement": "questions.store.question-jobs.spec.ts",
+    "allowed": []
+  },
+  {
+    "name": "draft-save-result",
+    "match": "word",
+    "replacement": "question-save-result",
+    "allowed": []
+  },
+  {
+    "name": "draft-streaming-jobs",
+    "match": "substring",
+    "replacement": "question-jobs",
+    "allowed": []
+  },
+  {
+    "name": "draftEdits",
+    "match": "word",
+    "replacement": "questionEdits",
+    "allowed": []
+  },
+  {
+    "name": "DraftEditService",
+    "match": "word",
+    "replacement": "QuestionEditService",
+    "allowed": []
+  },
+  {
+    "name": "DraftEditSessionStore",
+    "match": "word",
+    "replacement": "QuestionEditSessionStore",
+    "allowed": []
+  },
+  {
+    "name": "DraftGenerationJobList",
+    "match": "word",
+    "replacement": "QuestionGenerationJobList",
+    "allowed": []
+  },
+  {
+    "name": "DraftGenerationJobRead",
+    "match": "word",
+    "replacement": "QuestionGenerationJobRead",
+    "allowed": []
+  },
+  {
+    "name": "DraftGenerationStatusComponent",
+    "match": "word",
+    "replacement": "QuestionGenerationStatusComponent",
+    "allowed": []
+  },
+  {
+    "name": "DraftGenerationStrategy",
+    "match": "word",
+    "replacement": "QuestionGenerationStrategy",
+    "allowed": []
+  },
+  {
+    "name": "DraftJobsEvent",
+    "match": "word",
+    "replacement": "QuestionJobsEvent",
+    "allowed": []
+  },
+  {
+    "name": "draftJobsEvents",
+    "match": "word",
+    "replacement": "questionJobsEvents",
+    "allowed": []
+  },
+  {
+    "name": "draftJobsStream",
+    "match": "word",
+    "replacement": "questionJobsStream",
+    "allowed": []
+  },
+  {
+    "name": "draftJobStatusCounts",
+    "match": "word",
+    "replacement": "questionJobStatusCounts",
+    "allowed": []
+  },
+  {
+    "name": "DraftOperationEvent",
+    "match": "word",
+    "replacement": "QuestionGenerationEvent",
+    "allowed": []
+  },
+  {
+    "name": "draftOperationEvents",
+    "match": "word",
+    "replacement": "questionGenerationEvents",
+    "allowed": []
+  },
+  {
+    "name": "DraftPlayabilityService",
+    "match": "word",
+    "replacement": "QuestionPlayabilityService",
+    "allowed": []
+  },
+  {
+    "name": "draftProof",
+    "match": "word",
+    "replacement": "questionProof",
+    "allowed": []
+  },
+  {
+    "name": "DraftQuestionEditorCardComponent",
+    "match": "word",
+    "replacement": "QuestionEditorCardComponent",
+    "allowed": []
+  },
+  {
+    "name": "draftResourceStatus",
+    "match": "word",
+    "replacement": "questionResourceStatus",
+    "allowed": []
+  },
+  {
+    "name": "DraftReviewPanelComponent",
+    "match": "word",
+    "replacement": "QuestionsPanelComponent",
+    "allowed": []
+  },
+  {
+    "name": "DraftReviewStore",
+    "match": "word",
+    "replacement": "QuestionsStore",
+    "allowed": []
+  },
+  {
+    "name": "drafts-heading",
+    "match": "word",
+    "replacement": "questions-heading",
+    "allowed": []
+  },
+  {
+    "name": "draftsError",
+    "match": "word",
+    "replacement": "questionsError",
+    "allowed": []
+  },
+  {
+    "name": "draftsLoading",
+    "match": "word",
+    "replacement": "questionsLoading",
+    "allowed": []
+  },
+  {
+    "name": "draftsPath",
+    "match": "word",
+    "replacement": "questionsPath",
+    "allowed": []
+  },
+  {
+    "name": "draftsQueryEnabled",
+    "match": "word",
+    "replacement": "questionsQueryEnabled",
+    "allowed": []
+  },
+  {
+    "name": "draftsResource",
+    "match": "word",
+    "replacement": "questionsResource",
+    "allowed": []
+  },
+  {
+    "name": "draftStatusLabel",
+    "match": "word",
+    "replacement": "removed with the status badge",
+    "allowed": []
+  },
+  {
+    "name": "DraftStreamingJobsStore",
+    "match": "word",
+    "replacement": "QuestionJobsStore",
+    "allowed": []
+  },
+  {
+    "name": "drainUploadTriggeredDrafts",
+    "match": "word",
+    "replacement": "drainUploadTriggeredQuestionJobs",
+    "allowed": []
+  },
+  {
+    "name": "editingDraftId",
+    "match": "word",
+    "replacement": "editingQuestionId",
+    "allowed": []
+  },
+  {
+    "name": "exactDraftJobItems",
+    "match": "word",
+    "replacement": "exactQuestionJobItems",
+    "allowed": []
+  },
+  {
+    "name": "exactUsableDrafts",
+    "match": "word",
+    "replacement": "exactUsableQuestions",
+    "allowed": []
+  },
+  {
+    "name": "Exam Questions",
+    "match": "word",
+    "replacement": "Questions",
+    "allowed": []
+  },
+  {
+    "name": "examItemCount",
+    "match": "word",
+    "replacement": "questionCount",
+    "allowed": []
+  },
+  {
+    "name": "excludedDraftIds",
+    "match": "word",
+    "replacement": "excludedQuestionIds",
+    "allowed": []
+  },
+  {
+    "name": "expectAiInferredPlayableDraft",
+    "match": "word",
+    "replacement": "expectAiInferredPlayableQuestion",
+    "allowed": []
+  },
+  {
+    "name": "fixture-draft-model",
+    "match": "word",
+    "replacement": "fixture-question-model",
+    "allowed": []
+  },
+  {
+    "name": "formatDraftQuestionStatus",
+    "match": "word",
+    "replacement": "removed with the status badge",
+    "allowed": []
+  },
+  {
+    "name": "Generate drafts",
+    "match": "word",
+    "replacement": "Generate questions",
+    "allowed": []
+  },
+  {
+    "name": "generateDocumentDrafts",
+    "match": "word",
+    "replacement": "generateDocumentQuestions",
+    "allowed": []
+  },
+  {
+    "name": "generateDrafts",
+    "match": "word",
+    "replacement": "generateQuestions",
+    "allowed": []
+  },
+  {
+    "name": "getManualDraftOperation",
+    "match": "word",
+    "replacement": "getManualQuestionGeneration",
+    "allowed": []
+  },
+  {
+    "name": "incompleteApprovedDrafts",
+    "match": "word",
+    "replacement": "incompleteQuestions",
+    "allowed": []
+  },
+  {
+    "name": "incompleteDraft",
+    "match": "word",
+    "replacement": "incompleteQuestion",
+    "allowed": []
+  },
+  {
+    "name": "incompleteDraftJobAttribution",
+    "match": "word",
+    "replacement": "incompleteQuestionJobAttribution",
+    "allowed": []
+  },
+  {
+    "name": "isCompletePlayableDraft",
+    "match": "word",
+    "replacement": "isCompletePlayableQuestion",
+    "allowed": []
+  },
+  {
+    "name": "isPlayableDraft",
+    "match": "word",
+    "replacement": "isPlayableQuestion",
+    "allowed": []
+  },
+  {
+    "name": "latestStreamingJobSnapshot",
+    "match": "word",
+    "replacement": "latestQuestionGenerationJobSnapshot",
+    "allowed": []
+  },
+  {
+    "name": "latestStreamingQuestionSnapshot",
+    "match": "word",
+    "replacement": "latestQuestionSnapshot",
+    "allowed": []
+  },
+  {
+    "name": "listDocumentDraftJobs",
+    "match": "word",
+    "replacement": "listDocumentQuestionJobs",
+    "allowed": []
+  },
+  {
+    "name": "listQuestionDrafts",
+    "match": "word",
+    "replacement": "listQuestions",
+    "allowed": []
+  },
+  {
+    "name": "live-draft",
+    "match": "word",
+    "replacement": "live-question",
+    "allowed": []
+  },
+  {
+    "name": "manualDraftOperation",
+    "match": "word",
+    "replacement": "manualQuestionGeneration",
+    "allowed": []
+  },
+  {
+    "name": "ManualDraftTerminalExpectation",
+    "match": "word",
+    "replacement": "ManualQuestionGenerationTerminalExpectation",
+    "allowed": []
+  },
+  {
+    "name": "manualDraftTerminalResponse",
+    "match": "word",
+    "replacement": "manualQuestionGenerationTerminalResponse",
+    "allowed": []
+  },
+  {
+    "name": "no_streaming_blocker",
+    "match": "word",
+    "replacement": "no_question_generation_blocker",
+    "allowed": []
+  },
+  {
+    "name": "observeStreamingApiResponses",
+    "match": "word",
+    "replacement": "observeQuestionGenerationApiResponses",
+    "allowed": []
+  },
+  {
+    "name": "observeStreamingDraftUiUntil",
+    "match": "word",
+    "replacement": "observeQuestionGenerationUiUntil",
+    "allowed": []
+  },
+  {
+    "name": "packaged-streaming-baseline",
+    "match": "word",
+    "replacement": "packaged-question-generation-baseline",
+    "allowed": []
+  },
+  {
+    "name": "packaged-streaming-production",
+    "match": "word",
+    "replacement": "packaged-question-generation-production",
+    "allowed": []
+  },
+  {
+    "name": "PackagedStreamingProductionChecks",
+    "match": "word",
+    "replacement": "PackagedQuestionGenerationProductionChecks",
+    "allowed": []
+  },
+  {
+    "name": "PackagedStreamingProductionSummary",
+    "match": "word",
+    "replacement": "PackagedQuestionGenerationProductionSummary",
+    "allowed": []
+  },
+  {
+    "name": "PLAYABLE_DRAFT_STATUS",
+    "match": "word",
+    "replacement": "removed; question content determines practice eligibility",
+    "allowed": []
+  },
+  {
+    "name": "playableDrafts",
+    "match": "word",
+    "replacement": "playableQuestions",
+    "allowed": []
+  },
+  {
+    "name": "playableDraftsForDocument",
+    "match": "word",
+    "replacement": "playableQuestionsForDocument",
+    "allowed": []
+  },
+  {
+    "name": "pollStreamingDraftApis",
+    "match": "word",
+    "replacement": "pollQuestionGenerationApis",
+    "allowed": []
+  },
+  {
+    "name": "primaryDraft",
+    "match": "word",
+    "replacement": "primaryQuestion",
+    "allowed": []
+  },
+  {
+    "name": "QuestionDraftList",
+    "match": "word",
+    "replacement": "QuestionList",
+    "allowed": []
+  },
+  {
+    "name": "QuestionDraftRead",
+    "match": "word",
+    "replacement": "QuestionRead",
+    "allowed": []
+  },
+  {
+    "name": "Ready for practice",
+    "match": "word",
+    "replacement": "question editor card and practice eligibility",
+    "allowed": []
+  },
+  {
+    "name": "recordStreamingApiPollError",
+    "match": "word",
+    "replacement": "recordQuestionGenerationApiPollError",
+    "allowed": []
+  },
+  {
+    "name": "recordStreamingApiResponse",
+    "match": "word",
+    "replacement": "recordQuestionGenerationApiResponse",
+    "allowed": []
+  },
+  {
+    "name": "recordStreamingDraftJobSnapshot",
+    "match": "word",
+    "replacement": "recordQuestionJobSnapshot",
+    "allowed": []
+  },
+  {
+    "name": "recordStreamingQuestionSnapshot",
+    "match": "word",
+    "replacement": "recordQuestionSnapshot",
+    "allowed": []
+  },
+  {
+    "name": "renderStreamingBaselineMarkdown",
+    "match": "word",
+    "replacement": "renderQuestionGenerationBaselineMarkdown",
+    "allowed": []
+  },
+  {
+    "name": "restart-persistence-build-state",
+    "match": "word",
+    "replacement": "restart-persistence-questions-state",
+    "allowed": []
+  },
+  {
+    "name": "retryDocumentDraftJobs",
+    "match": "word",
+    "replacement": "retryDocumentQuestionJobs",
+    "allowed": []
+  },
+  {
+    "name": "sanitizeDraftJobAttribution",
+    "match": "word",
+    "replacement": "sanitizeQuestionJobAttribution",
+    "allowed": []
+  },
+  {
+    "name": "sanitizeDraftJobSnapshot",
+    "match": "word",
+    "replacement": "sanitizeQuestionJobSnapshot",
+    "allowed": []
+  },
+  {
+    "name": "saveDraft",
+    "match": "word",
+    "replacement": "saveQuestion",
+    "allowed": []
+  },
+  {
+    "name": "secondaryDraft",
+    "match": "word",
+    "replacement": "secondaryQuestion",
+    "allowed": []
+  },
+  {
+    "name": "secondaryDrafts",
+    "match": "word",
+    "replacement": "secondaryQuestions",
+    "allowed": []
+  },
+  {
+    "name": "secondaryPlayableDrafts",
+    "match": "word",
+    "replacement": "secondaryPlayableQuestions",
+    "allowed": []
+  },
+  {
+    "name": "selectedDocumentDrafts",
+    "match": "word",
+    "replacement": "selectedDocumentQuestions",
+    "allowed": []
+  },
+  {
+    "name": "startManualDraftOperation",
+    "match": "word",
+    "replacement": "startManualQuestionGeneration",
+    "allowed": []
+  },
+  {
+    "name": "Step 02: Exam Questions",
+    "match": "word",
+    "replacement": "Questions",
+    "allowed": []
+  },
+  {
+    "name": "streamed questions",
+    "match": "word",
+    "replacement": "generated questions",
+    "allowed": []
+  },
+  {
+    "name": "streaming-baseline",
+    "match": "substring",
+    "replacement": "question-generation-baseline",
+    "allowed": []
+  },
+  {
+    "name": "streaming-baseline-complete",
+    "match": "word",
+    "replacement": "question-generation-baseline-complete",
+    "allowed": []
+  },
+  {
+    "name": "streaming-baseline-report",
+    "match": "substring",
+    "replacement": "question-generation-baseline-report",
+    "allowed": []
+  },
+  {
+    "name": "streaming-baseline-report.mts",
+    "match": "word",
+    "replacement": "question-generation-baseline-report.mts",
+    "allowed": []
+  },
+  {
+    "name": "streaming-baseline-report.test.mts",
+    "match": "word",
+    "replacement": "question-generation-baseline-report.test.mts",
+    "allowed": []
+  },
+  {
+    "name": "streaming-capture",
+    "match": "substring",
+    "replacement": "question-generation-observer",
+    "allowed": []
+  },
+  {
+    "name": "streaming-capture-api",
+    "match": "word",
+    "replacement": "question-generation-observer-api",
+    "allowed": []
+  },
+  {
+    "name": "streaming-capture-api.mts",
+    "match": "word",
+    "replacement": "question-generation-observer-api.mts",
+    "allowed": []
+  },
+  {
+    "name": "streaming-capture-completion",
+    "match": "word",
+    "replacement": "question-generation-observer-completion",
+    "allowed": []
+  },
+  {
+    "name": "streaming-capture-completion.mts",
+    "match": "word",
+    "replacement": "question-generation-observer-completion.mts",
+    "allowed": []
+  },
+  {
+    "name": "streaming-capture-first-chunk",
+    "match": "word",
+    "replacement": "question-generation-observer-first-chunk",
+    "allowed": []
+  },
+  {
+    "name": "streaming-capture-first-chunk.mts",
+    "match": "word",
+    "replacement": "question-generation-observer-first-chunk.mts",
+    "allowed": []
+  },
+  {
+    "name": "streaming-capture-snapshots",
+    "match": "word",
+    "replacement": "question-generation-observer-snapshots",
+    "allowed": []
+  },
+  {
+    "name": "streaming-capture-snapshots.mts",
+    "match": "word",
+    "replacement": "question-generation-observer-snapshots.mts",
+    "allowed": []
+  },
+  {
+    "name": "streaming-capture-ui",
+    "match": "word",
+    "replacement": "question-generation-observer-ui",
+    "allowed": []
+  },
+  {
+    "name": "streaming-capture-ui.mts",
+    "match": "word",
+    "replacement": "question-generation-observer-ui.mts",
+    "allowed": []
+  },
+  {
+    "name": "streaming-capture.mts",
+    "match": "word",
+    "replacement": "question-generation-observer.mts",
+    "allowed": []
+  },
+  {
+    "name": "streaming-evidence",
+    "match": "substring",
+    "replacement": "question-generation-evidence",
+    "allowed": []
+  },
+  {
+    "name": "streaming-evidence.mts",
+    "match": "word",
+    "replacement": "question-generation-evidence.mts",
+    "allowed": []
+  },
+  {
+    "name": "streaming-evidence.test.mts",
+    "match": "word",
+    "replacement": "question-generation-evidence.test.mts",
+    "allowed": []
+  },
+  {
+    "name": "streaming-first-usable-question-visible",
+    "match": "word",
+    "replacement": "question-generation-first-usable-question-visible",
+    "allowed": []
+  },
+  {
+    "name": "streaming-practice-first-question",
+    "match": "word",
+    "replacement": "question-generation-practice-first-question",
+    "allowed": []
+  },
+  {
+    "name": "streaming-practice-ready",
+    "match": "word",
+    "replacement": "question-generation-practice-ready",
+    "allowed": []
+  },
+  {
+    "name": "streaming-question-status-visible",
+    "match": "word",
+    "replacement": "question-generation-status-visible",
+    "allowed": []
+  },
+  {
+    "name": "streaming_all_jobs_terminal",
+    "match": "word",
+    "replacement": "question_generation_all_jobs_terminal",
+    "allowed": []
+  },
+  {
+    "name": "streaming_baseline",
+    "match": "word",
+    "replacement": "question_generation_baseline",
+    "allowed": []
+  },
+  {
+    "name": "streaming_baseline_passed",
+    "match": "word",
+    "replacement": "question_generation_baseline_passed",
+    "allowed": []
+  },
+  {
+    "name": "STREAMING_COMPLETE_POLL_INTERVAL_MS",
+    "match": "word",
+    "replacement": "QUESTION_JOBS_COMPLETE_POLL_INTERVAL_MS",
+    "allowed": []
+  },
+  {
+    "name": "STREAMING_COMPLETE_STABLE_POLLS",
+    "match": "word",
+    "replacement": "QUESTION_JOBS_COMPLETE_STABLE_POLLS",
+    "allowed": []
+  },
+  {
+    "name": "streaming_complete_timeout_ms",
+    "match": "word",
+    "replacement": "question_jobs_complete_timeout_ms",
+    "allowed": []
+  },
+  {
+    "name": "streaming_draft_page_limit",
+    "match": "word",
+    "replacement": "question_jobs_chunk_limit",
+    "allowed": []
+  },
+  {
+    "name": "streaming_first_question_ready_visible",
+    "match": "word",
+    "replacement": "question_generation_first_question_ready_visible",
+    "allowed": []
+  },
+  {
+    "name": "streaming_first_usable_question_visible",
+    "match": "word",
+    "replacement": "question_generation_first_usable_question_visible",
+    "allowed": []
+  },
+  {
+    "name": "streaming_jobs_succeeded",
+    "match": "word",
+    "replacement": "question_generation_jobs_succeeded",
+    "allowed": []
+  },
+  {
+    "name": "streaming_practice_ready",
+    "match": "word",
+    "replacement": "question_generation_practice_ready",
+    "allowed": []
+  },
+  {
+    "name": "streaming_question_blocker_visible",
+    "match": "word",
+    "replacement": "question_generation_blocker_visible",
+    "allowed": []
+  },
+  {
+    "name": "STREAMING_QUESTION_STATUS_PATTERN",
+    "match": "word",
+    "replacement": "QUESTION_GENERATION_STATUS_PATTERN",
+    "allowed": []
+  },
+  {
+    "name": "streaming_question_status_visible",
+    "match": "word",
+    "replacement": "question_generation_status_visible",
+    "allowed": []
+  },
+  {
+    "name": "streaming_questions",
+    "match": "word",
+    "replacement": "question_generation",
+    "allowed": []
+  },
+  {
+    "name": "streamingApiGet",
+    "match": "word",
+    "replacement": "questionGenerationApiGet",
+    "allowed": []
+  },
+  {
+    "name": "streamingApiPollErrorCaptured",
+    "match": "word",
+    "replacement": "questionGenerationApiPollErrorCaptured",
+    "allowed": []
+  },
+  {
+    "name": "StreamingBaselineArtifacts",
+    "match": "word",
+    "replacement": "QuestionGenerationBaselineArtifacts",
+    "allowed": []
+  },
+  {
+    "name": "StreamingBaselineReport",
+    "match": "word",
+    "replacement": "QuestionGenerationBaselineReport",
+    "allowed": []
+  },
+  {
+    "name": "streamingCompleteTimeoutMs",
+    "match": "word",
+    "replacement": "questionJobsCompleteTimeoutMs",
+    "allowed": []
+  },
+  {
+    "name": "streamingDraftBlockerFromStatusCounts",
+    "match": "word",
+    "replacement": "questionJobBlockerFromStatusCounts",
+    "allowed": []
+  },
+  {
+    "name": "streamingDraftCaptureOpen",
+    "match": "word",
+    "replacement": "questionObservationActive",
+    "allowed": []
+  },
+  {
+    "name": "StreamingDraftJobAttribution",
+    "match": "word",
+    "replacement": "QuestionJobAttribution",
+    "allowed": []
+  },
+  {
+    "name": "StreamingDraftJobSnapshot",
+    "match": "word",
+    "replacement": "QuestionJobSnapshot",
+    "allowed": []
+  },
+  {
+    "name": "streamingDraftPageLimit",
+    "match": "word",
+    "replacement": "questionJobsChunkLimit",
+    "allowed": []
+  },
+  {
+    "name": "streamingDraftParseStartedAt",
+    "match": "word",
+    "replacement": "questionObservationStartedAt",
+    "allowed": []
+  },
+  {
+    "name": "streamingDraftWorkers",
+    "match": "word",
+    "replacement": "questionJobWorkers",
+    "allowed": []
+  },
+  {
+    "name": "streamingJobCompletionState",
+    "match": "word",
+    "replacement": "questionJobCompletionState",
+    "allowed": []
+  },
+  {
+    "name": "StreamingJobCompletionState",
+    "match": "word",
+    "replacement": "QuestionJobCompletionState",
+    "allowed": []
+  },
+  {
+    "name": "StreamingQuestionsMetrics",
+    "match": "word",
+    "replacement": "QuestionGenerationMetrics",
+    "allowed": []
+  },
+  {
+    "name": "StreamingQuestionSnapshot",
+    "match": "word",
+    "replacement": "QuestionSnapshot",
+    "allowed": []
+  },
+  {
+    "name": "streamingStatus",
+    "match": "word",
+    "replacement": "questionGenerationStatus",
+    "allowed": []
+  },
+  {
+    "name": "TERMINAL_STREAMING_JOB_STATUSES",
+    "match": "word",
+    "replacement": "TERMINAL_QUESTION_JOB_STATUSES",
+    "allowed": []
+  },
+  {
+    "name": "updateQuestionDraft",
+    "match": "word",
+    "replacement": "updateQuestion",
+    "allowed": []
+  },
+  {
+    "name": "uploadDocumentAndExpectDraft",
+    "match": "word",
+    "replacement": "uploadDocumentAndExpectQuestion",
+    "allowed": []
+  },
+  {
+    "name": "UploadTriggeredDraftProof",
+    "match": "word",
+    "replacement": "UploadTriggeredQuestionJobsProof",
+    "allowed": []
+  },
+  {
+    "name": "upsertDraft",
+    "match": "word",
+    "replacement": "upsertQuestion",
+    "allowed": []
+  },
+  {
+    "name": "usableDraftCount",
+    "match": "word",
+    "replacement": "usableQuestionCount",
+    "allowed": []
+  },
+  {
+    "name": "usableDraftCountAfterManual",
+    "match": "word",
+    "replacement": "usableQuestionCountAfterManual",
+    "allowed": []
+  },
+  {
+    "name": "usableDraftCountBeforeManual",
+    "match": "word",
+    "replacement": "usableQuestionCountBeforeManual",
+    "allowed": []
+  },
+  {
+    "name": "validateDraftTransition",
+    "match": "word",
+    "replacement": "validateQuestionTransition",
+    "allowed": []
+  },
+  {
+    "name": "verifyStreamingPracticeReady",
+    "match": "word",
+    "replacement": "verifyGeneratedQuestionsPracticeReady",
+    "allowed": []
+  },
+  {
+    "name": "wait-for-streaming-complete",
+    "match": "word",
+    "replacement": "wait-for-question-jobs",
+    "allowed": []
+  },
+  {
+    "name": "wait_for_streaming_complete",
+    "match": "word",
+    "replacement": "wait_for_question_jobs",
+    "allowed": []
+  },
+  {
+    "name": "waitForExactDocumentDrafts",
+    "match": "word",
+    "replacement": "waitForExactDocumentQuestions",
+    "allowed": []
+  },
+  {
+    "name": "waitForStreamingComplete",
+    "match": "word",
+    "replacement": "waitForQuestionJobs",
+    "allowed": []
+  },
+  {
+    "name": "waitForStreamingJobsComplete",
+    "match": "word",
+    "replacement": "waitForQuestionJobsComplete",
+    "allowed": []
+  },
+  {
+    "name": "waitForValidatedManualDraftPublication",
+    "match": "word",
+    "replacement": "waitForValidatedManualQuestionPublication",
+    "allowed": []
+  },
+  {
+    "name": "writeStreamingBaselineArtifacts",
+    "match": "word",
+    "replacement": "writeQuestionGenerationBaselineArtifacts",
+    "allowed": []
+  },
+  {
+    "name": "wrongChoiceForDraft",
+    "match": "word",
+    "replacement": "wrongChoiceForQuestion",
+    "allowed": []
+  },
+  {
+    "name": "on the Build page",
+    "match": "word",
+    "replacement": "on the Questions page",
+    "allowed": []
+  },
+  {
+    "name": "app-build-page",
+    "match": "word",
+    "replacement": "app-questions-page",
+    "allowed": []
+  },
+  {
+    "name": "Mock Exam Items",
+    "match": "word",
+    "replacement": "Questions",
+    "allowed": []
+  },
+  {
+    "name": "MockExamProvider",
+    "match": "word",
+    "replacement": "FakeQuestionWriter",
+    "allowed": []
+  },
+  {
+    "name": "RecordingExamProvider",
+    "match": "word",
+    "replacement": "RecordingQuestionWriter",
+    "allowed": []
+  },
+  {
+    "name": "UnavailableExamProvider",
+    "match": "word",
+    "replacement": "UnavailableQuestionWriter",
+    "allowed": []
+  },
+  {
+    "name": "UnapprovedQuestionsError",
+    "match": "word",
+    "replacement": "migration 33 deletes rejected questions and keeps the rest",
+    "allowed": []
   }
 ]

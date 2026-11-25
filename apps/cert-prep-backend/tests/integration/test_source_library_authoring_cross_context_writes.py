@@ -1,9 +1,9 @@
 """Today's results of the Source Library and Question Authoring writes that cross into each
 other's tables, and of Source Library's project checks.
 
-Stopping or retrying a document's run discards that document's unfinished draft generation
-jobs in the same transaction. Committing generated drafts records the document's exam item
-count and status in the same transaction as the drafts and the job or operation.
+Stopping or retrying a document's run discards that document's unfinished question generation
+jobs in the same transaction. Committing generated questions records the document's exam item
+count and status in the same transaction as the questions and the job or operation.
 
 The writes now go through the owning context's use cases on the caller's connection, and the
 project checks through Study Projects; bootstrap wires them as the app does.
@@ -17,14 +17,14 @@ from sqlite3 import Connection
 
 import pytest
 
-from cert_prep_backend.authoring.domain.models import DraftSuggestion
-from cert_prep_backend.authoring.infrastructure import draft_jobs
+from cert_prep_backend.authoring.domain.models import QuestionSuggestion
+from cert_prep_backend.authoring.infrastructure import question_generation_jobs
 from cert_prep_backend.authoring.infrastructure import manual_operations
-from cert_prep_backend.authoring.infrastructure import repository as drafts_repository
-from cert_prep_backend.authoring.infrastructure.sources import SourceLibraryDraftSources
+from cert_prep_backend.authoring.infrastructure import repository as questions_repository
+from cert_prep_backend.authoring.infrastructure.sources import SourceLibraryQuestionSources
 from cert_prep_backend.bootstrap.authoring_links import (
     authoring_documents,
-    bind_document_exam_state,
+    bind_document_question_count,
 )
 from cert_prep_backend.bootstrap.source_library_links import (
     document_operation_repository,
@@ -47,7 +47,7 @@ UNFINISHED_JOB_STATUSES = ("pending", "running", "cancel_requested")
 FINISHED_JOB_STATUSES = ("succeeded", "failed", "canceled", "skipped_missing_model")
 
 
-def test_a_failed_run_discards_unfinished_draft_jobs_and_keeps_finished_ones(
+def test_a_failed_run_discards_unfinished_question_jobs_and_keeps_finished_ones(
     tmp_path: Path,
 ) -> None:
     db = _database(tmp_path)
@@ -65,10 +65,11 @@ def test_a_failed_run_discards_unfinished_draft_jobs_and_keeps_finished_ones(
     assert _chunk_count(db, doc) == 0
     document = _document_row(db, doc)
     assert document["has_text"] == 0
-    assert document["exam_item_count"] == 0
+    # The questions outlive the run's text, so the source still counts them.
+    assert document["question_count"] == 3
 
 
-def test_a_retry_discards_unfinished_draft_jobs(tmp_path: Path) -> None:
+def test_a_retry_discards_unfinished_question_jobs(tmp_path: Path) -> None:
     db = _database(tmp_path)
     doc = _attach_pdf(db, operation_id="upload")
     _operations(db).fail("proj", "upload", error="OCR failed.")
@@ -82,7 +83,7 @@ def test_a_retry_discards_unfinished_draft_jobs(tmp_path: Path) -> None:
     assert _document_row(db, doc)["status"] == "processing"
 
 
-def test_recovery_discards_unfinished_draft_jobs_of_interrupted_runs(tmp_path: Path) -> None:
+def test_recovery_discards_unfinished_question_jobs_of_interrupted_runs(tmp_path: Path) -> None:
     db = _database(tmp_path)
     doc = _attach_pdf(db, operation_id="upload")
     _seed_text_and_jobs(db, doc)
@@ -115,7 +116,7 @@ def test_a_stopped_audio_run_discards_unfinished_jobs_and_keeps_its_transcript(
     assert _chunk_count(db, audio) == 1
     document = _document_row(db, audio)
     assert document["status"] == expected_status
-    assert document["exam_item_count"] == 0
+    assert document["question_count"] == 3
     assert document["extraction_warnings"] is None
     assert document["failure_message"] == (
         "Transcription failed." if stop == "fail" else None
@@ -130,7 +131,7 @@ def test_a_stopped_audio_run_discards_unfinished_jobs_and_keeps_its_transcript(
         ("processing", "earlier failure"),
     ],
 )
-def test_the_exam_state_clears_the_failure_message_when_ready_and_keeps_it_otherwise(
+def test_the_question_count_clears_the_failure_message_when_ready_and_keeps_it_otherwise(
     tmp_path: Path, status: str, expected_failure: str | None
 ) -> None:
     db = _database(tmp_path)
@@ -144,11 +145,11 @@ def test_the_exam_state_clears_the_failure_message_when_ready_and_keeps_it_other
             """
         )
 
-    _documents(db).record_exam_state("proj", "doc", status=status, exam_item_count=2)
+    _documents(db).record_question_count("proj", "doc", status=status, question_count=2)
 
     document = _document_row(db, "doc")
     assert document["status"] == status
-    assert document["exam_item_count"] == 2
+    assert document["question_count"] == 2
     assert document["extraction_warnings"] == "kept warning"
     assert document["failure_message"] == expected_failure
 
@@ -163,7 +164,7 @@ def test_a_document_that_ends_without_text_gets_the_no_text_reason_and_keeps_its
             "UPDATE documents SET extraction_warnings = 'page 2 is blank' WHERE id = 'warned'"
         )
 
-    _documents(db).record_exam_state("proj", "warned", status="no_text_detected", exam_item_count=0)
+    _documents(db).record_question_count("proj", "warned", status="no_text_detected", question_count=0)
 
     warned = _document_row(db, "warned")
     assert warned["status"] == "no_text_detected"
@@ -195,7 +196,7 @@ def test_the_job_cleanup_rolls_back_with_the_run_it_belongs_to(tmp_path: Path) -
     assert _document_row(db, doc)["status"] == "processing"
 
 
-def test_capture_review_recovery_discards_unfinished_draft_jobs(tmp_path: Path) -> None:
+def test_capture_review_recovery_discards_unfinished_question_jobs(tmp_path: Path) -> None:
     db = _database(tmp_path)
     doc = _attach_pdf(db, operation_id="upload")
     _seed_text_and_jobs(db, doc)
@@ -265,21 +266,21 @@ def test_source_library_refuses_work_for_a_missing_project(tmp_path: Path) -> No
         ("ready", 0, "no_text_detected"),
     ],
 )
-def test_a_committed_draft_job_records_the_document_exam_state(
+def test_a_committed_question_job_records_the_document_question_count(
     tmp_path: Path, status: str, has_text: int, expected_status: str
 ) -> None:
     db = _database(tmp_path)
     _ready_document(db, "doc", status=status, has_text=has_text)
     _ready_document(db, "other-doc")
     with db.connect() as connection:
-        _draft(connection, "earlier-approved", "doc", status="approved")
-        _draft(connection, "earlier-rejected", "doc", status="rejected")
-        _draft(connection, "other-document-draft", "other-doc", status="approved")
+        _question(connection, "earlier-first", "doc")
+        _question(connection, "earlier-second", "doc")
+        _question(connection, "other-document-authored_question", "other-doc")
     job = _committing_job(db, "doc")
 
-    drafts_repository.append_generated_drafts_and_complete_job(
+    questions_repository.append_generated_questions_and_complete_job(
         db,
-        exam_state=bind_document_exam_state(db),
+        question_count=bind_document_question_count(db),
         job_id=job.id,
         project_id="proj",
         document_id="doc",
@@ -292,24 +293,24 @@ def test_a_committed_draft_job_records_the_document_exam_state(
 
     document = _document_row(db, "doc")
     assert document["status"] == expected_status
-    assert document["exam_item_count"] == 4
+    assert document["question_count"] == 4
     assert document["updated_at"] != "t0"
-    assert _document_row(db, "other-doc")["exam_item_count"] == 0
-    assert draft_jobs.get_job(db, job.id).status == "succeeded"
+    assert _document_row(db, "other-doc")["question_count"] == 0
+    assert question_generation_jobs.get_job(db, job.id).status == "succeeded"
 
 
-def test_a_draft_job_without_new_drafts_still_counts_the_document_drafts(
+def test_a_question_job_without_new_questions_still_counts_the_document_questions(
     tmp_path: Path,
 ) -> None:
     db = _database(tmp_path)
     _ready_document(db, "doc", status="no_text_detected")
     with db.connect() as connection:
-        _draft(connection, "earlier", "doc", status="approved")
+        _question(connection, "earlier", "doc")
     job = _committing_job(db, "doc")
 
-    drafts_repository.append_generated_drafts_and_complete_job(
+    questions_repository.append_generated_questions_and_complete_job(
         db,
-        exam_state=bind_document_exam_state(db),
+        question_count=bind_document_question_count(db),
         job_id=job.id,
         project_id="proj",
         document_id="doc",
@@ -322,7 +323,7 @@ def test_a_draft_job_without_new_drafts_still_counts_the_document_drafts(
 
     document = _document_row(db, "doc")
     assert document["status"] == "ready"
-    assert document["exam_item_count"] == 1
+    assert document["question_count"] == 1
 
 
 @pytest.mark.parametrize(
@@ -333,18 +334,18 @@ def test_a_draft_job_without_new_drafts_still_counts_the_document_drafts(
         ("processing", 1, "processing"),
     ],
 )
-def test_a_committed_manual_operation_records_the_document_exam_state(
+def test_a_committed_manual_operation_records_the_document_question_count(
     tmp_path: Path, status: str, has_text: int, expected_status: str
 ) -> None:
     db = _database(tmp_path)
     _ready_document(db, "doc", status=status, has_text=has_text)
     with db.connect() as connection:
-        _draft(connection, "earlier", "doc", status="rejected")
+        _question(connection, "earlier", "doc")
     operation = _committing_manual_operation(db, "doc")
 
-    drafts_repository.append_generated_drafts_and_complete_manual_operation(
+    questions_repository.append_generated_questions_and_complete_manual_operation(
         db,
-        exam_state=bind_document_exam_state(db),
+        question_count=bind_document_question_count(db),
         operation_id=operation.id,
         project_id="proj",
         document_id="doc",
@@ -357,7 +358,7 @@ def test_a_committed_manual_operation_records_the_document_exam_state(
 
     document = _document_row(db, "doc")
     assert document["status"] == expected_status
-    assert document["exam_item_count"] == 2
+    assert document["question_count"] == 2
     assert (
         manual_operations.get_operation(
             db, project_id="proj", document_id="doc", operation_id=operation.id
@@ -367,13 +368,13 @@ def test_a_committed_manual_operation_records_the_document_exam_state(
 
 
 @pytest.mark.parametrize("kind", ["job", "manual"])
-def test_the_document_exam_state_rolls_back_with_the_draft_commit(
+def test_the_document_question_count_rolls_back_with_the_question_commit(
     tmp_path: Path, kind: str
 ) -> None:
     db = _database(tmp_path)
     _ready_document(db, "doc", status="no_text_detected")
     if kind == "job":
-        job = draft_jobs.enqueue_chunk_job(
+        job = question_generation_jobs.enqueue_chunk_job(
             db,
             project_id="proj",
             document_id="doc",
@@ -383,12 +384,12 @@ def test_the_document_exam_state_rolls_back_with_the_draft_commit(
             provider="future-provider",
             model="qwen3.5:4b",
             projects=authoring_projects(db),
-            sources=SourceLibraryDraftSources(document_repository(db)),
+            sources=SourceLibraryQuestionSources(document_repository(db)),
         )
         with pytest.raises(NotFoundError, match="atomic commit phase"):
-            drafts_repository.append_generated_drafts_and_complete_job(
+            questions_repository.append_generated_questions_and_complete_job(
                 db,
-                exam_state=bind_document_exam_state(db),
+                question_count=bind_document_question_count(db),
                 job_id=job.id,
                 project_id="proj",
                 document_id="doc",
@@ -411,9 +412,9 @@ def test_the_document_exam_state_rolls_back_with_the_draft_commit(
             documents=authoring_documents(db),
         )
         with pytest.raises(NotFoundError):
-            drafts_repository.append_generated_drafts_and_complete_manual_operation(
+            questions_repository.append_generated_questions_and_complete_manual_operation(
                 db,
-                exam_state=bind_document_exam_state(db),
+                question_count=bind_document_question_count(db),
                 operation_id=operation.id,
                 project_id="proj",
                 document_id="doc",
@@ -426,9 +427,9 @@ def test_the_document_exam_state_rolls_back_with_the_draft_commit(
 
     document = _document_row(db, "doc")
     assert document["status"] == "no_text_detected"
-    assert document["exam_item_count"] == 0
+    assert document["question_count"] == 0
     assert document["updated_at"] == "t0"
-    assert drafts_repository.list_drafts(db, "proj", projects=authoring_projects(db)) == []
+    assert questions_repository.list_questions(db, "proj", projects=authoring_projects(db)) == []
 
 
 def _operations(db: Database) -> SqliteDocumentOperationRepository:
@@ -503,21 +504,24 @@ def _ready_document(
 def _seed_text_and_jobs(
     db: Database, document_id: str, *, attach: bool = False, locator_kind: str = "page"
 ) -> None:
-    """One chunk and a draft job in every unfinished and several finished states."""
+    """One chunk, three questions and a question job in every unfinished and several finished
+    states."""
 
     if attach:
         _ready_document(db, document_id, status="processing")
     with db.connect() as connection:
         if not attach:
             _chunk(connection, document_id, locator_kind=locator_kind)
+            for number in range(3):
+                _question(connection, f"{document_id}-question-{number}", document_id)
             connection.execute(
-                "UPDATE documents SET has_text = 1, exam_item_count = 3 WHERE id = ?",
+                "UPDATE documents SET has_text = 1, question_count = 3 WHERE id = ?",
                 (document_id,),
             )
         for status in UNFINISHED_JOB_STATUSES + FINISHED_JOB_STATUSES:
             connection.execute(
                 """
-                INSERT INTO draft_generation_jobs(
+                INSERT INTO question_generation_jobs(
                     id, project_id, document_id, chunk_id, source_chunk_id,
                     page_number, strategy, status, provider, model,
                     created_at, updated_at
@@ -549,21 +553,21 @@ def _chunk(connection: Connection, document_id: str, *, locator_kind: str = "pag
     )
 
 
-def _draft(connection: Connection, draft_id: str, document_id: str, *, status: str) -> None:
+def _question(connection: Connection, question_id: str, document_id: str) -> None:
     connection.execute(
         """
-        INSERT INTO question_drafts(
+        INSERT INTO questions(
             id, project_id, document_id, question, choices_json, answer,
-            rationale, citation_page, source_excerpt, status, created_at, updated_at
+            rationale, citation_page, source_excerpt, created_at, updated_at
         )
-        VALUES (?, 'proj', ?, ?, '["A", "B"]', 'A', 'Because', 1, 'excerpt', ?, 't0', 't0')
+        VALUES (?, 'proj', ?, ?, '["A", "B"]', 'A', 'Because', 1, 'excerpt', 't0', 't0')
         """,
-        (draft_id, document_id, draft_id, status),
+        (question_id, document_id, question_id),
     )
 
 
 def _committing_job(db: Database, document_id: str):
-    job = draft_jobs.enqueue_chunk_job(
+    job = question_generation_jobs.enqueue_chunk_job(
         db,
         project_id="proj",
         document_id=document_id,
@@ -573,10 +577,10 @@ def _committing_job(db: Database, document_id: str):
         provider="future-provider",
         model="qwen3.5:4b",
         projects=authoring_projects(db),
-        sources=SourceLibraryDraftSources(document_repository(db)),
+        sources=SourceLibraryQuestionSources(document_repository(db)),
     )
-    draft_jobs.mark_running(db, job.id)
-    draft_jobs.begin_commit(db, job.id)
+    question_generation_jobs.mark_running(db, job.id)
+    question_generation_jobs.begin_commit(db, job.id)
     return job
 
 
@@ -597,8 +601,8 @@ def _committing_manual_operation(db: Database, document_id: str):
     return operation
 
 
-def _suggestion(chunk_id: str, question: str) -> DraftSuggestion:
-    return DraftSuggestion(
+def _suggestion(chunk_id: str, question: str) -> QuestionSuggestion:
+    return QuestionSuggestion(
         chunk_id=chunk_id,
         question=question,
         choices=["A correct", "B wrong"],
@@ -613,7 +617,7 @@ def _suggestion(chunk_id: str, question: str) -> DraftSuggestion:
 def _job_statuses(db: Database, document_id: str) -> list[str]:
     with db.connect() as connection:
         rows = connection.execute(
-            "SELECT status FROM draft_generation_jobs WHERE document_id = ? ORDER BY status",
+            "SELECT status FROM question_generation_jobs WHERE document_id = ? ORDER BY status",
             (document_id,),
         ).fetchall()
     return [row["status"] for row in rows]

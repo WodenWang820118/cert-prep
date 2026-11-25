@@ -10,7 +10,6 @@ from cert_prep_backend.practice.domain import (
     PracticeSession,
     PracticeSessionMode,
     PracticeSessionStatus,
-    QuestionDraftStatus,
     answer_matches_key,
     current_wrong_answers,
     select_questions,
@@ -29,17 +28,9 @@ def test_practice_enums_keep_their_serialized_values() -> None:
         status="active",
         created_at="2026-06-11T00:00:00Z",
     )
-    question = PracticeQuestion(
-        id="question-1",
-        choices=("A", "B"),
-        correct_answer="B",
-        status="approved",
-    )
-
     assert PracticeSessionStatus.ACTIVE.value == "active"
     assert PracticeSessionStatus.COMPLETED.value == "completed"
     assert PracticeSessionStatus.ABANDONED.value == "abandoned"
-    assert QuestionDraftStatus.APPROVED.value == "approved"
     assert session.status is PracticeSessionStatus.ACTIVE
     assert session.question_ids == ("question-1",)
     assert session.mode is PracticeSessionMode.RANDOM_DRAW
@@ -48,7 +39,6 @@ def test_practice_enums_keep_their_serialized_values() -> None:
     assert session.random_seed is None
     assert session.completed_at is None
     assert session.abandoned_at is None
-    assert question.status is QuestionDraftStatus.APPROVED
 
 
 def test_ordered_selection_keeps_playable_order_and_requires_questions() -> None:
@@ -75,7 +65,7 @@ def test_ordered_selection_keeps_playable_order_and_requires_questions() -> None
     assert str(exc_info.value) == NO_PLAYABLE_QUESTIONS_MESSAGE
 
 
-def test_playable_question_requires_complete_approved_grounded_content() -> None:
+def test_playable_question_requires_complete_grounded_content() -> None:
     question = PracticeQuestion(
         id="question-1",
         question="Which access model should be applied?",

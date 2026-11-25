@@ -13,14 +13,14 @@ from collections.abc import Sequence
 from sqlite3 import Connection
 
 from cert_prep_backend.authoring.application import use_cases as authoring
-from cert_prep_backend.authoring.application.ports import QuestionDraftRepository
-from cert_prep_backend.authoring.domain.draft import QuestionDraft
-from cert_prep_backend.bootstrap.authoring_links import question_draft_repository
+from cert_prep_backend.authoring.application.ports import QuestionRepository
+from cert_prep_backend.authoring.domain.question import Question
+from cert_prep_backend.bootstrap.authoring_links import question_repository
 from cert_prep_backend.bootstrap.source_library_links import document_repository
 from cert_prep_backend.bootstrap.study_projects import ProjectExistence
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.practice.application.ports import (
-    DraftedQuestion,
+    PracticeSourceQuestion,
     PracticeQuestions,
     ProjectDocuments,
     StudyProjects,
@@ -40,39 +40,39 @@ class DocumentMembership:
         source_library.view_document(self._documents, project_id, document_id)
 
 
-class DraftsAsPracticeQuestions:
-    """Question Authoring's draft reads, as the questions practice asks about."""
+class AuthoringPracticeQuestions:
+    """Question Authoring's question reads, as the questions practice asks about."""
 
-    def __init__(self, drafts: QuestionDraftRepository) -> None:
-        self._drafts = drafts
+    def __init__(self, questions: QuestionRepository) -> None:
+        self._questions = questions
 
-    def approved(self, project_id: str, *, document_id: str | None) -> list[DraftedQuestion]:
+    def for_source(self, project_id: str, *, document_id: str | None) -> list[PracticeSourceQuestion]:
         return [
-            _drafted_question(draft)
-            for draft in authoring.approved_questions(
-                self._drafts, project_id, document_id=document_id
+            _practice_source_question(authored_question)
+            for authored_question in authoring.source_questions(
+                self._questions, project_id, document_id=document_id
             )
         ]
 
-    def current(self, project_id: str, question_id: str) -> DraftedQuestion | None:
-        draft = authoring.find_question_draft(self._drafts, project_id, question_id)
-        return None if draft is None else _drafted_question(draft)
+    def current(self, project_id: str, question_id: str) -> PracticeSourceQuestion | None:
+        authored_question = authoring.find_question(self._questions, project_id, question_id)
+        return None if authored_question is None else _practice_source_question(authored_question)
 
-    def current_many(self, project_id: str, question_ids: Sequence[str]) -> list[DraftedQuestion]:
+    def current_many(self, project_id: str, question_ids: Sequence[str]) -> list[PracticeSourceQuestion]:
         return [
-            _drafted_question(draft)
-            for draft in authoring.question_drafts_for(self._drafts, project_id, question_ids)
+            _practice_source_question(authored_question)
+            for authored_question in authoring.questions_for(self._questions, project_id, question_ids)
         ]
 
 
 def bind_practice_reads(
     db: Database, connection: Connection
 ) -> tuple[StudyProjects, PracticeQuestions]:
-    """Project and draft reads on `connection`, so they share practice's transaction."""
+    """Project and question reads on `connection`, so they share practice's transaction."""
 
     return (
         ProjectExistence(SqliteProjectRepository(db, connection)),
-        DraftsAsPracticeQuestions(question_draft_repository(db, connection)),
+        AuthoringPracticeQuestions(question_repository(db, connection)),
     )
 
 
@@ -82,20 +82,18 @@ def practice_documents(db: Database) -> ProjectDocuments:
     return DocumentMembership(document_repository(db))
 
 
-def _drafted_question(draft: QuestionDraft) -> DraftedQuestion:
-    answer_key_source = draft.answer_key_source
+def _practice_source_question(authored_question: Question) -> PracticeSourceQuestion:
+    answer_key_source = authored_question.answer_key_source
     if not isinstance(answer_key_source, str):
         answer_key_source = None
-    status = draft.status if isinstance(draft.status, str) else str(draft.status)
-    return DraftedQuestion(
-        id=draft.id,
-        choices=tuple(draft.choices),
-        correct_answer=draft.answer,
-        question=draft.question,
-        status=status,
-        rationale=draft.rationale,
-        citation_page=draft.citation_page,
-        source_excerpt=draft.source_excerpt,
-        document_id=draft.document_id,
+    return PracticeSourceQuestion(
+        id=authored_question.id,
+        choices=tuple(authored_question.choices),
+        correct_answer=authored_question.answer,
+        question=authored_question.question,
+        rationale=authored_question.rationale,
+        citation_page=authored_question.citation_page,
+        source_excerpt=authored_question.source_excerpt,
+        document_id=authored_question.document_id,
         answer_key_source=answer_key_source,
     )

@@ -1,8 +1,8 @@
-"""Question Authoring's writes to Source Library: a document's count of drafts and its status.
+"""Question Authoring's writes to Source Library: a document's count of questions and its status.
 
 Question Authoring defines the port. The adapter calls Source Library's use cases on the
-connection that commits the drafts (BEGIN IMMEDIATE), so the document's exam state is
-written in the same transaction as the drafts and the job or operation that wrote them, as
+connection that commits the questions (BEGIN IMMEDIATE), so the document's question count and status is
+written in the same transaction as the questions and the job or operation that wrote them, as
 the UPDATE in Question Authoring's own SQL used to be.
 """
 
@@ -11,15 +11,15 @@ from __future__ import annotations
 from sqlite3 import Connection
 
 from cert_prep_backend.authoring.application.ports import (
-    DocumentExamState,
+    DocumentQuestionCount,
     ProjectDocuments,
 )
-from cert_prep_backend.authoring.infrastructure.draft_jobs import SqliteDraftGenerationJobRepository
+from cert_prep_backend.authoring.infrastructure.question_generation_jobs import SqliteQuestionGenerationJobRepository
 from cert_prep_backend.authoring.infrastructure.repository import (
-    BindDocumentExamState,
-    SqliteQuestionDraftRepository,
+    BindDocumentQuestionCount,
+    SqliteQuestionRepository,
 )
-from cert_prep_backend.authoring.infrastructure.sources import SourceLibraryDraftSources
+from cert_prep_backend.authoring.infrastructure.sources import SourceLibraryQuestionSources
 from cert_prep_backend.bootstrap.source_library_links import document_repository
 from cert_prep_backend.bootstrap.study_projects import authoring_projects
 from cert_prep_backend.platform.database import Database
@@ -27,18 +27,18 @@ from cert_prep_backend.source_library.application import use_cases as source_lib
 from cert_prep_backend.source_library.application.ports import DocumentRepository
 
 
-class SourceLibraryExamState:
-    """Source Library's `record_draft_count` and `record_import_draft_count`, for Question
-    Authoring's `DocumentExamState` port."""
+class SourceLibraryQuestionCount:
+    """Source Library's `record_question_count` and `record_import_question_count`, for Question
+    Authoring's `DocumentQuestionCount` port."""
 
     def __init__(self, documents: DocumentRepository) -> None:
         self._documents = documents
 
-    def record_draft_count(self, project_id: str, document_id: str, count: int) -> None:
-        source_library.record_draft_count(self._documents, project_id, document_id, count)
+    def record_question_count(self, project_id: str, document_id: str, count: int) -> None:
+        source_library.record_question_count(self._documents, project_id, document_id, count)
 
-    def record_import_draft_count(self, project_id: str, document_id: str, count: int) -> None:
-        source_library.record_import_draft_count(
+    def record_import_question_count(self, project_id: str, document_id: str, count: int) -> None:
+        source_library.record_import_question_count(
             self._documents, project_id, document_id, count
         )
 
@@ -53,11 +53,11 @@ class DocumentMembership:
         source_library.view_document(self._documents, project_id, document_id)
 
 
-def bind_document_exam_state(db: Database) -> BindDocumentExamState:
-    """A document's exam state on the connection that commits its drafts."""
+def bind_document_question_count(db: Database) -> BindDocumentQuestionCount:
+    """A document's question count and status on the connection that commits its questions."""
 
-    def bind(connection: Connection) -> DocumentExamState:
-        return SourceLibraryExamState(document_repository(db, connection))
+    def bind(connection: Connection) -> DocumentQuestionCount:
+        return SourceLibraryQuestionCount(document_repository(db, connection))
 
     return bind
 
@@ -68,22 +68,22 @@ def authoring_documents(
     return DocumentMembership(document_repository(db, connection))
 
 
-def question_draft_repository(
+def question_repository(
     db: Database, connection: Connection | None = None
-) -> SqliteQuestionDraftRepository:
+) -> SqliteQuestionRepository:
     docs = document_repository(db, connection)
-    return SqliteQuestionDraftRepository(
+    return SqliteQuestionRepository(
         db,
         connection,
         projects=authoring_projects(db, connection),
-        sources=SourceLibraryDraftSources(docs),
+        sources=SourceLibraryQuestionSources(docs),
     )
 
 
-def draft_generation_job_repository(
+def question_generation_job_repository(
     db: Database, connection: Connection | None = None
-) -> SqliteDraftGenerationJobRepository:
-    return SqliteDraftGenerationJobRepository(
+) -> SqliteQuestionGenerationJobRepository:
+    return SqliteQuestionGenerationJobRepository(
         db,
         connection,
         documents=authoring_documents(db, connection),

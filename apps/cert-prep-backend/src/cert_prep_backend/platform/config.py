@@ -31,14 +31,14 @@ class Settings(BaseSettings):
     max_page_text_chars: int = 20_000
     max_total_text_chars: int = 500_000
     document_processing_parallelism: int = Field(default=2, ge=1, le=4)
-    auto_generate_exam_on_upload: bool = False
-    auto_generate_exam_limit: int = 50
-    streaming_draft_generation_on_upload: bool = False
-    streaming_draft_generation_strategy: Literal["deterministic_only", "hybrid_reasoning"] = (
+    write_questions_on_upload: bool = False
+    write_questions_on_upload_limit: int = 50
+    question_jobs_on_upload: bool = False
+    question_jobs_strategy: Literal["deterministic_only", "hybrid_reasoning"] = (
         "hybrid_reasoning"
     )
-    streaming_draft_generation_page_limit: int = Field(default=3, ge=1, le=20)
-    streaming_draft_workers: int = Field(default=1, ge=1, le=4)
+    question_jobs_chunk_limit: int = Field(default=3, ge=1, le=20)
+    question_job_workers: int = Field(default=1, ge=1, le=4)
     reading_solver_enabled: bool = True
     ollama_timeout_seconds: float = 120.0
     allowed_origins: list[str] = Field(

@@ -63,9 +63,9 @@ pub(crate) fn launch_backend_entrypoint(
     command.env_remove("CERT_PREP_OLLAMA_FALLBACK_MODELS");
     forward_env(
         &mut command,
-        "CERT_PREP_STREAMING_DRAFT_GENERATION_PAGE_LIMIT",
+        "CERT_PREP_QUESTION_JOBS_CHUNK_LIMIT",
     );
-    forward_env(&mut command, "CERT_PREP_STREAMING_DRAFT_WORKERS");
+    forward_env(&mut command, "CERT_PREP_QUESTION_JOB_WORKERS");
 
     #[allow(unused_mut)]
     let mut child = OwnedSidecarProcess::spawn(&mut command)
@@ -144,7 +144,7 @@ fn backend_launch_env(
         BackendEnv::new("CERT_PREP_OLLAMA_MODEL", FIXED_OLLAMA_MODEL),
         BackendEnv::new("CERT_PREP_OLLAMA_PROFILE_ENABLED", "true"),
         BackendEnv::new("CERT_PREP_OLLAMA_PROFILE_ID", FIXED_OLLAMA_PROFILE_ID),
-        BackendEnv::new("CERT_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD", "true"),
+        BackendEnv::new("CERT_PREP_QUESTION_JOBS_ON_UPLOAD", "true"),
     ];
     if let Some(capture_runtime) = capture_runtime {
         environment.extend([
@@ -422,7 +422,7 @@ mod tests {
             Some(FIXED_OLLAMA_PROFILE_ID)
         );
         assert_eq!(
-            env_value(&env, "CERT_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD"),
+            env_value(&env, "CERT_PREP_QUESTION_JOBS_ON_UPLOAD"),
             Some("true")
         );
         assert_eq!(

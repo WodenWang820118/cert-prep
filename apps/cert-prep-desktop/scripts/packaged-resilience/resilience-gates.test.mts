@@ -6,12 +6,12 @@ import { test } from 'node:test';
 
 import type { JsonResponse, JsonTransport } from './api-client.mts';
 import {
-  drainUploadTriggeredDrafts,
+  drainUploadTriggeredQuestionJobs,
   exactOllamaHealth,
   exactOllamaTags,
   exactProviderSelection,
   exactOllamaLLMRequirement,
-  waitForExactDocumentDrafts,
+  waitForExactDocumentQuestions,
 } from './resilience-runner.mts';
 
 test('remaining provider selection accepts only exact raw Ollama 4b scope', async () => {
@@ -250,11 +250,11 @@ test('isolated Ollama tags and backend health prove the missing-to-installed mod
   assert.equal((await exactOllamaHealth(health, true)).available, true);
 });
 
-test('upload-triggered jobs drain without questions before manual drafts publish', async () => {
+test('upload-triggered jobs drain without questions before manual questions publish', async () => {
   const projectId = 'project-1';
   const documentId = 'document-1';
   const transport = new ScriptedTransport([
-    response(`/projects/${projectId}/documents/${documentId}/draft-jobs`, {
+    response(`/projects/${projectId}/documents/${documentId}/question-jobs`, {
       items: [
         {
           id: 'auto-job-1',
@@ -264,24 +264,24 @@ test('upload-triggered jobs drain without questions before manual drafts publish
         },
       ],
     }),
-    response(`/projects/${projectId}/question-drafts`, { items: [] }),
-    response(`/projects/${projectId}/question-drafts`, {
+    response(`/projects/${projectId}/questions`, { items: [] }),
+    response(`/projects/${projectId}/questions`, {
       items: [
-        draft('draft-1', projectId, documentId),
-        draft('draft-2', projectId, documentId),
+        question('question-1', projectId, documentId),
+        question('question-2', projectId, documentId),
       ],
     }),
   ]);
 
-  const drained = await drainUploadTriggeredDrafts(
+  const drained = await drainUploadTriggeredQuestionJobs(
     transport,
     projectId,
     documentId,
     1_000,
   );
-  assert.equal(drained.usableDraftCount, 0);
+  assert.equal(drained.usableQuestionCount, 0);
   assert.equal(
-    await waitForExactDocumentDrafts(transport, projectId, documentId, 1_000),
+    await waitForExactDocumentQuestions(transport, projectId, documentId, 1_000),
     2,
   );
   transport.assertConsumed();
@@ -326,7 +326,7 @@ function jsonResponse(body: unknown): Response {
   });
 }
 
-function draft(
+function question(
   id: string,
   projectId: string,
   documentId: string,

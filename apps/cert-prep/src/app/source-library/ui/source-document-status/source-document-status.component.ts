@@ -89,7 +89,7 @@ export class SourceDocumentStatusComponent {
       return 'Choose a source file to check whether its evidence is ready.';
     }
     if (this.readyForReview()) {
-      return 'Source evidence is ready to inspect below. Continue to Draft Review when you are ready.';
+      return 'Source evidence is ready to inspect below. Continue to Question Review when you are ready.';
     }
     if (document.status === 'processing' && document.chunks_count > 0) {
       return 'Some source evidence is available below while preparation continues.';

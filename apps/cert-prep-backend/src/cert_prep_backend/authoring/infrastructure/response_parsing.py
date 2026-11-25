@@ -5,7 +5,7 @@ import json
 import re
 from typing import Any
 
-from cert_prep_backend.authoring.domain.models import DraftSuggestion
+from cert_prep_backend.authoring.domain.models import QuestionSuggestion
 from cert_prep_backend.platform.errors import LanguageModelUnavailable
 
 RATIONALE_LANGUAGE_INSTRUCTION = (
@@ -27,7 +27,7 @@ def is_reading_question(choices: Sequence[str]) -> bool:
     )
 
 
-def fast_first_prompt(candidate: DraftSuggestion) -> str:
+def fast_first_prompt(candidate: QuestionSuggestion) -> str:
     choices = "\n".join(str(choice) for choice in candidate.choices)
     if is_reading_question(candidate.choices):
         return (
@@ -54,7 +54,7 @@ def fast_first_prompt(candidate: DraftSuggestion) -> str:
     )
 
 
-def fast_first_retry_prompt(candidate: DraftSuggestion) -> str:
+def fast_first_retry_prompt(candidate: QuestionSuggestion) -> str:
     choices = "\n".join(str(choice) for choice in candidate.choices)
     if is_reading_question(candidate.choices):
         return (

@@ -270,7 +270,7 @@ describe('App desktop runtime recovery routes', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     fixture.detectChanges();
 
-    router.navigateByUrl('/build');
+    router.navigateByUrl('/questions');
     fixture.detectChanges();
     TestBed.tick();
     return vi.waitFor(() => {
@@ -611,7 +611,7 @@ function createApiClient() {
     listDocuments: vi.fn().mockReturnValue(of({ items: [appDocument] })),
     getDocument: vi.fn().mockReturnValue(of(appDocument)),
     listDocumentChunks: vi.fn().mockReturnValue(of({ items: [] })),
-    listQuestionDrafts: vi
+    listQuestions: vi
       .fn()
       .mockReturnValue(of({ items: [editableAppQuestion] })),
     listActivePracticeSessions: vi.fn().mockReturnValue(of({ items: [] })),

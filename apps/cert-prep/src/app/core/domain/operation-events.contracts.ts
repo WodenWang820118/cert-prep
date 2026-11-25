@@ -1,8 +1,8 @@
 import type {
   DocumentOperationRead,
   DocumentRead,
-  DraftGenerationJobRead,
-  ManualDraftGenerationOperationRead,
+  QuestionGenerationJobRead,
+  ManualQuestionGenerationRead,
   LLMInstallationRead,
 } from './api.contracts';
 
@@ -11,11 +11,11 @@ export interface DocumentOperationEvent {
   readonly document: DocumentRead | null;
 }
 
-export interface DraftJobsEvent {
-  readonly items: DraftGenerationJobRead[];
+export interface QuestionJobsEvent {
+  readonly items: QuestionGenerationJobRead[];
 }
 
-export type DraftOperationEvent = ManualDraftGenerationOperationRead;
+export type QuestionGenerationEvent = ManualQuestionGenerationRead;
 export type LLMInstallationEvent = LLMInstallationRead;
 
 export function isDocumentOperationEventTerminal(
@@ -24,7 +24,7 @@ export function isDocumentOperationEventTerminal(
   return ['canceled', 'succeeded', 'failed'].includes(event.operation.status);
 }
 
-export function isDraftJobsEventTerminal(event: DraftJobsEvent): boolean {
+export function isQuestionJobsEventTerminal(event: QuestionJobsEvent): boolean {
   return (
     event.items.length > 0 &&
     event.items.every((job) =>
@@ -39,8 +39,8 @@ export function isDraftJobsEventTerminal(event: DraftJobsEvent): boolean {
   );
 }
 
-export function isDraftOperationEventTerminal(
-  event: DraftOperationEvent,
+export function isQuestionGenerationEventTerminal(
+  event: QuestionGenerationEvent,
 ): boolean {
   return ['canceled', 'succeeded', 'failed'].includes(event.status);
 }

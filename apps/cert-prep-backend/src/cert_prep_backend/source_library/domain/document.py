@@ -93,7 +93,7 @@ class SourceDocument:
     extraction_warnings: str | None
     failure_message: str | None
     processed_page_count: int
-    exam_item_count: int
+    question_count: int
     content_profile: ContentProfileValue
     classification_detail: str
     chunks_count: int
@@ -123,14 +123,14 @@ class SourceDocument:
                 "Markdown projection is available after document processing completes.",
             )
 
-    def status_after_drafts(self) -> str:
-        """The status a document has once the learner's drafts were written: still processing if
+    def status_after_questions(self) -> str:
+        """The status a document has once the learner's questions were written: still processing if
         it was, ready otherwise."""
 
         return "processing" if self.status == "processing" else "ready"
 
-    def status_after_import_drafts(self) -> str:
-        """The status a document has once drafts were written while it was imported: still
+    def status_after_import_questions(self) -> str:
+        """The status a document has once questions were written while it was imported: still
         processing if it was, ready when it has text and chunks, no_text_detected otherwise."""
 
         if self.status == "processing":

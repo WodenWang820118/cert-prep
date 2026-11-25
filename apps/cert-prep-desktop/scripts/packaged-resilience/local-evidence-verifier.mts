@@ -32,7 +32,7 @@ const DOCUMENT_CHECKS = [
 ] as const satisfies readonly ResilienceCheck[];
 
 const REMAINING_CHECKS = [
-  'draft',
+  'question',
   'runtime',
   'model',
   'ownedProcessesReleased',

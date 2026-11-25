@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from practice_test_support import _create_manual_question, _create_project, _upload_document
 
 
-def test_regrade_clears_a_wrong_answer_after_the_draft_key_is_corrected(
+def test_regrade_clears_a_wrong_answer_after_the_question_key_is_corrected(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
@@ -30,7 +30,7 @@ def test_regrade_clears_a_wrong_answer_after_the_draft_key_is_corrected(
     assert attempt.json()["is_correct"] is False
 
     corrected = client.patch(
-        f"/projects/{project_id}/question-drafts/{question['id']}",
+        f"/projects/{project_id}/questions/{question['id']}",
         headers=auth_headers,
         json={"answer": "Allow unrestricted access", "answer_key_source": "manual"},
     )
@@ -78,7 +78,7 @@ def test_a_corrected_key_reaches_the_wrong_answer_that_was_graded_against_the_ol
     assert attempt.json()["is_correct"] is True
 
     corrected = client.patch(
-        f"/projects/{project_id}/question-drafts/{question['id']}",
+        f"/projects/{project_id}/questions/{question['id']}",
         headers=auth_headers,
         json={
             "answer": "Allow unrestricted access",

@@ -23,9 +23,9 @@ test('smoke run state keeps the caller options and metrics and starts idle', () 
     port: 9444,
     projectApi: null,
     uploadedDocument: null,
-    streamingDraftParseStartedAt: null,
-    streamingDraftCaptureOpen: false,
-    streamingApiPollErrorCaptured: false,
+    questionObservationStartedAt: null,
+    questionObservationActive: false,
+    questionGenerationApiPollErrorCaptured: false,
   });
   assert.notEqual(
     createSmokeRunState(options, metrics).processBaseline,

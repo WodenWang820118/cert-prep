@@ -1,0 +1,93 @@
+<section class="workbench-panel" aria-labelledby="questions-heading">
+  <header class="workbench-panel-header">
+    <div class="min-w-0">
+      <div class="workbench-panel-title">
+        <span class="workbench-panel-icon" aria-hidden="true">
+          <app-icon name="lucideSparkles" />
+        </span>
+        <h2 id="questions-heading">Questions</h2>
+      </div>
+      <p class="workbench-panel-subtitle">
+        Review questions from the uploaded document, edit anything that needs
+        attention, then practice.
+      </p>
+
+      <app-question-generation-status
+        [model]="generationStatus()"
+        (action)="handleGenerationAction($event)"
+      />
+
+      @if (saveResult(); as result) {
+        <p
+          class="mt-2 rounded-md border border-green-200 bg-green-50 p-3 text-sm font-semibold text-green-900"
+          aria-live="polite"
+          data-testid="question-save-result"
+        >
+          {{ result }}
+        </p>
+      }
+    </div>
+  </header>
+
+  <div class="workbench-panel-body">
+    <div class="grid gap-3 md:grid-cols-[10rem_minmax(0,1fr)] md:items-end">
+      <label class="workbench-field">
+        <span>Question count</span>
+        <input
+          hlmInput
+          name="questionLimit"
+          type="number"
+          min="1"
+          max="50"
+          [ngModel]="questionsStore.questionLimit()"
+          (ngModelChange)="questionsStore.setQuestionLimit($event)"
+        />
+      </label>
+      <span class="text-sm text-muted-foreground">
+        Only questions tied to a source item can be used for practice.
+      </span>
+    </div>
+
+    <div class="workbench-question-list">
+      @for (card of questionCards(); track card.id) {
+        <app-question-editor-card
+          [model]="card"
+          (action)="handleQuestionAction(card, $event)"
+        />
+      } @empty {
+        <article class="workbench-question-card">
+          <h3>No questions are ready yet.</h3>
+          <p>
+            @if (sourceImport.canGenerateQuestions()) {
+            Generate questions to create practice items from this source.
+            } @else {
+            Add a source file with text, then generate questions when the source
+            is ready.
+            }
+          </p>
+        </article>
+      }
+    </div>
+
+    @if (hasPlayableQuestions()) {
+      <aside
+        class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-blue-200 bg-blue-50 p-4"
+        data-testid="question-practice-next-step"
+      >
+        <div>
+          <strong class="block text-blue-950">Next step: Practice</strong>
+          <span class="text-sm text-blue-900">
+            Your questions are ready for a random draw.
+          </span>
+        </div>
+        <a
+          class="workbench-action-button"
+          data-testid="question-practice-link"
+          routerLink="/random-draw"
+        >
+          Practice questions
+        </a>
+      </aside>
+    }
+  </div>
+</section>

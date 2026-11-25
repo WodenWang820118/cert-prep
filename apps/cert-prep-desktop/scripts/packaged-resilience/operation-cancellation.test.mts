@@ -41,17 +41,17 @@ class ScriptedTransport implements JsonTransport {
   }
 }
 
-test('records a live committing draft response and exact 409 rejection', async () => {
+test('records a live committing question response and exact 409 rejection', async () => {
   const scenario: CancelableOperationScenario = {
-    kind: 'draft',
-    startPath: '/projects/project-1/documents/document-1/draft-operations',
+    kind: 'question',
+    startPath: '/projects/project-1/documents/document-1/question-generations',
     operationPath: (operationId) =>
-      `/projects/project-1/documents/document-1/draft-operations/${operationId}`,
+      `/projects/project-1/documents/document-1/question-generations/${operationId}`,
     startData: { limit: 5 },
     projectId: 'project-1',
     documentId: 'document-1',
     provider: 'fake',
-    model: 'fixture-draft-model',
+    model: 'fixture-question-model',
     timeoutMs: 1_000,
   };
   const scope = {
@@ -236,10 +236,10 @@ test('rejects model scope drift on the durable commit response', async () => {
 
 test('fails fast when the commit probe terminates before committing', async () => {
   const scenario: CancelableOperationScenario = {
-    kind: 'draft',
-    startPath: '/projects/project-1/documents/document-1/draft-operations',
+    kind: 'question',
+    startPath: '/projects/project-1/documents/document-1/question-generations',
     operationPath: (operationId) =>
-      `/projects/project-1/documents/document-1/draft-operations/${operationId}`,
+      `/projects/project-1/documents/document-1/question-generations/${operationId}`,
     startData: { limit: 5 },
     projectId: 'project-1',
     documentId: 'document-1',

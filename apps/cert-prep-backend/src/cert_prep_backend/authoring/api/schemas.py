@@ -6,21 +6,20 @@ from cert_prep_backend.source_library.domain.exam_content import QuestionItemKin
 from cert_prep_backend.authoring.domain.models import (
     AnswerKeySource,
     AnswerKeySourceValue,
-    DraftGenerationStrategy,
-    DraftStatusValue,
+    QuestionGenerationStrategy,
 )
 from cert_prep_backend.authoring.domain.generation import (
-    DraftGenerationJobStatus,
-    ManualDraftOperationStatus,
+    QuestionGenerationJobStatus,
+    ManualQuestionGenerationStatus,
 )
 
 
-class DraftGenerateRequest(BaseModel):
+class QuestionGenerateRequest(BaseModel):
     limit: int = Field(default=5, ge=1, le=50)
-    strategy: DraftGenerationStrategy = DraftGenerationStrategy.DETERMINISTIC_ONLY
+    strategy: QuestionGenerationStrategy = QuestionGenerationStrategy.DETERMINISTIC_ONLY
 
 
-class QuestionDraftCreate(BaseModel):
+class QuestionCreate(BaseModel):
     question: str = ""
     choices: list[str] = Field(default_factory=list)
     answer: str | None = None
@@ -38,7 +37,7 @@ class QuestionDraftCreate(BaseModel):
     group_prompt: str | None = None
 
 
-class QuestionDraftUpdate(BaseModel):
+class QuestionUpdate(BaseModel):
     question: str | None = None
     choices: list[str] | None = None
     answer: str | None = None
@@ -54,7 +53,7 @@ class QuestionDraftUpdate(BaseModel):
     group_prompt: str | None = None
 
 
-class QuestionDraftRead(BaseModel):
+class QuestionRead(BaseModel):
     id: str
     project_id: str
     document_id: str | None
@@ -75,24 +74,22 @@ class QuestionDraftRead(BaseModel):
     item_kind: QuestionItemKindValue
     group_key: str | None
     group_prompt: str | None
-    status: DraftStatusValue
-    rejection_reason: str | None
     created_at: str
     updated_at: str
 
 
-class QuestionDraftList(BaseModel):
-    items: list[QuestionDraftRead]
+class QuestionList(BaseModel):
+    items: list[QuestionRead]
 
 
-class DraftGenerationJobRead(BaseModel):
+class QuestionGenerationJobRead(BaseModel):
     id: str
     project_id: str
     document_id: str
     chunk_id: str
     page_number: int
-    strategy: DraftGenerationStrategy
-    status: DraftGenerationJobStatus
+    strategy: QuestionGenerationStrategy
+    status: QuestionGenerationJobStatus
     phase: str
     cancellable: bool
     provider: str
@@ -107,11 +104,11 @@ class DraftGenerationJobRead(BaseModel):
     updated_at: str
 
 
-class DraftGenerationJobList(BaseModel):
-    items: list[DraftGenerationJobRead]
+class QuestionGenerationJobList(BaseModel):
+    items: list[QuestionGenerationJobRead]
 
 
-class UnavailableDraftBlockRead(BaseModel):
+class UnavailableQuestionBlockRead(BaseModel):
     status: str = "needs_review"
     chunk_id: str
     citation_page: int
@@ -121,13 +118,13 @@ class UnavailableDraftBlockRead(BaseModel):
     reason: str
 
 
-class ManualDraftGenerationOperationRead(BaseModel):
+class ManualQuestionGenerationRead(BaseModel):
     id: str
     project_id: str
     document_id: str
     limit: int
-    strategy: DraftGenerationStrategy
-    status: ManualDraftOperationStatus
+    strategy: QuestionGenerationStrategy
+    status: ManualQuestionGenerationStatus
     phase: str
     cancellable: bool
     provider: str
@@ -136,7 +133,7 @@ class ManualDraftGenerationOperationRead(BaseModel):
     effective_model: str | None = None
     fallback_reason: str | None = None
     generated_count: int
-    unavailable_blocks: list[UnavailableDraftBlockRead] = Field(default_factory=list)
+    unavailable_blocks: list[UnavailableQuestionBlockRead] = Field(default_factory=list)
     error: str | None = None
     created_at: str
     updated_at: str

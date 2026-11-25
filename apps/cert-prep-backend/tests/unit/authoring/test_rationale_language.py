@@ -1,7 +1,7 @@
-"""Draft prompts ask for a Traditional Chinese rationale and keep the JSON shape."""
+"""Question prompts ask for a Traditional Chinese rationale and keep the JSON shape."""
 
-from cert_prep_backend.authoring.domain.models import DraftSuggestion
-from cert_prep_backend.authoring.infrastructure.ollama_drafts import (
+from cert_prep_backend.authoring.domain.models import QuestionSuggestion
+from cert_prep_backend.authoring.infrastructure.ollama_question_writer import (
     _reasoning_system_prompt,
     _reasoning_user_prompt,
     _supplemental_reasoning_user_prompt,
@@ -13,8 +13,8 @@ from cert_prep_backend.authoring.infrastructure.response_parsing import (
 )
 
 
-def _candidate() -> DraftSuggestion:
-    return DraftSuggestion(
+def _candidate() -> QuestionSuggestion:
+    return QuestionSuggestion(
         chunk_id="chunk-1",
         question="余暇の楽しみ方は？",
         choices=["ようか", "よか"],

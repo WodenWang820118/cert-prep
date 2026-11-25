@@ -22,7 +22,7 @@ scanned-PDF flow. This order has not been verified on an installed app yet;
 that run is open work in
 [capture-workbench-cert-prep-pdf.md](../TODOS/capture-workbench-cert-prep-pdf.md).
 The Capture Workbench page offers PDF and image only; a successful packaged transcription
-belongs to the Build page's source-library import path, not to this smoke.
+belongs to the Questions page's source-library import path, not to this smoke.
 The real OCR proof on the packaged app is `cert-prep-desktop:acceptance-real`
 ([acceptance spec](cert-prep-pdf-image-acceptance.md)).
 `acceptance-real` covers JPEG and scanned PDF text recognition.

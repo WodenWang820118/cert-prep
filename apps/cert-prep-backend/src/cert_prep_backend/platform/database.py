@@ -1064,6 +1064,275 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
         WHERE source_kind IN ('audio', 'document');
         """,
     ),
+    (
+        33,
+        # Questions, not drafts: a question has no approval status, so the table loses its
+        # status and rejection reason, and the generation tables say question generation. The column rename runs first, while every trigger still
+        # names an existing table, because SQLite re-parses the whole schema for it. The new
+        # tables are created under their final names and filled from the old ones; only
+        # practice_attempts keeps its name, so it is rebuilt under a temporary one to point its
+        # foreign key at questions. Indexes and triggers are created again with the names and
+        # bodies of the new tables. A question its author rejected is deleted, with what its
+        # foreign keys delete (foreign keys are off during the rebuild, so the cascade to
+        # practice_attempts is spelled out); every other status, `draft` included, becomes an
+        # ordinary question.
+        """
+        ALTER TABLE documents RENAME COLUMN exam_item_count TO question_count;
+
+        DELETE FROM practice_attempts
+        WHERE question_id IN (SELECT id FROM question_drafts WHERE status = 'rejected');
+        DELETE FROM question_drafts WHERE status = 'rejected';
+
+        CREATE TABLE questions (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            document_id TEXT REFERENCES documents(id) ON DELETE SET NULL,
+            chunk_id TEXT REFERENCES document_chunks(id) ON DELETE SET NULL,
+            question TEXT NOT NULL,
+            choices_json TEXT NOT NULL,
+            answer TEXT,
+            answer_key_source TEXT NOT NULL DEFAULT 'manual',
+            rationale TEXT,
+            citation_page INTEGER,
+            citation_locator_kind TEXT NOT NULL DEFAULT 'page',
+            citation_start_ms INTEGER,
+            citation_end_ms INTEGER,
+            source_excerpt TEXT,
+            confidence REAL,
+            source_order INTEGER,
+            source_question_number TEXT,
+            item_kind TEXT NOT NULL DEFAULT 'unknown',
+            group_key TEXT,
+            group_prompt TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        INSERT INTO questions (
+            id, project_id, document_id, chunk_id,
+            question, choices_json, answer, answer_key_source,
+            rationale, citation_page, citation_locator_kind, citation_start_ms,
+            citation_end_ms, source_excerpt, confidence, source_order,
+            source_question_number, item_kind, group_key, group_prompt,
+            created_at, updated_at
+        )
+        SELECT
+            id, project_id, document_id, chunk_id,
+            question, choices_json, answer,
+            CASE answer_key_source WHEN 'pdf' THEN 'source' ELSE answer_key_source END,
+            rationale, citation_page, citation_locator_kind, citation_start_ms,
+            citation_end_ms, source_excerpt, confidence, source_order,
+            source_question_number, item_kind, group_key, group_prompt,
+            created_at, updated_at
+        FROM question_drafts;
+
+        CREATE TABLE practice_attempts_new (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL REFERENCES practice_sessions(id) ON DELETE CASCADE,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            question_id TEXT NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+            selected_answer TEXT NOT NULL,
+            is_correct INTEGER NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        INSERT INTO practice_attempts_new (
+            id, session_id, project_id, question_id, selected_answer, is_correct, created_at
+        )
+        SELECT id, session_id, project_id, question_id, selected_answer, is_correct, created_at
+        FROM practice_attempts;
+        DROP TABLE practice_attempts;
+        ALTER TABLE practice_attempts_new RENAME TO practice_attempts;
+        DROP TABLE question_drafts;
+
+        CREATE TABLE question_generation_jobs (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            chunk_id TEXT REFERENCES document_chunks(id) ON DELETE SET NULL,
+            source_chunk_id TEXT NOT NULL,
+            page_number INTEGER NOT NULL,
+            strategy TEXT NOT NULL,
+            status TEXT NOT NULL,
+            phase TEXT NOT NULL DEFAULT 'queued',
+            cancellable INTEGER NOT NULL DEFAULT 1,
+            provider TEXT NOT NULL DEFAULT '',
+            model TEXT NOT NULL DEFAULT '',
+            effective_provider TEXT,
+            effective_model TEXT,
+            fallback_reason TEXT,
+            generated_count INTEGER NOT NULL DEFAULT 0,
+            retry_count INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            CHECK(chunk_id IS NULL OR chunk_id = source_chunk_id),
+            UNIQUE(document_id, chunk_id, strategy)
+        );
+        INSERT INTO question_generation_jobs (
+            id, project_id, document_id, chunk_id,
+            source_chunk_id, page_number, strategy, status,
+            phase, cancellable, provider, model,
+            effective_provider, effective_model, fallback_reason, generated_count,
+            retry_count, last_error, created_at, updated_at
+        )
+        SELECT
+            id, project_id, document_id, chunk_id,
+            source_chunk_id, page_number, strategy, status,
+            phase, cancellable, provider, model,
+            effective_provider, effective_model, fallback_reason, generated_count,
+            retry_count, last_error, created_at, updated_at
+        FROM draft_generation_jobs;
+        DROP TABLE draft_generation_jobs;
+
+        CREATE TABLE manual_question_generations (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            limit_count INTEGER NOT NULL,
+            strategy TEXT NOT NULL,
+            status TEXT NOT NULL,
+            phase TEXT NOT NULL,
+            cancellable INTEGER NOT NULL,
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            effective_provider TEXT,
+            effective_model TEXT,
+            fallback_reason TEXT,
+            generated_count INTEGER NOT NULL DEFAULT 0,
+            unavailable_blocks_json TEXT NOT NULL DEFAULT '[]',
+            error TEXT,
+            commit_started_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        INSERT INTO manual_question_generations (
+            id, project_id, document_id, limit_count,
+            strategy, status, phase, cancellable,
+            provider, model, effective_provider, effective_model,
+            fallback_reason, generated_count, unavailable_blocks_json, error,
+            commit_started_at, created_at, updated_at
+        )
+        SELECT
+            id, project_id, document_id, limit_count,
+            strategy, status, phase, cancellable,
+            provider, model, effective_provider, effective_model,
+            fallback_reason, generated_count, unavailable_blocks_json, error,
+            commit_started_at, created_at, updated_at
+        FROM manual_draft_generation_operations;
+        DROP TABLE manual_draft_generation_operations;
+
+        CREATE TABLE llm_installation_jobs (
+            id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            status TEXT NOT NULL,
+            phase TEXT NOT NULL,
+            cancellable INTEGER NOT NULL,
+            detail TEXT NOT NULL,
+            completed INTEGER,
+            total INTEGER,
+            error TEXT,
+            commit_started_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        INSERT INTO llm_installation_jobs (
+            id, kind, provider, model,
+            status, phase, cancellable, detail,
+            completed, total, error, commit_started_at,
+            created_at, updated_at
+        )
+        SELECT
+            id, kind, provider, model,
+            status, phase, cancellable, detail,
+            completed, total, error, commit_started_at,
+            created_at, updated_at
+        FROM runtime_installation_jobs;
+        DROP TABLE runtime_installation_jobs;
+
+        -- The count of every question of the source, as the writers keep it from now on.
+        UPDATE documents
+        SET question_count = (
+            SELECT COUNT(*)
+            FROM questions
+            WHERE questions.project_id = documents.project_id
+                AND questions.document_id = documents.id
+        );
+
+        CREATE INDEX idx_questions_project_created
+            ON questions(project_id, created_at);
+        CREATE INDEX idx_practice_attempts_wrong
+            ON practice_attempts(project_id, is_correct, created_at);
+        CREATE INDEX idx_question_generation_jobs_document
+            ON question_generation_jobs(project_id, document_id, created_at);
+        CREATE INDEX idx_question_generation_jobs_status
+            ON question_generation_jobs(status, updated_at);
+        CREATE INDEX idx_manual_question_generations_document
+            ON manual_question_generations(project_id, document_id, created_at);
+        CREATE UNIQUE INDEX idx_manual_question_generations_one_active
+            ON manual_question_generations(project_id, document_id)
+            WHERE status IN ('queued', 'running', 'cancel_requested');
+        CREATE INDEX idx_llm_installation_jobs_updated
+            ON llm_installation_jobs(updated_at DESC);
+        CREATE UNIQUE INDEX idx_llm_installation_jobs_one_active_kind
+            ON llm_installation_jobs(kind)
+            WHERE status IN (
+                'queued', 'running', 'cancel_requested', 'waiting_for_user'
+            );
+
+        CREATE TRIGGER trg_questions_audio_locator_insert
+        AFTER INSERT ON questions
+        WHEN NEW.chunk_id IS NOT NULL
+        BEGIN
+            UPDATE questions
+            SET citation_locator_kind = COALESCE(
+                    (SELECT locator_kind FROM document_chunks WHERE id = NEW.chunk_id), 'page'),
+                citation_start_ms = (
+                    SELECT start_ms FROM document_chunks WHERE id = NEW.chunk_id),
+                citation_end_ms = (
+                    SELECT end_ms FROM document_chunks WHERE id = NEW.chunk_id),
+                citation_page = CASE
+                    WHEN (SELECT locator_kind FROM document_chunks WHERE id = NEW.chunk_id) = 'time'
+                    THEN NULL ELSE citation_page END
+            WHERE id = NEW.id;
+        END;
+        CREATE TRIGGER trg_question_generation_jobs_validate_chunk_insert
+        BEFORE INSERT ON question_generation_jobs
+        WHEN NEW.chunk_id IS NULL
+            OR NOT EXISTS (
+                SELECT 1
+                FROM document_chunks
+                WHERE id = NEW.chunk_id
+                    AND project_id = NEW.project_id
+                    AND document_id = NEW.document_id
+            )
+        BEGIN
+            SELECT RAISE(ABORT, 'question job chunk must belong to its document');
+        END;
+        CREATE TRIGGER trg_question_generation_jobs_validate_chunk_update
+        BEFORE UPDATE OF chunk_id ON question_generation_jobs
+        WHEN NEW.chunk_id IS NOT NULL
+            AND NOT EXISTS (
+                SELECT 1
+                FROM document_chunks
+                WHERE id = NEW.chunk_id
+                    AND project_id = NEW.project_id
+                    AND document_id = NEW.document_id
+            )
+        BEGIN
+            SELECT RAISE(ABORT, 'question job chunk must belong to its document');
+        END;
+        CREATE TRIGGER trg_question_generation_jobs_immutable_attribution
+        BEFORE UPDATE OF project_id, document_id, source_chunk_id
+            ON question_generation_jobs
+        WHEN NEW.project_id IS NOT OLD.project_id
+            OR NEW.document_id IS NOT OLD.document_id
+            OR NEW.source_chunk_id IS NOT OLD.source_chunk_id
+        BEGIN
+            SELECT RAISE(ABORT, 'question job attribution is immutable');
+        END;
+        """,
+    ),
 )
 
 
@@ -1098,7 +1367,7 @@ def _legacy_page_source_kind(filename: str, storage_path: str, uploads_root: Pat
 # Migrations that rebuild a parent table (create, copy, drop, rename) run with foreign keys off,
 # so dropping the old table cascades into nothing, and statement by statement in one
 # transaction, so the version recheck and the rebuild commit together.
-_TABLE_REBUILD_MIGRATIONS: Final[frozenset[int]] = frozenset({30})
+_TABLE_REBUILD_MIGRATIONS: Final[frozenset[int]] = frozenset({30, 33})
 
 
 class Database:

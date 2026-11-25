@@ -88,7 +88,7 @@ function documentRead(overrides: Partial<DocumentRead> = {}): DocumentRead {
     extraction_warnings: null,
     failure_message: null,
     processed_page_count: 8,
-    exam_item_count: 0,
+    question_count: 0,
     content_profile: 'study_material',
     classification_detail: '',
     chunks_count: 8,

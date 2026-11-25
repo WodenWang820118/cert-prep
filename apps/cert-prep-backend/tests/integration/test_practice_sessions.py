@@ -296,7 +296,7 @@ def test_session_question_document_id_falls_back_for_old_snapshots(
     assert response.status_code == 200
     assert response.json()["questions"][0]["document_id"] == document_id
 
-def test_full_document_session_uses_source_order_for_document_drafts(
+def test_full_document_session_uses_source_order_for_document_questions(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
@@ -377,7 +377,7 @@ def test_random_draw_session_uses_fixed_seed_deterministically(
     assert len(first_session["question_ids"]) == 2
     assert set(first_session["question_ids"]) <= {item["id"] for item in questions}
 
-def test_random_draw_session_excludes_incomplete_approved_rows(
+def test_random_draw_session_excludes_incomplete_questions(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
@@ -402,7 +402,7 @@ def test_random_draw_session_excludes_incomplete_approved_rows(
     assert session["question_ids"] == [complete["id"]]
     assert incomplete["id"] not in session["question_ids"]
 
-def test_whole_source_session_excludes_incomplete_approved_rows(
+def test_whole_source_session_excludes_incomplete_questions(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)

@@ -34,7 +34,7 @@ import {
   ensureCaptureRuntimeReady,
   installPythonRuntimeIfNeeded,
 } from '../packaged-flow-smoke/runtime-install-flow.mts';
-import { waitForUploadDocumentResponse } from '../packaged-flow-smoke/streaming-capture-api.mts';
+import { waitForUploadDocumentResponse } from '../packaged-flow-smoke/question-generation-observer-api.mts';
 import { errorMessage, isRecord } from '../packaged-flow-smoke/text-utils.mts';
 import {
   evaluateOcrTruth,
@@ -504,12 +504,12 @@ function createRunState(
     captureRuntimeWorkerMirrorUrl: options.captureRuntimeWorkerMirrorUrl,
     acceptanceArtifactRoot: options.acceptanceArtifactRoot,
     candidateDistributionProfile: 'local_nonpublishable',
-    waitForStreamingComplete: false,
-    streamingCompleteTimeoutMs: options.timeoutMs,
+    waitForQuestionJobs: false,
+    questionJobsCompleteTimeoutMs: options.timeoutMs,
     skipGpuSampling: true,
     productionSummary: false,
     allowCaptureChunkVariance: true,
-    verifyStreamingPracticeReady: false,
+    verifyGeneratedQuestionsPracticeReady: false,
   };
   const metrics: SmokeMetrics = {
     status: 'running',
@@ -527,10 +527,10 @@ function createRunState(
     ),
     first_chunk_gate_ms: 15_000,
     first_chunk_under_gate: false,
-    wait_for_streaming_complete: false,
-    practice_ready_from_streamed_questions: false,
+    wait_for_question_jobs: false,
+    practice_ready_from_generated_questions: false,
     app_data_dir: relative(options.workspaceRoot, options.appDataDir),
-    streaming_questions: {
+    question_generation: {
       job_snapshots: [],
       question_snapshots: [],
       status_counts: {},

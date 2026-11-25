@@ -7,9 +7,9 @@ from conftest import AUTH_TOKEN, TestCaptureRuntimeClient, minimal_pdf
 from llm_test_fakes import RecordingOllamaClient
 from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.ai_providers.infrastructure.ollama_transport import OllamaProvider
-from cert_prep_backend.authoring.domain.models import DraftGenerationStrategy, SourceChunk
-from cert_prep_backend.authoring.infrastructure import repository as drafts_repository
-from cert_prep_backend.authoring.infrastructure.streaming import _generation_attribution
+from cert_prep_backend.authoring.domain.models import QuestionGenerationStrategy, SourceChunk
+from cert_prep_backend.authoring.infrastructure import repository as questions_repository
+from cert_prep_backend.authoring.infrastructure.question_jobs import _generation_attribution
 from cert_prep_backend.authoring.infrastructure.sudachi_reading_lexicon import SudachiReadingLexicon
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.bootstrap.study_projects import authoring_projects
@@ -29,7 +29,7 @@ REVIEW_ITEMS = [
 HEADERS = {"Authorization": f"Bearer {AUTH_TOKEN}"}
 
 
-@pytest.mark.parametrize("path", ["batch", "streaming", "manual"])
+@pytest.mark.parametrize("path", ["batch", "background", "manual"])
 @pytest.mark.parametrize("enabled, text, calls", [
     (True, READING_TEXT, 0),
     (True, READING_ITEM, 1),
@@ -62,7 +62,7 @@ def test_inference_paths_and_saved_attribution(tmp_path, path, enabled, text, ca
         llm_provider=provider,
         capture_runtime_client=TestCaptureRuntimeClient(),
         document_processing_async_jobs=False,
-        streaming_draft_generation_async_jobs=False,
+        background_question_jobs=False,
     )) as client:
         project_id = client.post("/projects", headers=HEADERS, json={"name": "讀音"}).json()["id"]
         document = client.post(
@@ -79,11 +79,11 @@ def test_inference_paths_and_saved_attribution(tmp_path, path, enabled, text, ca
                 "UPDATE document_chunks SET text = ?, raw_text = ? WHERE id = ?",
                 (text, text, chunk["id"]),
             )
-        manager = client.app.state.streaming_draft_generation_manager
+        manager = client.app.state.question_job_scheduler
         if path == "batch":
-            suggestions = client.app.state.draft_writing.suggestions(
+            suggestions = client.app.state.question_writing.suggestions(
                 provider, [SourceChunk(id=chunk["id"], page_number=1, text=text)],
-                1, DraftGenerationStrategy.HYBRID_REASONING,
+                1, QuestionGenerationStrategy.HYBRID_REASONING,
             )
             attribution = _generation_attribution(
                 provider, generated=bool(suggestions),
@@ -92,18 +92,18 @@ def test_inference_paths_and_saved_attribution(tmp_path, path, enabled, text, ca
             assert "dictionary_generated" not in suggestions[0].to_serialized()
             assert "section_instruction" not in suggestions[0].to_serialized()
         else:
-            if path == "streaming":
-                settings.streaming_draft_generation_on_upload = True
+            if path == "background":
+                settings.question_jobs_on_upload = True
                 jobs = manager.enqueue_document(database, project_id=project_id, document_id=document_id)
                 assert len(jobs) == 1
                 attribution = jobs[0]
             else:
                 attribution = manager.start_manual_operation(
                     database, project_id=project_id, document_id=document_id, limit=1,
-                    strategy=DraftGenerationStrategy.HYBRID_REASONING,
+                    strategy=QuestionGenerationStrategy.HYBRID_REASONING,
                 )
             assert attribution.status == "succeeded", attribution
-            suggestions = drafts_repository.list_drafts(database, project_id, projects=authoring_projects(database))
+            suggestions = questions_repository.list_questions(database, project_id, projects=authoring_projects(database))
         assert len(suggestions) == 1
         suggestion = suggestions[0]
         assert suggestion.answer_key_source == "ai_inferred"
@@ -124,7 +124,7 @@ def test_inference_paths_and_saved_attribution(tmp_path, path, enabled, text, ca
 
 
 def test_dictionary_failure_falls_back_to_model() -> None:
-    from cert_prep_backend.authoring.infrastructure.draft_writing import generate_drafts_for_strategy
+    from cert_prep_backend.authoring.infrastructure.question_writing import write_questions_for_strategy
 
     fake_client = RecordingOllamaClient(
         models=["qwen3.5:4b"],
@@ -132,9 +132,9 @@ def test_dictionary_failure_falls_back_to_model() -> None:
     )
     provider = OllamaProvider("http://127.0.0.1:11434", "qwen3.5:4b", 1, client=fake_client)
     with patch("sudachipy.Dictionary", side_effect=OSError("dictionary missing")):
-        suggestions = generate_drafts_for_strategy(
+        suggestions = write_questions_for_strategy(
             provider, [SourceChunk(id="chunk", page_number=1, text=READING_TEXT)], 1,
-            DraftGenerationStrategy.HYBRID_REASONING, reading_lexicon=SudachiReadingLexicon(),
+            QuestionGenerationStrategy.HYBRID_REASONING, reading_lexicon=SudachiReadingLexicon(),
         )
     assert suggestions[0].rationale == "模型解說。"
     assert len(fake_client.chat_calls) == 1
@@ -149,7 +149,7 @@ def test_default_enabled_and_environment_can_disable(monkeypatch) -> None:
 
 @pytest.mark.parametrize("dictionary_first", [True, False])
 def test_mixed_generation_keeps_actual_model_attribution(dictionary_first) -> None:
-    from cert_prep_backend.authoring.infrastructure.draft_writing import generate_drafts_for_strategy
+    from cert_prep_backend.authoring.infrastructure.question_writing import write_questions_for_strategy
 
     fake_client = RecordingOllamaClient(
         models=["qwen3.5:4b"],
@@ -157,10 +157,10 @@ def test_mixed_generation_keeps_actual_model_attribution(dictionary_first) -> No
     )
     provider = OllamaProvider("http://127.0.0.1:11434", "qwen3.5:4b", 1, client=fake_client)
     texts = [READING_TEXT, PARTICLE_TEXT] if dictionary_first else [PARTICLE_TEXT, READING_TEXT]
-    suggestions = generate_drafts_for_strategy(
+    suggestions = write_questions_for_strategy(
         provider, [SourceChunk(id=str(index), page_number=index + 1, text=text)
                    for index, text in enumerate(texts)],
-        2, DraftGenerationStrategy.HYBRID_REASONING, reading_lexicon=SudachiReadingLexicon(),
+        2, QuestionGenerationStrategy.HYBRID_REASONING, reading_lexicon=SudachiReadingLexicon(),
     )
     assert len(suggestions) == 2
     assert sum(suggestion.dictionary_generated for suggestion in suggestions) == 1

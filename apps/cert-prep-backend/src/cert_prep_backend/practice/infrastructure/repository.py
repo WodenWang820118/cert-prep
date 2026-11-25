@@ -10,7 +10,7 @@ from sqlite3 import Connection, Row
 
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.practice.application.ports import (
-    DraftedQuestion,
+    PracticeSourceQuestion,
     PracticeQuestions,
     ProjectDocuments,
     StudyProjects,
@@ -82,12 +82,12 @@ class SqlitePracticeRepository:
         ).fetchone()
         return None if row is None else _session_from_row(row)
 
-    def approved_questions(
+    def source_questions(
         self, project_id: str, *, document_id: str | None
     ) -> list[PracticeQuestion]:
         return [
-            draft.as_question(keep_status=True)
-            for draft in self._questions.approved(project_id, document_id=document_id)
+            authored_question.as_question()
+            for authored_question in self._questions.for_source(project_id, document_id=document_id)
         ]
 
     def answer_history(self, project_id: str) -> list[AnsweredQuestion]:
@@ -110,7 +110,7 @@ class SqlitePracticeRepository:
 
     def answer_history_since(self, project_id: str, attempt_id: str) -> list[AnsweredQuestion]:
         # The latest attempt of the target's question at or after that attempt. Rank 1
-        # with no snapshot and no draft drops the row, rather than falling through.
+        # with no snapshot and no question drops the row, rather than falling through.
         target = self._connection.execute(
             """
             SELECT question_id, created_at, rowid AS attempt_sequence
@@ -230,7 +230,6 @@ class SqlitePracticeRepository:
                 choices_json,
                 correct_answer AS answer,
                 question,
-                'approved' AS status,
                 rationale,
                 citation_page,
                 source_excerpt,
@@ -242,17 +241,17 @@ class SqlitePracticeRepository:
         ).fetchone()
         if snapshot_row is not None:
             return _question_from_row(snapshot_row)
-        draft = self._questions.current(session.project_id, question_id)
-        if draft is None:
+        authored_question = self._questions.current(session.project_id, question_id)
+        if authored_question is None:
             return None
-        question = draft.as_question(keep_status=True)
+        question = authored_question.as_question()
         if session.includes_question(question_id) or question.is_playable():
             return question
         return None
 
     def current_question(self, project_id: str, question_id: str) -> PracticeQuestion | None:
-        draft = self._questions.current(project_id, question_id)
-        return None if draft is None else draft.as_question(keep_status=True)
+        authored_question = self._questions.current(project_id, question_id)
+        return None if authored_question is None else authored_question.as_question()
 
     def attempts_for_question(self, project_id: str, question_id: str) -> list[PracticeAttempt]:
         rows = self._connection.execute(
@@ -362,17 +361,16 @@ class SqlitePracticeRepository:
             (session.project_id, session.id),
         ).fetchall()
         snapshots = {row["id"]: row for row in snapshot_rows}
-        drafts = self._drafts_by_id(session.project_id, session.question_ids)
+        current_by_id = self._questions_by_id(session.project_id, session.question_ids)
         questions: list[PracticeQuestion] = []
         for question_id in session.question_ids:
             snapshot = snapshots.get(question_id)
-            draft = drafts.get(question_id)
+            authored_question = current_by_id.get(question_id)
             if snapshot is not None:
-                questions.append(_snapshot_question(snapshot, draft))
-            elif draft is not None:
-                # Sessions from before question snapshots fall back to the draft, and the
-                # old query did not select the draft's status, so the question stays approved.
-                questions.append(draft.as_question(keep_status=False))
+                questions.append(_snapshot_question(snapshot, authored_question))
+            elif authored_question is not None:
+                # Sessions from before question snapshots fall back to the current question.
+                questions.append(authored_question.as_question())
         return questions
 
     def _attempt_rows(self, sql: str, parameters: tuple[object, ...]) -> list[Row]:
@@ -384,13 +382,13 @@ class SqlitePracticeRepository:
         if not attempts:
             return []
         snapshots = self._snapshots(project_id)
-        drafts = self._drafts_by_id(project_id, [row["question_id"] for row in attempts])
+        questions = self._questions_by_id(project_id, [row["question_id"] for row in attempts])
         answered: list[AnsweredQuestion] = []
         for row in attempts:
             question = _question_as_answered(
                 row["question_id"],
                 snapshots.get((row["session_id"], row["question_id"])),
-                drafts.get(row["question_id"]),
+                questions.get(row["question_id"]),
             )
             if question is None:
                 continue
@@ -417,12 +415,12 @@ class SqlitePracticeRepository:
         ).fetchall()
         return {(row["session_id"], row["question_id"]): row for row in rows}
 
-    def _drafts_by_id(
+    def _questions_by_id(
         self, project_id: str, question_ids: Sequence[str]
-    ) -> dict[str, DraftedQuestion]:
+    ) -> dict[str, PracticeSourceQuestion]:
         return {
-            draft.id: draft
-            for draft in self._questions.current_many(project_id, list(question_ids))
+            authored_question.id: authored_question
+            for authored_question in self._questions.current_many(project_id, list(question_ids))
         }
 
 
@@ -443,13 +441,11 @@ def _session_from_row(row: Row) -> PracticeSession:
 
 
 def _question_from_row(row: Row) -> PracticeQuestion:
-    keys = row.keys()
     return PracticeQuestion(
         id=row["id"],
         choices=tuple(json.loads(row["choices_json"])),
         correct_answer=row["answer"],
         question=row["question"],
-        status=row["status"] if "status" in keys else "approved",
         rationale=row["rationale"],
         citation_page=row["citation_page"],
         source_excerpt=row["source_excerpt"],
@@ -485,12 +481,12 @@ def _answered_question(project_id: str, row: Row, question: PracticeQuestion) ->
     )
 
 
-def _snapshot_question(snapshot: Row, draft: DraftedQuestion | None) -> PracticeQuestion:
-    """A stored snapshot. Its document id falls back to the draft; the answer key always does."""
+def _snapshot_question(snapshot: Row, authored_question: PracticeSourceQuestion | None) -> PracticeQuestion:
+    """A stored snapshot. Its document id falls back to the question; the answer key always does."""
 
     document_id = snapshot["document_id"]
-    if document_id is None and draft is not None:
-        document_id = draft.document_id
+    if document_id is None and authored_question is not None:
+        document_id = authored_question.document_id
     return PracticeQuestion(
         id=snapshot["id"],
         choices=tuple(json.loads(snapshot["choices_json"])),
@@ -500,25 +496,25 @@ def _snapshot_question(snapshot: Row, draft: DraftedQuestion | None) -> Practice
         citation_page=snapshot["citation_page"],
         source_excerpt=snapshot["source_excerpt"],
         document_id=document_id,
-        answer_key_source=None if draft is None else draft.answer_key_source,
+        answer_key_source=None if authored_question is None else authored_question.answer_key_source,
     )
 
 
 def _question_as_answered(
-    question_id: str, snapshot: Row | None, draft: DraftedQuestion | None
+    question_id: str, snapshot: Row | None, authored_question: PracticeSourceQuestion | None
 ) -> PracticeQuestion | None:
-    """The question an attempt answered: the snapshot when the session stored one, else the draft.
+    """The question an attempt answered: the snapshot when the session stored one, else the question.
 
     An attempt with neither is left out. The snapshot wins for the text that was shown;
-    the answer-key source always comes from the current draft, and a null snapshot
-    document id falls back to the draft's.
+    the answer-key source always comes from the current authored_question, and a null snapshot
+    document id falls back to the question's.
     """
 
     if snapshot is None:
-        return None if draft is None else draft.as_question(keep_status=False)
+        return None if authored_question is None else authored_question.as_question()
     document_id = snapshot["document_id"]
-    if document_id is None and draft is not None:
-        document_id = draft.document_id
+    if document_id is None and authored_question is not None:
+        document_id = authored_question.document_id
     return PracticeQuestion(
         id=question_id,
         choices=tuple(json.loads(snapshot["choices_json"])),
@@ -528,7 +524,7 @@ def _question_as_answered(
         citation_page=snapshot["citation_page"],
         source_excerpt=snapshot["source_excerpt"],
         document_id=document_id,
-        answer_key_source=None if draft is None else draft.answer_key_source,
+        answer_key_source=None if authored_question is None else authored_question.answer_key_source,
     )
 
 

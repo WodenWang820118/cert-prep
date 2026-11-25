@@ -13,18 +13,13 @@ from cert_prep_backend.practice.domain.wrong_answer import AnsweredQuestion
 
 
 @dataclass(frozen=True, slots=True)
-class DraftedQuestion:
-    """A question draft as practice reads it. The owning context is Question Authoring.
-
-    `status` is the draft's stored status. Queries that used to leave status out of the
-    SELECT keep the practice question approved (`keep_status=False`).
-    """
+class PracticeSourceQuestion:
+    """A question from Question Authoring as read by Practice."""
 
     id: str
     choices: tuple[str, ...]
     correct_answer: str | None
     question: str
-    status: str
     rationale: str | None
     citation_page: int | None
     source_excerpt: str | None
@@ -34,13 +29,12 @@ class DraftedQuestion:
     def __post_init__(self) -> None:
         object.__setattr__(self, "choices", tuple(self.choices))
 
-    def as_question(self, *, keep_status: bool) -> PracticeQuestion:
+    def as_question(self) -> PracticeQuestion:
         return PracticeQuestion(
             id=self.id,
             choices=self.choices,
             correct_answer=self.correct_answer,
             question=self.question,
-            status=self.status if keep_status else "approved",
             rationale=self.rationale,
             citation_page=self.citation_page,
             source_excerpt=self.source_excerpt,
@@ -64,22 +58,22 @@ class ProjectDocuments(Protocol):
 
 
 class PracticeQuestions(Protocol):
-    """Question drafts practice reads, mapped out of Question Authoring."""
+    """Questions practice reads, mapped out of Question Authoring."""
 
-    def approved(
+    def for_source(
         self, project_id: str, *, document_id: str | None
-    ) -> list[DraftedQuestion]:
-        """Approved drafts of the project (by id), or of one document (in source order)."""
+    ) -> list[PracticeSourceQuestion]:
+        """Questions of the project (by id), or of one document (in source order)."""
         ...
 
-    def current(self, project_id: str, question_id: str) -> DraftedQuestion | None:
-        """The project's current draft of one question, or None when it is gone."""
+    def current(self, project_id: str, question_id: str) -> PracticeSourceQuestion | None:
+        """The project's current question, or None when it is gone."""
         ...
 
     def current_many(
         self, project_id: str, question_ids: Sequence[str]
-    ) -> list[DraftedQuestion]:
-        """The project's current drafts for these ids; ids with no draft are absent."""
+    ) -> list[PracticeSourceQuestion]:
+        """The project's current questions for these ids; ids with no question are absent."""
         ...
 
 
@@ -92,10 +86,10 @@ class PracticeRepository(Protocol):
         """The project's newest active session, without its questions."""
         ...
 
-    def approved_questions(
+    def source_questions(
         self, project_id: str, *, document_id: str | None
     ) -> list[PracticeQuestion]:
-        """Approved questions of the project (by id), or of one document (in source order)."""
+        """Questions of the project (by id), or of one document (in source order)."""
         ...
 
     def answer_history(self, project_id: str) -> list[AnsweredQuestion]:
@@ -117,13 +111,13 @@ class PracticeRepository(Protocol):
     def question_for_answer(
         self, session: PracticeSession, question_id: str
     ) -> PracticeQuestion | None:
-        """The session's snapshot of a question, else the draft if it is playable."""
+        """The session's snapshot of a question, else the question if it is playable."""
         ...
 
     def add_attempt(self, attempt: PracticeAttempt) -> None: ...
 
     def current_question(self, project_id: str, question_id: str) -> PracticeQuestion | None:
-        """The project's current draft of a question, including its answer key."""
+        """The project's current question of a question, including its answer key."""
         ...
 
     def attempts_for_question(self, project_id: str, question_id: str) -> list[PracticeAttempt]:

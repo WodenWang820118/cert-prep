@@ -13,8 +13,8 @@ state, and non-streaming consumers.
 This slice covers:
 
 - document upload/processing operations;
-- automatic draft-generation jobs;
-- manual draft-generation operations;
+- background question generation jobs;
+- manual question generations;
 - HTTP LLM installation jobs (Ollama and its model).
 
 Capture Workbench's existing replayable SSE remains the owner of capture event
@@ -43,8 +43,8 @@ All endpoints require the same bearer authentication as the REST API, accept
 | --- | --- | --- |
 | `GET /projects/{project_id}/document-operations/{operation_id}/events` | `document-operation` | document operation plus current document when available |
 | `GET /projects/{project_id}/documents/{document_id}/document-operation/events` | `document-operation` | active document operation plus current document |
-| `GET /projects/{project_id}/documents/{document_id}/draft-jobs/events` | `draft-jobs` | `{ "items": DraftGenerationJobRead[] }` |
-| `GET /projects/{project_id}/documents/{document_id}/draft-operations/{operation_id}/events` | `draft-operation` | manual draft operation |
+| `GET /projects/{project_id}/documents/{document_id}/question-jobs/events` | `question-jobs` | `{ "items": QuestionGenerationJobRead[] }` |
+| `GET /projects/{project_id}/documents/{document_id}/question-generations/{operation_id}/events` | `question-generation` | manual question generation |
 | `GET /llm/installations/{job_id}/events` | `llm-installation` | LLM installation snapshot |
 
 Each connection emits monotonically increasing stream-local SSE `id` values;
@@ -115,7 +115,7 @@ duplicated retry/timer state), and SSE generators that poll SQLite on a timer
 - Unrelated database transitions do not produce duplicate operation snapshots.
 - Terminal streams emit one terminal frame and close.
 - Client unsubscribe aborts the underlying fetch/reader.
-- Document, draft, runtime, and model store tests prove live snapshot handling,
+- Document, question, runtime, and model store tests prove live snapshot handling,
   context cleanup, terminal cleanup, and stream errors.
 - Existing REST command/snapshot behavior and Capture Workbench SSE behavior
   remain green.

@@ -6,12 +6,12 @@ import type {
   DocumentRead,
   PracticeSessionRead,
   ProjectRead,
-  QuestionDraftRead,
+  QuestionRead,
   WrongAnswerExplanationRead,
   WrongAnswerRead,
 } from '../../../core/domain';
 import { OperationStore } from '../../../core/data';
-import { DraftReviewStore } from '../../../authoring/data';
+import { QuestionsStore } from '../../../authoring/data';
 import { editableAppQuestion } from '../../../core/testing';
 import { ProjectStore } from '../../../projects/data';
 import { SourceImportStore } from '../../../source-library/data';
@@ -56,7 +56,7 @@ describe('WrongAnswerRetryComponent', () => {
     extraction_warnings: null,
     failure_message: null,
     processed_page_count: 10,
-    exam_item_count: 1,
+    question_count: 1,
     content_profile: 'vocabulary_single_questions',
     classification_detail: '{"profile":"vocabulary_single_questions"}',
     chunks_count: 4,
@@ -139,7 +139,7 @@ describe('WrongAnswerRetryComponent', () => {
     explainWrongAnswer: ReturnType<typeof vi.fn>;
     listWrongAnswers: ReturnType<typeof vi.fn>;
     summarizeWrongAnswers: ReturnType<typeof vi.fn>;
-    updateQuestionDraft: ReturnType<typeof vi.fn>;
+    updateQuestion: ReturnType<typeof vi.fn>;
     regradePracticeQuestion: ReturnType<typeof vi.fn>;
   };
 
@@ -152,7 +152,7 @@ describe('WrongAnswerRetryComponent', () => {
         .mockReturnValue(throwError(() => new Error('AI provider unavailable'))),
       listWrongAnswers: vi.fn().mockReturnValue(of({ items: [wrongAnswer] })),
       summarizeWrongAnswers: vi.fn().mockReturnValue(of(summary)),
-      updateQuestionDraft: vi.fn().mockReturnValue(of(editableAppQuestion)),
+      updateQuestion: vi.fn().mockReturnValue(of(editableAppQuestion)),
       regradePracticeQuestion: vi.fn().mockReturnValue(
         of({
           question_id: wrongAnswer.question_id,
@@ -222,7 +222,7 @@ describe('WrongAnswerRetryComponent', () => {
     [['1. First', 'Second'], 'Second', '1. First'],
     [[], '2. Second', '1. First'],
   ] as const)('formats answers only when the complete question has sequential ordinals (%j)', (choices, selected, correct) => {
-    TestBed.inject(DraftReviewStore).drafts.set([
+    TestBed.inject(QuestionsStore).questions.set([
       { ...editableAppQuestion, id: wrongAnswer.question_id, choices: [...choices] },
     ]);
     TestBed.inject(WrongAnswerRetryStore).wrongAnswers.set([{
@@ -414,8 +414,8 @@ describe('WrongAnswerRetryComponent', () => {
   });
 
   it('saves the original choice, regrades, reloads, and reports the result', () => {
-    const updated = new Subject<QuestionDraftRead>();
-    apiClient.updateQuestionDraft.mockReturnValue(updated.asObservable());
+    const updated = new Subject<QuestionRead>();
+    apiClient.updateQuestion.mockReturnValue(updated.asObservable());
     apiClient.regradePracticeQuestion.mockReturnValue(
       of({
         question_id: wrongAnswer.question_id,
@@ -429,7 +429,7 @@ describe('WrongAnswerRetryComponent', () => {
     );
     const fixture = TestBed.createComponent(WrongAnswerRetryComponent);
     selectProject();
-    TestBed.inject(DraftReviewStore).drafts.set([
+    TestBed.inject(QuestionsStore).questions.set([
       {
         ...editableAppQuestion,
         id: wrongAnswer.question_id,
@@ -481,7 +481,7 @@ describe('WrongAnswerRetryComponent', () => {
     TestBed.tick();
     fixture.detectChanges();
 
-    expect(apiClient.updateQuestionDraft).toHaveBeenCalledWith(
+    expect(apiClient.updateQuestion).toHaveBeenCalledWith(
       project.id,
       wrongAnswer.question_id,
       { answer: '2. Second', answer_key_source: 'manual', rationale: '' },
@@ -492,7 +492,7 @@ describe('WrongAnswerRetryComponent', () => {
       wrongAnswer.question_id,
       { signal: expect.any(AbortSignal) },
     );
-    expect(apiClient.updateQuestionDraft.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(apiClient.updateQuestion.mock.invocationCallOrder[0]).toBeLessThan(
       apiClient.regradePracticeQuestion.mock.invocationCallOrder[0],
     );
     expect(apiClient.listWrongAnswers).toHaveBeenCalledWith(project.id);
@@ -505,12 +505,12 @@ describe('WrongAnswerRetryComponent', () => {
   });
 
   it('shows the API error and does not regrade when the key update fails', () => {
-    apiClient.updateQuestionDraft.mockReturnValue(
-      throwError(() => ({ error: { message: 'Draft update failed' } })),
+    apiClient.updateQuestion.mockReturnValue(
+      throwError(() => ({ error: { message: 'Question update failed' } })),
     );
     const fixture = TestBed.createComponent(WrongAnswerRetryComponent);
     selectProject();
-    TestBed.inject(DraftReviewStore).drafts.set([
+    TestBed.inject(QuestionsStore).questions.set([
       {
         ...editableAppQuestion,
         id: wrongAnswer.question_id,
@@ -533,7 +533,7 @@ describe('WrongAnswerRetryComponent', () => {
     TestBed.tick();
     fixture.detectChanges();
 
-    expect(apiClient.updateQuestionDraft).toHaveBeenCalledWith(
+    expect(apiClient.updateQuestion).toHaveBeenCalledWith(
       project.id,
       wrongAnswer.question_id,
       { answer: '1. First', answer_key_source: 'manual', rationale: '' },
@@ -541,7 +541,7 @@ describe('WrongAnswerRetryComponent', () => {
     );
     expect(apiClient.regradePracticeQuestion).not.toHaveBeenCalled();
     expect(apiClient.listWrongAnswers).not.toHaveBeenCalled();
-    expect(fixture.nativeElement.textContent).toContain('Draft update failed');
+    expect(fixture.nativeElement.textContent).toContain('Question update failed');
     expect(fixture.nativeElement.textContent).not.toContain('Answer key corrected');
     expect(buttonByText(fixture.nativeElement, 'Save correct answer')).not.toBeNull();
   });

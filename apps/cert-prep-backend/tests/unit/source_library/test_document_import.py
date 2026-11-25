@@ -1,5 +1,5 @@
 """Importing a document without a capture review: which failures fail its operation, how an
-upload id already in use is refused, and how extraction and drafting finish the run."""
+upload id already in use is refused, and how extraction and question_generation finish the run."""
 
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ def _document(**changes: object) -> SourceDocument:
         extraction_warnings=None,
         failure_message=None,
         processed_page_count=0,
-        exam_item_count=0,
+        question_count=0,
         content_profile="unknown",
         classification_detail="",
         chunks_count=0,
@@ -169,11 +169,11 @@ class FakeExtraction:
         return self._documents.stored
 
 
-class FakeDrafting:
+class FakeImportedQuestionGeneration:
     def __init__(self) -> None:
         self.documents: list[str] = []
 
-    def draft_questions(self, project_id: str, document_id: str) -> None:
+    def start_question_generation(self, project_id: str, document_id: str) -> None:
         self.documents.append(document_id)
 
 
@@ -189,7 +189,7 @@ def _import(
     operations: FakeOperations,
     documents: FakeDocuments,
     extraction: FakeExtraction,
-    drafting: FakeDrafting,
+    question_generation: FakeImportedQuestionGeneration,
     *,
     content: bytes = b"%PDF source",
     filename: str = "notes.pdf",
@@ -203,7 +203,7 @@ def _import(
             FakeFiles(),
             FakeWork(),
             extraction,
-            drafting,
+            question_generation,
             project_id=project_id,
             operation_id="operation",
             upload=FakeUpload(content),
@@ -215,9 +215,9 @@ def _import(
     )
 
 
-def _parts() -> tuple[FakeOperations, FakeDocuments, FakeDrafting]:
+def _parts() -> tuple[FakeOperations, FakeDocuments, FakeImportedQuestionGeneration]:
     operations = FakeOperations()
-    return operations, FakeDocuments(operations), FakeDrafting()
+    return operations, FakeDocuments(operations), FakeImportedQuestionGeneration()
 
 
 def test_settings_read_the_upload_limits_from_the_environment(
@@ -259,69 +259,69 @@ def test_an_upload_id_in_use_is_refused_without_touching_its_operation(existing,
     documents = FakeDocuments(operations)
 
     with pytest.raises(error):
-        _import(operations, documents, FakeExtraction(documents), FakeDrafting())
+        _import(operations, documents, FakeExtraction(documents), FakeImportedQuestionGeneration())
 
     assert operations.failures == []
     assert documents.attached is None
 
 
 def test_a_missing_project_is_not_found_before_any_claim() -> None:
-    operations, documents, drafting = _parts()
+    operations, documents, question_generation = _parts()
 
     with pytest.raises(NotFoundError):
-        _import(operations, documents, FakeExtraction(documents), drafting, project_id="gone")
+        _import(operations, documents, FakeExtraction(documents), question_generation, project_id="gone")
 
     assert operations.failures == []
 
 
 def test_a_claimed_upload_that_is_too_large_fails_its_operation() -> None:
-    operations, documents, drafting = _parts()
+    operations, documents, question_generation = _parts()
 
     with pytest.raises(SourceTooLarge):
-        _import(operations, documents, FakeExtraction(documents), drafting, content=b"x" * 65)
+        _import(operations, documents, FakeExtraction(documents), question_generation, content=b"x" * 65)
 
     assert operations.failures == [{"error": "Document upload did not pass validation."}]
 
 
 def test_an_upload_canceled_while_it_was_validated_stops_without_a_document() -> None:
-    operations, documents, drafting = _parts()
+    operations, documents, question_generation = _parts()
     operations.current = replace(operations.current, status=Status.CANCEL_REQUESTED)
 
     with pytest.raises(DocumentProcessingCanceledError):
-        _import(operations, documents, FakeExtraction(documents), drafting)
+        _import(operations, documents, FakeExtraction(documents), question_generation)
 
     assert documents.attached is None
     assert operations.failures == []
 
 
-def test_an_import_with_chunks_starts_its_drafts() -> None:
-    operations, documents, drafting = _parts()
+def test_an_import_with_chunks_starts_its_questions() -> None:
+    operations, documents, question_generation = _parts()
     extraction = FakeExtraction(documents)
 
-    document = _import(operations, documents, extraction, drafting)
+    document = _import(operations, documents, extraction, question_generation)
 
     assert isinstance(document, SourceDocument)
     assert document.chunks_count == 2
-    assert drafting.documents == ["document"]
+    assert question_generation.documents == ["document"]
     assert documents.attached is not None
     assert documents.attached["language_hint"] == "auto"
     assert extraction.calls[0]["source_kind"] == "pdf"
     assert extraction.calls[0]["language_hint"] == "ja"
 
 
-def test_an_import_without_chunks_starts_no_drafts() -> None:
-    operations, documents, drafting = _parts()
+def test_an_import_without_chunks_starts_no_questions() -> None:
+    operations, documents, question_generation = _parts()
 
-    _import(operations, documents, FakeExtraction(documents, chunks=0), drafting)
+    _import(operations, documents, FakeExtraction(documents, chunks=0), question_generation)
 
-    assert drafting.documents == []
+    assert question_generation.documents == []
 
 
 def test_extraction_without_text_fails_the_operation_and_marks_the_document() -> None:
-    operations, documents, drafting = _parts()
+    operations, documents, question_generation = _parts()
     extraction = FakeExtraction(documents, error=SourceTextNotDetected("No text was detected."))
 
-    result = _import(operations, documents, extraction, drafting)
+    result = _import(operations, documents, extraction, question_generation)
 
     # The upload answers with its document, which the failed operation left without text.
     assert isinstance(result, SourceDocument)
@@ -332,24 +332,24 @@ def test_extraction_without_text_fails_the_operation_and_marks_the_document() ->
             "extraction_method": "none",
         }
     ]
-    assert drafting.documents == []
+    assert question_generation.documents == []
 
 
 def test_a_failed_extraction_records_its_message_and_propagates() -> None:
-    operations, documents, drafting = _parts()
+    operations, documents, question_generation = _parts()
     extraction = FakeExtraction(documents, error=SourceExtractionFailed("Source extraction failed."))
 
     with pytest.raises(SourceExtractionFailed):
-        _import(operations, documents, extraction, drafting)
+        _import(operations, documents, extraction, question_generation)
 
     assert operations.failures[0] == {"error": "Source extraction failed."}
 
 
 def test_a_canceled_extraction_is_acknowledged() -> None:
-    operations, documents, drafting = _parts()
+    operations, documents, question_generation = _parts()
     extraction = FakeExtraction(documents, error=DocumentProcessingCanceledError("stopped"))
 
-    document = _import(operations, documents, extraction, drafting)
+    document = _import(operations, documents, extraction, question_generation)
 
     assert isinstance(document, SourceDocument)
     assert operations.calls == ["acknowledge_cancellation"]
@@ -387,5 +387,5 @@ def test_extraction_goes_on_only_while_the_operation_processes_that_document() -
         ({"status": SourceDocumentStatus.READY, "chunks_count": 3, "has_text": False}, "no_text_detected"),
     ],
 )
-def test_drafts_written_at_import_leave_the_document_ready_only_with_text(changes, status) -> None:
-    assert _document(**changes).status_after_import_drafts() == status
+def test_questions_written_at_import_leave_the_document_ready_only_with_text(changes, status) -> None:
+    assert _document(**changes).status_after_import_questions() == status

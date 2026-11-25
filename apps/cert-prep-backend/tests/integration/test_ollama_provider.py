@@ -12,8 +12,8 @@ from cert_prep_backend.platform.errors import LanguageModelUnavailable
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.ai_providers.infrastructure import machine_inventory as machine_inventory_module
 from cert_prep_backend.ai_providers.infrastructure import ollama_transport
-from cert_prep_backend.authoring.domain.models import DraftSuggestion, SourceChunk
-from cert_prep_backend.authoring.infrastructure.ollama_drafts import OllamaDraftWriter
+from cert_prep_backend.authoring.domain.models import QuestionSuggestion, SourceChunk
+from cert_prep_backend.authoring.infrastructure.ollama_question_writer import OllamaQuestionWriter
 from cert_prep_backend.authoring.infrastructure.response_parsing import (
     RATIONALE_LANGUAGE_INSTRUCTION,
 )
@@ -349,7 +349,7 @@ def test_ollama_reasoning_requests_exact_distinct_count_when_source_supports_it(
         client=fake_client,
     )
 
-    suggestions = OllamaDraftWriter(provider).generate_reasoning_drafts(chunks, limit=2)
+    suggestions = OllamaQuestionWriter(provider).write_reasoning_questions(chunks, limit=2)
 
     assert [suggestion.source_question_number for suggestion in suggestions] == ["1", "2"]
     assert len(fake_client.chat_calls) == 1
@@ -376,7 +376,7 @@ def test_ollama_reasoning_retries_invalid_json_once_without_switching_provider()
         client=fake_client,
     )
 
-    suggestions = OllamaDraftWriter(provider).generate_reasoning_drafts(chunks, limit=1)
+    suggestions = OllamaQuestionWriter(provider).write_reasoning_questions(chunks, limit=1)
 
     assert len(suggestions) == 1
     assert [call["model"] for call in fake_client.chat_calls] == ["qwen3.5:4b", "qwen3.5:4b"]
@@ -399,7 +399,7 @@ def test_ollama_reasoning_forces_num_gpu_zero_in_cpu_mode() -> None:
         client=fake_client,
     )
 
-    OllamaDraftWriter(provider).generate_reasoning_drafts(chunks, limit=2)
+    OllamaQuestionWriter(provider).write_reasoning_questions(chunks, limit=2)
 
     assert fake_client.chat_calls[0]["options"]["num_gpu"] == 0
 
@@ -420,7 +420,7 @@ def test_ollama_reasoning_uses_one_supplemental_pass_for_a_short_grounded_result
         client=fake_client,
     )
 
-    suggestions = OllamaDraftWriter(provider).generate_reasoning_drafts(chunks, limit=2)
+    suggestions = OllamaQuestionWriter(provider).write_reasoning_questions(chunks, limit=2)
 
     assert [suggestion.source_question_number for suggestion in suggestions] == ["1", "2"]
     assert len(fake_client.chat_calls) == 2
@@ -465,7 +465,7 @@ def test_ollama_reasoning_supplements_a_malformed_initial_item_once() -> None:
         client=fake_client,
     )
 
-    suggestions = OllamaDraftWriter(provider).generate_reasoning_drafts(chunks, limit=2)
+    suggestions = OllamaQuestionWriter(provider).write_reasoning_questions(chunks, limit=2)
 
     assert [suggestion.source_question_number for suggestion in suggestions] == ["3", "1"]
     assert len(fake_client.chat_calls) == 2
@@ -493,7 +493,7 @@ def test_ollama_reasoning_stops_after_one_empty_supplemental_pass() -> None:
         client=fake_client,
     )
 
-    suggestions = OllamaDraftWriter(provider).generate_reasoning_drafts(chunks, limit=2)
+    suggestions = OllamaQuestionWriter(provider).write_reasoning_questions(chunks, limit=2)
 
     assert [suggestion.source_question_number for suggestion in suggestions] == ["1"]
     assert len(fake_client.chat_calls) == 2
@@ -517,13 +517,13 @@ def test_ollama_reasoning_discards_a_supplemental_duplicate_before_filling() -> 
         client=fake_client,
     )
 
-    suggestions = OllamaDraftWriter(provider).generate_reasoning_drafts(chunks, limit=2)
+    suggestions = OllamaQuestionWriter(provider).write_reasoning_questions(chunks, limit=2)
 
     assert [suggestion.source_question_number for suggestion in suggestions] == ["1", "2"]
     assert len(fake_client.chat_calls) == 2
 
 
-def test_ollama_reasoning_does_not_supplement_a_single_item_streaming_request() -> None:
+def test_ollama_reasoning_does_not_supplement_a_single_item_background_request() -> None:
     chunks = _reasoning_chunks()
     malformed = {
         **_reasoning_item(chunks[0], 1),
@@ -541,7 +541,7 @@ def test_ollama_reasoning_does_not_supplement_a_single_item_streaming_request() 
         client=fake_client,
     )
 
-    assert OllamaDraftWriter(provider).generate_reasoning_drafts(chunks, limit=1) == []
+    assert OllamaQuestionWriter(provider).write_reasoning_questions(chunks, limit=1) == []
     assert len(fake_client.chat_calls) == 1
 
 
@@ -563,7 +563,7 @@ def test_ollama_reasoning_does_not_supplement_notice_only_source() -> None:
         client=fake_client,
     )
 
-    assert OllamaDraftWriter(provider).generate_reasoning_drafts([notice], limit=2) == []
+    assert OllamaQuestionWriter(provider).write_reasoning_questions([notice], limit=2) == []
     assert len(fake_client.chat_calls) == 1
 
 
@@ -620,7 +620,7 @@ def test_ollama_reasoning_supplements_a_valid_source_classifier_false_negative()
         client=fake_client,
     )
 
-    suggestions = OllamaDraftWriter(provider).generate_reasoning_drafts(chunks, limit=2)
+    suggestions = OllamaQuestionWriter(provider).write_reasoning_questions(chunks, limit=2)
 
     assert [suggestion.source_question_number for suggestion in suggestions] == ["1", "2"]
     assert len(fake_client.chat_calls) == 2
@@ -644,7 +644,7 @@ def test_ollama_reasoning_runtime_failure_does_not_try_another_model() -> None:
     )
 
     with pytest.raises(LanguageModelUnavailable, match="primary model runner crashed"):
-        OllamaDraftWriter(provider).generate_reasoning_drafts(chunks, limit=2)
+        OllamaQuestionWriter(provider).write_reasoning_questions(chunks, limit=2)
 
     assert [call["model"] for call in fake_client.chat_calls] == [
         "qwen3.5:4b",
@@ -956,7 +956,7 @@ def test_llm_health_has_no_device_for_the_fake_provider(tmp_path: Path) -> None:
     assert response.json()["provider"] == "fake"
     assert response.json()["device"] is None
 
-def test_ollama_fast_first_draft_maps_compact_json_to_candidate_choice(
+def test_ollama_fast_first_question_maps_compact_json_to_candidate_choice(
     monkeypatch,
 ) -> None:
     fake_client = RecordingOllamaClient(
@@ -979,7 +979,7 @@ def test_ollama_fast_first_draft_maps_compact_json_to_candidate_choice(
         text="1 余暇の楽しみ方はいろいろある。 1 ようか 2よか 3よが 4 ようが",
         source_excerpt="1 余暇の楽しみ方はいろいろある。",
     )
-    candidate = DraftSuggestion(
+    candidate = QuestionSuggestion(
         chunk_id=chunk.id,
         question="余暇の楽しみ方はいろいろある。",
         choices=["1 ようか", "2 よか", "3 よが", "4 ようが"],
@@ -990,7 +990,7 @@ def test_ollama_fast_first_draft_maps_compact_json_to_candidate_choice(
         source_excerpt="1 余暇の楽しみ方はいろいろある。",
     )
 
-    suggestion = OllamaDraftWriter(provider).generate_fast_first_draft(chunk, candidate)
+    suggestion = OllamaQuestionWriter(provider).write_fast_first_question(chunk, candidate)
 
     assert suggestion is not None
     assert suggestion.answer == "2 よか"
@@ -1007,7 +1007,7 @@ def test_ollama_fast_first_draft_maps_compact_json_to_candidate_choice(
     assert "num_gpu" not in fake_client.chat_calls[0]["options"]
     assert fake_client.pull_calls == 0
 
-def test_ollama_fast_first_draft_forwards_cpu_and_keep_alive_options(
+def test_ollama_fast_first_question_forwards_cpu_and_keep_alive_options(
     monkeypatch,
 ) -> None:
     fake_client = RecordingOllamaClient(
@@ -1028,7 +1028,7 @@ def test_ollama_fast_first_draft_forwards_cpu_and_keep_alive_options(
         text="Question text. 1 first 2 second 3 third 4 fourth",
         source_excerpt="Question text.",
     )
-    candidate = DraftSuggestion(
+    candidate = QuestionSuggestion(
         chunk_id=chunk.id,
         question="Question text.",
         choices=["1 first", "2 second", "3 third", "4 fourth"],
@@ -1039,10 +1039,10 @@ def test_ollama_fast_first_draft_forwards_cpu_and_keep_alive_options(
         source_excerpt="Question text.",
     )
 
-    suggestion = OllamaDraftWriter(provider).generate_fast_first_draft(
+    suggestion = OllamaQuestionWriter(provider).write_fast_first_question(
         chunk,
         candidate,
-        keep_alive=ollama_transport.STREAMING_RELEASE_KEEP_ALIVE,
+        keep_alive=ollama_transport.RELEASE_AFTER_JOB_KEEP_ALIVE,
     )
 
     assert suggestion is not None
@@ -1051,7 +1051,7 @@ def test_ollama_fast_first_draft_forwards_cpu_and_keep_alive_options(
     assert fake_client.chat_calls[0]["options"]["num_gpu"] == 0
     assert fake_client.pull_calls == 0
 
-def test_ollama_fast_first_draft_reports_primary_runtime_failure_without_fallback(
+def test_ollama_fast_first_question_reports_primary_runtime_failure_without_fallback(
     monkeypatch,
 ) -> None:
     fake_client = RecordingOllamaClient(
@@ -1072,7 +1072,7 @@ def test_ollama_fast_first_draft_reports_primary_runtime_failure_without_fallbac
         text="Question text. 1 first 2 second 3 third 4 fourth",
         source_excerpt="Question text.",
     )
-    candidate = DraftSuggestion(
+    candidate = QuestionSuggestion(
         chunk_id=chunk.id,
         question="Question text.",
         choices=["1 first", "2 second", "3 third", "4 fourth"],
@@ -1084,7 +1084,7 @@ def test_ollama_fast_first_draft_reports_primary_runtime_failure_without_fallbac
     )
 
     with pytest.raises(LanguageModelUnavailable, match="model requires more memory"):
-        OllamaDraftWriter(provider).generate_fast_first_draft(chunk, candidate)
+        OllamaQuestionWriter(provider).write_fast_first_question(chunk, candidate)
 
     assert [call["model"] for call in fake_client.chat_calls] == ["qwen3.5:4b"]
     health = provider.health()
@@ -1112,7 +1112,7 @@ def test_ollama_fast_first_invalid_json_does_not_mark_model_unusable(
         text="Question text. 1 first 2 second 3 third 4 fourth",
         source_excerpt="Question text.",
     )
-    candidate = DraftSuggestion(
+    candidate = QuestionSuggestion(
         chunk_id=chunk.id,
         question="Question text.",
         choices=["1 first", "2 second", "3 third", "4 fourth"],
@@ -1123,7 +1123,7 @@ def test_ollama_fast_first_invalid_json_does_not_mark_model_unusable(
         source_excerpt="Question text.",
     )
 
-    suggestion = OllamaDraftWriter(provider).generate_fast_first_draft(chunk, candidate)
+    suggestion = OllamaQuestionWriter(provider).write_fast_first_question(chunk, candidate)
 
     assert suggestion is None
     health = provider.health()
@@ -1156,7 +1156,7 @@ def test_ollama_fast_first_retries_invalid_json_with_the_same_model(
         text="Question text. 1 first 2 second 3 third 4 fourth",
         source_excerpt="Question text.",
     )
-    candidate = DraftSuggestion(
+    candidate = QuestionSuggestion(
         chunk_id=chunk.id,
         question="Question text.",
         choices=["1 first", "2 second", "3 third", "4 fourth"],
@@ -1167,7 +1167,7 @@ def test_ollama_fast_first_retries_invalid_json_with_the_same_model(
         source_excerpt="Question text.",
     )
 
-    suggestion = OllamaDraftWriter(provider).generate_fast_first_draft(chunk, candidate)
+    suggestion = OllamaQuestionWriter(provider).write_fast_first_question(chunk, candidate)
 
     assert suggestion is not None
     assert suggestion.answer == "2 second"

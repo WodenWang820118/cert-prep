@@ -24,7 +24,7 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
         llm_provider=EchoCaptureProvider(),
         capture_runtime_client=DeterministicAudioCaptureRuntime(),
         document_processing_async_jobs=False,
-        streaming_draft_generation_async_jobs=False,
+        background_question_jobs=False,
     )
     with TestClient(app) as test_client:
         yield test_client

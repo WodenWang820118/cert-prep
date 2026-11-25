@@ -45,7 +45,7 @@ const DOCUMENT_CHECKS = [
 ] as const;
 
 const REMAINING_CHECKS = [
-  'draft',
+  'question',
   'runtime',
   'model',
   'ownedProcessesReleased',
@@ -160,7 +160,7 @@ test('local verifier rejects evidence identity and installation drift', async (t
       const path = join(
         fixture.remainingOutputRoot,
         'cancellation',
-        'draft.json',
+        'question.json',
       );
       const evidence = readJson(path);
       const proof = evidence.proof as Record<string, unknown>;

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from cert_prep_backend.authoring.domain.models import DraftSuggestion
-from cert_prep_backend.authoring.infrastructure.ollama_drafts import (
+from cert_prep_backend.authoring.domain.models import QuestionSuggestion
+from cert_prep_backend.authoring.infrastructure.ollama_question_writer import (
     _reasoning_system_prompt,
     _reasoning_user_prompt,
     _supplemental_reasoning_user_prompt,
@@ -24,8 +24,8 @@ def _candidate(
     question: str = "Question text",
     choices: list[str] | tuple[str, ...],
     source_excerpt: str = "Source text",
-) -> DraftSuggestion:
-    return DraftSuggestion(
+) -> QuestionSuggestion:
+    return QuestionSuggestion(
         chunk_id="chunk-1",
         question=question,
         choices=choices,

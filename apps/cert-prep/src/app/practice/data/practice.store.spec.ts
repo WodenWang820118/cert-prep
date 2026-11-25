@@ -5,9 +5,9 @@ import type {
   DocumentRead,
   PracticeSessionRead,
   ProjectRead,
-  QuestionDraftRead,
+  QuestionRead,
 } from '../../core/domain';
-import { DraftReviewStore } from '../../authoring/data';
+import { QuestionsStore } from '../../authoring/data';
 import { PracticeStore } from './practice.store';
 import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../../source-library/data';
@@ -25,17 +25,14 @@ describe('PracticeStore session modes', () => {
     documentRead('document-1', 'domain-a.pdf'),
     documentRead('document-2', 'domain-b.pdf'),
   ];
-  const questions: QuestionDraftRead[] = [
-    editableQuestion('draft-1', documents[0].id),
-    editableQuestion('draft-2', documents[1].id),
-    editableQuestion('draft-3', documents[1].id),
-    editableQuestion('draft-4', documents[1].id, {
-      status: 'rejected',
-      rejection_reason: 'No supported answer.',
-    }),
-    editableQuestion('draft-5', documents[0].id, { question: '   ' }),
-    editableQuestion('draft-6', documents[1].id, { answer: 'C' }),
-    editableQuestion('draft-7', documents[1].id, {
+  const questions: QuestionRead[] = [
+    editableQuestion('question-1', documents[0].id),
+    editableQuestion('question-2', documents[1].id),
+    editableQuestion('question-3', documents[1].id),
+    editableQuestion('question-4', documents[1].id),
+    editableQuestion('question-5', documents[0].id, { question: '   ' }),
+    editableQuestion('question-6', documents[1].id, { answer: 'C' }),
+    editableQuestion('question-7', documents[1].id, {
       citation_page: null,
       source_excerpt: null,
     }),
@@ -43,7 +40,7 @@ describe('PracticeStore session modes', () => {
   const session: PracticeSessionRead = {
     id: 'session-1',
     project_id: project.id,
-    question_ids: ['draft-1'],
+    question_ids: ['question-1'],
     questions: [],
     mode: 'random_draw',
     document_id: null,
@@ -58,7 +55,7 @@ describe('PracticeStore session modes', () => {
   const apiClient = {
     createPracticeSession: vi.fn().mockReturnValue(of(session)),
     getPracticeSession: vi.fn().mockReturnValue(of(session)),
-    listQuestionDrafts: vi.fn().mockReturnValue(of({ items: questions })),
+    listQuestions: vi.fn().mockReturnValue(of({ items: questions })),
     listActivePracticeSessions: vi.fn().mockReturnValue(of({ items: [] })),
     abandonPracticeSession: vi.fn().mockReturnValue(of(session)),
   };
@@ -77,14 +74,14 @@ describe('PracticeStore session modes', () => {
     projects.select(project.id);
 
     TestBed.inject(SourceImportStore).documents.set(documents);
-    TestBed.inject(DraftReviewStore).drafts.set(questions);
+    TestBed.inject(QuestionsStore).questions.set(questions);
   });
 
   it('sends a full-document payload for the selected parsed document', () => {
     const store = TestBed.inject(PracticeStore);
     store.setSelectedDocumentId(documents[1].id);
 
-    expect(store.selectedDocumentQuestionCount()).toBe(2);
+    expect(store.selectedDocumentQuestionCount()).toBe(3);
 
     store.createPracticeSession('full_document');
     TestBed.tick();
@@ -92,7 +89,7 @@ describe('PracticeStore session modes', () => {
     expect(apiClient.createPracticeSession).toHaveBeenCalledWith(project.id, {
       mode: 'full_document',
       document_id: documents[1].id,
-      question_count: 2,
+      question_count: 3,
     }, { signal: expect.any(AbortSignal) });
     expect(apiClient.getPracticeSession).toHaveBeenCalledWith(
       project.id,
@@ -111,7 +108,7 @@ describe('PracticeStore session modes', () => {
     expect(apiClient.createPracticeSession).toHaveBeenCalledWith(project.id, {
       mode: 'full_document',
       document_id: documents[1].id,
-      question_count: 2,
+      question_count: 3,
     }, { signal: expect.any(AbortSignal) });
   });
 
@@ -119,24 +116,24 @@ describe('PracticeStore session modes', () => {
     const store = TestBed.inject(PracticeStore);
     store.setSessionQuestionCount(10);
 
-    expect(store.questionCount()).toBe(3);
-    expect(store.effectiveRandomQuestionCount()).toBe(3);
+    expect(store.questionCount()).toBe(4);
+    expect(store.effectiveRandomQuestionCount()).toBe(4);
 
     store.createPracticeSession('random_draw');
     TestBed.tick();
 
     expect(apiClient.createPracticeSession).toHaveBeenCalledWith(project.id, {
       mode: 'random_draw',
-      question_count: 3,
+      question_count: 4,
     }, { signal: expect.any(AbortSignal) });
   });
 
-  it('excludes non-playable drafts from practice availability', () => {
+  it('excludes non-playable questions from practice availability', () => {
     const store = TestBed.inject(PracticeStore);
     store.setSelectedDocumentId(documents[1].id);
 
-    expect(store.questionCount()).toBe(3);
-    expect(store.selectedDocumentQuestionCount()).toBe(2);
+    expect(store.questionCount()).toBe(4);
+    expect(store.selectedDocumentQuestionCount()).toBe(3);
 
     store.createPracticeSession('full_document');
     TestBed.tick();
@@ -144,29 +141,28 @@ describe('PracticeStore session modes', () => {
     expect(apiClient.createPracticeSession).toHaveBeenCalledWith(project.id, {
       mode: 'full_document',
       document_id: documents[1].id,
-      question_count: 2,
+      question_count: 3,
     }, { signal: expect.any(AbortSignal) });
   });
 
-  it('does not surface a non-approved in-session draft as active', () => {
+  it('surfaces a complete in-session question from the live question list', () => {
     const store = TestBed.inject(PracticeStore);
     store.practiceSession.set({
       ...session,
-      id: 'session-rejected',
-      question_ids: ['draft-4'],
+      question_ids: ['question-4'],
       question_count: 1,
     });
 
-    expect(store.activeQuestion()).toBeNull();
+    expect(store.activeQuestion()).toEqual(questions.find((question) => question.id === 'question-4'));
     expect(store.sessionComplete()).toBe(false);
   });
 
-  it('does not surface an incomplete approved in-session draft as active', () => {
+  it('does not surface an incomplete in-session question as active', () => {
     const store = TestBed.inject(PracticeStore);
     store.practiceSession.set({
       ...session,
       id: 'session-incomplete',
-      question_ids: ['draft-5'],
+      question_ids: ['question-5'],
       question_count: 1,
     });
 
@@ -174,14 +170,14 @@ describe('PracticeStore session modes', () => {
     expect(store.sessionComplete()).toBe(false);
   });
 
-  it('surfaces session snapshot questions before live draft rows', () => {
+  it('surfaces session snapshot questions before live question rows', () => {
     const store = TestBed.inject(PracticeStore);
     store.practiceSession.set({
       ...session,
-      question_ids: ['draft-1'],
+      question_ids: ['question-1'],
       questions: [
         {
-          id: 'draft-1',
+          id: 'question-1',
           question: 'Snapshot question text?',
           choices: ['Snapshot A', 'Snapshot B'],
           answer: 'Snapshot A',
@@ -195,7 +191,7 @@ describe('PracticeStore session modes', () => {
     });
 
     expect(store.activeQuestion()).toEqual({
-      id: 'draft-1',
+      id: 'question-1',
       question: 'Snapshot question text?',
       choices: ['Snapshot A', 'Snapshot B'],
       answer: 'Snapshot A',
@@ -232,7 +228,7 @@ describe('PracticeStore session modes', () => {
       mode: 'review_retry',
       questions: [
         {
-          id: 'draft-1',
+          id: 'question-1',
           question: 'Retry the missed question?',
           choices: ['A', 'B'],
           answer: 'A',
@@ -270,7 +266,7 @@ describe('PracticeStore session modes', () => {
       id: 'attempt-1',
       session_id: resumable.id,
       project_id: project.id,
-      question_id: 'draft-1',
+      question_id: 'question-1',
       selected_answer: 'A',
       is_correct: true,
       created_at: '2026-07-11T00:01:00Z',
@@ -281,10 +277,10 @@ describe('PracticeStore session modes', () => {
     apiClient.getPracticeSession.mockReturnValue(of({
       ...session,
       id: resumable.id,
-      question_ids: ['draft-1', 'draft-2'],
+      question_ids: ['question-1', 'question-2'],
       questions: [
-        sessionQuestion('draft-1', 'First?'),
-        sessionQuestion('draft-2', 'Second?'),
+        sessionQuestion('question-1', 'First?'),
+        sessionQuestion('question-2', 'Second?'),
       ],
       question_count: 2,
       attempts: [firstAttempt],
@@ -304,9 +300,9 @@ describe('PracticeStore session modes', () => {
 
     expect(store.practiceSession()?.id).toBe(resumable.id);
     expect(store.resumableSession()).toBeNull();
-    expect(store.answeredQuestionIds()).toEqual(new Set(['draft-1']));
+    expect(store.answeredQuestionIds()).toEqual(new Set(['question-1']));
     expect(store.lastAttempt()).toEqual(firstAttempt);
-    expect(store.activeQuestion()?.id).toBe('draft-2');
+    expect(store.activeQuestion()?.id).toBe('question-2');
   });
 
   it('requires two steps before abandoning a resumable session', () => {
@@ -374,7 +370,7 @@ function documentRead(id: string, filename: string): DocumentRead {
     extraction_warnings: null,
     failure_message: null,
     processed_page_count: 10,
-    exam_item_count: 3,
+    question_count: 3,
     content_profile: 'vocabulary_single_questions',
     classification_detail: '{"profile":"vocabulary_single_questions"}',
     chunks_count: 8,
@@ -386,8 +382,8 @@ function documentRead(id: string, filename: string): DocumentRead {
 function editableQuestion(
   id: string,
   documentId: string,
-  overrides: Partial<QuestionDraftRead> = {},
-): QuestionDraftRead {
+  overrides: Partial<QuestionRead> = {},
+): QuestionRead {
   return {
     id,
     project_id: 'project-1',
@@ -406,8 +402,6 @@ function editableQuestion(
     item_kind: 'vocabulary_single',
     group_key: null,
     group_prompt: null,
-    status: 'approved',
-    rejection_reason: null,
     created_at: '2026-06-17T00:00:00Z',
     updated_at: '2026-06-17T00:00:00Z',
     ...overrides,

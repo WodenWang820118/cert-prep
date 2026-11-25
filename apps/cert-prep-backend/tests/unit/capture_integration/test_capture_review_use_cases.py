@@ -115,7 +115,7 @@ def source_document(
         extraction_warnings=None,
         failure_message=None,
         processed_page_count=0,
-        exam_item_count=0,
+        question_count=0,
         content_profile="unknown",
         classification_detail="",
         chunks_count=chunks_count,
@@ -474,7 +474,7 @@ class FakeWorkflow:
         return self.published
 
 
-class FakeDrafts:
+class FakeQuestions:
     def __init__(self, trace: list[tuple]) -> None:
         self.trace = trace
         self.error: BaseException | None = None
@@ -688,7 +688,7 @@ class World:
         self.work = FakeWork(self.trace)
         self.events = FakeEvents(self.trace)
         self.maintenance = FakeMaintenance(self.trace)
-        self.drafts = FakeDrafts(self.trace)
+        self.questions = FakeQuestions(self.trace)
         self.runtime = FakeRuntime(self.trace)
         self.workflow.sessions = self.sessions
 
@@ -1303,7 +1303,7 @@ def commit(world: World, *, candidate: object = CANDIDATE, client_request_id: st
         world.workflow,
         world.work,
         world.events,
-        world.drafts,
+        world.questions,
         project_id=PROJECT,
         session_id="session",
         candidate=candidate,
@@ -1318,7 +1318,7 @@ def publish(world: World, *, candidate: object = CANDIDATE) -> None:
         world.workflow,
         world.work,
         world.events,
-        world.drafts,
+        world.questions,
         project_id=PROJECT,
         document_id="document",
         operation_id=OPERATION,
@@ -1528,17 +1528,17 @@ def test_a_failure_to_finish_the_unqueued_commit_propagates() -> None:
     assert ("fail", PROJECT, OPERATION, COMMIT_NOT_QUEUED) in world.trace
 
 
-def test_commit_publication_enqueues_drafts_only_when_chunks_exist() -> None:
+def test_commit_publication_enqueues_questions_only_when_chunks_exist() -> None:
     empty = World()
     publish(empty)
     assert "enqueue" not in [item[0] for item in empty.trace]
     assert ("publish_terminal", PROJECT, "session", CaptureReviewStatus.COMPLETED) in empty.trace
 
-    drafted = World()
-    drafted.workflow.published = source_document(chunks_count=2)
-    publish(drafted)
-    assert ("enqueue", PROJECT, "document") in drafted.trace
-    assert drafted.trace[-2:] == [
+    source_question = World()
+    source_question.workflow.published = source_document(chunks_count=2)
+    publish(source_question)
+    assert ("enqueue", PROJECT, "document") in source_question.trace
+    assert source_question.trace[-2:] == [
         ("get", PROJECT, "session"),
         ("publish_terminal", PROJECT, "session", CaptureReviewStatus.COMPLETED),
     ]
@@ -1585,12 +1585,12 @@ def test_a_commit_reload_error_in_finally_is_swallowed() -> None:
     assert "publish_terminal" not in [item[0] for item in world.trace]
 
 
-def test_a_draft_enqueue_error_still_reaches_finally() -> None:
+def test_a_question_enqueue_error_still_reaches_finally() -> None:
     world = World()
     world.workflow.published = source_document(chunks_count=1)
-    world.drafts.error = RuntimeError("drafts down")
+    world.questions.error = RuntimeError("questions down")
 
-    with pytest.raises(RuntimeError, match="drafts down"):
+    with pytest.raises(RuntimeError, match="questions down"):
         publish(world)
 
     assert ("enqueue", PROJECT, "document") in world.trace

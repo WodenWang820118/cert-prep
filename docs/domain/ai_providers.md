@@ -6,7 +6,7 @@
 
 負責：依使用者的偏好選擇語言模型的供應者（Ollama 或假供應者）；檢查供應者與模型能不能用；為這台機器選 Ollama 模型設定檔與執行模式；盤點機器；以 JSON 模式和模型對話、產生結構化 JSON；延遲建立供應者，讓 app 啟動時不探測 Ollama。
 
-不負責：寫題目草稿與它的 prompt（題目編寫）、錯題解說的內容（練習與複習）、擷取結果的結構化 prompt（擷取整合）、安裝 Ollama 與下載模型（執行環境）。錄音文字的繁體中文翻譯由 AI 供應實作，段落與翻譯結果由教材來源管理。
+不負責：寫題目與它的 prompt（題目編寫）、錯題解說的內容（練習與複習）、擷取結果的結構化 prompt（擷取整合）、安裝 Ollama 與下載模型（語言模型佈建）。錄音文字的繁體中文翻譯由 AI 供應實作，段落與翻譯結果由教材來源管理。
 
 ## 用語
 
@@ -20,8 +20,8 @@
 | 模型下載           | `ModelDownloadProvider`                    | 使用者確認後下載設定的模型                                     |
 | 模型上線檢查       | `ModelOnboardingProvider`                  | 下載前檢查執行環境、下載後確認模型能回應                       |
 | 產生歸屬           | `GenerationAttributionProvider`            | 最近一次成功的產生實際用了哪個供應者與模型                     |
-| 釋放資源           | `ResourceReleasingProvider`                | 串流產生工作結束後讓模型卸載                                   |
-| 串流參數           | `StreamingGenerationOptionsProvider`       | 串流產生時供應者自己的呼叫參數，例如用完就卸載模型             |
+| 釋放資源           | `ResourceReleasingProvider`                | 背景產生工作結束後讓模型卸載                                   |
+| 背景產生參數           | `BackgroundGenerationOptionsProvider`       | 背景產生時供應者自己的呼叫參數，例如用完就卸載模型             |
 | 產生時才啟動       | `StartsOnGenerationProvider`               | 產生時才啟動還沒執行的供應者執行環境                           |
 | 需要安裝的執行環境 | `LLMInstallationProvider`              | 供應者需要在本機安裝的執行環境（Ollama）                       |
 | 延遲建立的供應者   | `LazyLLMProvider`                          | 第一次用到時才依設定建立的供應者                               |
@@ -93,7 +93,7 @@ classDiagram
 - 偏好是假供應者時才選假供應者；自動與 Ollama 都選 Ollama。選中 Ollama 時，它需要安裝 Ollama 與模型。
 - JSON 對話的工作階段：開始前檢查一次模型；裡面任何失敗，包括讀回覆時的失敗，都當作模型呼叫失敗（「Ollama unavailable for configured model …」）；只有成功的工作階段記入產生歸屬。
 - 只有供應者是 Ollama、而且設定檔啟用時才選設定檔；只有在選設定檔時才盤點機器。盤點結果保留 5 分鐘，要求重新盤點時才再量一次。
-- 供應者不寫題目草稿：題目編寫用 JSON 對話自己寫（D14）。
+- 供應者不寫題目：題目編寫用 JSON 對話自己寫（D14）。
 
 ## 用例
 
@@ -112,7 +112,7 @@ classDiagram
 
 ```mermaid
 sequenceDiagram
-  participant Writer as authoring OllamaDraftWriter
+  participant Writer as authoring OllamaQuestionWriter
   participant Lazy as LazyLLMProvider
   participant Ollama as OllamaProvider
   participant Client as Ollama API
@@ -128,14 +128,14 @@ sequenceDiagram
   Ollama->>Ollama: 成功才記入產生歸屬；任何失敗包成 LanguageModelUnavailable
 ```
 
-`create_app` 把 `lazy_provider_from_settings(settings)`（測試可以注入自己的供應者）放在 `app.state.llm_provider`，把 `OllamaMachineInventory(settings)` 放在 `app.state.machine_inventory`，並經 `build_llm_installation` 交給執行環境的 `LLMInstallation`。router 只呼叫 `application/use_cases.py` 的用例。
+`create_app` 把 `lazy_provider_from_settings(settings)`（測試可以注入自己的供應者）放在 `app.state.llm_provider`，把 `OllamaMachineInventory(settings)` 放在 `app.state.machine_inventory`，並經 `build_llm_installation` 交給語言模型佈建的 `LLMInstallation`。router 只呼叫 `application/use_cases.py` 的用例。
 
 ## 與其他上下文的關係
 
-- 題目編寫：用 `draft_writer_for` 為設定的供應者挑選寫草稿者，Ollama 經 JSON 對話寫草稿；串流產生使用串流參數、產生歸屬與釋放資源。
+- 題目編寫：用 `question_writer_for` 為設定的供應者挑選題目編寫器，Ollama 經 JSON 對話寫題目；背景產生使用背景產生參數、產生歸屬與釋放資源。
 - 練習與複習：用供應者的健康狀態決定能不能請模型解說錯題；解說能力 `PracticeExplanationProvider` 由練習與複習自己定義。
 - 擷取整合：用結構化 JSON 整理擷取結果。
-- 執行環境：用模型下載、模型上線檢查與需要安裝的執行環境安裝 Ollama 與模型；安裝設定檔模型時用 `choose_ollama_profile`；`/llm/machine-inventory` 用 `inspect_machine`，回應用 AI 供應的 `MachineInventoryRead`。模型安裝使用 `POST /llm/installations`，JSON 內的 `kind` 為 `ollama_model`。
+- 語言模型佈建：用模型下載、模型上線檢查與需要安裝的執行環境安裝 Ollama 與模型；安裝設定檔模型時用 `choose_ollama_profile`；`/llm/machine-inventory` 用 `inspect_machine`，回應用 AI 供應的 `MachineInventoryRead`。模型安裝使用 `POST /llm/installations`，JSON 內的 `kind` 為 `ollama_model`。
 - 教材來源：`infrastructure/translation.py` 的 `OllamaTraditionalChineseTranslator` 實作教材來源的 `TraditionalChineseTranslator` port，由 `bootstrap/source_library_links.py` 接線。使用設定的主機、模型與逾時；單段翻譯用完即卸載，批次翻譯保留模型 5 分鐘，結束時釋放資源。每個翻譯請求算一次使用擁有的伺服器，裝置切換會等它；使用者選 CPU 時加上 `num_gpu=0`。翻譯提示詞依段落所屬教材的 `language_hint` 指定來源語言；自動偵測時由模型判斷。
 
 其他上下文只能經 `ai_providers.application` 與 `ai_providers.domain` 使用 AI 供應（import-linter「Other contexts reach AI Providers only through its application and domain」），AI 供應不依賴任何其他上下文（「AI Providers does not depend on other contexts」）。

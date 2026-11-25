@@ -62,8 +62,8 @@ import {
   writeSessionRestartEvidence,
 } from './evidence-writer.mts';
 import {
-  assertManualDraftTerminalEvidence,
-  type ManualDraftTerminalExpectation,
+  assertManualQuestionGenerationTerminalEvidence,
+  type ManualQuestionGenerationTerminalExpectation,
   type ResilienceCheck,
 } from './evidence-contract.mts';
 import {
@@ -83,7 +83,7 @@ import { encoded, pollJson, stringField } from './scenario-utils.mts';
 import { runSessionRestartScenario } from './session-restart.mts';
 
 const REMAINING_CHECKS = [
-  'draft',
+  'question',
   'runtime',
   'model',
   'ownedProcessesReleased',
@@ -93,7 +93,7 @@ const OLLAMA_RUNTIME_PROVIDER = 'ollama';
 const OLLAMA_RUNTIME_MODEL = 'qwen3.5:4b';
 const OLLAMA_RUNTIME_MISSING_REASON = 'ollama_missing';
 const OLLAMA_MODEL = DEFAULT_LLM_MODEL;
-const AUTO_DRAFT_TERMINAL_STATUSES = new Set([
+const UPLOAD_QUESTION_JOB_TERMINAL_STATUSES = new Set([
   'succeeded',
   'skipped_provider_unavailable',
   'skipped_missing_model',
@@ -111,7 +111,7 @@ export interface TimedProof {
 }
 
 export interface RemainingScenarioProofs {
-  readonly draft: TimedProof;
+  readonly question: TimedProof;
   readonly runtime: TimedProof;
   readonly model: TimedProof;
   readonly sessionRestart: TimedProof;
@@ -125,10 +125,10 @@ export interface RemainingResilienceRunResult {
   readonly sessionRestart: EvidenceArtifactReference;
 }
 
-export interface UploadTriggeredDraftProof extends Record<string, unknown> {
+export interface UploadTriggeredQuestionJobsProof extends Record<string, unknown> {
   readonly jobCount: number;
   readonly statuses: readonly string[];
-  readonly usableDraftCount: 0;
+  readonly usableQuestionCount: 0;
 }
 
 interface OwnedProcessTrackerPort {
@@ -397,7 +397,7 @@ export async function executeRemainingResilienceScenarios(
       'Remaining resilience upload was not bound to the exact project.',
     );
   }
-  const autoDrafts = await drainUploadTriggeredDrafts(
+  const uploadTriggeredJobs = await drainUploadTriggeredQuestionJobs(
     transport,
     projectApi.projectId,
     uploadedDocument.documentId,
@@ -451,12 +451,12 @@ export async function executeRemainingResilienceScenarios(
     return { ...proof, tagsBefore, tagsAfter, healthBefore, healthAfter };
   });
 
-  const draft = await captureTimedProof(now, async () => {
+  const question = await captureTimedProof(now, async () => {
     const startPath = `/projects/${encoded(projectApi.projectId)}/documents/${encoded(
       uploadedDocument.documentId,
-    )}/draft-operations`;
+    )}/question-generations`;
     const scenario: CancelableOperationScenario = {
-      kind: 'draft',
+      kind: 'question',
       startPath,
       operationPath: (operationId) => `${startPath}/${encoded(operationId)}`,
       startData: { limit: 2, strategy: 'hybrid_reasoning' },
@@ -470,7 +470,7 @@ export async function executeRemainingResilienceScenarios(
           options.latePublishObservationWindowMs,
           wait,
           async () => ({
-            usableDraftCount: await currentExactDocumentDraftCount(
+            usableQuestionCount: await currentExactDocumentQuestionCount(
               transport,
               projectApi.projectId,
               uploadedDocument.documentId,
@@ -479,8 +479,8 @@ export async function executeRemainingResilienceScenarios(
         ),
     };
     const proof = await runCancelableOperationScenario(transport, scenario);
-    const commitBinding = commitBindingFromProof(proof, 'draft');
-    const manualDraftTerminalResponse = await waitForOperationSuccess(
+    const commitBinding = commitBindingFromProof(proof, 'question');
+    const manualQuestionGenerationTerminalResponse = await waitForOperationSuccess(
       transport,
       commitBinding.operationId,
       scenario.operationPath,
@@ -491,11 +491,11 @@ export async function executeRemainingResilienceScenarios(
         model: selection.model,
       },
       options.timeoutMs,
-      'draft',
+      'question',
     );
-    const usableDraftCount = await waitForValidatedManualDraftPublication(
+    const usableQuestionCount = await waitForValidatedManualQuestionPublication(
       transport,
-      manualDraftTerminalResponse,
+      manualQuestionGenerationTerminalResponse,
       {
         ...commitBinding,
         projectId: projectApi.projectId,
@@ -505,10 +505,10 @@ export async function executeRemainingResilienceScenarios(
     );
     return {
       ...proof,
-      manualDraftTerminalResponse,
-      uploadTriggeredJobs: autoDrafts,
-      usableDraftCountBeforeManual: autoDrafts.usableDraftCount,
-      usableDraftCountAfterManual: usableDraftCount,
+      manualQuestionGenerationTerminalResponse,
+      uploadTriggeredJobs: uploadTriggeredJobs,
+      usableQuestionCountBeforeManual: uploadTriggeredJobs.usableQuestionCount,
+      usableQuestionCountAfterManual: usableQuestionCount,
     };
   });
 
@@ -542,7 +542,7 @@ export async function executeRemainingResilienceScenarios(
     }),
   );
 
-  return { draft, runtime, model, sessionRestart };
+  return { question, runtime, model, sessionRestart };
 }
 
 interface ProviderSelection {
@@ -811,67 +811,67 @@ export async function exactOllamaHealth(
   };
 }
 
-export async function drainUploadTriggeredDrafts(
+export async function drainUploadTriggeredQuestionJobs(
   transport: JsonTransport,
   projectId: string,
   documentId: string,
   timeoutMs: number,
-): Promise<UploadTriggeredDraftProof> {
+): Promise<UploadTriggeredQuestionJobsProof> {
   const jobsPath = `/projects/${encoded(projectId)}/documents/${encoded(
     documentId,
-  )}/draft-jobs`;
+  )}/question-jobs`;
   const terminal = await pollJson(
     transport,
     jobsPath,
     (body) => {
-      const items = exactDraftJobItems(body, projectId, documentId);
+      const items = exactQuestionJobItems(body, projectId, documentId);
       return (
         items.length > 0 &&
         items.every((item) =>
-          AUTO_DRAFT_TERMINAL_STATUSES.has(String(item.status)),
+          UPLOAD_QUESTION_JOB_TERMINAL_STATUSES.has(String(item.status)),
         )
       );
     },
-    { timeoutMs, label: 'upload-triggered automatic draft jobs' },
+    { timeoutMs, label: 'upload-triggered automatic question jobs' },
   );
-  const jobs = exactDraftJobItems(terminal, projectId, documentId);
+  const jobs = exactQuestionJobItems(terminal, projectId, documentId);
   if (jobs.some((job) => job.status !== 'skipped_missing_model')) {
     throw new Error(
-      'Upload-triggered draft jobs did not all terminate on the isolated missing model.',
+      'Upload-triggered question jobs did not all terminate on the isolated missing model.',
     );
   }
-  const drafts = requireJsonObject(
+  const questions = requireJsonObject(
     await transport.request(
       'GET',
-      `/projects/${encoded(projectId)}/question-drafts`,
+      `/projects/${encoded(projectId)}/questions`,
     ),
     [200],
-    'drafts before manual generation',
+    'questions before manual generation',
   );
-  const usable = exactUsableDrafts(drafts, projectId, documentId);
+  const usable = exactUsableQuestions(questions, projectId, documentId);
   if (usable.length !== 0) {
     throw new Error(
-      'Automatic draft jobs published usable questions before manual proof.',
+      'Automatic question jobs published usable questions before manual proof.',
     );
   }
   return {
     jobCount: jobs.length,
     statuses: jobs.map((job) => String(job.status)),
-    usableDraftCount: 0,
+    usableQuestionCount: 0,
   };
 }
 
-function exactDraftJobItems(
+function exactQuestionJobItems(
   body: Record<string, unknown>,
   projectId: string,
   documentId: string,
 ): Record<string, unknown>[] {
   if (!Array.isArray(body.items)) {
-    throw new Error('Automatic draft job list was invalid.');
+    throw new Error('Automatic question job list was invalid.');
   }
   return body.items.map((raw) => {
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-      throw new Error('Automatic draft job item was invalid.');
+      throw new Error('Automatic question job item was invalid.');
     }
     const item = raw as Record<string, unknown>;
     const status = String(item.status);
@@ -880,16 +880,16 @@ function exactDraftJobItems(
       item.document_id !== documentId ||
       typeof item.id !== 'string' ||
       item.id.trim().length === 0 ||
-      (!AUTO_DRAFT_TERMINAL_STATUSES.has(status) &&
+      (!UPLOAD_QUESTION_JOB_TERMINAL_STATUSES.has(status) &&
         !['pending', 'running', 'cancel_requested'].includes(status))
     ) {
-      throw new Error('Automatic draft job response scope was not exact.');
+      throw new Error('Automatic question job response scope was not exact.');
     }
     return item;
   });
 }
 
-export async function waitForExactDocumentDrafts(
+export async function waitForExactDocumentQuestions(
   transport: JsonTransport,
   projectId: string,
   documentId: string,
@@ -897,28 +897,28 @@ export async function waitForExactDocumentDrafts(
 ): Promise<number> {
   const body = await pollJson(
     transport,
-    `/projects/${encoded(projectId)}/question-drafts`,
+    `/projects/${encoded(projectId)}/questions`,
     (candidate) =>
-      exactUsableDrafts(candidate, projectId, documentId).length >= 2,
-    { timeoutMs, label: 'manual draft publication' },
+      exactUsableQuestions(candidate, projectId, documentId).length >= 2,
+    { timeoutMs, label: 'manual question publication' },
   );
-  const usable = exactUsableDrafts(body, projectId, documentId);
+  const usable = exactUsableQuestions(body, projectId, documentId);
   if (usable.length < 2) {
     throw new Error(
-      'Manual draft commit did not publish two usable questions.',
+      'Manual question commit did not publish two usable questions.',
     );
   }
   return usable.length;
 }
 
-export async function waitForValidatedManualDraftPublication(
+export async function waitForValidatedManualQuestionPublication(
   transport: JsonTransport,
   terminalResponse: Readonly<Record<string, unknown>>,
-  expected: ManualDraftTerminalExpectation,
+  expected: ManualQuestionGenerationTerminalExpectation,
   timeoutMs: number,
 ): Promise<number> {
-  assertManualDraftTerminalEvidence(terminalResponse, expected);
-  return waitForExactDocumentDrafts(
+  assertManualQuestionGenerationTerminalEvidence(terminalResponse, expected);
+  return waitForExactDocumentQuestions(
     transport,
     expected.projectId,
     expected.documentId,
@@ -926,7 +926,7 @@ export async function waitForValidatedManualDraftPublication(
   );
 }
 
-async function currentExactDocumentDraftCount(
+async function currentExactDocumentQuestionCount(
   transport: JsonTransport,
   projectId: string,
   documentId: string,
@@ -934,34 +934,34 @@ async function currentExactDocumentDraftCount(
   const body = requireJsonObject(
     await transport.request(
       'GET',
-      `/projects/${encoded(projectId)}/question-drafts`,
+      `/projects/${encoded(projectId)}/questions`,
     ),
     [200],
-    'current exact-document question drafts',
+    'current exact-document questions',
   );
-  return exactUsableDrafts(body, projectId, documentId).length;
+  return exactUsableQuestions(body, projectId, documentId).length;
 }
 
-function exactUsableDrafts(
+function exactUsableQuestions(
   body: Record<string, unknown>,
   projectId: string,
   documentId: string,
 ): Record<string, unknown>[] {
   if (!Array.isArray(body.items)) {
-    throw new Error('Question draft list was invalid.');
+    throw new Error('Question list was invalid.');
   }
   return body.items.filter((raw) => {
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-      throw new Error('Question draft item was invalid.');
+      throw new Error('Question item was invalid.');
     }
     const item = raw as Record<string, unknown>;
     if (item.project_id !== projectId) {
-      throw new Error('Question draft response escaped the exact project.');
+      throw new Error('Question response escaped the exact project.');
     }
     const answer = item.answer;
     const usable = typeof answer === 'string' && answer.trim().length > 0;
     if (usable && item.document_id !== documentId) {
-      throw new Error('Usable question draft escaped the exact document.');
+      throw new Error('Usable question escaped the exact document.');
     }
     return usable && item.document_id === documentId;
   }) as Record<string, unknown>[];
@@ -1099,14 +1099,14 @@ function createRunState(options: RemainingResilienceOptions): SmokeRunState {
     ollamaProfileEnabled: false,
     acceptanceIsolation: true,
     candidateDistributionProfile: options.candidateDistributionProfile,
-    waitForStreamingComplete: false,
-    streamingCompleteTimeoutMs: options.timeoutMs,
-    streamingDraftPageLimit: 1,
-    streamingDraftWorkers: 1,
+    waitForQuestionJobs: false,
+    questionJobsCompleteTimeoutMs: options.timeoutMs,
+    questionJobsChunkLimit: 1,
+    questionJobWorkers: 1,
     skipGpuSampling: true,
     productionSummary: false,
     allowCaptureChunkVariance: true,
-    verifyStreamingPracticeReady: false,
+    verifyGeneratedQuestionsPracticeReady: false,
   };
   const metrics: SmokeMetrics = {
     status: 'running',
@@ -1124,13 +1124,13 @@ function createRunState(options: RemainingResilienceOptions): SmokeRunState {
     ),
     first_chunk_gate_ms: 15_000,
     first_chunk_under_gate: false,
-    wait_for_streaming_complete: false,
-    practice_ready_from_streamed_questions: false,
+    wait_for_question_jobs: false,
+    practice_ready_from_generated_questions: false,
     app_data_dir: relative(
       options.workspaceRoot,
       smokeOptions.appDataDir ?? '',
     ),
-    streaming_questions: {
+    question_generation: {
       job_snapshots: [],
       question_snapshots: [],
       status_counts: {},
@@ -1148,9 +1148,9 @@ function createRunState(options: RemainingResilienceOptions): SmokeRunState {
     processBaseline: { all: [], nodePids: new Set() },
     projectApi: null,
     uploadedDocument: null,
-    streamingDraftParseStartedAt: null,
-    streamingDraftCaptureOpen: false,
-    streamingApiPollErrorCaptured: false,
+    questionObservationStartedAt: null,
+    questionObservationActive: false,
+    questionGenerationApiPollErrorCaptured: false,
   };
 }
 
@@ -1233,7 +1233,7 @@ function buildOperationEnvelopes(
   scenarios: RemainingScenarioProofs,
 ): Readonly<Record<OperationCheck, EvidenceEnvelopeOptions>> {
   return Object.fromEntries(
-    (['draft', 'runtime', 'model'] as const).map((check) => {
+    (['question', 'runtime', 'model'] as const).map((check) => {
       const timed = scenarios[check];
       return [
         check,

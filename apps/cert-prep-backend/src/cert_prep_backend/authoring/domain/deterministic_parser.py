@@ -11,7 +11,7 @@ from cert_prep_backend.source_library.domain.exam_content import (
 )
 from cert_prep_backend.authoring.domain.models import (
     AnswerKeySource,
-    DraftSuggestion,
+    QuestionSuggestion,
     SourceChunk,
 )
 
@@ -159,10 +159,10 @@ def _continued_question(left: SourceChunk, right: SourceChunk) -> ParsedQuestion
 
 def extract_jlpt_question_blocks(
     chunks: Sequence[SourceChunk], limit: int
-) -> list[DraftSuggestion]:
+) -> list[QuestionSuggestion]:
     """Extract visible JLPT question blocks without using AI reasoning."""
 
-    suggestions: list[DraftSuggestion] = []
+    suggestions: list[QuestionSuggestion] = []
     for chunk_index, chunk in enumerate(chunks):
         if len(suggestions) >= limit:
             break
@@ -189,7 +189,7 @@ def extract_jlpt_question_blocks(
                 )
         for block in blocks:
             suggestions.append(
-                DraftSuggestion(
+                QuestionSuggestion(
                     chunk_id=chunk.id,
                     question=block.stem,
                     choices=block.choices,

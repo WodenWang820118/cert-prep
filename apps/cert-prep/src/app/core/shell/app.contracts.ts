@@ -1,6 +1,6 @@
 import type { AppIconName } from '../ui';
 export type StudyPageId =
-  | 'build'
+  | 'questions'
   | 'whole_source'
   | 'random_draw'
   | 'runtime'

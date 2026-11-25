@@ -1,6 +1,6 @@
 """Use cases of the Source Library context, named after what the learner does with a source.
 
-Importing a document runs its extraction (Capture Integration) and starts its question drafts
+Importing a document runs its extraction (Capture Integration) and starts its questions
 (Question Authoring) through ports, so this context does not depend on either.
 """
 
@@ -38,7 +38,7 @@ from cert_prep_backend.source_library.application.ports import (
     DocumentOperationRepository,
     DocumentRepository,
     DocumentWork,
-    ImportedDocumentDrafting,
+    ImportedQuestionGeneration,
     QueuedDocumentWork,
     SourceExtraction,
     SourceFileStore,
@@ -69,8 +69,8 @@ __all__ = [
     "list_documents",
     "open_audio_source",
     "receive_upload",
-    "record_draft_count",
-    "record_import_draft_count",
+    "record_question_count",
+    "record_import_question_count",
     "recover_interrupted_work",
     "retry_document_processing",
     "translate_chunk",
@@ -114,30 +114,30 @@ def view_document(
     return documents.document(project_id, document_id)
 
 
-def record_draft_count(
+def record_question_count(
     documents: DocumentRepository, project_id: str, document_id: str, count: int
 ) -> None:
-    """Record the document's count of drafts after the learner had drafts written: a processing
+    """Record the document's count of questions after the learner had questions written: a processing
     document stays processing, any other becomes ready."""
 
     document = documents.document(project_id, document_id)
-    documents.record_exam_state(
-        project_id, document_id, status=document.status_after_drafts(), exam_item_count=count
+    documents.record_question_count(
+        project_id, document_id, status=document.status_after_questions(), question_count=count
     )
 
 
-def record_import_draft_count(
+def record_import_question_count(
     documents: DocumentRepository, project_id: str, document_id: str, count: int
 ) -> None:
-    """Record the document's count of drafts written after it was imported: ready when it has
+    """Record the document's count of questions written after it was imported: ready when it has
     text and chunks, no_text_detected otherwise, and still processing if it was."""
 
     document = documents.document(project_id, document_id)
-    documents.record_exam_state(
+    documents.record_question_count(
         project_id,
         document_id,
-        status=document.status_after_import_drafts(),
-        exam_item_count=count,
+        status=document.status_after_import_questions(),
+        question_count=count,
     )
 
 
@@ -215,7 +215,7 @@ def list_chunks(
 def view_chunk(
     documents: DocumentRepository, project_id: str, document_id: str, chunk_id: str
 ) -> DocumentChunk:
-    """One chunk of a document, which another context cites as a draft's source."""
+    """One chunk of a document, which another context cites as a question's source."""
     return documents.chunk(project_id, document_id, chunk_id)
 
 
@@ -320,7 +320,7 @@ async def import_document(
     files: SourceFileStore,
     work: DocumentWork,
     extraction: SourceExtraction,
-    drafting: ImportedDocumentDrafting,
+    question_generation: ImportedQuestionGeneration,
     *,
     project_id: str,
     operation_id: str,
@@ -332,7 +332,7 @@ async def import_document(
 ) -> SourceDocument:
     """Import a PDF, image or recording without a capture review: claim the operation id,
     validate and store the file, attach its document, then extract its text and start its
-    drafts, in the background or within the request. Returns the document; one whose
+    questions, in the background or within the request. Returns the document; one whose
     extraction found no text has the no_text_detected status and its failed operation.
 
     Once the id is claimed, a rejected or failed upload fails the operation; a cancellation,
@@ -389,7 +389,7 @@ async def import_document(
             documents,
             files,
             extraction,
-            drafting,
+            question_generation,
             project_id=project_id,
             document_id=document.id,
             operation_id=operation_id,
@@ -456,7 +456,7 @@ async def retry_document_processing(
     files: SourceFileStore,
     work: DocumentWork,
     extraction: SourceExtraction,
-    drafting: ImportedDocumentDrafting,
+    question_generation: ImportedQuestionGeneration,
     *,
     project_id: str,
     document_id: str,
@@ -506,7 +506,7 @@ async def retry_document_processing(
         documents,
         files,
         extraction,
-        drafting,
+        question_generation,
         project_id=project_id,
         document_id=document_id,
         operation_id=operation_id,
@@ -595,7 +595,7 @@ def _process_document(
     documents: DocumentRepository,
     files: SourceFileStore,
     extraction: SourceExtraction,
-    drafting: ImportedDocumentDrafting,
+    question_generation: ImportedQuestionGeneration,
     *,
     project_id: str,
     document_id: str,
@@ -603,19 +603,19 @@ def _process_document(
     source: _SourceToExtract,
     shutdown_requested: Callable[[], bool] = lambda: False,
 ) -> SourceDocument | DocumentOperation:
-    """Extract a document's text and start its drafts; settle the operation when it stops.
+    """Extract a document's text and start its questions; settle the operation when it stops.
 
     A canceled run is acknowledged. When extraction finds no text, the failed operation is
     returned and the document keeps the no_text_detected status. Other failures fail the
     operation and propagate."""
 
     try:
-        return _extract_and_draft(
+        return _extract_and_generate_questions(
             operations,
             documents,
             files,
             extraction,
-            drafting,
+            question_generation,
             project_id=project_id,
             document_id=document_id,
             operation_id=operation_id,
@@ -663,12 +663,12 @@ def _process_document(
         raise
 
 
-def _extract_and_draft(
+def _extract_and_generate_questions(
     operations: DocumentOperationRepository,
     documents: DocumentRepository,
     files: SourceFileStore,
     extraction: SourceExtraction,
-    drafting: ImportedDocumentDrafting,
+    question_generation: ImportedQuestionGeneration,
     *,
     project_id: str,
     document_id: str,
@@ -707,6 +707,6 @@ def _extract_and_draft(
     finally:
         del content
     if document.chunks_count > 0:
-        drafting.draft_questions(project_id, document_id)
+        question_generation.start_question_generation(project_id, document_id)
         document = documents.document(project_id, document_id)
     return document

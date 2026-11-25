@@ -41,7 +41,7 @@ from cert_prep_backend.capture_integration.application.ports import (
     CaptureEventSignal,
     CaptureFileStore,
     CaptureOperations,
-    CaptureQuestionDrafting,
+    CaptureQuestionGeneration,
     CaptureReviewEvents,
     CaptureReviewMaintenance,
     CaptureReviewStore,
@@ -406,7 +406,7 @@ def commit_capture_review(
     workflow: CaptureReviewWorkflow,
     work: CaptureBackgroundWork,
     events: CaptureReviewEvents,
-    drafts: CaptureQuestionDrafting,
+    questions: CaptureQuestionGeneration,
     *,
     project_id: str,
     session_id: str,
@@ -459,7 +459,7 @@ def commit_capture_review(
                 workflow,
                 work,
                 events,
-                drafts,
+                questions,
                 project_id=project_id,
                 document_id=queued_document_id,
                 operation_id=queued_operation_id,
@@ -503,7 +503,7 @@ def publish_reviewed_capture(
     workflow: CaptureReviewWorkflow,
     work: CaptureBackgroundWork,
     events: CaptureReviewEvents,
-    drafts: CaptureQuestionDrafting,
+    questions: CaptureQuestionGeneration,
     *,
     project_id: str,
     document_id: str,
@@ -526,7 +526,7 @@ def publish_reviewed_capture(
             ),
         )
         if document.chunks_count > 0:
-            drafts.enqueue_document(project_id, document_id)
+            questions.enqueue_document(project_id, document_id)
     except CaptureExtractionCanceled:
         _finish_canceled_capture(
             sessions,

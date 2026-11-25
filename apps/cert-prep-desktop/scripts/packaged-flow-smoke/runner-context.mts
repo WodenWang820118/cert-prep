@@ -21,7 +21,7 @@ export const ACCEPTANCE_PRIVATE_SCREENSHOT_SELECTORS = [
   'textarea[data-testid="corrected-text"]',
   // Generated strings can overflow individual title/choice/rationale boxes;
   // mask the complete card so screenshots never retain partial content.
-  '[data-testid="draft-question-card"]',
+  '[data-testid="question-card"]',
   '.practice-select-field select',
   '.practice-question-card',
   '.wrong-answer-card',
@@ -450,7 +450,9 @@ export async function closeRuntimeDrawer(run: SmokeRunState): Promise<void> {
   const dialog = closeableRuntimeDialogLocator(run);
   const dialogCount = await dialog.count();
   if (dialogCount === 0) {
-    await clickButtonPattern(run, /^\s*Build\s*$/);
+    await activePage(run).getByRole('link', { name: 'Questions', exact: true }).click({
+      timeout: 10_000,
+    });
     await waitText(
       run,
       /Projects|Create project|Recent projects|Local Workspace/i,

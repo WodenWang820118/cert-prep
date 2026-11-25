@@ -49,7 +49,7 @@ def test_legacy_practice_attempt_fallback_does_not_require_live_playability(
         )
         connection.execute(
             """
-            UPDATE question_drafts
+            UPDATE questions
             SET rationale = ''
             WHERE project_id = ? AND id = ?
             """,
@@ -81,12 +81,12 @@ def test_practice_attempt_grades_against_session_question_snapshot(
     ).json()
 
     updated = client.patch(
-        f"/projects/{project_id}/question-drafts/{question['id']}",
+        f"/projects/{project_id}/questions/{question['id']}",
         headers=auth_headers,
         json={
             "choices": ["Rotate keys after launch", "Allow unrestricted access"],
             "answer": "Rotate keys after launch",
-            "rationale": "The live draft was edited after session creation.",
+            "rationale": "The live question was edited after session creation.",
         },
     )
     assert updated.status_code == 200
@@ -105,7 +105,7 @@ def test_practice_attempt_grades_against_session_question_snapshot(
     attempt = response.json()
     assert attempt["is_correct"] is True
 
-def test_practice_attempt_rejects_approved_question_outside_session(
+def test_practice_attempt_rejects_question_outside_session(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
@@ -118,7 +118,7 @@ def test_practice_attempt_rejects_approved_question_outside_session(
         document_id,
     )
     playable_questions = client.get(
-        f"/projects/{project_id}/question-drafts",
+        f"/projects/{project_id}/questions",
         headers=auth_headers,
     ).json()["items"]
     assert second_question["id"] in {question["id"] for question in playable_questions}
@@ -132,7 +132,6 @@ def test_practice_attempt_rejects_approved_question_outside_session(
     outside_question = next(
         question for question in playable_questions if question["id"] not in session["question_ids"]
     )
-    assert outside_question["status"] == "approved"
 
     response = client.post(
         f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
@@ -149,7 +148,7 @@ def test_practice_attempt_rejects_approved_question_outside_session(
         "message": "Question is not part of this practice session.",
     }
 
-def test_practice_attempt_rejects_incomplete_approved_row_as_not_playable(
+def test_practice_attempt_rejects_incomplete_questions_as_not_playable(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
@@ -183,7 +182,7 @@ def test_practice_attempt_rejects_incomplete_approved_row_as_not_playable(
         "message": "Playable question not found.",
     }
 
-def test_practice_excludes_and_rejects_no_evidence_approved_row(
+def test_practice_excludes_and_rejects_question_without_evidence(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)

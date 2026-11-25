@@ -4,16 +4,16 @@
 
 ## 負責與不負責
 
-負責：用已核可的題目開始練習（隨機抽題、整份教材、錯題重練），記錄每一次作答與對錯，判斷練習何時完成，整理錯題與錯題總覽，並請 AI 解說錯題。
+負責：用可練習的題目開始練習（隨機抽題、整份教材、錯題重練），記錄每一次作答與對錯，判斷練習何時完成，整理錯題與錯題總覽，並請 AI 解說錯題。
 
-不負責：題目怎麼產生與核可（題目編寫）、教材與頁碼（教材來源）、用哪個 LLM 解說（AI 供應）。練習只讀它們的結果。
+不負責：題目怎麼產生（題目編寫）、教材與頁碼（教材來源）、用哪個 LLM 解說（AI 供應）。練習只讀它們的結果。
 
 ## 用語
 
 | 中文     | 程式名稱             | 意思                                                     |
 | -------- | -------------------- | -------------------------------------------------------- |
 | 練習     | `PracticeSession`    | 一次作答；模式有整份、隨機抽題、錯題重練                 |
-| 練習題目 | `PracticeQuestion`   | 練習問的一題：開始時的快照，之後改草稿不影響已開始的練習 |
+| 練習題目 | `PracticeQuestion`   | 練習問的一題：開始時的快照，之後改題目不影響已開始的練習 |
 | 選題     | `QuestionSelection`  | 新練習問哪些題、題數，以及隨機抽題的種子                 |
 | 作答     | `PracticeAttempt`    | 對一題的一次作答與對錯                                   |
 | 作答紀錄 | `AnsweredQuestion`   | 一次作答與當時問的題目                                   |
@@ -61,7 +61,7 @@ classDiagram
   WrongAnswerSummary ..> PracticeAttempt : 由作答紀錄算出
 ```
 
-- 只有可練習的題目能進入新練習：已核可、題目與至少兩個選項不是空白、正確答案在選項裡、有解說，並有頁碼或原文摘錄（`PracticeQuestion.is_playable`）。錯題重練直接用錯題本身，不再檢查。
+- 只有可練習的題目能進入新練習：題目與至少兩個選項不是空白、正確答案在選項裡、有解說，並有頁碼或原文摘錄（`PracticeQuestion.is_playable`）。錯題重練直接用錯題本身，不再檢查。
 - 開始時決定題目並保存快照（`select_questions`）：隨機抽題預設 10 題，用保存的種子抽；整份教材依教材順序；錯題重練依錯題順序。一個專案同時只能有一個進行中的練習。
 - 作答的題目必須屬於這次練習，選的答案必須是題目的選項；已放棄的練習不能再作答，已完成的仍可作答。
 - 每一題都有作答後，進行中的練習變成完成；已完成的練習不能放棄，已放棄的再放棄維持原樣。
@@ -109,12 +109,12 @@ sequenceDiagram
   UC-->>API: PracticeAttempt
 ```
 
-`create_app` 建立 `SqlitePracticeStore` 放在 `app.state.practice_store`，並接上 `bind_practice_reads` 與 `practice_documents`；router 只依 `PracticeStore` 這個 port 呼叫用例。寫入的用例在同一個 `BEGIN IMMEDIATE` 交易裡讀、判斷、寫，兩個請求同時開始練習時只有一個成功。這個交易裡對專案與草稿的讀取用同一條連線。確認教材（`require_document`）在寫入交易之前，用自己的連線。
+`create_app` 建立 `SqlitePracticeStore` 放在 `app.state.practice_store`，並接上 `bind_practice_reads` 與 `practice_documents`；router 只依 `PracticeStore` 這個 port 呼叫用例。寫入的用例在同一個 `BEGIN IMMEDIATE` 交易裡讀、判斷、寫，兩個請求同時開始練習時只有一個成功。這個交易裡對專案與題目的讀取用同一條連線。確認教材（`require_document`）在寫入交易之前，用自己的連線。
 
 ## 與其他上下文的關係
 
 - 學習專案：練習屬於一個專案；專案不存在時是 404。練習經 port `StudyProjects` 呼叫 `project_exists`，讀的是練習這次交易的連線。
-- 題目編寫：練習經 port `PracticeQuestions` 讀已核可的題目與目前的草稿（`approved_questions`、`find_question_draft`、`question_drafts_for`），同一條連線。
+- 題目編寫：練習經 port `PracticeQuestions` 讀教材或專案的題目（`source_questions`、`find_question`、`questions_for`），同一條連線。
 - 教材來源：整份教材模式經 `view_document` 確認教材屬於這個專案。
 - AI 供應：解說錯題用 LLM provider，型別是 AI 供應的 `LLMProvider` port；router 從 `create_app` 放在 `app.state.llm_provider` 的實作取得。
 
@@ -122,7 +122,7 @@ sequenceDiagram
 
 ## 規則與資料來源
 
-- 資料表：`practice_sessions`、`practice_session_questions`（題目快照）、`practice_attempts` 屬練習與複習；migration 在 `platform/database.py`。專案、草稿與教材由所屬上下文的用例讀取，練習的 infrastructure 不查那些資料表。
+- 資料表：`practice_sessions`、`practice_session_questions`（題目快照）、`practice_attempts` 屬練習與複習；migration 在 `platform/database.py`。專案、題目與教材由所屬上下文的用例讀取，練習的 infrastructure 不查那些資料表。
 - HTTP：`/projects/{project_id}/practice-sessions`、`/projects/{project_id}/wrong-answers`、`POST /projects/{project_id}/practice-questions/{question_id}/regrade`（DTO 在 `practice/api/schemas.py`）。
 - API 的 `PracticeSessionStatus`、`PracticeSessionMode` 列舉值對應到概念集的 `practice.session-status.*`、`practice.session-mode.*`。
 
@@ -136,6 +136,6 @@ sequenceDiagram
 | `data`    | `PracticeStore`、`WrongAnswerRetryStore`、`PracticeSessionPayloadService`、`ReviewRetryNavigationService`、`ChoiceKeyService`、`ReviewDisplayService`                       | 開始練習、作答與放棄、載入錯題與總覽、請求解說、訂正答案與重評、重練導覽、組合 payload 與顯示標籤；保留原本的 `providedIn: 'root'` |
 | `feature` | `PracticePanelComponent`、`WrongAnswerSummaryComponent`、`WrongAnswerRetryComponent`、`WrongAnswerSummaryPage`、`WholeSourcePage`、`RandomDrawPage`、`WrongAnswerRetryPage` | 三個注入 store 或 service 的容器與四個路由頁面；保留 selector、DI 順序、模板及樣式                                                 |
 
-三個容器都注入 store 或 service，因此歸 `feature`；本次沒有獨立的 `ui` 層。練習只經上游的公開 API 使用題目編寫（`authoring/data` 的 `DraftReviewStore`、`authoring/domain` 的 `displayChoice`）、教材來源（`source-library/data` 的 `SourceImportStore`）、學習專案（`projects/data` 的 `ProjectStore`）及 `core` 的 API、作業狀態、型別與展示元件。沒有反向呼叫，也沒有新增架構例外。
+三個容器都注入 store 或 service，因此歸 `feature`；本次沒有獨立的 `ui` 層。練習只經上游的公開 API 使用題目編寫（`authoring/data` 的 題目 store、`authoring/domain` 的 `displayChoice`）、教材來源（`source-library/data` 的 `SourceImportStore`）、學習專案（`projects/data` 的 `ProjectStore`）及 `core` 的 API、作業狀態、型別與展示元件。沒有反向呼叫，也沒有新增架構例外。
 
-殼層的 `loadComponent` 改經 `practice/feature` 公開 API；頁面路由為 `/wrong-answers/summary`、`/whole-source`、`/random-draw` 與 `/wrong-answer-retry`。執行環境健康（`RuntimeHealthViewModel*`）與 `runtime-manager` 屬於 `runtime` 上下文（見[執行環境](llm_provisioning.md)）；`api`、`utils`、`testing` 不搬移。
+殼層的 `loadComponent` 改經 `practice/feature` 公開 API；頁面路由為 `/wrong-answers/summary`、`/whole-source`、`/random-draw` 與 `/wrong-answer-retry`。執行環境健康（`RuntimeHealthViewModel*`）與 `runtime-manager` 屬於 `runtime` 上下文（見[語言模型佈建](llm_provisioning.md)）；`api`、`utils`、`testing` 不搬移。

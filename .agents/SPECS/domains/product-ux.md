@@ -44,21 +44,20 @@ practice, or review flows after a source has been captured.
 - Runtime status is compact: header chips plus a Manage runtime drawer, not a
   large first-screen checklist.
 - Runtime status can be healthy while practice is still blocked by missing
-  playable questions. Build, Whole source, and Random draw must surface the
-  practice-blocking reason when streamed questions exist but are not selectable.
+  playable questions. Questions, Whole source, and Random draw must surface the
+  practice-blocking reason when generated questions exist but are not selectable.
 - Source import uses `language_hint`; `auto` remains the default, while QA uses
   `ja` for the JLPT production PDF.
 - Capture Workbench progress uses authenticated replayable SSE with
   `Last-Event-ID`; normal capture progress never polls. Bounded polling remains
   limited to unrelated host-owned readiness and reconciliation workflows.
 - Manual answer/rationale entry is a production fallback, not a debug-only path.
-- Whole source and Random draw consume playable editable questions. Older
-  approval-gated draft language is superseded.
-- A playable question requires approved status, question text, at least two
+- Whole source and Random draw consume playable editable questions.
+- A playable question requires question text, at least two
   nonempty choices, an answer present in the choices, rationale, and either a
   citation page or source excerpt.
-- Source files, Draft Review, and Whole source share an explicit active document
-  selection. Draft Review defaults to active-document questions and shows active
+- Source files, Questions, and Whole source share an explicit active document
+  selection. Questions defaults to active-document questions and shows active
   counts against the project total.
 - Source import accepts PDF, PNG, JPEG/JPG, static WebP, MP3, WAV, and M4A files
   in one queue while preserving the document library. The client uses bounded
@@ -97,7 +96,7 @@ practice, or review flows after a source has been captured.
   review, or clearing by a later correct attempt.
 - Practice sessions persist the selected playable question fields at session
   creation. Attempts and wrong-answer review grade/read from that session-time
-  snapshot, with a live-draft fallback only for older sessions.
+  snapshot, with a live-question fallback only for older sessions.
 - Wrong-answer retry supports focused retry paths: per-card `Retry` starts a
   `review_retry` session for that attempt, and `Start wrong-answer retry` starts a
   `review_retry` session for all current wrong answers. Both flows navigate to
@@ -115,7 +114,7 @@ practice, or review flows after a source has been captured.
 
 ## Workbench Screen Contract
 
-The workbench screens are Build at `/build`, Whole source at `/whole-source`,
+The workbench screens are Questions at `/questions`, Whole source at `/whole-source`,
 Random draw at `/random-draw`, Wrong-answer retry at `/wrong-answer-retry`,
 Wrong-answer summary at `/wrong-answers/summary`, Capture Workbench at
 `/capture`, and the Manage Runtime modal opened from the app topbar (`/runtime`
@@ -135,8 +134,8 @@ Shared workbench rules:
 
 Page requirements:
 
-- Build: show `Cert Prep`, runtime chips in the page header, the workspace
-  banner, and the two-column Source files / Mock Exam Items workbench.
+- Questions: show `Cert Prep`, runtime chips in the page header, the workspace
+  banner, and the two-column Source files / Questions workbench.
 - Whole source: show a source-document selector, `Start whole source`, compact
   document/question/session metrics, stable choice rows, `Submit answer`, and
   a right-side session details / question navigator rail when useful.

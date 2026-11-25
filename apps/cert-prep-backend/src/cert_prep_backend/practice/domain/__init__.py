@@ -14,7 +14,6 @@ from cert_prep_backend.practice.domain.session import (
     PracticeSession,
     PracticeSessionMode,
     PracticeSessionStatus,
-    QuestionDraftStatus,
     QuestionSelection,
     select_questions,
 )
@@ -41,7 +40,6 @@ __all__ = [
     "PracticeSessionConflict",
     "PracticeSessionMode",
     "PracticeSessionStatus",
-    "QuestionDraftStatus",
     "QuestionSelection",
     "RepeatedMiss",
     "WrongAnswer",

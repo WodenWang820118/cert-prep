@@ -605,11 +605,17 @@
       "retired": false
     },
     {
+      "id": "authoring.question",
+      "label": "題目",
+      "codeName": "Question",
+      "retired": false
+    },
+    {
       "id": "authoring.draft-status.approved",
       "label": "已核可",
       "codeName": "DraftStatus.APPROVED",
       "enum": { "enumId": "DraftStatus", "value": "approved" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "authoring.answer-key-source.manual",
@@ -623,6 +629,13 @@
       "label": "教材上的答案",
       "codeName": "AnswerKeySource.PDF",
       "enum": { "enumId": "AnswerKeySource", "value": "pdf" },
+      "retired": true
+    },
+    {
+      "id": "authoring.answer-key-source.source",
+      "label": "教材上的答案",
+      "codeName": "AnswerKeySource.SOURCE",
+      "enum": { "enumId": "AnswerKeySource", "value": "source" },
       "retired": false
     },
     {
@@ -640,6 +653,16 @@
         "enumId": "DraftGenerationStrategy",
         "value": "deterministic_only"
       },
+      "retired": true
+    },
+    {
+      "id": "authoring.question-generation-strategy.deterministic-only",
+      "label": "只用確定性解析",
+      "codeName": "QuestionGenerationStrategy.DETERMINISTIC_ONLY",
+      "enum": {
+        "enumId": "QuestionGenerationStrategy",
+        "value": "deterministic_only"
+      },
       "retired": false
     },
     {
@@ -650,6 +673,16 @@
         "enumId": "DraftGenerationStrategy",
         "value": "hybrid_reasoning"
       },
+      "retired": true
+    },
+    {
+      "id": "authoring.question-generation-strategy.hybrid-reasoning",
+      "label": "解析加語言模型",
+      "codeName": "QuestionGenerationStrategy.HYBRID_REASONING",
+      "enum": {
+        "enumId": "QuestionGenerationStrategy",
+        "value": "hybrid_reasoning"
+      },
       "retired": false
     },
     {
@@ -657,6 +690,13 @@
       "label": "等待",
       "codeName": "DraftGenerationJobStatus.PENDING",
       "enum": { "enumId": "DraftGenerationJobStatus", "value": "pending" },
+      "retired": true
+    },
+    {
+      "id": "authoring.question-generation-job-status.pending",
+      "label": "等待",
+      "codeName": "QuestionGenerationJobStatus.PENDING",
+      "enum": { "enumId": "QuestionGenerationJobStatus", "value": "pending" },
       "retired": false
     },
     {
@@ -664,6 +704,13 @@
       "label": "執行中",
       "codeName": "DraftGenerationJobStatus.RUNNING",
       "enum": { "enumId": "DraftGenerationJobStatus", "value": "running" },
+      "retired": true
+    },
+    {
+      "id": "authoring.question-generation-job-status.running",
+      "label": "執行中",
+      "codeName": "QuestionGenerationJobStatus.RUNNING",
+      "enum": { "enumId": "QuestionGenerationJobStatus", "value": "running" },
       "retired": false
     },
     {
@@ -674,6 +721,16 @@
         "enumId": "DraftGenerationJobStatus",
         "value": "cancel_requested"
       },
+      "retired": true
+    },
+    {
+      "id": "authoring.question-generation-job-status.cancel-requested",
+      "label": "要求取消",
+      "codeName": "QuestionGenerationJobStatus.CANCEL_REQUESTED",
+      "enum": {
+        "enumId": "QuestionGenerationJobStatus",
+        "value": "cancel_requested"
+      },
       "retired": false
     },
     {
@@ -681,6 +738,13 @@
       "label": "已取消",
       "codeName": "DraftGenerationJobStatus.CANCELED",
       "enum": { "enumId": "DraftGenerationJobStatus", "value": "canceled" },
+      "retired": true
+    },
+    {
+      "id": "authoring.question-generation-job-status.canceled",
+      "label": "已取消",
+      "codeName": "QuestionGenerationJobStatus.CANCELED",
+      "enum": { "enumId": "QuestionGenerationJobStatus", "value": "canceled" },
       "retired": false
     },
     {
@@ -688,6 +752,13 @@
       "label": "成功",
       "codeName": "DraftGenerationJobStatus.SUCCEEDED",
       "enum": { "enumId": "DraftGenerationJobStatus", "value": "succeeded" },
+      "retired": true
+    },
+    {
+      "id": "authoring.question-generation-job-status.succeeded",
+      "label": "成功",
+      "codeName": "QuestionGenerationJobStatus.SUCCEEDED",
+      "enum": { "enumId": "QuestionGenerationJobStatus", "value": "succeeded" },
       "retired": false
     },
     {
@@ -696,6 +767,16 @@
       "codeName": "DraftGenerationJobStatus.SKIPPED_PROVIDER_UNAVAILABLE",
       "enum": {
         "enumId": "DraftGenerationJobStatus",
+        "value": "skipped_provider_unavailable"
+      },
+      "retired": true
+    },
+    {
+      "id": "authoring.question-generation-job-status.skipped-provider-unavailable",
+      "label": "供應者不能用而跳過",
+      "codeName": "QuestionGenerationJobStatus.SKIPPED_PROVIDER_UNAVAILABLE",
+      "enum": {
+        "enumId": "QuestionGenerationJobStatus",
         "value": "skipped_provider_unavailable"
       },
       "retired": false
@@ -708,6 +789,16 @@
         "enumId": "DraftGenerationJobStatus",
         "value": "skipped_missing_model"
       },
+      "retired": true
+    },
+    {
+      "id": "authoring.question-generation-job-status.skipped-missing-model",
+      "label": "模型不在而跳過",
+      "codeName": "QuestionGenerationJobStatus.SKIPPED_MISSING_MODEL",
+      "enum": {
+        "enumId": "QuestionGenerationJobStatus",
+        "value": "skipped_missing_model"
+      },
       "retired": false
     },
     {
@@ -715,6 +806,13 @@
       "label": "失敗",
       "codeName": "DraftGenerationJobStatus.FAILED",
       "enum": { "enumId": "DraftGenerationJobStatus", "value": "failed" },
+      "retired": true
+    },
+    {
+      "id": "authoring.question-generation-job-status.failed",
+      "label": "失敗",
+      "codeName": "QuestionGenerationJobStatus.FAILED",
+      "enum": { "enumId": "QuestionGenerationJobStatus", "value": "failed" },
       "retired": false
     },
     {
@@ -722,6 +820,13 @@
       "label": "排隊",
       "codeName": "ManualDraftOperationStatus.QUEUED",
       "enum": { "enumId": "ManualDraftOperationStatus", "value": "queued" },
+      "retired": true
+    },
+    {
+      "id": "authoring.manual-question-generation-status.queued",
+      "label": "排隊",
+      "codeName": "ManualQuestionGenerationStatus.QUEUED",
+      "enum": { "enumId": "ManualQuestionGenerationStatus", "value": "queued" },
       "retired": false
     },
     {
@@ -729,6 +834,13 @@
       "label": "執行中",
       "codeName": "ManualDraftOperationStatus.RUNNING",
       "enum": { "enumId": "ManualDraftOperationStatus", "value": "running" },
+      "retired": true
+    },
+    {
+      "id": "authoring.manual-question-generation-status.running",
+      "label": "執行中",
+      "codeName": "ManualQuestionGenerationStatus.RUNNING",
+      "enum": { "enumId": "ManualQuestionGenerationStatus", "value": "running" },
       "retired": false
     },
     {
@@ -739,6 +851,16 @@
         "enumId": "ManualDraftOperationStatus",
         "value": "cancel_requested"
       },
+      "retired": true
+    },
+    {
+      "id": "authoring.manual-question-generation-status.cancel-requested",
+      "label": "要求取消",
+      "codeName": "ManualQuestionGenerationStatus.CANCEL_REQUESTED",
+      "enum": {
+        "enumId": "ManualQuestionGenerationStatus",
+        "value": "cancel_requested"
+      },
       "retired": false
     },
     {
@@ -746,6 +868,13 @@
       "label": "已取消",
       "codeName": "ManualDraftOperationStatus.CANCELED",
       "enum": { "enumId": "ManualDraftOperationStatus", "value": "canceled" },
+      "retired": true
+    },
+    {
+      "id": "authoring.manual-question-generation-status.canceled",
+      "label": "已取消",
+      "codeName": "ManualQuestionGenerationStatus.CANCELED",
+      "enum": { "enumId": "ManualQuestionGenerationStatus", "value": "canceled" },
       "retired": false
     },
     {
@@ -753,6 +882,13 @@
       "label": "成功",
       "codeName": "ManualDraftOperationStatus.SUCCEEDED",
       "enum": { "enumId": "ManualDraftOperationStatus", "value": "succeeded" },
+      "retired": true
+    },
+    {
+      "id": "authoring.manual-question-generation-status.succeeded",
+      "label": "成功",
+      "codeName": "ManualQuestionGenerationStatus.SUCCEEDED",
+      "enum": { "enumId": "ManualQuestionGenerationStatus", "value": "succeeded" },
       "retired": false
     },
     {
@@ -760,6 +896,13 @@
       "label": "失敗",
       "codeName": "ManualDraftOperationStatus.FAILED",
       "enum": { "enumId": "ManualDraftOperationStatus", "value": "failed" },
+      "retired": true
+    },
+    {
+      "id": "authoring.manual-question-generation-status.failed",
+      "label": "失敗",
+      "codeName": "ManualQuestionGenerationStatus.FAILED",
+      "enum": { "enumId": "ManualQuestionGenerationStatus", "value": "failed" },
       "retired": false
     },
     {

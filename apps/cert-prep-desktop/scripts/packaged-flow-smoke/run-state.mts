@@ -20,8 +20,8 @@ export function createSmokeRunState(
     processBaseline: { all: [], nodePids: new Set() },
     projectApi: null,
     uploadedDocument: null,
-    streamingDraftParseStartedAt: null,
-    streamingDraftCaptureOpen: false,
-    streamingApiPollErrorCaptured: false,
+    questionObservationStartedAt: null,
+    questionObservationActive: false,
+    questionGenerationApiPollErrorCaptured: false,
   };
 }

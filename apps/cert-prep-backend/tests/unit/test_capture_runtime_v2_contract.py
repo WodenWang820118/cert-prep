@@ -1260,9 +1260,9 @@ def test_structuring_open_uses_route_identity_and_header_idempotency() -> None:
                 "digest": "sha256:" + "d" * 64,
                 "device": "cuda", "deviceName": "RTX 4060",
             },
-            "schemaDialect": "https://json-schema.org/draft/2020-12/schema",
+            "schemaDialect": "https://json-schema.org/question/2020-12/schema",
         },
-        "schemaDialect": "https://json-schema.org/draft/2020-12/schema",
+        "schemaDialect": "https://json-schema.org/question/2020-12/schema",
     })
     calls = []
 

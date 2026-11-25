@@ -6,23 +6,22 @@ from collections.abc import Sequence
 
 import pytest
 
-from cert_prep_backend.authoring.domain.draft import QuestionDraft
+from cert_prep_backend.authoring.domain.question import Question
 from cert_prep_backend.bootstrap.practice_reads import (
     DocumentMembership,
-    DraftsAsPracticeQuestions,
+    AuthoringPracticeQuestions,
     ProjectExistence,
 )
 from cert_prep_backend.platform.errors import NotFoundError
-from cert_prep_backend.practice.application.ports import DraftedQuestion
-from cert_prep_backend.practice.domain.session import QuestionDraftStatus
+from cert_prep_backend.practice.application.ports import PracticeSourceQuestion
 from cert_prep_backend.projects.domain.project import Project, ProjectName
 
 
-def _draft(
-    draft_id: str, *, status: str = "approved", answer_key_source: object = "manual"
-) -> QuestionDraft:
-    return QuestionDraft(
-        id=draft_id,
+def _question(
+    question_id: str, *, answer_key_source: object = "manual"
+) -> Question:
+    return Question(
+        id=question_id,
         project_id="project",
         document_id="document",
         chunk_id=None,
@@ -42,31 +41,29 @@ def _draft(
         item_kind="unknown",
         group_key=None,
         group_prompt=None,
-        status=status,
-        rejection_reason=None,
         created_at="t1",
         updated_at="t1",
     )
 
 
-class DraftRepository:
-    def __init__(self, drafts: list[QuestionDraft]) -> None:
-        self.drafts = drafts
-        self.approved_document_id: str | None = None
+class QuestionRepository:
+    def __init__(self, questions: list[Question]) -> None:
+        self.questions = questions
+        self.source_document_id: str | None = None
 
-    def approved(self, project_id: str, *, document_id: str | None) -> list[QuestionDraft]:
+    def for_source(self, project_id: str, *, document_id: str | None) -> list[Question]:
         assert project_id == "project"
-        self.approved_document_id = document_id
-        return self.drafts
+        self.source_document_id = document_id
+        return self.questions
 
-    def find(self, project_id: str, draft_id: str) -> QuestionDraft | None:
+    def find(self, project_id: str, question_id: str) -> Question | None:
         assert project_id == "project"
-        return next((draft for draft in self.drafts if draft.id == draft_id), None)
+        return next((authored_question for authored_question in self.questions if authored_question.id == question_id), None)
 
-    def find_many(self, project_id: str, draft_ids: Sequence[str]) -> list[QuestionDraft]:
+    def find_many(self, project_id: str, question_ids: Sequence[str]) -> list[Question]:
         assert project_id == "project"
-        by_id = {draft.id: draft for draft in self.drafts}
-        return [by_id[draft_id] for draft_id in draft_ids if draft_id in by_id]
+        by_id = {authored_question.id: authored_question for authored_question in self.questions}
+        return [by_id[question_id] for question_id in question_ids if question_id in by_id]
 
 
 class Projects:
@@ -111,47 +108,45 @@ def test_document_membership_requires_the_source_document() -> None:
     DocumentMembership(Documents(found=True)).require("project", "document")
 
 
-def test_drafts_are_read_as_practice_questions_without_reordering() -> None:
-    first, second = _draft("second"), _draft("first")
-    repository = DraftRepository([first, second])
-    questions = DraftsAsPracticeQuestions(repository)
+def test_questions_are_read_as_practice_questions_without_reordering() -> None:
+    first, second = _question("second"), _question("first")
+    repository = QuestionRepository([first, second])
+    questions = AuthoringPracticeQuestions(repository)
 
-    approved = questions.approved("project", document_id="document")
-    assert [draft.id for draft in approved] == ["second", "first"]
-    assert repository.approved_document_id == "document"
+    source_questions = questions.for_source("project", document_id="document")
+    assert [authored_question.id for authored_question in source_questions] == ["second", "first"]
+    assert repository.source_document_id == "document"
     assert questions.current("project", "missing") is None
     assert questions.current_many("project", ["missing", "first"])[0].id == "first"
 
 
-def test_a_draft_standing_in_for_a_snapshot_stays_approved() -> None:
-    drafted = DraftedQuestion(
-        id="draft",
+def test_a_question_standing_in_for_a_snapshot_preserves_evidence() -> None:
+    source_question = PracticeSourceQuestion(
+        id="question",
         choices=("A", "B"),
         correct_answer="A",
         question="Q?",
-        status="retired",
         rationale=None,
         citation_page=1,
         source_excerpt=None,
         document_id="document",
-        answer_key_source="pdf",
+        answer_key_source="source",
     )
 
-    shown = drafted.as_question(keep_status=False)
-    current = DraftsAsPracticeQuestions(DraftRepository([_draft("draft")])).current(
-        "project", "draft"
+    shown = source_question.as_question()
+    current = AuthoringPracticeQuestions(QuestionRepository([_question("question")])).current(
+        "project", "question"
     )
 
-    assert shown.status is QuestionDraftStatus.APPROVED
-    assert shown.answer_key_source == "pdf"
-    assert current is not None and current.status == "approved"
-    assert current.as_question(keep_status=True).document_id == "document"
+    assert shown.answer_key_source == "source"
+    assert current is not None
+    assert current.as_question().document_id == "document"
 
 
 def test_a_non_text_answer_key_source_is_left_out() -> None:
-    drafted = DraftsAsPracticeQuestions(
-        DraftRepository([_draft("draft", answer_key_source=None)])
-    ).current("project", "draft")
+    source_question = AuthoringPracticeQuestions(
+        QuestionRepository([_question("question", answer_key_source=None)])
+    ).current("project", "question")
 
-    assert drafted is not None
-    assert drafted.answer_key_source is None
+    assert source_question is not None
+    assert source_question.answer_key_source is None

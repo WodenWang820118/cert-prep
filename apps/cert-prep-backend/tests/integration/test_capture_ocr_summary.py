@@ -471,9 +471,9 @@ class ForbiddenProvider:
         self.calls.append("health")
         raise AssertionError("OCR summary route must not inspect the provider.")
 
-    def generate_drafts(self, *_args, **_kwargs) -> list[object]:
-        self.calls.append("generate_drafts")
-        raise AssertionError("OCR summary route must not generate drafts.")
+    def write_questions(self, *_args, **_kwargs) -> list[object]:
+        self.calls.append("write_questions")
+        raise AssertionError("OCR summary route must not generate questions.")
 
     def generate_structured_json(self, *_args, **_kwargs) -> str:
         self.calls.append("generate_structured_json")
@@ -488,7 +488,7 @@ def _app(tmp_path: Path, runtime: RecordingOcrRuntime):
         capture_runtime_client=runtime,
         document_processing_async_jobs=False,
         llm_installation_async_jobs=False,
-        streaming_draft_generation_async_jobs=False,
+        background_question_jobs=False,
     )
     provider.calls.clear()
     runtime.calls.clear()

@@ -32,5 +32,5 @@ Backend coordinator tests cover audio routing, raw provenance, cancellation,
 retry, timeout, unavailable runtime and translation mapping. A real run must use
 the published Capture Runtime and check source-language transcript retention and the
 Traditional Chinese translation separately. The installed-app transcription
-journey, through the Build page's source-library import, is still pending
+journey, through the Questions page's source-library import, is still pending
 ([TODO](../../TODOS/capture-workbench-cert-prep-pdf.md)).

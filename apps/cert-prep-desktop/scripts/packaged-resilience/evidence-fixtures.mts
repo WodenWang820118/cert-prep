@@ -184,7 +184,7 @@ function validProof(
       latePublishObservationWindowMs: 2_000,
     };
   }
-  if (check === 'draft') {
+  if (check === 'question') {
     return {
       ...cancellationProof(
         {
@@ -198,7 +198,7 @@ function validProof(
         terminal,
         commitStartedAt,
       ),
-      manualDraftTerminalResponse: {
+      manualQuestionGenerationTerminalResponse: {
         id: 'operation-commit',
         project_id: projectId,
         document_id: documentId,
@@ -217,16 +217,16 @@ function validProof(
       },
       canceledState: {
         observationWindowMs: 2_000,
-        immediate: { usableDraftCount: 0 },
-        afterWindow: { usableDraftCount: 0 },
+        immediate: { usableQuestionCount: 0 },
+        afterWindow: { usableQuestionCount: 0 },
       },
       uploadTriggeredJobs: {
         jobCount: 2,
         statuses: ['skipped_missing_model', 'skipped_missing_model'],
-        usableDraftCount: 0,
+        usableQuestionCount: 0,
       },
-      usableDraftCountBeforeManual: 0,
-      usableDraftCountAfterManual: 2,
+      usableQuestionCountBeforeManual: 0,
+      usableQuestionCountAfterManual: 2,
     };
   }
   if (check === 'runtime') {
@@ -325,13 +325,13 @@ function validProof(
       projectId,
       documentId,
       operationId,
-      beforeCancel: { chunksCount: 2, nonZeroDerivedMetricCount: 3 },
+      beforeCancel: { chunksCount: 2, nonZeroDerivedMetricCount: 1, questionCount: 0 },
       afterCanceled: {
         chunksCount: 0,
         chunksEndpointItems: 0,
         hasText: false,
         processedPageCount: 0,
-        examItemCount: 0,
+        questionCount: 0,
       },
       originalPdfRetryable: true,
       latePublishSuppressed: true,

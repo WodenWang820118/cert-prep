@@ -24,13 +24,13 @@ import {
   EXPECTED_BASELINE_PAGES,
   FIRST_CHUNK_TEXT_PATTERN,
   observeFirstChunkVisibleFromParseStart,
-  observeStreamingDraftUiUntil,
+  observeQuestionGenerationUiUntil,
   recordFirstChunkVisible,
   refreshFirstChunkGateMetrics,
-  waitForStreamingJobsComplete,
+  waitForQuestionJobsComplete,
   waitForUploadDocumentResponse,
-} from './streaming-capture.mts';
-import { FIRST_CHUNK_GATE_MS } from './streaming-evidence.mts';
+} from './question-generation-observer.mts';
+import { FIRST_CHUNK_GATE_MS } from './question-generation-evidence.mts';
 import { captureGenerationReadinessAtProjectCreate } from './generation-readiness.mts';
 import type { SmokeRunState } from './types.mts';
 
@@ -91,8 +91,8 @@ export async function uploadAndParsePdf(run: SmokeRunState): Promise<void> {
   run.metrics.ui_timings_ms.upload_to_processing_visible =
     Date.now() - uploadStart;
   const parseStart = Date.now();
-  run.streamingDraftParseStartedAt = parseStart;
-  run.streamingDraftCaptureOpen = true;
+  run.questionObservationStartedAt = parseStart;
+  run.questionObservationActive = true;
   const firstChunkObservation = observeFirstChunkVisibleFromParseStart(
     run,
     parseStart,
@@ -103,11 +103,11 @@ export async function uploadAndParsePdf(run: SmokeRunState): Promise<void> {
     run.uploadedDocument = uploadedDocument;
     if (uploadedDocument) {
       run.metrics.observations.push(
-        `Captured upload document reference for streaming API polling: ${uploadedDocument.documentId}.`,
+        `Captured upload document reference for question generation API polling: ${uploadedDocument.documentId}.`,
       );
     } else {
       run.metrics.observations.push(
-        'Upload document response was not captured; streaming evidence is limited to UI/API responses.',
+        'Upload document response was not captured; question generation evidence is limited to UI/API responses.',
       );
     }
     await screenshot(run, 'parsing-started');
@@ -135,7 +135,7 @@ export async function uploadAndParsePdf(run: SmokeRunState): Promise<void> {
       run.metrics.ui_timings_ms.parse_complete_visible =
         Date.now() - parseStart;
     });
-    await observeStreamingDraftUiUntil(
+    await observeQuestionGenerationUiUntil(
       run,
       parseStart,
       parseCompletePromise,
@@ -157,14 +157,14 @@ export async function uploadAndParsePdf(run: SmokeRunState): Promise<void> {
       await captureDocumentOcrEvidence(run, uploadedDocument);
       await captureLlmHealth(run, uploadedDocument);
     }
-    if (run.options.waitForStreamingComplete) {
+    if (run.options.waitForQuestionJobs) {
       if (!uploadedDocument) {
         throw new Error(
-          'Cannot wait for streaming completion without upload API reference.',
+          'Cannot wait for question generation completion without upload API reference.',
         );
       }
       try {
-        await waitForStreamingJobsComplete(run, uploadedDocument, parseStart);
+        await waitForQuestionJobsComplete(run, uploadedDocument, parseStart);
       } catch (error) {
         await captureLlmHealth(run, uploadedDocument);
         throw error;
@@ -174,7 +174,7 @@ export async function uploadAndParsePdf(run: SmokeRunState): Promise<void> {
   } finally {
     firstChunkObservation.stop();
     await firstChunkObservation.done;
-    run.streamingDraftCaptureOpen = false;
+    run.questionObservationActive = false;
   }
   await screenshot(run, 'parsing-complete-with-metrics');
 }
@@ -207,7 +207,7 @@ export async function createAndEditQuestion(run: SmokeRunState): Promise<void> {
   const createStart = Date.now();
   await clickButtonText(run, 'Generate questions', { timeout: 120_000 });
   const generatedArticle = activePage(run)
-    .locator('app-draft-review-panel [data-testid="draft-question-card"]')
+    .locator('app-questions-panel [data-testid="question-card"]')
     .first();
   await generatedArticle.waitFor({ state: 'visible', timeout: 10 * 60_000 });
   const generatedQuestion = (
@@ -230,7 +230,7 @@ export async function createAndEditQuestion(run: SmokeRunState): Promise<void> {
   await screenshot(run, 'editable-question-created');
 
   const questionArticle = activePage(run)
-    .locator('app-draft-review-panel article')
+    .locator('app-questions-panel article')
     .filter({ hasText: generatedQuestion })
     .first();
   const editButton = questionArticle
@@ -250,7 +250,7 @@ export async function createAndEditQuestion(run: SmokeRunState): Promise<void> {
   });
 
   const editingArticle = activePage(run)
-    .locator('app-draft-review-panel article')
+    .locator('app-questions-panel article')
     .first();
   await editingArticle.locator('textarea').first().waitFor({
     state: 'visible',
@@ -291,10 +291,10 @@ export async function createAndEditQuestion(run: SmokeRunState): Promise<void> {
   await screenshot(run, 'editable-question-saved');
 }
 
-export async function verifyStreamingPracticeReady(
+export async function verifyGeneratedQuestionsPracticeReady(
   run: SmokeRunState,
 ): Promise<void> {
-  const parseStart = run.streamingDraftParseStartedAt ?? Date.now();
+  const parseStart = run.questionObservationStartedAt ?? Date.now();
   await clickButtonPattern(run, /^\s*Whole source\s*$/);
   await waitText(
     run,
@@ -313,7 +313,7 @@ export async function verifyStreamingPracticeReady(
     if (await startButton.isEnabled()) {
       run.metrics.ui_timings_ms.practice_ready_visible_ms =
         Date.now() - parseStart;
-      await screenshot(run, 'streaming-practice-ready');
+      await screenshot(run, 'question-generation-practice-ready');
       const [wholeSourceQuestionCount] = await Promise.all([
         captureWholeSourceSessionCreate(run),
         startButton.click({ timeout: 30_000 }),
@@ -327,8 +327,8 @@ export async function verifyStreamingPracticeReady(
       );
       run.metrics.ui_timings_ms.practice_first_question_visible_ms =
         Date.now() - parseStart;
-      run.metrics.practice_ready_from_streamed_questions = true;
-      await screenshot(run, 'streaming-practice-first-question');
+      run.metrics.practice_ready_from_generated_questions = true;
+      await screenshot(run, 'question-generation-practice-first-question');
       return;
     }
     await delay(500);
@@ -365,7 +365,7 @@ export async function runWholeSourceWrongAnswer(
   // provider. Its answer is part of that provider's contract, so avoid a
   // second API round-trip here and keep the wrong-answer assertion focused on
   // the packaged practice flow. Non-fake smoke runs still resolve the answer
-  // from the persisted draft API.
+  // from the persisted question API.
   const correctAnswer = isFakeProvider
     ? 'Apply the cited concept'
     : await answerForVisiblePracticeQuestion(run, questionText);

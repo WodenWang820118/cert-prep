@@ -37,7 +37,7 @@ for commands and compatibility.
 
 ## Acceptance Criteria
 
-- Project, health, document, draft, active-session, and wrong-answer reads use
+- Project, health, document, question, active-session, and wrong-answer reads use
   `httpResource` rather than Promise aggregation in their query path.
 - Generated route encoding and existing Promise client behavior remain intact.
 - Auth, config failure, abort, loading, reload, partial failure, and stale

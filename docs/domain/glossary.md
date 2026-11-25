@@ -58,8 +58,8 @@
 
 | 中文             | 程式名稱                      | 意思                                                            |
 | ---------------- | ----------------------------- | --------------------------------------------------------------- |
-| 題目草稿         | `QuestionDraft`               | 由段落產生或手動建立、可以編修的選擇題                          |
-| 手寫草稿         | `NewQuestionDraft`            | 學習者自己寫的題目；引用出處時教材與段落要一起給                |
+| 題目         | `Question`               | 由段落產生或手動建立、可以編修的選擇題                          |
+| 手寫題目         | `NewQuestion`            | 學習者自己寫的題目；引用出處時教材與段落要一起給                |
 | 漢字讀音片段     | `ReadingSpan`                 | 詞典提供的題幹原文片段與平假名讀音                              |
 | 讀音解答         | `ReadingSolution`             | 唯一讀音相符的選項、原文片段、讀音與固定的繁體中文解說          |
 | 讀音詞典         | `ReadingLexicon`              | 提供題幹內含漢字片段讀音的 application port                      |
@@ -67,26 +67,27 @@
 | 題目收錄         | `QuestionAdmission`           | 一題抽出題目的收錄結果：清理後的題幹，或拒收原因                  |
 | 拒收原因         | `AdmissionRejection`          | 抽出題目未被收錄的原因代碼；只記錄與量測，不進 API                |
 | 讀音題節規則     | `section_asks_for_reading`     | 題目前同段落的指示含「読み方」或「よみかた」才可使用讀音詞典    |
-| 題節指示         | `section_instruction`         | 同段落中題目前最近的題節指示，只在解析與草稿建議內部傳遞        |
-| 草稿編修         | `DraftEdit`                   | 學習者對草稿的修正；只改有給的欄位，出處與狀態不變              |
-| 草稿狀態         | `DraftStatus`                 | 草稿是否已核可；產生與手寫的草稿都直接核可                      |
+| 題節指示         | `section_instruction`         | 同段落中題目前最近的題節指示，只在解析與題目建議內部傳遞        |
+| 題目編修         | `QuestionEdit`                   | 學習者對題目的修正；只改有給的欄位，出處不變              |
 | 答案來源         | `AnswerKeySource`             | 答案由學習者給、教材上的答案，或模型推論                        |
-| 草稿來源段落     | `SourceChunk`                 | 交給寫草稿者的一段教材文字、頁碼與內容類型                      |
-| 草稿建議         | `DraftSuggestion`             | 寫草稿者寫出、還沒存成草稿的一題                                |
-| 待檢查的解析題   | `UnavailableDraftBlock`       | 解析到但沒能補完答案的題目，保留下來讓學習者檢查                |
-| 產生結果         | `DraftGenerationResult`       | 一次產生得到的草稿建議與待檢查的解析題                          |
-| 產生策略         | `DraftGenerationStrategy`     | 只用確定性解析，或解析加上語言模型                              |
-| 寫草稿者         | `DraftGenerationProvider`     | 把段落寫成題目草稿的介面；`draft_writer_for` 依設定的供應者挑選 |
-| 推理寫草稿       | `ReasoningDraftProvider`      | 請模型從段落找出完整的選擇題                                    |
-| 快速首題         | `FastFirstDraftProvider`      | 請模型為一題解析到的題目補上答案與解說                          |
-| Ollama 寫草稿者  | `OllamaDraftWriter`           | 經 JSON 對話請 Ollama 補答案與解說、或找出解析不到的題目        |
-| 佔位草稿寫草稿者 | `PlaceholderDraftWriter`      | 假供應者用的固定草稿，讓 app 與測試不需要模型也能跑             |
-| 產生工作         | `DraftGenerationJob`          | 匯入教材後，為一個段落產生題目的背景工作（每個段落與策略一個）  |
-| 產生工作狀態     | `DraftGenerationJobStatus`    | 等待、執行中、要求取消、已取消、成功、因模型或供應者跳過、失敗  |
-| 手動產生作業     | `ManualDraftOperation`        | 學習者要求為整份教材產生題目；同一份教材同時只有一個進行中      |
-| 手動產生作業狀態 | `ManualDraftOperationStatus`  | 排隊、執行中、要求取消、已取消、成功、失敗                      |
-| 產生已取消       | `DraftJobCanceledError`       | 取消在開始提交前發生；產生的草稿不寫入                          |
-| 產生不能取消     | `DraftJobNotCancellableError` | 已經開始提交草稿，不能再取消                                    |
+| 題目來源段落     | `SourceChunk`                 | 交給題目編寫器的一段教材文字、頁碼與內容類型                      |
+| 題目建議         | `QuestionSuggestion`             | 題目編寫器寫出、尚未儲存的一題                                |
+| 待檢查的解析題   | `UnavailableQuestionBlock`       | 解析到但沒能補完答案的題目，保留下來讓學習者檢查                |
+| 產生結果         | `QuestionGenerationResult`       | 一次產生得到的題目建議與待檢查的解析題                          |
+| 產生策略         | `QuestionGenerationStrategy`     | 只用確定性解析，或解析加上語言模型                              |
+| 題目編寫器         | `QuestionWriter`     | 把段落寫成題目的介面；`question_writer_for` 依設定的供應者挑選 |
+| 推理寫題目       | `ReasoningQuestionWriter`      | 請模型從段落找出完整的選擇題                                    |
+| 快速首題         | `FastFirstQuestionWriter`      | 請模型為一題解析到的題目補上答案與解說                          |
+| Ollama 題目編寫器  | `OllamaQuestionWriter`           | 經 JSON 對話請 Ollama 補答案與解說、或找出解析不到的題目        |
+| 預設題目編寫器 | `PlaceholderQuestionWriter`      | 假供應者用的固定題目，讓 app 與測試不需要模型也能跑             |
+| 產生工作         | `QuestionGenerationJob`          | 匯入教材後，為一個段落產生題目的背景工作（每個段落與策略一個）  |
+| 背景題目工作排程 | `QuestionJobScheduler`、`QuestionJobWork` | 擷取後安排及執行題目產生工作；工作本身不串流 |
+| 教材題目數 | `DocumentQuestionCount`、`question_count` | 記錄教材題目數與狀態的介面，以及 API 的題目數欄位；題目數一律是教材所有題目的總數 |
+| 產生工作狀態     | `QuestionGenerationJobStatus`    | 等待、執行中、要求取消、已取消、成功、因模型或供應者跳過、失敗  |
+| 手動產生作業     | `ManualQuestionGeneration`        | 學習者要求為整份教材產生題目；同一份教材同時只有一個進行中      |
+| 手動產生作業狀態 | `ManualQuestionGenerationStatus`  | 排隊、執行中、要求取消、已取消、成功、失敗                      |
+| 產生已取消       | `QuestionJobCanceledError`       | 取消在開始提交前發生；產生的題目不寫入                          |
+| 產生不能取消     | `QuestionJobNotCancellableError` | 已經開始提交題目，不能再取消                                    |
 
 ## 練習與複習
 
@@ -99,8 +100,7 @@
 | 隨機抽題 | Random draw | `/random-draw`，從可練習題目中隨機抽題 |
 | 錯題重練 | Wrong-answer retry | `/wrong-answer-retry`，重練目前的錯題 |
 | 錯題總覽 | Wrong-answer summary | `/wrong-answers/summary`，顯示錯題統計與弱點 |
-| 練習題目     | `PracticeQuestion`        | 練習問的一題：開始時的快照，之後改草稿不影響已開始的練習           |
-| 草稿狀態     | `QuestionDraftStatus`     | 練習只用已核可的草稿                                               |
+| 練習題目     | `PracticeQuestion`        | 練習問的一題：開始時的快照，之後改題目不影響已開始的練習           |
 | 選題         | `QuestionSelection`       | 新練習問哪些題、題數，以及隨機抽題的種子                           |
 | 作答         | `PracticeAttempt`         | 對一題的一次作答與對錯                                             |
 | 作答紀錄     | `AnsweredQuestion`        | 一次作答與當時問的題目；專案的作答紀錄由新到舊排列                 |
@@ -124,8 +124,8 @@
 | 模型下載           | `ModelDownloadProvider`                    | 使用者確認後下載設定的模型                                     |
 | 模型上線檢查       | `ModelOnboardingProvider`                  | 下載前檢查執行環境、下載後確認模型能回應                       |
 | 產生歸屬           | `GenerationAttributionProvider`            | 最近一次成功的產生實際用了哪個供應者與模型                     |
-| 釋放資源           | `ResourceReleasingProvider`                | 串流產生工作結束後讓模型卸載                                   |
-| 串流參數           | `StreamingGenerationOptionsProvider`       | 串流產生時供應者自己的呼叫參數，例如用完就卸載模型             |
+| 釋放資源           | `ResourceReleasingProvider`                | 背景產生工作結束後讓模型卸載                                   |
+| 背景產生參數           | `BackgroundGenerationOptionsProvider`       | 背景產生時供應者自己的呼叫參數，例如用完就卸載模型             |
 | 產生時才啟動       | `StartsOnGenerationProvider`               | 產生時才啟動還沒執行的供應者執行環境                           |
 | 需要安裝的執行環境 | `LLMInstallationProvider`              | 供應者需要在本機安裝的執行環境（Ollama）                       |
 | 延遲建立的供應者   | `LazyLLMProvider`                          | 第一次用到時才依設定建立的供應者                               |

@@ -19,87 +19,85 @@ from cert_prep_backend.practice.domain.attempt import PracticeAttempt
 from cert_prep_backend.practice.domain.session import (
     PracticeQuestion,
     PracticeSession,
-    QuestionDraftStatus,
 )
 from cert_prep_backend.practice.infrastructure.repository import SqlitePracticeStore
 from cert_prep_backend.projects.infrastructure.repository import SqliteProjectRepository
-from cert_prep_backend.bootstrap.authoring_links import question_draft_repository
+from cert_prep_backend.bootstrap.authoring_links import question_repository
 
 
 class _LeaveUncommitted(Exception):
     """Stops the practice unit of work so its transaction rolls back."""
 
 
-def test_approved_questions_use_id_order_or_document_source_order(tmp_path: Path) -> None:
+def test_source_questions_use_id_order_or_document_source_order(tmp_path: Path) -> None:
     database = _database(tmp_path)
     store = _store(database)
     with database.connect() as connection:
         _project(connection, "proj")
         _document(connection, "proj", "doc-1")
         _document(connection, "proj", "doc-2")
-        _draft(
-            connection, draft_id="a", project_id="proj", document_id="doc-1",
+        _question(
+            connection, question_id="a", project_id="proj", document_id="doc-1",
             source_order=2, citation_page=9, created_at="t9",
         )
-        _draft(
-            connection, draft_id="b", project_id="proj", document_id="doc-1",
+        _question(
+            connection, question_id="b", project_id="proj", document_id="doc-1",
             source_order=1, citation_page=1, created_at="t0",
         )
-        _draft(
-            connection, draft_id="c", project_id="proj", document_id="doc-1",
+        _question(
+            connection, question_id="c", project_id="proj", document_id="doc-1",
             source_order=None, citation_page=5, created_at="t0",
         )
-        _draft(
-            connection, draft_id="d", project_id="proj", document_id="doc-1",
+        _question(
+            connection, question_id="d", project_id="proj", document_id="doc-1",
             source_order=None, citation_page=1, created_at="t9",
         )
-        _draft(
-            connection, draft_id="e", project_id="proj", document_id="doc-1",
-            status="rejected", source_order=0, created_at="t0",
+        _question(
+            connection, question_id="e", project_id="proj", document_id="doc-1",
+            source_order=0, created_at="t0",
         )
-        _draft(
-            connection, draft_id="f", project_id="proj", document_id="doc-2",
+        _question(
+            connection, question_id="f", project_id="proj", document_id="doc-2",
             source_order=1, created_at="t0",
         )
 
     with store.reading() as practice:
-        assert _ids(practice.approved_questions("proj", document_id=None)) == [
-            "a", "b", "c", "d", "f",
+        assert _ids(practice.source_questions("proj", document_id=None)) == [
+            "a", "b", "c", "d", "e", "f",
         ]
-        document_questions = practice.approved_questions("proj", document_id="doc-1")
-        assert _ids(document_questions) == ["b", "a", "d", "c"]
-        assert document_questions[0].status is QuestionDraftStatus.APPROVED
+        document_questions = practice.source_questions("proj", document_id="doc-1")
+        assert _ids(document_questions) == ["e", "b", "a", "d", "c"]
 
 
-def test_session_and_history_keep_snapshot_text_and_the_draft_answer_key(tmp_path: Path) -> None:
+def test_session_and_history_keep_snapshot_text_and_the_question_answer_key(tmp_path: Path) -> None:
     database = _database(tmp_path)
     store = _store(database)
     with database.connect() as connection:
         _project(connection, "proj")
         _document(connection, "proj", "doc")
-        _draft(
-            connection, draft_id="coalesce", project_id="proj", document_id="doc",
-            question="draft coalesce", rationale="draft why",
+        _question(
+            connection, question_id="coalesce", project_id="proj", document_id="doc",
+            question="question coalesce", rationale="question why",
         )
-        _draft(
-            connection, draft_id="kept", project_id="proj", document_id="doc",
-            question="draft kept", answer_key_source="pdf",
+        _question(
+            connection, question_id="kept", project_id="proj", document_id="doc",
+            question="question kept", answer_key_source="source",
         )
-        _draft(
-            connection, draft_id="retired", project_id="proj", document_id="doc",
-            status="retired", question="draft retired", rationale="retired why",
-            answer_key_source="pdf",
+        _question(
+            connection, question_id="retired", project_id="proj", document_id="doc",
+            question="question retired", rationale="retired why",
+            answer_key_source="source",
         )
-        _draft(
-            connection, draft_id="bare", project_id="proj", document_id="doc",
+        _question(
+            connection, question_id="bare", project_id="proj", document_id="doc",
             question="bare question", rationale="",
         )
-        _draft(
-            connection, draft_id="outside", project_id="proj", document_id="doc",
+        _question(
+            connection, question_id="outside", project_id="proj", document_id="doc",
             question="outside question", rationale="playable why", citation_page=2,
         )
-        _draft(
-            connection, draft_id="unplayable-outside", project_id="proj", document_id="doc",
+        _question(
+            connection, question_id="unplayable-outside", project_id="proj", document_id="doc",
             question="unplayable outside", rationale="",
         )
 
@@ -132,8 +130,8 @@ def test_session_and_history_keep_snapshot_text_and_the_draft_answer_key(tmp_pat
         practice.add_attempt(_attempt("attempt-retired", "retired", created_at="t2"))
         practice._connection.execute(
             """
-            UPDATE question_drafts
-            SET answer_key_source = 'pdf', question = 'edited coalesce',
+            UPDATE questions
+            SET answer_key_source = 'source', question = 'edited coalesce',
                 rationale = 'edited why'
             WHERE id = 'coalesce'
             """
@@ -153,23 +151,21 @@ def test_session_and_history_keep_snapshot_text_and_the_draft_answer_key(tmp_pat
         assert shown["snap-only"].rationale is None
         assert shown["snap-only"].document_id == "snap-doc"
         assert shown["snap-only"].answer_key_source is None
-        assert shown["snap-only"].status is QuestionDraftStatus.APPROVED
 
         assert shown["coalesce"].question == "snapshot coalesce"
         assert shown["coalesce"].correct_answer == "B"
         assert shown["coalesce"].rationale is None
         assert shown["coalesce"].citation_page == 8
         assert shown["coalesce"].document_id == "doc"
-        assert shown["coalesce"].answer_key_source == "pdf"
+        assert shown["coalesce"].answer_key_source == "source"
 
         assert shown["kept"].document_id == "kept-doc"
-        assert shown["kept"].answer_key_source == "pdf"
+        assert shown["kept"].answer_key_source == "source"
         assert shown["kept"].question == "snapshot kept"
 
-        assert shown["retired"].question == "draft retired"
+        assert shown["retired"].question == "question retired"
         assert shown["retired"].rationale == "retired why"
-        assert shown["retired"].status is QuestionDraftStatus.APPROVED
-        assert shown["retired"].answer_key_source == "pdf"
+        assert shown["retired"].answer_key_source == "source"
         assert shown["bare"].question == "bare question"
         assert shown["bare"].rationale == ""
 
@@ -178,32 +174,30 @@ def test_session_and_history_keep_snapshot_text_and_the_draft_answer_key(tmp_pat
         assert asked.question == "snapshot coalesce"
         assert asked.document_id is None
         assert asked.answer_key_source is None
-        assert asked.status is QuestionDraftStatus.APPROVED
 
         bare_asked = practice.question_for_answer(session, "bare")
         assert bare_asked is not None
         assert bare_asked.question == "bare question"
         assert bare_asked.rationale == ""
-        assert bare_asked.status is QuestionDraftStatus.APPROVED
         outside = practice.question_for_answer(session, "outside")
         assert outside is not None and outside.is_playable()
         assert practice.question_for_answer(session, "unplayable-outside") is None
 
         history = practice.answer_history("proj")
         assert [item.attempt.id for item in history] == ["attempt-retired", "attempt-coalesce"]
-        assert history[0].question.question == "draft retired"
-        assert history[0].question.status is QuestionDraftStatus.APPROVED
-        assert history[0].question.answer_key_source == "pdf"
+        assert history[0].question.question == "question retired"
+        assert history[0].question.answer_key_source == "source"
         assert history[1].question.question == "snapshot coalesce"
         assert history[1].question.rationale is None
         assert history[1].question.document_id == "doc"
         assert history[1].question.correct_answer == "B"
-        assert history[1].question.answer_key_source == "pdf"
+        assert history[1].question.answer_key_source == "source"
 
-        with pytest.raises(ValueError, match="retired"):
-            practice.question_for_answer(session, "retired")
-        with pytest.raises(ValueError, match="retired"):
-            practice.current_question("proj", "retired")
+        # Without a stored status, a question whose status was unknown is an ordinary one.
+        retired_asked = practice.question_for_answer(session, "retired")
+        assert retired_asked is not None and retired_asked.question == "question retired"
+        current = practice.current_question("proj", "retired")
+        assert current is not None and current.question == "question retired"
 
 
 def test_answer_history_since_is_the_latest_row_at_or_after_the_target(tmp_path: Path) -> None:
@@ -213,7 +207,7 @@ def test_answer_history_since_is_the_latest_row_at_or_after_the_target(tmp_path:
         _project(connection, "proj")
         _project(connection, "other")
         _document(connection, "proj", "doc")
-        _draft(connection, draft_id="q", project_id="proj", document_id="doc", question="draft q")
+        _question(connection, question_id="q", project_id="proj", document_id="doc", question="question q")
 
     question = _shown("q", question="snapshot q", document_id="doc", rationale="why")
     with store.writing() as practice:
@@ -259,14 +253,14 @@ def test_answer_history_since_is_the_latest_row_at_or_after_the_target(tmp_path:
         connection.execute(
             "DELETE FROM practice_session_questions WHERE session_id = 'session-a'"
         )
-        connection.execute("UPDATE question_drafts SET project_id = 'other' WHERE id = 'q'")
+        connection.execute("UPDATE questions SET project_id = 'other' WHERE id = 'q'")
 
     with store.reading() as practice:
         assert practice.answer_history_since("proj", "attempt-z") == []
         assert [item.attempt.id for item in practice.answer_history("proj")] == ["attempt-z"]
 
 
-def test_practice_transaction_sees_uncommitted_projects_and_drafts(tmp_path: Path) -> None:
+def test_practice_transaction_sees_uncommitted_projects_and_questions(tmp_path: Path) -> None:
     database = _database(tmp_path)
     store = _store(database)
     with pytest.raises(_LeaveUncommitted):
@@ -277,20 +271,20 @@ def test_practice_transaction_sees_uncommitted_projects_and_drafts(tmp_path: Pat
                 VALUES ('new-project', 'New', '', 't0', 't0')
                 """
             )
-            _draft(
+            _question(
                 practice._connection,
-                draft_id="draft-new",
+                question_id="question-new",
                 project_id="new-project",
                 document_id=None,
                 question="uncommitted",
             )
             _document(practice._connection, "new-project", "doc-new")
             assert practice.project_exists("new-project") is True
-            assert _ids(practice.approved_questions("new-project", document_id=None)) == [
-                "draft-new",
+            assert _ids(practice.source_questions("new-project", document_id=None)) == [
+                "question-new",
             ]
             assert SqliteProjectRepository(database).get("new-project") is None
-            assert question_draft_repository(database).approved(
+            assert question_repository(database).for_source(
                 "new-project", document_id=None
             ) == []
             with pytest.raises(NotFoundError, match="^Document not found.$"):
@@ -299,7 +293,7 @@ def test_practice_transaction_sees_uncommitted_projects_and_drafts(tmp_path: Pat
 
     with store.reading() as practice:
         assert practice.project_exists("new-project") is False
-        assert practice.approved_questions("new-project", document_id=None) == []
+        assert practice.source_questions("new-project", document_id=None) == []
 
 
 def test_require_document_accepts_a_committed_document_of_that_project(tmp_path: Path) -> None:
@@ -353,13 +347,12 @@ def _document(connection: Connection, project_id: str, document_id: str) -> None
     )
 
 
-def _draft(
+def _question(
     connection: Connection,
     *,
-    draft_id: str,
+    question_id: str,
     project_id: str,
     document_id: str | None,
-    status: str = "approved",
     source_order: int | None = None,
     citation_page: int | None = 1,
     created_at: str = "t0",
@@ -369,22 +362,21 @@ def _draft(
 ) -> None:
     connection.execute(
         """
-        INSERT INTO question_drafts(
+        INSERT INTO questions(
             id, project_id, document_id, question, choices_json, answer,
-            answer_key_source, rationale, citation_page, source_excerpt, status,
+            answer_key_source, rationale, citation_page, source_excerpt,
             source_order, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, '["A", "B"]', 'A', ?, ?, ?, 'excerpt', ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, '["A", "B"]', 'A', ?, ?, ?, 'excerpt', ?, ?, ?)
         """,
         (
-            draft_id,
+            question_id,
             project_id,
             document_id,
-            draft_id if question is None else question,
+            question_id if question is None else question,
             answer_key_source,
             rationale,
             citation_page,
-            status,
             source_order,
             created_at,
             created_at,

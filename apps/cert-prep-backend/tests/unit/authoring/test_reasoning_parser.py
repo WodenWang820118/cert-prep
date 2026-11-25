@@ -1,11 +1,11 @@
-"""Synthetic model response shapes must retain strict draft validation."""
+"""Synthetic model response shapes must retain strict question validation."""
 
 from dataclasses import replace
 
 import pytest
 
-from cert_prep_backend.authoring.domain.models import DraftSuggestion, SourceChunk
-from reasoning_test_support import draft_suggestion_from_item
+from cert_prep_backend.authoring.domain.models import QuestionSuggestion, SourceChunk
+from reasoning_test_support import question_suggestion_from_item
 
 
 @pytest.fixture
@@ -31,8 +31,8 @@ def item() -> dict[str, object]:
     }
 
 
-def _parse(item: dict[str, object], chunk: SourceChunk) -> DraftSuggestion | None:
-    return draft_suggestion_from_item(item, {chunk.page_number: chunk}, {chunk.id: chunk})
+def _parse(item: dict[str, object], chunk: SourceChunk) -> QuestionSuggestion | None:
+    return question_suggestion_from_item(item, {chunk.page_number: chunk}, {chunk.id: chunk})
 
 
 @pytest.mark.parametrize("alias", ["question_stem", "stem"])

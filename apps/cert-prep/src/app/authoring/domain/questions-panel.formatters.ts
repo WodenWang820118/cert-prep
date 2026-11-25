@@ -1,0 +1,95 @@
+import type {
+  QuestionEditValuesLike,
+  QuestionGenerationMessage,
+  QuestionGenerationMessageInput,
+  QuestionEditorViewModel,
+} from './questions-panel.contracts';
+
+export function formatQuestionGenerationMessage(
+  input: QuestionGenerationMessageInput,
+): QuestionGenerationMessage {
+  if (!input.sourceReady) {
+    return {
+      message: 'Add a source file with text before generating questions.',
+      tone: 'neutral',
+    };
+  }
+
+  if (input.hasGenerationError && input.hasQuestions) {
+    return {
+      message:
+        'Questions are ready to edit. Retry to prepare any missing questions.',
+      tone: 'warning',
+    };
+  }
+
+  if (input.hasGenerationError) {
+    return {
+      message: 'Could not prepare questions. Retry.',
+      tone: 'danger',
+    };
+  }
+
+  if (input.isPreparing) {
+    return {
+      message: 'Preparing questions...',
+      tone: 'info',
+    };
+  }
+
+  if (input.zeroQuestionsGenerated) {
+    return {
+      message:
+        'No questions were generated from this source. It has no recognizable multiple-choice questions, for example a listening transcript whose choices are spoken.',
+      tone: 'info',
+    };
+  }
+
+  if (input.hasQuestions && input.hasReviewEvidence) {
+    return {
+      message: 'Questions are ready to edit. Check the source evidence below.',
+      tone: 'warning',
+    };
+  }
+
+  if (input.hasQuestions) {
+    return {
+      message: 'Questions are ready to edit.',
+      tone: 'success',
+    };
+  }
+
+  if (input.sourceProcessing) {
+    return {
+      message: 'Preparing source content...',
+      tone: 'info',
+    };
+  }
+
+  return {
+    message: 'Source is ready. Generate questions when you are ready.',
+    tone: 'neutral',
+  };
+}
+
+export function formatChoiceKey(index: number): string {
+  let value = index + 1;
+  let key = '';
+  while (value > 0) {
+    value -= 1;
+    key = String.fromCharCode(65 + (value % 26)) + key;
+    value = Math.floor(value / 26);
+  }
+  return key;
+}
+
+export function cloneQuestionEdit(
+  edit: QuestionEditValuesLike,
+): QuestionEditorViewModel['edit'] {
+  return {
+    question: edit.question,
+    choices: [...edit.choices],
+    answer: edit.answer,
+    rationale: edit.rationale,
+  };
+}

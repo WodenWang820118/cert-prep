@@ -246,11 +246,11 @@ def _candidates(
 ) -> list[PracticeQuestion]:
     if mode is PracticeSessionMode.REVIEW_RETRY:
         return _retry_candidates(practice, project_id, wrong_attempt_ids)
-    approved = practice.approved_questions(
+    questions = practice.source_questions(
         project_id,
         document_id=document_id if mode is PracticeSessionMode.FULL_DOCUMENT else None,
     )
-    return [question for question in approved if question.is_playable()]
+    return [question for question in questions if question.is_playable()]
 
 
 def _retry_candidates(

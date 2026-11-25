@@ -4,9 +4,9 @@
 
 ## 負責與不負責
 
-負責：學習者上傳 PDF 或圖片後，請 Capture Runtime 擷取文字、在確認前檢閱、確認後寫成教材段落，並在有段落時排入題目草稿。也負責這個程序裡 runtime 的就緒、來源證明、需求與安裝。
+負責：學習者上傳 PDF 或圖片後，請 Capture Runtime 擷取文字、在確認前檢閱、確認後寫成教材段落，並在有段落時排入題目。也負責這個程序裡 runtime 的就緒、來源證明、需求與安裝。
 
-不負責：教材與段落怎麼存（教材來源）、題目草稿怎麼寫（題目編寫）、專案本身（學習專案）、Capture Runtime 的協定與傳輸。SDK 型別留在 infrastructure。不經檢閱的上傳屬教材來源（`import_document`），擷取整合只替它擷取文字。
+不負責：教材與段落怎麼存（教材來源）、題目怎麼寫（題目編寫）、專案本身（學習專案）、Capture Runtime 的協定與傳輸。SDK 型別留在 infrastructure。不經檢閱的上傳屬教材來源（`import_document`），擷取整合只替它擷取文字。
 
 ## 用語
 
@@ -27,7 +27,7 @@
 | 擷取背景工作          | `CaptureBackgroundWork`               | 把擷取與寫入排進背景                               |
 | 擷取檢閱事件          | `CaptureReviewEvents`                 | 叫醒事件串流：runtime 身份、可檢閱、結束           |
 | 擷取事件信號          | `CaptureEventSignal`                  | 一輪等待用的修訂號；不放在事件埠上                 |
-| 擷取後的題目草稿      | `CaptureQuestionDrafting`             | 寫入後為教材排入題目草稿                           |
+| 擷取後的題目      | `CaptureQuestionGeneration`             | 寫入後為教材排入題目                           |
 | runtime 設定          | `CaptureRuntimeSetup`                 | 就緒、來源證明、需求與安裝；結果保持不透明         |
 | 上傳佔用              | `CaptureUploadClaim`                  | 這次請求有沒有佔到作業 id                          |
 | 已排入的確認          | `QueuedCaptureCommit`                 | 確認已完成而重播，或已排進背景寫入                 |
@@ -142,7 +142,7 @@ stateDiagram-v2
 | 放棄上傳              | `abandon_capture_upload`      | 建立失敗時把作業標成失敗；已有檢閱才結束檢閱      |
 | 擷取以供檢閱          | `extract_capture_for_review`  | 背景執行擷取；取消、缺需求與失敗各有收尾          |
 | 確認擷取檢閱          | `commit_capture_review`       | 比對候選與請求，佔用檢閱，並排入寫入              |
-| 寫入已確認的擷取      | `publish_reviewed_capture`    | 背景寫入教材；有段落才排題目草稿                  |
+| 寫入已確認的擷取      | `publish_reviewed_capture`    | 背景寫入教材；有段落才排題目                  |
 | 回報結構化失敗        | `report_structuring_failure`  | 不再進行中就重播，否則記下失敗                    |
 | 取消擷取檢閱          | `cancel_capture_review`       | 取消進行中的檢閱與 runtime 作業                   |
 | 丟棄 runtime 擷取     | `discard_capture_runtime`     | 刪除暫存的 runtime 作業；沒有 id 或已刪除則跳過   |
@@ -176,7 +176,7 @@ sequenceDiagram
   participant Cases as 用例
   participant Worker as 背景工作
   participant Runtime as Capture Runtime
-  participant Drafts as 題目草稿
+  participant Questions as 題目
   Learner->>Router: 建立擷取
   Router->>Cases: claim_capture_upload、start_capture_review
   Cases->>Worker: 排入擷取
@@ -188,20 +188,20 @@ sequenceDiagram
   Cases->>Worker: 排入寫入
   Worker->>Cases: publish_reviewed_capture
   Cases->>Runtime: 確認並寫成教材段落
-  Cases->>Drafts: 有段落才排入題目草稿
+  Cases->>Questions: 有段落才排入題目
 ```
 
 `create_app` 把檢閱儲存、流程、維護、runtime、背景工作、事件，以及 `ClientCaptureRuntimeSetup` 放在 `app.state`。router 只依 port 呼叫用例。
 
 ## 與其他上下文的關係
 
-- 教材來源：經擷取整合自己的 `CaptureDocuments`、`CaptureOperations`、`CaptureFileStore`、`CapturePublication` 與 `BindCaptureReviewCommit`。教材來源的 adapter 滿足這些 Protocol，教材來源不 import 擷取整合。`review_workflow` 停止作業（檢閱確認失敗、復原檢閱）時經教材來源的 port `DocumentOperationRepository`（`create_app` 傳入 `app.state.document_operation_repository`），所以作業停止時也刪掉教材未結束的草稿產生工作；`persistence` 與 `review_workflow` 的成果發布與確認提交經 `CapturePublication`、`BindCaptureReviewCommit` 與 `CaptureOperations`（由 `bootstrap/capture_links.py` 組裝），不直接呼叫教材來源的 infrastructure。
-- 題目編寫：寫入後經 `CaptureQuestionDrafting` 排入題目草稿。
+- 教材來源：經擷取整合自己的 `CaptureDocuments`、`CaptureOperations`、`CaptureFileStore`、`CapturePublication` 與 `BindCaptureReviewCommit`。教材來源的 adapter 滿足這些 Protocol，教材來源不 import 擷取整合。`review_workflow` 停止作業（檢閱確認失敗、復原檢閱）時經教材來源的 port `DocumentOperationRepository`（`create_app` 傳入 `app.state.document_operation_repository`），所以作業停止時也刪掉教材未結束的題目產生工作；`persistence` 與 `review_workflow` 的成果發布與確認提交經 `CapturePublication`、`BindCaptureReviewCommit` 與 `CaptureOperations`（由 `bootstrap/capture_links.py` 組裝），不直接呼叫教材來源的 infrastructure。
+- 題目編寫：寫入後經 `CaptureQuestionGeneration` 排入題目。
 - 學習專案：建立擷取時用 `require_project` 確認專案存在。
 - Capture Runtime：anticorruption layer（D8）。`application` 不得 import `capture_runtime_client`。SDK 型別留在 infrastructure，以及 router 的回應模型。
 - 教材來源的不經檢閱匯入：`CaptureSourceExtraction` 呼叫 coordinator 與 `publish_capture_document`，不建立檢閱；教材來源只認得它的 port `SourceExtraction`。
 
-擷取整合不依賴練習與複習、執行環境（import-linter「Capture Integration, Practice and LLM Provisioning do not depend on each other」）。
+擷取整合不依賴練習與複習、語言模型佈建（import-linter「Capture Integration, Practice and LLM Provisioning do not depend on each other」）。
 
 ## 規則與資料來源
 

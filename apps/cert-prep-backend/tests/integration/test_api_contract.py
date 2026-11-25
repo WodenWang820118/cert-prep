@@ -43,18 +43,18 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
         "mixed",
         "study_material",
     ]
-    assert _enum_values(openapi, "QuestionDraftRead", "status") == ["approved"]
-    assert _enum_values(openapi, "QuestionDraftRead", "answer_key_source") == [
+    assert "status" not in openapi["components"]["schemas"]["QuestionRead"]["properties"]
+    assert _enum_values(openapi, "QuestionRead", "answer_key_source") == [
         "manual",
-        "pdf",
+        "source",
         "ai_inferred",
     ]
-    assert _enum_values(openapi, "QuestionDraftRead", "item_kind") == [
+    assert _enum_values(openapi, "QuestionRead", "item_kind") == [
         "unknown",
         "vocabulary_single",
         "grouped_question",
     ]
-    assert _enum_values(openapi, "DraftGenerateRequest", "strategy") == [
+    assert _enum_values(openapi, "QuestionGenerateRequest", "strategy") == [
         "deterministic_only",
         "hybrid_reasoning",
     ]
@@ -110,7 +110,7 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
         "completed",
         "failed",
     ]
-    assert _enum_values(openapi, "DraftGenerationJobRead", "status") == [
+    assert _enum_values(openapi, "QuestionGenerationJobRead", "status") == [
         "pending",
         "running",
         "cancel_requested",
@@ -120,7 +120,7 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
         "skipped_missing_model",
         "failed",
     ]
-    assert _enum_values(openapi, "ManualDraftGenerationOperationRead", "status") == [
+    assert _enum_values(openapi, "ManualQuestionGenerationRead", "status") == [
         "queued",
         "running",
         "cancel_requested",
@@ -188,8 +188,8 @@ def test_document_operation_routes_and_upload_header_are_documented(tmp_path) ->
     for path in (
         "/projects/{project_id}/document-operations/{operation_id}/events",
         "/projects/{project_id}/documents/{document_id}/document-operation/events",
-        "/projects/{project_id}/documents/{document_id}/draft-jobs/events",
-        "/projects/{project_id}/documents/{document_id}/draft-operations/{operation_id}/events",
+        "/projects/{project_id}/documents/{document_id}/question-jobs/events",
+        "/projects/{project_id}/documents/{document_id}/question-generations/{operation_id}/events",
         "/llm/installations/{job_id}/events",
     ):
         assert "text/event-stream" in openapi["paths"][path]["get"]["responses"][
@@ -315,9 +315,9 @@ def test_practice_session_conflicts_are_documented(tmp_path) -> None:
     ) == "ApiErrorRead"
 
 
-def test_draft_job_effective_attribution_is_required_and_nullable(tmp_path) -> None:
+def test_question_job_effective_attribution_is_required_and_nullable(tmp_path) -> None:
     openapi = create_app(Settings(data_dir=tmp_path, api_token="contract-token")).openapi()
-    schema = openapi["components"]["schemas"]["DraftGenerationJobRead"]
+    schema = openapi["components"]["schemas"]["QuestionGenerationJobRead"]
 
     attribution_fields = {
         "effective_provider",
@@ -336,7 +336,7 @@ def test_commit_started_at_is_optional_and_nullable_for_durable_jobs(tmp_path) -
     openapi = create_app(Settings(data_dir=tmp_path, api_token="contract-token")).openapi()
 
     for schema_name in (
-        "ManualDraftGenerationOperationRead",
+        "ManualQuestionGenerationRead",
         "LLMInstallationRead",
     ):
         schema = openapi["components"]["schemas"][schema_name]

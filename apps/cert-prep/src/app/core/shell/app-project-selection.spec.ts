@@ -48,7 +48,7 @@ describe('App project selection', () => {
     apiClient.getDocument.mockImplementation((projectId: string) =>
       of(projectId === secondAppProject.id ? secondAppDocument : appDocument),
     );
-    apiClient.listQuestionDrafts.mockReturnValue(of({ items: [] }));
+    apiClient.listQuestions.mockReturnValue(of({ items: [] }));
 
     const fixture = TestBed.createComponent(App);
     const projects = TestBed.inject(ProjectStore);
@@ -111,7 +111,7 @@ function createApiClient() {
     listDocuments: vi.fn().mockReturnValue(of({ items: [appDocument] })),
     getDocument: vi.fn().mockReturnValue(of(appDocument)),
     listDocumentChunks: vi.fn().mockReturnValue(of({ items: [] })),
-    listQuestionDrafts: vi.fn().mockReturnValue(of({ items: [editableAppQuestion] })),
+    listQuestions: vi.fn().mockReturnValue(of({ items: [editableAppQuestion] })),
     listWrongAnswers: vi.fn().mockReturnValue(of({ items: [] })),
     summarizeWrongAnswers: vi.fn().mockReturnValue(of(emptyWrongAnswerSummary())),
   };

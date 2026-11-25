@@ -64,14 +64,14 @@ describe('App', () => {
         ),
       ),
     ).toEqual([
-      ['Build', 'Capture Workbench'],
+      ['Questions', 'Capture Workbench'],
       ['Whole source', 'Random draw'],
       ['Wrong-answer summary', 'Wrong-answer retry'],
     ]);
     expect(studyNav?.querySelector('a[href="/runtime"]')).toBeNull();
     expect(linkByText(compiled, 'Wrong-answer retry')).not.toBeNull();
 
-    router.navigateByUrl('/build');
+    router.navigateByUrl('/questions');
     fixture.detectChanges();
     TestBed.tick();
     return vi
@@ -85,12 +85,12 @@ describe('App', () => {
           compiled.querySelector('[aria-label="Runtime status"]'),
         ).toBeNull();
         expect(compiled.textContent).toContain('Source files');
-        expect(compiled.textContent).toContain('Exam Questions');
+        expect(compiled.querySelector('app-questions-panel h2')?.textContent).toBe('Questions');
         expect(
           compiled.querySelector('.workbench-main')?.textContent,
         ).not.toContain('Wrong-answer retry');
         expect(
-          linkByText(compiled, 'Build')?.getAttribute('aria-current'),
+          linkByText(compiled, 'Questions')?.getAttribute('aria-current'),
         ).toBe('page');
       })
       .then(() => {
@@ -347,7 +347,7 @@ function createApiClient() {
     listDocuments: vi.fn().mockReturnValue(of({ items: [appDocument] })),
     getDocument: vi.fn().mockReturnValue(of(appDocument)),
     listDocumentChunks: vi.fn().mockReturnValue(of({ items: [] })),
-    listQuestionDrafts: vi
+    listQuestions: vi
       .fn()
       .mockReturnValue(of({ items: [editableAppQuestion] })),
     listWrongAnswers: vi.fn().mockReturnValue(of({ items: [] })),

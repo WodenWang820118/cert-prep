@@ -18,7 +18,7 @@ infrastructure but report their reasons with the same vocabulary.
 
 To add a rule: add an ``AdmissionRejection`` value, a small predicate here, one line
 in ``admit_extracted_question``, tests in tests/unit/authoring/test_question_admission.py,
-and a row in the docs table. Measure the effect on recorded drafts before and after.
+and a row in the docs table. Measure the effect on recorded questions before and after.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ class AdmissionRejection(StrEnum):
     UNRESOLVED_SOURCE = "unresolved_source"
     ANSWER_NOT_IN_CHOICES = "answer_not_in_choices"
     EXCERPT_NOT_IN_SOURCE = "excerpt_not_in_source"
-    NOT_AN_EXAM_ITEM = "not_an_exam_item"
+    NOT_A_QUESTION_ITEM = "not_a_question_item"
     # Content rules applied by admit_extracted_question.
     LISTENING_PAGE = "listening_page"
     CHOICES_ONLY = "choices_only"

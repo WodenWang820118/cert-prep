@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 
-from cert_prep_backend.authoring.domain.models import DraftSuggestion
+from cert_prep_backend.authoring.domain.models import QuestionSuggestion
 
 
 _CHOICE_MARKER_PREFIX = re.compile(
@@ -41,10 +41,10 @@ def _choice_text_without_marker(value: str) -> str:
     return _CHOICE_MARKER_PREFIX.sub("", value, count=1).strip()
 
 
-def as_editable_question(suggestion: DraftSuggestion) -> DraftSuggestion:
+def as_editable_question(suggestion: QuestionSuggestion) -> QuestionSuggestion:
     """Normalize provider suggestions into immediately playable editable questions."""
 
-    return DraftSuggestion(
+    return QuestionSuggestion(
         chunk_id=suggestion.chunk_id,
         question=suggestion.question,
         choices=suggestion.choices,
@@ -65,11 +65,11 @@ def as_editable_question(suggestion: DraftSuggestion) -> DraftSuggestion:
 
 
 def dedupe_suggestions(
-    suggestions: Sequence[DraftSuggestion], limit: int
-) -> list[DraftSuggestion]:
+    suggestions: Sequence[QuestionSuggestion], limit: int
+) -> list[QuestionSuggestion]:
     """Deduplicate generated suggestions while preserving source order."""
 
-    deduped: list[DraftSuggestion] = []
+    deduped: list[QuestionSuggestion] = []
     seen: set[tuple[str, str, str]] = set()
     for suggestion in suggestions:
         key = (
