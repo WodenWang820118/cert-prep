@@ -229,8 +229,11 @@ def _create_capture(client: TestClient, headers: dict[str, str]) -> tuple[str, s
     return project_id, created.json()["captureId"]
 
 
+# "-2" is decimal but below -1; the others are not decimal integers. Both fail in the route.
+@pytest.mark.parametrize("cursor", ["-2", "abc", "1e3"])
 def test_invalid_cursor_is_rejected_with_422_body_before_runtime_is_read(
     tmp_path: Path,
+    cursor: str,
 ) -> None:
     runtime = ReplayableEventCaptureRuntime()
     with _client(tmp_path, runtime) as client:
@@ -239,7 +242,7 @@ def test_invalid_cursor_is_rejected_with_422_body_before_runtime_is_read(
 
         response = client.get(
             f"/projects/{project_id}/capture-reviews/{capture_id}/events",
-            headers={**headers, "Last-Event-ID": "-2"},
+            headers={**headers, "Last-Event-ID": cursor},
         )
 
         assert response.status_code == 422
@@ -250,8 +253,33 @@ def test_invalid_cursor_is_rejected_with_422_body_before_runtime_is_read(
         assert runtime.event_cursors == []
 
 
+def test_overlength_cursor_fails_header_validation_before_runtime_is_read(
+    tmp_path: Path,
+) -> None:
+    runtime = ReplayableEventCaptureRuntime()
+    with _client(tmp_path, runtime) as client:
+        headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
+        project_id, capture_id = _create_capture(client, headers)
+
+        response = client.get(
+            f"/projects/{project_id}/capture-reviews/{capture_id}/events",
+            headers={**headers, "Last-Event-ID": "1" * 33},
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "validation_error"
+        assert response.json()["message"] == "Request validation failed."
+        [error] = response.json()["details"]["errors"]
+        assert error["loc"] == ["header", "Last-Event-ID"]
+        assert error["type"] == "string_too_long"
+        assert runtime.event_cursors == []
+
+
+@pytest.mark.parametrize(("cursor", "forwarded"), [("4", 4), ("-1", -1)])
 def test_http_replay_returns_exact_single_frame_with_streaming_headers(
     tmp_path: Path,
+    cursor: str,
+    forwarded: int,
 ) -> None:
     runtime = DurableTerminalReplayCaptureRuntime()
     with _client(tmp_path, runtime) as client:
@@ -260,7 +288,7 @@ def test_http_replay_returns_exact_single_frame_with_streaming_headers(
 
         response = client.get(
             f"/projects/{project_id}/capture-reviews/{capture_id}/events",
-            headers={**headers, "Last-Event-ID": "4"},
+            headers={**headers, "Last-Event-ID": cursor},
         )
 
         assert response.status_code == 200
@@ -271,3 +299,4 @@ def test_http_replay_returns_exact_single_frame_with_streaming_headers(
         assert len(frames) == 1
         assert frames[0].startswith("id: 5\nevent: checkpoint\ndata: ")
         assert json.loads(frames[0].split("data: ", 1)[1])["eventId"] == f"{capture_id}/5"
+        assert runtime.event_cursors == [forwarded]
