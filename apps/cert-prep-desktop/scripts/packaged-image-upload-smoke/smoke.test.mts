@@ -53,7 +53,7 @@ test('terminal image evidence requires one fully processed no-text page', () => 
     () =>
       requireExpectedTerminalImageDocument({
         ...document,
-        status: 'ocr_failed',
+        status: 'extraction_failed',
       }),
     /status expected no_text_detected/,
   );
@@ -105,10 +105,10 @@ test('OCR image evidence requires a ready document with provenance and chunks', 
   assert.throws(
     () =>
       requireExpectedOcrImageDocument(
-        { ...document, extraction_method: 'embedded' },
+        { ...document, extraction_method: 'text_layer' },
         { filename: 'ocr_test_image.jpeg', sha256: 'a'.repeat(64) },
       ),
-    /extraction_method expected windowsml_ocr/,
+    /extraction_method expected text_recognition/,
   );
   assert.deepEqual(
     requireExpectedOcrImageDocument(
@@ -117,7 +117,7 @@ test('OCR image evidence requires a ready document with provenance and chunks', 
     ),
     { ...document, ocr_device: 'cpu' },
   );
-  for (const device of ['windowsml-dml', 'directml:0', '', null]) {
+  for (const device of ['dml', 'directml:0', '', null]) {
     assert.throws(
       () =>
         requireExpectedOcrImageDocument(
@@ -216,7 +216,8 @@ function terminalDocument(): Record<string, unknown> {
     chunks_count: 0,
     extraction_method: 'none',
     ocr_device: 'cpu',
-    ocr_fallback_reason: null,
+    extraction_warnings: null,
+    failure_message: null,
   };
 }
 
@@ -232,8 +233,9 @@ function ocrDocument(): Record<string, unknown> {
     processed_page_count: 1,
     has_text: true,
     chunks_count: 3,
-    extraction_method: 'windowsml_ocr',
+    extraction_method: 'text_recognition',
     ocr_device: 'directml',
-    ocr_fallback_reason: null,
+    extraction_warnings: null,
+    failure_message: null,
   };
 }

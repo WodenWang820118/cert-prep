@@ -290,15 +290,13 @@ export async function captureDocumentOcrEvidence(
         `PDF OCR evidence source SHA expected ${run.options.acceptanceFixture.sha256} but received ${String(payload.sha256)}.`,
       );
     }
-    if (payload.extraction_method !== 'windowsml_ocr') {
+    if (payload.extraction_method !== 'text_recognition') {
       throw new Error(
-        `PDF OCR evidence extraction_method expected windowsml_ocr but received ${String(payload.extraction_method)}.`,
+        `PDF OCR evidence extraction_method expected text_recognition but received ${String(payload.extraction_method)}.`,
       );
     }
-    if (stringField(payload.ocr_fallback_reason).trim()) {
-      throw new Error(
-        'PDF OCR evidence reported a fallback reason under the OCR-only contract.',
-      );
+    if (stringField(payload.failure_message).trim()) {
+      throw new Error('A ready PDF reported an extraction failure message.');
     }
     const chunksPayload = await streamingApiGet(
       run,
@@ -325,10 +323,10 @@ export async function captureDocumentOcrEvidence(
       }
       if (
         chunk.extraction_method !== undefined &&
-        chunk.extraction_method !== 'windowsml_ocr'
+        chunk.extraction_method !== 'text_recognition'
       ) {
         throw new Error(
-          `PDF OCR chunk extraction_method expected windowsml_ocr but received ${String(chunk.extraction_method)}.`,
+          `PDF OCR chunk extraction_method expected text_recognition but received ${String(chunk.extraction_method)}.`,
         );
       }
       const rawText =
@@ -394,10 +392,10 @@ export async function captureDocumentOcrEvidence(
   }
   const device = stringField(payload.ocr_device).trim() || 'unknown';
   (run.metrics as SmokeMetrics & { ocr_device?: string }).ocr_device = device;
-  const fallback = stringField(payload.ocr_fallback_reason).trim();
+  const warning = stringField(payload.extraction_warnings).trim();
   run.metrics.observations.push(
-    fallback
-      ? `Document OCR completed on ${device}; fallback_reason=${fallback}.`
+    warning
+      ? `Document OCR completed on ${device}; extraction_warnings=${warning}.`
       : `Document OCR completed on ${device}.`,
   );
 }

@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 
 export const OCR_PAGE_RECORD_EVIDENCE_SCHEMA_VERSION = 1 as const;
 export const OCR_PROJECTION_SOURCE = 'capture-runtime-ocr-projection' as const;
-export const OCR_EXTRACTION_METHOD = 'windowsml_ocr' as const;
-export const OCR_FORBIDDEN_EXTRACTION_METHODS = ['embedded', 'mixed'] as const;
+export const OCR_EXTRACTION_METHOD = 'text_recognition' as const;
+export const OCR_FORBIDDEN_EXTRACTION_METHODS = ['text_layer'] as const;
 export const OCR_IDENTITY_CANONICALIZATION = 'sorted-json-v1' as const;
 
 export interface OcrDocumentRecordIdentity {

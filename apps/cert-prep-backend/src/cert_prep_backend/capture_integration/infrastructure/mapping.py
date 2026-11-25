@@ -18,7 +18,7 @@ from cert_prep_backend.capture_integration.infrastructure.review import reviewed
 from cert_prep_backend.source_library.domain.exam_content import classify_exam_text, line_metadata
 from cert_prep_backend.source_library.domain.document import (
     ExtractedPage,
-    PdfExtractionResult,
+    PageExtraction,
 )
 
 
@@ -28,12 +28,12 @@ class CaptureAudioSegment:
     target_text: str
 
 
-def capture_document_to_pdf_extraction(
+def capture_document_to_page_extraction(
     document: CaptureDocument,
     *,
     review: CaptureReview | None = None,
     ocr_projection: object | None = None,
-) -> PdfExtractionResult:
+) -> PageExtraction:
     overrides = (
         reviewed_text_overrides(
             RawCapture(
@@ -120,14 +120,13 @@ def capture_document_to_pdf_extraction(
         if ocr_projection is not None
         else max(pages)
     )
-    return PdfExtractionResult(
+    return PageExtraction(
         page_count=page_count,
         pages=tuple(extracted_pages),
         status="ready",
         extraction_method=extraction_method,
         ocr_device=ocr_device,
-        ocr_fallback_reason=warnings,
-        ocr_duration_ms=0,
+        extraction_warnings=warnings,
         processed_page_count=page_count if ocr_projection is not None else len(pages),
     )
 
@@ -159,11 +158,11 @@ def _ocr_only_extraction_method(document: CaptureDocument) -> str:
         raise ValueError(
             "Capture document extraction provenance violates the OCR-only contract."
         )
-    return "windowsml_ocr"
+    return "text_recognition"
 
 
 __all__ = [
     "CaptureAudioSegment",
     "capture_document_to_audio_segments",
-    "capture_document_to_pdf_extraction",
+    "capture_document_to_page_extraction",
 ]

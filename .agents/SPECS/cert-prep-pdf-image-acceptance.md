@@ -51,14 +51,15 @@ and need the product owner's review before they are updated
   generalized to images: PDF assertions are intentionally PDF-specific, and the
   image path has its own terminal-document contract.
 - Image OCR must reach `ready` with one processed page, text chunks,
-  `windowsml_ocr` extraction, a non-empty OCR device and a SHA-256 matching the
+  `text_recognition` extraction, a non-empty OCR device and a SHA-256 matching the
   supplied bytes.
 - CER is computed against raw OCR text with one fixed normalization policy.
   Scanned PDF pages must be CER <= 1%, photos/JPEGs CER <= 3%, and critical
   anchors have zero omissions. These are blocking semantic gates, not
   screenshot observations.
-- Every PDF page and image must persist `windowsml_ocr`; embedded/mixed
-  provenance and LLM extraction routing are rejected.
+- Every PDF page and image must persist `text_recognition`; historical
+  `text_layer` provenance and LLM extraction routing are rejected for new
+  captures.
 - Provenance is bound to what the app executes: hash the installed executable
   and its adjacent `resources` manifest and core. A supplied downloaded runtime
   must match those resources exactly; a supplied path is never called a fresh

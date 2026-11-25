@@ -11,34 +11,37 @@ from cert_prep_backend.platform.config import Settings
 def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
     openapi = create_app(Settings(data_dir=tmp_path, api_token="contract-token")).openapi()
 
+    document_properties = openapi["components"]["schemas"]["DocumentRead"]["properties"]
+    assert {"extraction_warnings", "failure_message"} <= document_properties.keys()
+
     assert _enum_values(openapi, "DocumentRead", "status") == [
         "processing",
         "cancel_requested",
         "canceled",
         "ready",
-        "exam_failed",
         "no_text_detected",
-        "ocr_failed",
+        "extraction_failed",
         "transcription_failed",
     ]
     assert _enum_values(openapi, "DocumentRead", "extraction_method") == [
-        "embedded",
-        "mixed",
         "none",
-        "ocr_failed",
-        "windowsml_ocr",
+        "text_recognition",
+        "transcription",
+        "text_layer",
     ]
     assert _enum_values(openapi, "DocumentRead", "content_profile") == [
         "unknown",
         "jlpt_vocabulary",
         "jlpt_grouped",
         "mixed",
+        "study_material",
     ]
     assert _enum_values(openapi, "ChunkRead", "content_profile") == [
         "unknown",
         "jlpt_vocabulary",
         "jlpt_grouped",
         "mixed",
+        "study_material",
     ]
     assert _enum_values(openapi, "QuestionDraftRead", "status") == ["approved"]
     assert _enum_values(openapi, "QuestionDraftRead", "answer_key_source") == [

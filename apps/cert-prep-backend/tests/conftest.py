@@ -490,7 +490,7 @@ def _test_runtime_requirements(status: str) -> RuntimeRequirements:
                 {
                     "requirementId": "text-recognition",
                     "kind": "text-recognition",
-                    "displayName": "WindowsML OCR",
+                    "displayName": "Text recognition",
                     "status": status,
                     "requiredFor": ["pdf", "image"],
                     "installStrategy": "test",

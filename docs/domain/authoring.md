@@ -141,7 +141,7 @@ stateDiagram-v2
 | 取消手動產生     | `cancel_manual_generation`           | 排隊中的作業立即取消，執行中的要求停止；提交後不能取消                   |
 | 匯入後起草       | `draft_imported_document`            | 匯入後有段落的教材：排入產生工作，或依設定立即寫出草稿                   |
 
-教材來源的 `import_document` 與 `retry_document_processing` 擷取出段落後，經教材來源的 port `ImportedDocumentDrafting` 呼叫 `draft_imported_document`；實作這個 port 的是 `infrastructure/import_drafting.py` 的 `ImportedDocumentDrafts`，它依設定（`streaming_draft_generation_on_upload`、`auto_generate_exam_on_upload`、`auto_generate_exam_limit`）呼叫用例。匯入時直接產生草稿時，模型無法使用就不寫草稿；之後記錄教材的題目數，有文字與段落的教材記為可用，否則記為 `exam_failed`（`SourceDocument.status_after_import_drafts`）。
+教材來源的 `import_document` 與 `retry_document_processing` 擷取出段落後，經教材來源的 port `ImportedDocumentDrafting` 呼叫 `draft_imported_document`；實作這個 port 的是 `infrastructure/import_drafting.py` 的 `ImportedDocumentDrafts`，它依設定（`streaming_draft_generation_on_upload`、`auto_generate_exam_on_upload`、`auto_generate_exam_limit`）呼叫用例。匯入時直接產生草稿時，模型無法使用就不寫草稿；之後記錄教材的題目數，有文字與段落的教材記為可用，否則記為 `no_text_detected`（`SourceDocument.status_after_import_drafts`）。
 
 ## 主要流程
 

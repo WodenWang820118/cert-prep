@@ -74,7 +74,7 @@ Capture Runtime from the Capture Workbench page when they want to capture.
 - The capture page shows that Capture Runtime is unavailable with a clear
   action and does not construct a usable capture client first.
 - Every PDF/image dispatch requires a ready `text-recognition` requirement and
-  persists only `windowsml_ocr`; a missing or non-ready requirement is rejected
+  persists only `text_recognition`; a missing or non-ready requirement is rejected
   before ingestion.
 
 ## Test plan

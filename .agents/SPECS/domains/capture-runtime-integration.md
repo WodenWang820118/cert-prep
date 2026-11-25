@@ -39,12 +39,13 @@ mixed-result arbitration or provider fallback.
 
 - Every new PDF page and image goes through the runtime's raster OCR
   (`text-recognition` requirement). Cert never reads an embedded PDF text layer,
-  arbitrates a mixed result, writes `direct_pdf`, or calls a second OCR route.
+  arbitrates a mixed result, or calls a second OCR route; `text_layer` is only
+  the stored value of rows extracted before Capture.
 - `capture_integration/infrastructure/mapping.py` accepts exactly the producer
-  engine `text-recognition` and writes the durable discriminator `windowsml_ocr` on
+  engine `text-recognition` and writes the durable discriminator `text_recognition` on
   the document and every page and chunk. Neither value is inferred from a
   substring.
-- Existing `direct_pdf`, `embedded` and `mixed` rows are legacy read-only data:
+- Existing `text_layer` rows (pre-Capture text-layer extraction) are legacy read-only data:
   displayed and exported by their existing rules, never a new write, route
   selector or source for rewriting OCR evidence.
 - Projection pages map in source order to chunks through

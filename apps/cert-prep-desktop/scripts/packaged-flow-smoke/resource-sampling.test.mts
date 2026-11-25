@@ -304,7 +304,7 @@ test('adapter-aware summary joins GPU LUID metrics to DXGI adapter kinds', () =>
   assert.equal(summary.gpu_routing_checks.gpu_luid_map_usable, true);
 });
 
-test('adapter-aware summary accepts AMD WindowsML routing with only the required adapter', () => {
+test('adapter-aware summary sees Capture Runtime on the AMD iGPU with only the required adapter', () => {
   const windowsSummary = summarizeWindowsResourceCsv(`timestamp,source,path,pid,name,metric,value,unit
 "2026-06-21T00:00:00Z","windows_process","Win32_Process","42","${CAPTURE_RUNTIME_FILE}","working_set_bytes","1024","bytes"
 "2026-06-21T00:00:00Z","windows_process","Win32_Process","77","llama-server.exe","working_set_bytes","2048","bytes"

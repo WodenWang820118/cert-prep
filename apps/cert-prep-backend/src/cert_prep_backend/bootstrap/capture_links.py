@@ -20,7 +20,7 @@ from cert_prep_backend.capture_integration.application.ports import (
 )
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.source_library.application.ports import DocumentOperationRepository
-from cert_prep_backend.source_library.domain.document import PdfExtractionResult, SourceDocument
+from cert_prep_backend.source_library.domain.document import PageExtraction, SourceDocument
 from cert_prep_backend.source_library.domain.operation import DocumentOperation
 from cert_prep_backend.source_library.infrastructure import operations
 
@@ -83,7 +83,7 @@ class SourceLibraryCapturePublication:
         project_id: str,
         operation_id: str,
         document_id: str,
-        extraction: PdfExtractionResult,
+        extraction: PageExtraction,
     ) -> SourceDocument:
         return operations.publish_success(
             self._db,

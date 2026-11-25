@@ -93,8 +93,8 @@ interface PreparedRuntimeResources {
  * Produces the resource directory consumed by Tauri.
  *
  * cert-prep owns only the backend sidecar here. Capture Runtime is staged as
- * its published executable, manifest, and schema; its WindowsML bundle
- * descriptor and model lifecycle remain inside Capture Runtime and are
+ * its published executable, manifest, and schema; its text-recognition
+ * payload descriptor and model lifecycle remain inside Capture Runtime and are
  * verified by the runtime itself without extracting or rebuilding a cert-prep
  * OCR payload.
  */

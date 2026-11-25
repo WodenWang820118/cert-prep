@@ -27,7 +27,6 @@ from cert_prep_backend.source_library.infrastructure.documents import (
     update_exam_state,
 )
 from cert_prep_backend.source_library.infrastructure.progress import (
-    record_extraction_progress,
     recover_processing_documents,
 )
 from cert_prep_backend.source_library.infrastructure.records import (
@@ -230,7 +229,6 @@ __all__ = [
     "get_source_chunks",
     "list_chunks",
     "list_documents",
-    "record_extraction_progress",
     "recover_processing_documents",
     "update_exam_state",
     "update_chunk_translation",

@@ -24,7 +24,7 @@ from cert_prep_backend.platform.errors import (
     NotFoundError,
 )
 from cert_prep_backend.source_library.application.ports import DocumentDraftJobs
-from cert_prep_backend.source_library.domain.document import PdfExtractionResult, SourceDocument
+from cert_prep_backend.source_library.domain.document import PageExtraction, SourceDocument
 from cert_prep_backend.source_library.domain.operation import (
     DocumentOperation,
     ensure_retry_allowed,
@@ -279,7 +279,7 @@ def publish_success(
     project_id: str,
     operation_id: str,
     document_id: str,
-    extraction: PdfExtractionResult,
+    extraction: PageExtraction,
 ) -> SourceDocument:
     """Atomically publish final extraction data and terminal operation success."""
 
@@ -377,6 +377,7 @@ def publish_capture_audio_success(
             UPDATE documents
             SET duration_ms = ?, has_text = 1, status = 'ready',
                 extraction_method = 'transcription', processed_page_count = ?,
+                failure_message = NULL,
                 transcription_status = 'succeeded', translation_status = 'succeeded',
                 configured_transcription_model = ?, effective_transcription_model = ?,
                 transcription_device = ?, transcription_warning = ?,
@@ -507,7 +508,7 @@ def start_retry_operation(
             document_id=document_id,
             status="processing",
             extraction_method="none",
-            fallback_reason=None,
+            failure_message=None,
             now=now,
         )
         connection.execute(
@@ -695,18 +696,23 @@ def _record_stopped_document(
     if document is None:
         raise NotFoundError("Document not found.")
     if document["source_kind"] == "audio":
-        preserve = (
-            _preserve_canceled_audio_state
-            if stopped.status is DocumentOperationStatus.CANCELED
-            else _preserve_failed_audio_state
-        )
-        preserve(
-            connection,
-            draft_jobs=draft_jobs,
-            project_id=project_id,
-            document_id=document_id,
-            now=now,
-        )
+        if stopped.status is DocumentOperationStatus.CANCELED:
+            _preserve_canceled_audio_state(
+                connection,
+                draft_jobs=draft_jobs,
+                project_id=project_id,
+                document_id=document_id,
+                now=now,
+            )
+        else:
+            _preserve_failed_audio_state(
+                connection,
+                draft_jobs=draft_jobs,
+                project_id=project_id,
+                document_id=document_id,
+                error=stopped.error,
+                now=now,
+            )
         return
     state = failure_state(
         stopped,
@@ -721,7 +727,7 @@ def _record_stopped_document(
         document_id=document_id,
         status=state.status,
         extraction_method=state.extraction_method,
-        fallback_reason=state.fallback_reason,
+        failure_message=state.failure_message,
         processed_page_count=state.processed_page_count,
         now=now,
     )
@@ -758,7 +764,7 @@ def _reset_document_derived_state(
     document_id: str,
     status: str,
     extraction_method: str,
-    fallback_reason: str | None,
+    failure_message: str | None,
     processed_page_count: int = 0,
     now: str,
 ) -> None:
@@ -771,10 +777,8 @@ def _reset_document_derived_state(
         """
         UPDATE documents
         SET status = ?, has_text = 0, extraction_method = ?,
-            ocr_device = NULL, ocr_fallback_reason = ?, ocr_duration_ms = 0,
-            processed_page_count = ?, parse_wall_duration_ms = 0,
-            render_duration_ms = 0, ocr_engine_duration_ms = 0,
-            ocr_worker_count = 0, first_chunk_ms = 0, exam_item_count = 0,
+            ocr_device = NULL, extraction_warnings = NULL, failure_message = ?,
+            processed_page_count = ?, exam_item_count = 0,
             content_profile = 'unknown', classification_detail = '',
             updated_at = ?
         WHERE project_id = ? AND id = ?
@@ -782,7 +786,7 @@ def _reset_document_derived_state(
         (
             status,
             extraction_method,
-            fallback_reason,
+            failure_message,
             processed_page_count,
             now,
             project_id,
@@ -822,10 +826,8 @@ def _preserve_canceled_audio_state(
         """
         UPDATE documents
         SET status = ?, has_text = ?, extraction_method = ?,
-            ocr_device = NULL, ocr_fallback_reason = NULL, ocr_duration_ms = 0,
-            processed_page_count = ?, parse_wall_duration_ms = 0,
-            render_duration_ms = 0, ocr_engine_duration_ms = 0,
-            ocr_worker_count = 0, first_chunk_ms = 0, exam_item_count = 0,
+            ocr_device = NULL, extraction_warnings = NULL, failure_message = NULL,
+            processed_page_count = ?, exam_item_count = 0,
             content_profile = ?, classification_detail = '',
             transcription_status = CASE
                 WHEN transcription_status = 'succeeded' THEN 'succeeded'
@@ -860,6 +862,7 @@ def _preserve_failed_audio_state(
     draft_jobs: DocumentDraftJobs,
     project_id: str,
     document_id: str,
+    error: str | None,
     now: str,
 ) -> None:
     """Keep incremental transcript data while making an audio failure retryable."""
@@ -880,10 +883,9 @@ def _preserve_failed_audio_state(
                 ELSE 'transcription_failed'
             END,
             has_text = ?, extraction_method = ?,
-            ocr_device = NULL, ocr_fallback_reason = NULL, ocr_duration_ms = 0,
-            processed_page_count = ?, parse_wall_duration_ms = 0,
-            render_duration_ms = 0, ocr_engine_duration_ms = 0,
-            ocr_worker_count = 0, first_chunk_ms = 0, exam_item_count = 0,
+            ocr_device = NULL, extraction_warnings = NULL,
+            failure_message = CASE WHEN transcription_status != 'succeeded' THEN ? END,
+            processed_page_count = ?, exam_item_count = 0,
             content_profile = ?, classification_detail = '',
             transcription_status = CASE
                 WHEN transcription_status = 'succeeded' THEN 'succeeded'
@@ -895,6 +897,7 @@ def _preserve_failed_audio_state(
         (
             int(chunks_count > 0),
             "transcription" if chunks_count > 0 else "none",
+            error,
             chunks_count,
             "study_material" if chunks_count > 0 else "unknown",
             now,

@@ -1037,11 +1037,6 @@ function operationSnapshot(
 function allZeroDocumentMetrics(value: Record<string, unknown>): boolean {
   return [
     'processedPageCount',
-    'ocrDurationMs',
-    'parseWallDurationMs',
-    'renderDurationMs',
-    'ocrEngineDurationMs',
-    'firstChunkMs',
     'examItemCount',
   ].every((key) => nonNegativeInteger(value[key]) === 0);
 }

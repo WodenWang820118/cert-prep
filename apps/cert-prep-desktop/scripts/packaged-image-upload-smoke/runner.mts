@@ -432,7 +432,7 @@ async function waitForExpectedOcrImageDocumentWithOneRetry(
   } catch (error) {
     if (
       !(error instanceof Error) ||
-      !/ended as ocr_failed\./u.test(error.message)
+      !/ended as extraction_failed\./u.test(error.message)
     ) {
       throw error;
     }
@@ -442,7 +442,7 @@ async function waitForExpectedOcrImageDocumentWithOneRetry(
       .first();
     await retry.waitFor({ state: 'visible', timeout: 10_000 });
     run.metrics.observations.push(
-      'JPEG OCR reached ocr_failed during the packaged image journey; retrying the product retry-parsing action once.',
+      'JPEG OCR reached extraction_failed during the packaged image journey; retrying the product retry-parsing action once.',
     );
     await retry.click({ timeout: 30_000 });
     await waitForImageDocumentToLeaveFailure(readDocument, 30_000);
@@ -457,10 +457,10 @@ async function waitForImageDocumentToLeaveFailure(
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const latest = await readDocument();
-    if (isRecord(latest) && latest.status !== 'ocr_failed') return;
+    if (isRecord(latest) && latest.status !== 'extraction_failed') return;
     await new Promise<void>((resolve) => setTimeout(resolve, 250));
   }
-  throw new Error('JPEG OCR retry did not leave the initial ocr_failed state.');
+  throw new Error('JPEG OCR retry did not leave the initial extraction_failed state.');
 }
 
 async function readDocument(

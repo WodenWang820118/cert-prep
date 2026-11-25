@@ -31,7 +31,7 @@ CANCELLABLE_PROCESSING_PHASES: Final = frozenset(
     {Phase.PROCESSING, Phase.AWAITING_REVIEW, Phase.TRANSCRIBING, Phase.TRANSLATING}
 )
 RETRYABLE_DOCUMENT_STATUSES: Final = frozenset(
-    {"canceled", "ocr_failed", "no_text_detected", "transcription_failed"}
+    {"canceled", "extraction_failed", "no_text_detected", "transcription_failed"}
 )
 _CANCELING_OR_CANCELED: Final = frozenset({Status.CANCEL_REQUESTED, Status.CANCELED})
 
@@ -42,7 +42,7 @@ class DocumentFailureState:
 
     status: str
     extraction_method: str
-    fallback_reason: str | None
+    failure_message: str | None
     processed_page_count: int
 
 
@@ -301,9 +301,9 @@ def failure_state(
     if stopped.status is Status.CANCELED:
         return DocumentFailureState("canceled", "none", None, 0)
     return DocumentFailureState(
-        status=document_status or "ocr_failed",
-        extraction_method=extraction_method or "ocr_failed",
-        fallback_reason=stopped.error,
+        status=document_status or "extraction_failed",
+        extraction_method=extraction_method or "none",
+        failure_message=stopped.error,
         processed_page_count=page_count if document_status == "no_text_detected" else 0,
     )
 

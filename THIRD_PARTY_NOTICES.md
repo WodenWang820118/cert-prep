@@ -27,7 +27,7 @@ Qwen3-ForcedAligner; both are provided under the Apache License 2.0:
 - https://huggingface.co/Qwen/Qwen3-ASR-0.6B-hf
 - https://huggingface.co/Qwen/Qwen3-ForcedAligner-0.6B-hf
 
-## WindowsML OCR payload
+## Capture Runtime text-recognition payload
 
 The downloadable OCR runtime contains PP-OCRv6 medium detection and recognition
 model payloads derived from the official PaddleOCR/PaddleX release sources.

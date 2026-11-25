@@ -35,7 +35,7 @@ import { captureGenerationReadinessAtProjectCreate } from './generation-readines
 import type { SmokeRunState } from './types.mts';
 
 export const PDF_PARSE_TERMINAL_TEXT_PATTERN =
-  /Ready to review|\d+\/\d+ pages|ready\s*Page|OCR failed|Parsing failed|WindowsML OCR is unavailable/i;
+  /Ready to review|\d+\/\d+ pages|ready\s*Page|Source could not be read|Parsing failed|Text recognition is unavailable|requires text recognition/i;
 
 export async function createProject(run: SmokeRunState): Promise<void> {
   await closeRuntimeDrawer(run);
@@ -144,12 +144,12 @@ export async function uploadAndParsePdf(run: SmokeRunState): Promise<void> {
     await parseCompletePromise;
     const terminalText = await bodyText(run);
     if (
-      /OCR failed|Parsing failed|WindowsML OCR is unavailable|requires WindowsML OCR/i.test(
+      /Source could not be read|Parsing failed|Text recognition is unavailable|requires text recognition/i.test(
         terminalText,
       )
     ) {
       throw new Error(
-        `PDF parsing reached a terminal OCR failure: ${terminalText.match(/(?:OCR failed|Parsing failed|WindowsML OCR is unavailable|requires WindowsML OCR)[^\r\n]*/i)?.[0] ?? 'unknown OCR failure'}.`,
+        `PDF parsing reached a terminal OCR failure: ${terminalText.match(/(?:Source could not be read|Parsing failed|Text recognition is unavailable|requires text recognition)[^\r\n]*/i)?.[0] ?? 'unknown OCR failure'}.`,
       );
     }
     recordOcrCompletionFromText(run, terminalText);

@@ -38,7 +38,16 @@ from cert_prep_backend.capture_integration.infrastructure.persistence import (
 )
 from cert_prep_backend.bootstrap.capture_links import capture_publication
 from cert_prep_backend.source_library.infrastructure import operations
-from cert_prep_backend.source_library.domain.document import ExtractedPage, PdfExtractionResult
+from cert_prep_backend.capture_integration.application.messages import (
+    SPEECH_RECOGNITION_UNAVAILABLE_MESSAGE,
+    TEXT_RECOGNITION_FAILED_MESSAGE,
+    TEXT_RECOGNITION_UNAVAILABLE_MESSAGE,
+)
+from cert_prep_backend.source_library.domain.document import (
+    NO_TEXT_DETECTED_MESSAGE,
+    ExtractedPage,
+    PageExtraction,
+)
 from capture_runtime_client import (
     CAPTURE_RUNTIME_VERSION,
     CaptureDocument,
@@ -249,7 +258,7 @@ def test_public_capture_publication_maps_exact_producer_engine_to_durable_method
             publication=capture_publication(app.state.database),
         )
 
-        assert result.extraction_method == "windowsml_ocr"
+        assert result.extraction_method == "text_recognition"
         assert _public_capture_counts(
             app,
             project_id=str(fixture["project_id"]),
@@ -391,10 +400,10 @@ def test_public_capture_publication_uses_projection_validation_for_embedded_mode
             publication=capture_publication(app.state.database),
         )
 
-        assert result.extraction_method == "windowsml_ocr"
+        assert result.extraction_method == "text_recognition"
 
 
-def test_legacy_embedded_and_mixed_rows_remain_read_compatible(tmp_path: Path) -> None:
+def test_legacy_text_layer_rows_remain_read_compatible(tmp_path: Path) -> None:
     app = create_app(
         settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
         document_processing_async_jobs=False,
@@ -407,7 +416,7 @@ def test_legacy_embedded_and_mixed_rows_remain_read_compatible(tmp_path: Path) -
             headers,
         )
         expected_document_ids: dict[str, str] = {}
-        for method in ("embedded", "mixed"):
+        for method in ("text_layer",):
             operation_id = str(uuid4())
             document_id = str(uuid4())
             expected_document_ids[method] = document_id
@@ -432,7 +441,7 @@ def test_legacy_embedded_and_mixed_rows_remain_read_compatible(tmp_path: Path) -
                 project_id=project_id,
                 operation_id=operation_id,
                 document_id=document_id,
-                extraction=PdfExtractionResult(
+                extraction=PageExtraction(
                     page_count=1,
                     pages=(
                         ExtractedPage(
@@ -449,8 +458,7 @@ def test_legacy_embedded_and_mixed_rows_remain_read_compatible(tmp_path: Path) -
                     status="ready",
                     extraction_method=method,
                     ocr_device=None,
-                    ocr_fallback_reason=None,
-                    ocr_duration_ms=0,
+                    extraction_warnings=None,
                     processed_page_count=1,
                 ),
             )
@@ -1071,7 +1079,7 @@ def test_upload_delegates_to_capture_runtime_and_atomically_maps_existing_chunks
         document = response.json()
         assert document["status"] == "ready"
         assert document["sha256"] == hashlib.sha256(source).hexdigest()
-        assert document["extraction_method"] == "windowsml_ocr"
+        assert document["extraction_method"] == "text_recognition"
         assert document["ocr_device"] == "igpu"
         assert document["chunks_count"] == 1
         chunks = client.get(
@@ -1113,7 +1121,7 @@ def test_image_upload_uses_the_same_capture_runtime_host_path(tmp_path: Path) ->
         document = response.json()
         assert document["status"] == "ready"
         assert document["source_kind"] == "document"
-        assert document["extraction_method"] == "windowsml_ocr"
+        assert document["extraction_method"] == "text_recognition"
         chunks = client.get(
             f"/projects/{project_id}/documents/{document['id']}/chunks",
             headers=headers,
@@ -1302,30 +1310,32 @@ def test_review_result_fails_closed_when_runtime_replay_violates_contract(
         (
             "capture.pdf",
             "application/pdf",
-            "ocr_failed",
-            "This PDF requires WindowsML OCR, which is unavailable in the installed Capture Runtime.",
+            "extraction_failed",
+            "This PDF requires text recognition, which is unavailable in the installed Capture Runtime.",
         ),
         (
             "capture.png",
             "image/png",
-            "ocr_failed",
-            "WindowsML OCR is unavailable. No downloadable model is published for this runtime release.",
+            "extraction_failed",
+            TEXT_RECOGNITION_UNAVAILABLE_MESSAGE,
         ),
         (
             "capture.wav",
             "audio/wav",
             "transcription_failed",
-            "Speech recognition is unavailable. No downloadable model is published for this runtime release.",
+            SPEECH_RECOGNITION_UNAVAILABLE_MESSAGE,
         ),
     ],
 )
 def test_core_only_ocr_and_audio_sources_fail_before_sidecar_dispatch(
     tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
     filename: str,
     media_type: str,
     expected_document_status: str,
     expected_message: str,
 ) -> None:
+    caplog.set_level("WARNING")
     runtime = CoreOnlyCaptureRuntime()
     settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
     operation_id = f"core-only-{filename.rsplit('.', 1)[-1]}"
@@ -1376,10 +1386,312 @@ def test_core_only_ocr_and_audio_sources_fail_before_sidecar_dispatch(
         assert len(documents) == 1
         assert documents[0]["status"] == expected_document_status
         assert documents[0]["chunks_count"] == 0
+        assert documents[0]["failure_message"] == expected_message
+        assert documents[0]["extraction_warnings"] is None
 
     assert runtime.requirement_reads == 1
     assert runtime.create_attempts == 0
     assert runtime.deleted == []
+    # The runtime's requirement detail is logged once, in the rendered warning, and stored nowhere.
+    [warning] = [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelname == "WARNING" and _REQUIREMENT_DETAIL in record.getMessage()
+    ]
+    assert warning.startswith("Capture Runtime requirement ")
+    assert caplog.text.count(_REQUIREMENT_DETAIL) == 1
+
+
+
+_REQUIREMENT_DETAIL = "No downloadable model is published for this runtime release."
+
+_RUNTIME_ONLY_TEXT = "runtime-only detail 7f3a: worker trace at C:/runtime/cache"
+
+
+class FailingCaptureRuntime(DeterministicCaptureRuntime):
+    """A capture the runtime fails at once, with its own failure code and message."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__()
+        self.code = code
+
+    def start_capture(self, upload, *, source_kind, client_request_id, target_language=None):
+        super().start_capture(
+            upload,
+            source_kind=source_kind,
+            client_request_id=client_request_id,
+            target_language=target_language,
+        )
+        operation = self._operation(status="failed")
+        return CaptureOperation.model_validate(
+            {
+                **operation.model_dump(mode="json", by_alias=True),
+                "error": {
+                    "code": self.code,
+                    "message": _RUNTIME_ONLY_TEXT,
+                    "stage": "extraction",
+                    "retryable": False,
+                },
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("code", "expected_document_status", "expected_message"),
+    [
+        ("ocr_page_failed", "extraction_failed", TEXT_RECOGNITION_FAILED_MESSAGE),
+        ("no_text_detected", "no_text_detected", NO_TEXT_DETECTED_MESSAGE),
+    ],
+)
+def test_a_failed_capture_stores_and_shows_cert_text_and_logs_the_runtime_text(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    code: str,
+    expected_document_status: str,
+    expected_message: str,
+) -> None:
+    runtime = FailingCaptureRuntime(code)
+    settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
+    operation_id = f"runtime-failure-{code}"
+    caplog.set_level("WARNING")
+    # The default upload: the document is accepted and extracted in the background.
+    with TestClient(
+        create_app(
+            settings=settings,
+            llm_provider=EchoCaptureProvider(),
+            capture_runtime_client=runtime,
+            streaming_draft_generation_async_jobs=False,
+        )
+    ) as client:
+        auth = {"Authorization": f"Bearer {AUTH_TOKEN}"}
+        project_id = _create_project(client, auth)
+        response = client.post(
+            f"/projects/{project_id}/documents",
+            headers={**auth, "X-Cert-Prep-Operation-Id": operation_id},
+            files={"file": ("scan.pdf", minimal_pdf("Scanned page."), "application/pdf")},
+        )
+        assert response.status_code == 201
+        accepted = response.json()
+        # The worker may finish before the response is built; either way the response is the
+        # document, never the runtime's text.
+        assert accepted["filename"] == "scan.pdf"
+        assert (accepted["status"], accepted["failure_message"]) in {
+            ("processing", None),
+            (expected_document_status, expected_message),
+        }
+        operation = None
+        for _ in range(200):
+            operation = client.get(
+                f"/projects/{project_id}/document-operations/{operation_id}", headers=auth
+            )
+            if operation.json()["status"] == "failed":
+                break
+            time.sleep(0.01)
+        assert operation is not None
+        documents = client.get(f"/projects/{project_id}/documents", headers=auth)
+        with client.app.state.database.connect() as connection:
+            stored = [
+                str(value)
+                for row in connection.execute(
+                    "SELECT failure_message, extraction_warnings FROM documents"
+                    " UNION ALL SELECT error, NULL FROM document_operations"
+                )
+                for value in tuple(row)
+                if value is not None
+            ]
+
+    assert operation.json()["status"] == "failed"
+    assert operation.json()["error"] == expected_message
+    [document] = documents.json()["items"]
+    assert document["id"] == accepted["id"]
+    assert document["status"] == expected_document_status
+    assert document["failure_message"] == expected_message
+    for body in (response.text, operation.text, documents.text, *stored):
+        assert _RUNTIME_ONLY_TEXT not in body
+    # The runtime's text is a diagnostic: one warning names it with the Capture code, and no
+    # logged traceback carries it as the cause of Cert's error.
+    warnings = [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelname == "WARNING" and _RUNTIME_ONLY_TEXT in record.getMessage()
+    ]
+    assert len(warnings) == 1
+    assert f"code {code}" in warnings[0]
+    assert caplog.text.count(_RUNTIME_ONLY_TEXT) == 1
+
+
+
+class CompletedBeforeStructuringRuntime(DeterministicCaptureRuntime):
+    """Capture reports completed before structuring, optionally with an error attached; neither
+    is a failure Capture reported for this run."""
+
+    def __init__(self, *, error: dict[str, object] | None = None) -> None:
+        super().__init__()
+        self.error = error
+
+    def start_capture(self, upload, *, source_kind, client_request_id, target_language=None):
+        super().start_capture(
+            upload,
+            source_kind=source_kind,
+            client_request_id=client_request_id,
+            target_language=target_language,
+        )
+        operation = self._operation(status="completed")
+        return CaptureOperation.model_validate(
+            {
+                **operation.model_dump(mode="json", by_alias=True),
+                "lastEventSequence": 7,
+                "error": self.error,
+            }
+        )
+
+
+_ATTACHED_ERROR = {
+    "code": "ocr_page_failed",
+    "message": "runtime-only note on a completed capture",
+    "stage": "extraction",
+    "retryable": False,
+}
+
+
+def _start_review_capture_until_failed(app, operation_id: str) -> tuple[str, int]:
+    with TestClient(app) as client:
+        auth = {"Authorization": f"Bearer {AUTH_TOKEN}"}
+        project_id = _create_project(client, auth)
+        response = client.post(
+            f"/projects/{project_id}/capture-workbench/captures",
+            headers={**auth, "X-Cert-Prep-Operation-Id": operation_id},
+            files={"file": ("scanned.pdf", minimal_pdf("Scanned source."), "application/pdf")},
+        )
+        assert response.status_code == 202
+        row = None
+        for _ in range(200):
+            with app.state.database.connect() as connection:
+                row = connection.execute(
+                    """SELECT operation.status, operation.error, session.last_event_sequence
+                       FROM document_operations AS operation
+                       JOIN capture_review_sessions AS session
+                           ON session.operation_id = operation.id
+                       WHERE operation.id = ?""",
+                    (operation_id,),
+                ).fetchone()
+            if row is not None and row[0] == "failed":
+                break
+            time.sleep(0.01)
+    assert row is not None and row[0] == "failed"
+    return str(row[1]), int(row[2])
+
+
+@pytest.mark.parametrize("attached_error", [None, _ATTACHED_ERROR])
+def test_a_review_start_without_a_capture_code_keeps_the_generic_message(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, attached_error: dict[str, object] | None
+) -> None:
+    caplog.set_level("WARNING")
+    app = create_app(
+        settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
+        llm_provider=EchoCaptureProvider(),
+        capture_runtime_client=CompletedBeforeStructuringRuntime(error=attached_error),
+        document_processing_async_jobs=False,
+        streaming_draft_generation_async_jobs=False,
+    )
+
+    error, last_event_sequence = _start_review_capture_until_failed(app, "review-no-code")
+
+    assert error == "Capture Runtime extraction failed."
+    assert last_event_sequence == 7
+    [warning] = [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("Capture Runtime extraction failed for operation")
+    ]
+    assert "code None" in warning
+
+
+
+def test_a_direct_upload_completed_before_structuring_keeps_the_source_kind_message(
+    tmp_path: Path,
+) -> None:
+    # The generic message belongs to the review path; a direct upload still says which
+    # recognition could not read its source.
+    with TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
+            llm_provider=EchoCaptureProvider(),
+            capture_runtime_client=CompletedBeforeStructuringRuntime(),
+            document_processing_async_jobs=False,
+            streaming_draft_generation_async_jobs=False,
+        ),
+        raise_server_exceptions=False,
+    ) as client:
+        auth = {"Authorization": f"Bearer {AUTH_TOKEN}"}
+        project_id = _create_project(client, auth)
+        client.post(
+            f"/projects/{project_id}/documents",
+            headers={**auth, "X-Cert-Prep-Operation-Id": "direct-completed"},
+            files={"file": ("scan.pdf", minimal_pdf("Scanned page."), "application/pdf")},
+        )
+        operation = client.get(
+            f"/projects/{project_id}/document-operations/direct-completed", headers=auth
+        ).json()
+        [document] = client.get(f"/projects/{project_id}/documents", headers=auth).json()[
+            "items"
+        ]
+
+    assert operation["status"] == "failed"
+    assert operation["error"] == TEXT_RECOGNITION_FAILED_MESSAGE
+    assert document["failure_message"] == TEXT_RECOGNITION_FAILED_MESSAGE
+
+def test_a_failed_review_start_stores_cert_text_and_logs_the_runtime_text_once(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level("WARNING")
+    app = create_app(
+        settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
+        llm_provider=EchoCaptureProvider(),
+        capture_runtime_client=FailingCaptureRuntime("ocr_page_failed"),
+        document_processing_async_jobs=False,
+        streaming_draft_generation_async_jobs=False,
+    )
+
+    error, _sequence = _start_review_capture_until_failed(app, "review-runtime-text")
+
+    assert error == TEXT_RECOGNITION_FAILED_MESSAGE
+    [warning] = [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelname == "WARNING" and _RUNTIME_ONLY_TEXT in record.getMessage()
+    ]
+    assert "code ocr_page_failed" in warning
+    assert caplog.text.count(_RUNTIME_ONLY_TEXT) == 1
+
+def test_a_synchronous_upload_without_text_returns_its_document(tmp_path: Path) -> None:
+    settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
+    with TestClient(
+        create_app(
+            settings=settings,
+            llm_provider=EchoCaptureProvider(),
+            capture_runtime_client=FailingCaptureRuntime("no_text_detected"),
+            document_processing_async_jobs=False,
+            streaming_draft_generation_async_jobs=False,
+        )
+    ) as client:
+        auth = {"Authorization": f"Bearer {AUTH_TOKEN}"}
+        project_id = _create_project(client, auth)
+        response = client.post(
+            f"/projects/{project_id}/documents",
+            headers={**auth, "X-Cert-Prep-Operation-Id": "sync-no-text"},
+            files={"file": ("scan.pdf", minimal_pdf("Scanned page."), "application/pdf")},
+        )
+        operation = client.get(
+            f"/projects/{project_id}/document-operations/sync-no-text", headers=auth
+        ).json()
+
+    assert response.status_code == 201
+    document = response.json()
+    assert document["status"] == "no_text_detected"
+    assert document["failure_message"] == NO_TEXT_DETECTED_MESSAGE
+    assert operation["status"] == "failed"
+    assert operation["document_id"] == document["id"]
 
 
 def test_pending_host_snapshot_does_not_expose_runtime_terminal_state(
@@ -2035,8 +2347,9 @@ def test_terminal_event_replays_monotonically_after_result_deletes_runtime(
 
 
 def test_pdf_capture_requirement_unavailable_reports_ocr_required_failure(
-    tmp_path: Path,
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
+    caplog.set_level("WARNING")
     runtime = UnavailablePdfOcrRuntime()
     settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
     app = create_app(
@@ -2075,10 +2388,17 @@ def test_pdf_capture_requirement_unavailable_reports_ocr_required_failure(
     assert tuple(operation) == (
         "failed",
         "failed",
-        "This PDF requires WindowsML OCR, which is unavailable in the installed Capture Runtime.",
+        "This PDF requires text recognition, which is unavailable in the installed Capture Runtime.",
     )
     assert runtime.requirement_reads == 1
     assert runtime.created_request_ids == []
+    [warning] = [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelname == "WARNING" and _REQUIREMENT_DETAIL in record.getMessage()
+    ]
+    assert warning.startswith("Capture Runtime requirement ")
+    assert caplog.text.count(_REQUIREMENT_DETAIL) == 1
 
 
 def test_expired_review_is_canceled_and_terminal_cancel_is_idempotent(tmp_path: Path) -> None:

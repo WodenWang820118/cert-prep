@@ -997,7 +997,7 @@ def _document_projection(
     extraction = CaptureEngine(
         engine=(
             "text-recognition"
-            if document.extraction_method in {None, "windowsml_ocr"}
+            if document.extraction_method == "text_recognition"
             else document.extraction_method
         ),
         model=f"capture-runtime@{CAPTURE_RUNTIME_VERSION}",
@@ -1019,8 +1019,8 @@ def _document_projection(
         extraction_engine=extraction,
         structuring_engine=structuring,
         warnings=(
-            [document.ocr_fallback_reason]
-            if document.ocr_fallback_reason
+            [document.extraction_warnings]
+            if document.extraction_warnings
             else []
         ),
         created_at=document.created_at,

@@ -16,14 +16,6 @@ export type LanguageHint =
   | 'en'
   | 'mixed';
 
-/**
- * Display-ready parsing metric shown on the source document card.
- */
-export interface DocumentParsingMetric {
-  readonly label: string;
-  readonly value: string;
-}
-
 export type SourceUploadStatus =
   | 'queued'
   | 'uploading'

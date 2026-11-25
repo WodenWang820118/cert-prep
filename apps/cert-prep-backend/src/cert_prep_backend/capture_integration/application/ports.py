@@ -19,7 +19,7 @@ from cert_prep_backend.capture_integration.domain.review_session import (
 )
 from cert_prep_backend.source_library.domain.document import (
     DocumentChunk,
-    PdfExtractionResult,
+    PageExtraction,
     SourceDocument,
     SourceFile,
 )
@@ -124,7 +124,7 @@ class CapturePublication(Protocol):
         project_id: str,
         operation_id: str,
         document_id: str,
-        extraction: PdfExtractionResult,
+        extraction: PageExtraction,
     ) -> SourceDocument: ...
 
 

@@ -7,9 +7,13 @@ from collections.abc import Callable
 
 from capture_runtime_client import CaptureSourceKind
 
+from cert_prep_backend.capture_integration.application.messages import (
+    REQUIREMENT_UNAVAILABLE_CODE,
+    extraction_failure_message,
+    requirement_unavailable_message,
+)
 from cert_prep_backend.capture_integration.application.ports import CapturePublication
 from cert_prep_backend.capture_integration.infrastructure.coordinator import (
-    PDF_OCR_UNAVAILABLE_MESSAGE,
     CaptureRuntimeCanceledError,
     CaptureRuntimeJobError,
     CaptureRuntimeRequirementUnavailableError,
@@ -26,7 +30,10 @@ from cert_prep_backend.source_library.application.errors import (
     SourceExtractionFailed,
     SourceTextNotDetected,
 )
-from cert_prep_backend.source_library.domain.document import SourceDocument
+from cert_prep_backend.source_library.domain.document import (
+    NO_TEXT_DETECTED_MESSAGE,
+    SourceDocument,
+)
 
 logger = logging.getLogger(__name__)
 _MEDIA_TYPES = {
@@ -41,7 +48,6 @@ _MEDIA_TYPES = {
 }
 # Language hints Capture's speech recognition is told for audio; the rest keep its Chinese default.
 _CAPTURE_SPOKEN_LANGUAGES = {"ja": "ja", "en": "en"}
-_REQUIREMENTS_UNAVAILABLE = "Capture Runtime extraction requirements are unavailable."
 
 
 def capture_spoken_language(language_hint: str) -> str | None:
@@ -96,19 +102,36 @@ class CaptureSourceExtraction:
         except CaptureRuntimeCanceledError as error:
             raise DocumentProcessingCanceledError(str(error)) from error
         except CaptureRuntimeRequirementUnavailableError as error:
-            message = PDF_OCR_UNAVAILABLE_MESSAGE if source_kind == "pdf" else str(error)
-            raise ProviderUnavailableError(message) from error
+            # Cert stores and shows its own message. The runtime's requirement detail is a
+            # diagnostic: it is logged here once and kept out of the stored error and of the
+            # exception chain.
+            logger.warning(
+                "Capture Runtime requirement %s unavailable for operation %s (%s source): %s",
+                error.requirement_id,
+                operation_id,
+                source_kind,
+                error,
+            )
+            raise ProviderUnavailableError(requirement_unavailable_message(source_kind)) from None
         except CaptureRuntimeJobError as error:
-            if error.code == "requirement_unavailable":
-                message = (
-                    PDF_OCR_UNAVAILABLE_MESSAGE
-                    if source_kind == "pdf"
-                    else _REQUIREMENTS_UNAVAILABLE
-                )
-                raise ProviderUnavailableError(message) from error
+            logger.warning(
+                "Capture Runtime extraction failed for operation %s (%s source), "
+                "code %s, stage %s: %s",
+                operation_id,
+                source_kind,
+                error.code,
+                error.stage,
+                error,
+            )
+            if error.code == REQUIREMENT_UNAVAILABLE_CODE:
+                raise ProviderUnavailableError(
+                    requirement_unavailable_message(source_kind)
+                ) from None
             if error.code == "no_text_detected":
-                raise SourceTextNotDetected(str(error)) from error
-            raise SourceExtractionFailed(str(error)) from error
+                raise SourceTextNotDetected(NO_TEXT_DETECTED_MESSAGE) from None
+            raise SourceExtractionFailed(
+                extraction_failure_message(source_kind, error.code)
+            ) from None
 
         document = publish_capture_document(
             project_id=project_id,

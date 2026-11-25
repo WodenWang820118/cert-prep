@@ -77,7 +77,7 @@
       "label": "題目產生失敗",
       "codeName": "SourceDocumentStatus.EXAM_FAILED",
       "enum": { "enumId": "SourceDocumentStatus", "value": "exam_failed" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.document-status.no-text-detected",
@@ -91,6 +91,13 @@
       "label": "OCR 失敗",
       "codeName": "SourceDocumentStatus.OCR_FAILED",
       "enum": { "enumId": "SourceDocumentStatus", "value": "ocr_failed" },
+      "retired": true
+    },
+    {
+      "id": "source-library.document-status.extraction-failed",
+      "label": "擷取失敗",
+      "codeName": "SourceDocumentStatus.EXTRACTION_FAILED",
+      "enum": { "enumId": "SourceDocumentStatus", "value": "extraction_failed" },
       "retired": false
     },
     {
@@ -108,20 +115,20 @@
       "label": "內嵌文字",
       "codeName": "PdfExtractionMethod.EMBEDDED",
       "enum": { "enumId": "PdfExtractionMethod", "value": "embedded" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.extraction-method.mixed",
       "label": "內嵌文字與 OCR 混合",
       "codeName": "PdfExtractionMethod.MIXED",
       "enum": { "enumId": "PdfExtractionMethod", "value": "mixed" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.extraction-method.none",
       "label": "沒有擷取",
-      "codeName": "PdfExtractionMethod.NONE",
-      "enum": { "enumId": "PdfExtractionMethod", "value": "none" },
+      "codeName": "ExtractionMethod.NONE",
+      "enum": { "enumId": "ExtractionMethod", "value": "none" },
       "retired": false
     },
     {
@@ -129,13 +136,46 @@
       "label": "OCR 失敗",
       "codeName": "PdfExtractionMethod.OCR_FAILED",
       "enum": { "enumId": "PdfExtractionMethod", "value": "ocr_failed" },
-      "retired": false
+      "retired": true
     },
     {
       "id": "source-library.extraction-method.windowsml-ocr",
       "label": "Windows ML OCR",
       "codeName": "PdfExtractionMethod.WINDOWSML_OCR",
       "enum": { "enumId": "PdfExtractionMethod", "value": "windowsml_ocr" },
+      "retired": true
+    },
+    {
+      "id": "source-library.extraction-method.text-recognition",
+      "label": "文字辨識",
+      "codeName": "ExtractionMethod.TEXT_RECOGNITION",
+      "enum": { "enumId": "ExtractionMethod", "value": "text_recognition" },
+      "retired": false
+    },
+    {
+      "id": "source-library.extraction-method.transcription",
+      "label": "轉錄",
+      "codeName": "ExtractionMethod.TRANSCRIPTION",
+      "enum": { "enumId": "ExtractionMethod", "value": "transcription" },
+      "retired": false
+    },
+    {
+      "id": "source-library.extraction-method.text-layer",
+      "label": "文字圖層",
+      "codeName": "ExtractionMethod.TEXT_LAYER",
+      "enum": { "enumId": "ExtractionMethod", "value": "text_layer" },
+      "retired": false
+    },
+    {
+      "id": "source-library.extraction-warnings",
+      "label": "擷取警告",
+      "codeName": "DocumentRead.extraction_warnings",
+      "retired": false
+    },
+    {
+      "id": "source-library.failure-message",
+      "label": "失敗訊息",
+      "codeName": "DocumentRead.failure_message",
       "retired": false
     },
     {
@@ -164,6 +204,13 @@
       "label": "混合",
       "codeName": "ContentProfile.MIXED",
       "enum": { "enumId": "ContentProfile", "value": "mixed" },
+      "retired": false
+    },
+    {
+      "id": "source-library.content-profile.study-material",
+      "label": "學習教材",
+      "codeName": "ContentProfile.STUDY_MATERIAL",
+      "enum": { "enumId": "ContentProfile", "value": "study_material" },
       "retired": false
     },
     {

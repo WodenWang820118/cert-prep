@@ -14,7 +14,6 @@ import type { DocumentOperationEvent } from '../../core/domain';
 import { CertPrepHttpResourceClient } from '../../core/data';
 import { CertPrepSseClient } from '../../core/data';
 import type {
-  DocumentParsingMetric,
   LanguageHint,
   SourceDocumentActivity,
   SourceFileSelectionOptions,
@@ -351,10 +350,6 @@ export class SourceImportStore {
 
   showMoreChunks(): void {
     this.library.showMoreChunks();
-  }
-
-  parsingMetrics(document: DocumentRead): DocumentParsingMetric[] {
-    return this.metrics.parsingMetrics(document);
   }
 
   uploadDocument(): void {
@@ -710,10 +705,9 @@ export class SourceImportStore {
       document === null ||
       ![
         'canceled',
-        'ocr_failed',
+        'extraction_failed',
         'transcription_failed',
         'no_text_detected',
-        'exam_failed',
       ].includes(document.status)
     ) {
       return;

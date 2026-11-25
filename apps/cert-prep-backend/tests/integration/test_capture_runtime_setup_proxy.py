@@ -83,12 +83,12 @@ class RecordingSetupClient:
                 RuntimeRequirement(
                     requirement_id="text-recognition",
                     kind="text-recognition",
-                    display_name="WindowsML OCR",
+                    display_name="Text recognition",
                     status=RuntimeRequirementStatus.INSTALLABLE,
                     required_for=["pdf", "image"],
                     install_strategy="checksum-pinned-bundle",
                     artifact=RuntimeArtifactDescriptor(
-                        artifact_url="https://github.com/example/capture-windowsml.zip",
+                        artifact_url="https://github.com/example/capture-text-recognition-windows-x64.zip",
                         artifact_file_name="capture-text-recognition-windows-x64.zip",
                         bytes=138_837_175,
                         sha256="a88c9a3097771d07bd1d940db6acdcbb5336e7c6c85406f5c22655ed6930704a",
@@ -143,7 +143,7 @@ class CoreOnlySetupClient(RecordingSetupClient):
                 RuntimeRequirement(
                     requirement_id="text-recognition",
                     kind="text-recognition",
-                    display_name="WindowsML OCR",
+                    display_name="Text recognition",
                     status=RuntimeRequirementStatus.UNAVAILABLE,
                     required_for=["pdf", "image"],
                     install_strategy="unavailable",

@@ -61,7 +61,7 @@ def test_runtime_setup_use_cases_return_the_port_result() -> None:
     assert use_cases.view_runtime_ready(setup) == "body"
     assert use_cases.list_runtime_requirements(setup) == "body"
     started = use_cases.start_runtime_installation(
-        setup, requirement_id="windowsml-ocr", idempotency_key=KEY
+        setup, requirement_id="text-recognition", idempotency_key=KEY
     )
     assert started == "body"
     assert use_cases.list_runtime_installations(setup) == "body"
@@ -70,7 +70,7 @@ def test_runtime_setup_use_cases_return_the_port_result() -> None:
     assert setup.calls == [
         ("handshake",),
         ("requirements",),
-        ("start_installation", "windowsml-ocr", KEY),
+        ("start_installation", "text-recognition", KEY),
         ("installations",),
         ("installation", "job"),
         ("cancel_installation", "job"),

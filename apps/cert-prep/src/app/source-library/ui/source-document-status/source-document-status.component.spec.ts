@@ -49,7 +49,11 @@ describe('SourceDocumentStatusComponent', () => {
     buttonByText(processingFixture.nativeElement, 'Cancel').click();
 
     const failedFixture = createFixture({
-      document: documentRead({ status: 'ocr_failed', has_text: false }),
+      document: documentRead({
+        status: 'extraction_failed',
+        has_text: false,
+        failure_message: 'Text recognition is unavailable.',
+      }),
     });
     const failedActions: SourceImportAction[] = [];
     failedFixture.componentInstance.action.subscribe((action) => failedActions.push(action));
@@ -59,21 +63,44 @@ describe('SourceDocumentStatusComponent', () => {
     expect(failedActions).toEqual([{ type: 'retry-processing' }]);
     expect(failedFixture.nativeElement.querySelector('h3')?.textContent?.trim()).toBe('Source could not be read');
     expect(failedFixture.nativeElement.textContent).toContain('Retry source processing');
+    expect(failedFixture.nativeElement.textContent).toContain('Text recognition is unavailable.');
+    expect(failedFixture.nativeElement.textContent).not.toContain('Check the extracted text');
+  });
+
+  it('explains a failure only while the document has a failure status', () => {
+    const failed = createFixture({
+      document: documentRead({
+        status: 'no_text_detected',
+        has_text: false,
+        failure_message: 'No reviewable text.',
+      }),
+    });
+    const readyAgain = createFixture({
+      document: documentRead({ status: 'ready', failure_message: 'No reviewable text.' }),
+    });
+
+    expect(failed.nativeElement.querySelector('[role="alert"]')?.textContent).toContain(
+      'Why it failed: No reviewable text.',
+    );
+    expect(readyAgain.nativeElement.textContent).toContain('Ready to review');
+    expect(readyAgain.nativeElement.textContent).not.toContain('No reviewable text.');
+    expect(readyAgain.nativeElement.textContent).not.toContain('Why it failed');
   });
 
   it('keeps internal stream and fallback details out of the human-facing status', () => {
     const fixture = createFixture({
       document: documentRead({
-        ocr_fallback_reason: 'WindowsML internal fallback detail',
+        status: 'ready',
+        extraction_warnings: 'Internal extraction warning',
       }),
       streamError: 'SSE connection error: status=503',
     });
 
     const text = fixture.nativeElement.textContent as string;
-    expect(text).toContain('fallback reader');
+    expect(text).toContain('Check the extracted text before practice.');
     expect(text).toContain('We could not update the source status.');
     expect(text).toContain('Retry source status');
-    expect(text).not.toContain('WindowsML internal fallback detail');
+    expect(text).not.toContain('Internal extraction warning');
     expect(text).not.toContain('SSE connection error');
   });
 });

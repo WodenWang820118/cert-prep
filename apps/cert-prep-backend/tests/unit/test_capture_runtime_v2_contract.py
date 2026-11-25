@@ -1207,7 +1207,7 @@ def _streaming_result() -> dict[str, object]:
         "engine": "text-recognition",
         "model": f"capture-runtime@{CAPTURE_RUNTIME_VERSION}",
         "digest": f"sha256:{'a' * 64}",
-        "device": "WindowsML",
+        "device": "directml",
     }
     raw = {
         "schemaVersion": "2",

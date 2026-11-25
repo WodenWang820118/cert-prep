@@ -36,7 +36,11 @@ from cert_prep_backend.capture_integration.application.errors import (
     CaptureRuntimeCallFailed,
     CaptureSourceMissing,
 )
-from cert_prep_backend.capture_integration.application.messages import PDF_OCR_UNAVAILABLE_MESSAGE
+from cert_prep_backend.capture_integration.application.messages import (
+    PDF_OCR_UNAVAILABLE_MESSAGE,
+    TEXT_RECOGNITION_FAILED_MESSAGE,
+    TEXT_RECOGNITION_UNAVAILABLE_MESSAGE,
+)
 from cert_prep_backend.capture_integration.application.results import (
     RuntimeCancellation,
     StructuringFailureNotice,
@@ -103,14 +107,9 @@ def source_document(filename: str = "scan.png", *, chunks_count: int = 0) -> Sou
         status="uploaded",
         extraction_method="none",
         ocr_device=None,
-        ocr_fallback_reason=None,
-        ocr_duration_ms=0,
+        extraction_warnings=None,
+        failure_message=None,
         processed_page_count=0,
-        parse_wall_duration_ms=0,
-        render_duration_ms=0,
-        ocr_engine_duration_ms=0,
-        ocr_worker_count=0,
-        first_chunk_ms=0,
         exam_item_count=0,
         content_profile="unknown",
         classification_detail="",
@@ -927,7 +926,7 @@ def test_pdf_requirement_failure_uses_the_pdf_message_and_no_sequence() -> None:
     world = World()
     world.source = SourceFile("notes.bin", DIGEST, "uploads/notes.PDF")
     world.documents.source = world.source
-    world.workflow.error = CaptureRequirementUnavailable("windowsml down")
+    world.workflow.error = CaptureRequirementUnavailable("runtime detail")
 
     extract(world)
 
@@ -952,7 +951,7 @@ def test_pdf_requirement_failure_uses_the_pdf_message_and_no_sequence() -> None:
     ]
 
 
-def test_image_requirement_failure_uses_the_runtime_message() -> None:
+def test_image_requirement_failure_stores_cert_text_not_the_runtime_message() -> None:
     world = World()
     world.workflow.error = CaptureRequirementUnavailable("decoder missing")
 
@@ -971,7 +970,7 @@ def test_image_requirement_failure_uses_the_runtime_message() -> None:
     )
     assert world.trace[-3:] == [
         ("finish", PROJECT, "session", CaptureReviewStatus.FAILED, None),
-        ("fail", PROJECT, OPERATION, "decoder missing"),
+        ("fail", PROJECT, OPERATION, TEXT_RECOGNITION_UNAVAILABLE_MESSAGE),
         ("publish_terminal", PROJECT, "session", CaptureReviewStatus.FAILED),
     ]
 
@@ -1003,7 +1002,7 @@ def test_a_pdf_requirement_job_keeps_the_pdf_message_and_the_sequence() -> None:
     ]
 
 
-def test_any_other_job_code_uses_the_generic_message_and_the_sequence() -> None:
+def test_any_other_job_code_stores_the_text_recognition_failure_and_the_sequence() -> None:
     world = World()
     world.source = SourceFile("notes.pdf", DIGEST, "uploads/notes.pdf")
     world.documents.source = world.source
@@ -1013,6 +1012,21 @@ def test_any_other_job_code_uses_the_generic_message_and_the_sequence() -> None:
 
     assert world.trace[-3:] == [
         ("finish", PROJECT, "session", CaptureReviewStatus.FAILED, 3),
+        ("fail", PROJECT, OPERATION, TEXT_RECOGNITION_FAILED_MESSAGE),
+        ("publish_terminal", PROJECT, "session", CaptureReviewStatus.FAILED),
+    ]
+
+
+def test_a_failure_without_a_capture_code_keeps_the_generic_message() -> None:
+    # For example, storing the review state failed after extraction: no text recognition
+    # diagnosis applies.
+    world = World()
+    world.workflow.error = CaptureExtractionFailed(None, None)
+
+    extract(world)
+
+    assert world.trace[-3:] == [
+        ("finish", PROJECT, "session", CaptureReviewStatus.FAILED, None),
         ("fail", PROJECT, OPERATION, EXTRACTION_FAILED),
         ("publish_terminal", PROJECT, "session", CaptureReviewStatus.FAILED),
     ]

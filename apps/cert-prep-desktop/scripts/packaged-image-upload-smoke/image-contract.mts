@@ -25,9 +25,8 @@ export const PACKAGED_STATIC_IMAGE_SHA256 = createHash('sha256')
 const TERMINAL_STATUSES = new Set([
   'ready',
   'no_text_detected',
-  'ocr_failed',
+  'extraction_failed',
   'canceled',
-  'exam_failed',
 ]);
 
 export interface PackagedImageDocumentEvidence {
@@ -42,7 +41,8 @@ export interface PackagedImageDocumentEvidence {
   readonly chunks_count: number;
   readonly extraction_method: string;
   readonly ocr_device: string;
-  readonly ocr_fallback_reason: string | null;
+  readonly extraction_warnings: string | null;
+  readonly failure_message: string | null;
   readonly source_kind?: string;
 }
 
@@ -101,10 +101,13 @@ export function requireExpectedTerminalImageDocument(
     );
   }
   if (
-    payload.ocr_fallback_reason !== null &&
-    typeof payload.ocr_fallback_reason !== 'string'
+    payload.extraction_warnings !== null &&
+    typeof payload.extraction_warnings !== 'string'
   ) {
-    throw new Error('Packaged image document ocr_fallback_reason was invalid.');
+    throw new Error('Packaged image document extraction_warnings was invalid.');
+  }
+  if (payload.failure_message !== null && typeof payload.failure_message !== 'string') {
+    throw new Error('Packaged image document failure_message was invalid.');
   }
   return payload as unknown as PackagedImageDocumentEvidence;
 }
@@ -123,7 +126,8 @@ export function requireExpectedOcrImageDocument(
     page_count: 1,
     processed_page_count: 1,
     has_text: true,
-    extraction_method: 'windowsml_ocr',
+    extraction_method: 'text_recognition',
+    failure_message: null,
   };
   for (const [field, value] of Object.entries(fields)) {
     if (payload[field] !== value) {
@@ -153,10 +157,10 @@ export function requireExpectedOcrImageDocument(
     );
   }
   if (
-    payload.ocr_fallback_reason !== null &&
-    typeof payload.ocr_fallback_reason !== 'string'
+    payload.extraction_warnings !== null &&
+    typeof payload.extraction_warnings !== 'string'
   ) {
-    throw new Error('Packaged OCR image document ocr_fallback_reason was invalid.');
+    throw new Error('Packaged OCR image document extraction_warnings was invalid.');
   }
   return payload as unknown as PackagedImageDocumentEvidence;
 }
@@ -211,7 +215,7 @@ export async function waitForExpectedOcrImageDocument(
     }
     if (
       isRecord(latest) &&
-      ['ocr_failed', 'canceled', 'exam_failed'].includes(String(latest.status))
+      ['extraction_failed', 'canceled', 'no_text_detected'].includes(String(latest.status))
     ) {
       throw new Error(
         `Packaged OCR image document ended as ${String(latest.status)}.`,

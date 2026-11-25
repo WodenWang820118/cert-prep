@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -10,6 +11,30 @@ from cert_prep_backend.source_library.infrastructure import chunks as chunk_repo
 from cert_prep_backend.platform import database as database_module
 from cert_prep_backend.platform.database import MIGRATIONS, Database
 
+
+# Text only Capture Runtime could have written; migration 30 must not keep it.
+RUNTIME_TEXT = "worker exited 3221225477 while reading page 2 of C:/scans/notes.pdf"
+# A reason Cert wrote itself; migration 30 keeps it.
+INTERRUPTED_TEXT = "Parsing was interrupted before completion."
+# Two reasons earlier releases of Cert wrote; migration 30 keeps them too.
+REQUIREMENTS_TEXT = "Capture Runtime extraction requirements are unavailable."
+ASSETS_TEXT = (
+    "Capture Runtime extraction assets are unavailable. Install the required WindowsML or "
+    "Whisper asset in Runtime setup, then retry."
+)
+
+# Migration 30 drops these document columns.
+RETIRED_DOCUMENT_COLUMNS = frozenset(
+    {
+        "ocr_fallback_reason",
+        "ocr_duration_ms",
+        "parse_wall_duration_ms",
+        "render_duration_ms",
+        "ocr_engine_duration_ms",
+        "ocr_worker_count",
+        "first_chunk_ms",
+    }
+)
 
 def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> None:
     db = Database(Settings(data_dir=tmp_path, api_token="test-token"))
@@ -35,13 +60,10 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
 
     assert document_columns["content_profile"] == "'unknown'"
     assert "classification_detail" in document_columns
-    assert {
-        "parse_wall_duration_ms",
-        "render_duration_ms",
-        "ocr_engine_duration_ms",
-        "ocr_worker_count",
-        "first_chunk_ms",
-    } <= set(document_columns)
+    assert {"extraction_warnings", "failure_message"} <= set(document_columns)
+    assert RETIRED_DOCUMENT_COLUMNS.isdisjoint(document_columns)
+    assert document_columns["extraction_method"] == "'none'"
+    assert chunk_columns["extraction_method"] == "'none'"
     assert {"raw_text", "line_start", "line_end", "line_count", "content_profile"} <= set(
         chunk_columns
     )
@@ -985,3 +1007,415 @@ def test_migration_29_upgrades_a_version_28_database(tmp_path: Path) -> None:
     assert count == 0
     assert project["name"] == "Kept"
     assert versions == [version for version, _sql in MIGRATIONS]
+
+
+def test_migration_30_rewrites_extraction_vocabulary_and_preserves_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = Settings(data_dir=tmp_path, api_token="test-token")
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            database_module,
+            "MIGRATIONS",
+            tuple(migration for migration in MIGRATIONS if migration[0] < 30),
+        )
+        previous = Database(settings)
+        pdf_error = (
+            "This PDF requires WindowsML OCR, which is unavailable in the installed "
+            "Capture Runtime."
+        )
+        image_error = (
+            "WindowsML OCR is unavailable. "
+            "No downloadable model is published for this runtime release."
+        )
+        with previous.connect() as connection:
+            connection.execute(
+                """INSERT INTO projects(id, name, description, created_at, updated_at)
+                   VALUES ('p', 'Kept', '', '2026-01-01', '2026-01-01')"""
+            )
+            # Each WindowsML device name a release stored, and the values that stay.
+            stored_devices = {
+                "ocr": "windowsml-dml",
+                "embedded": "amd_windowsml:0",
+                "mixed": "windowsml",
+                "failed": "cpu",
+                "exam": "directml",
+                "audio": None,
+                "runtime": None,
+                "speech": None,
+                "interrupted": None,
+                "silent": None,
+                "retried": None,
+                "requirements": None,
+                "assets": None,
+                "notext": None,
+                "notext-ambiguous": None,
+                "notext-unmatched": None,
+            }
+            audio_documents = {"audio", "speech", "silent"}
+            # The stored values of the old vocabulary, named once.
+            old_failed = "ocr_failed"
+            old_recognition = "windowsml_ocr"
+            for doc, status, method, message in (
+                ("ocr", "ready", old_recognition, image_error),
+                ("embedded", "ready", "embedded", None),
+                ("mixed", "ready", "mixed", None),
+                ("failed", old_failed, old_failed, pdf_error),
+                ("exam", "exam_failed", "none", "No reviewable text."),
+                ("audio", "ready", "transcription", None),
+                # A failure reason an earlier release copied from the runtime's error text.
+                ("runtime", old_failed, old_failed, RUNTIME_TEXT),
+                ("speech", "transcription_failed", "none", RUNTIME_TEXT),
+                # A failure reason Cert itself wrote: true, so it is kept.
+                ("interrupted", old_failed, old_failed, INTERRUPTED_TEXT),
+                # A failed recording: the writer of that release stored no reason, only the
+                # operation error.
+                ("silent", "transcription_failed", "none", None),
+                # Retried successfully; only an earlier failed operation keeps runtime text.
+                ("retried", "ready", old_recognition, None),
+                # Two texts earlier releases of Cert wrote itself.
+                ("requirements", old_failed, old_failed, REQUIREMENTS_TEXT),
+                ("assets", old_failed, old_failed, ASSETS_TEXT),
+                # Two failed runs stored the same runtime text; only the one that settled
+                # last, at the document's updated_at, found no text.
+                ("notext", "no_text_detected", "none", RUNTIME_TEXT),
+                # Two failed runs settled at the document's updated_at: neither is known to
+                # be the run without text.
+                ("notext-ambiguous", "no_text_detected", "none", RUNTIME_TEXT),
+                # No failed run settled at the document's updated_at.
+                ("notext-unmatched", "no_text_detected", "none", RUNTIME_TEXT),
+            ):
+                connection.execute(
+                    """INSERT INTO documents(
+                        id, project_id, filename, sha256, storage_path, page_count, has_text,
+                        status, created_at, extraction_method, ocr_device, ocr_fallback_reason,
+                        source_kind
+                    ) VALUES (?, 'p', 'source', 'digest', 'path', 1, 1,
+                              ?, '2026-01-01', ?, ?, ?, ?)""",
+                    (
+                        doc, status, method, stored_devices[doc],
+                        message, "audio" if doc in audio_documents else "document",
+                    ),
+                )
+                connection.execute(
+                    """INSERT INTO document_chunks(
+                        id, project_id, document_id, page_number, chunk_index, text,
+                        source_excerpt, created_at, extraction_method, locator_kind,
+                        start_ms, end_ms
+                    ) VALUES (?, 'p', ?, 1, 0, 'kept text', 'excerpt', '2026-01-01',
+                              ?, ?, ?, ?)""",
+                    (
+                        doc, doc, method, "time" if doc in audio_documents else "page",
+                        12 if doc in audio_documents else None,
+                        30 if doc in audio_documents else None,
+                    ),
+                )
+            connection.execute(
+                """INSERT INTO question_drafts(
+                    id, project_id, document_id, chunk_id, question, choices_json,
+                    status, created_at, updated_at
+                ) VALUES ('q', 'p', 'ocr', 'ocr', 'Question', '[]',
+                          'approved', '2026-01-01', '2026-01-01')"""
+            )
+            for doc, message in (
+                ("failed", pdf_error),
+                ("ocr", image_error),
+                ("runtime", RUNTIME_TEXT),
+                ("speech", RUNTIME_TEXT),
+                ("interrupted", INTERRUPTED_TEXT),
+                ("silent", RUNTIME_TEXT),
+                ("retried", RUNTIME_TEXT),
+                ("requirements", REQUIREMENTS_TEXT),
+                ("assets", ASSETS_TEXT),
+            ):
+                connection.execute(
+                    """INSERT INTO document_operations(
+                        id, project_id, document_id, status, phase, cancellable, error,
+                        created_at, updated_at
+                    ) VALUES (?, 'p', ?, 'failed', 'failed', 0, ?, '2026-01-01', '2026-01-01')""",
+                    (doc, doc, message),
+                )
+            # The failure writer stored one timestamp as the operation's and the document's
+            # updated_at. A retry took its created_at before it waited for the write lock, so
+            # the run without text ('notext') is not the newest by created_at.
+            for doc, settled_at in (
+                ("notext", "2026-01-03"),
+                ("notext-ambiguous", "2026-01-03"),
+                ("notext-unmatched", "2026-01-04"),
+            ):
+                connection.execute(
+                    "UPDATE documents SET updated_at = ? WHERE id = ?", (settled_at, doc)
+                )
+            for operation, doc, created_at, updated_at in (
+                ("notext", "notext", "2026-01-01", "2026-01-03"),
+                ("notext-newer", "notext", "2026-01-02", "2026-01-02"),
+                ("notext-ambiguous", "notext-ambiguous", "2026-01-01", "2026-01-03"),
+                ("notext-ambiguous-retry", "notext-ambiguous", "2026-01-02", "2026-01-03"),
+                ("notext-unmatched", "notext-unmatched", "2026-01-01", "2026-01-02"),
+                ("notext-unmatched-retry", "notext-unmatched", "2026-01-02", "2026-01-03"),
+            ):
+                connection.execute(
+                    """INSERT INTO document_operations(
+                        id, project_id, document_id, status, phase, cancellable, error,
+                        created_at, updated_at
+                    ) VALUES (?, 'p', ?, 'failed', 'failed', 0, ?, ?, ?)""",
+                    (operation, doc, RUNTIME_TEXT, created_at, updated_at),
+                )
+            # A canceled run that settled at the same time as the run without text is not a
+            # second candidate: only failed runs count.
+            connection.execute(
+                """INSERT INTO document_operations(
+                    id, project_id, document_id, status, phase, cancellable, error,
+                    created_at, updated_at
+                ) VALUES ('notext-canceled', 'p', 'notext', 'canceled', 'canceled', 0, NULL,
+                          '2026-01-01', '2026-01-03')"""
+            )
+            outline_before = _extraction_schema_outline(connection)
+            counts_before = _row_counts(connection)
+
+    def snapshot(
+        db: Database,
+    ) -> tuple[list[tuple[object, ...]], list[tuple[object, ...]], list[tuple[object, ...]], str]:
+        with db.connect() as connection:
+            assert connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+            assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+            question = connection.execute(
+                "SELECT document_id, chunk_id FROM question_drafts WHERE id = 'q'"
+            ).fetchone()
+            assert question is not None
+            assert tuple(question) == ("ocr", "ocr")
+            documents = connection.execute(
+                """SELECT id, status, extraction_method, ocr_device, extraction_warnings,
+                          failure_message, sha256, source_kind
+                   FROM documents ORDER BY id"""
+            )
+            chunks = connection.execute(
+                """SELECT document_id, extraction_method, text, locator_kind, start_ms, end_ms
+                   FROM document_chunks ORDER BY document_id"""
+            )
+            operations = connection.execute(
+                "SELECT document_id, error FROM document_operations ORDER BY document_id, id"
+            )
+            applied = connection.execute(
+                "SELECT applied_at FROM schema_migrations WHERE version = 30"
+            ).fetchone()[0]
+            return (
+                [tuple(row) for row in documents],
+                [tuple(row) for row in chunks],
+                [tuple(row) for row in operations],
+                str(applied),
+            )
+
+    pdf_failure = (
+        "This PDF requires text recognition, which is unavailable in the installed "
+        "Capture Runtime."
+    )
+    image_warning = (
+        "Text recognition is unavailable. "
+        "No downloadable model is published for this runtime release."
+    )
+    image_unavailable = "Text recognition is unavailable in the installed Capture Runtime."
+    no_text = "No reviewable text was found in this source."
+    unreadable = "Text recognition could not read this source."
+    untranscribed = "Speech recognition could not transcribe this recording."
+    first = snapshot(Database(settings))
+    assert first[0] == [
+        ("assets", "extraction_failed", "none", None, None, ASSETS_TEXT, "digest", "document"),
+        ("audio", "ready", "transcription", None, None, None, "digest", "audio"),
+        ("embedded", "ready", "text_layer", "directml", None, None, "digest", "document"),
+        ("exam", "no_text_detected", "none", "directml", None, no_text, "digest", "document"),
+        ("failed", "extraction_failed", "none", "cpu", None, pdf_failure, "digest", "document"),
+        (
+            "interrupted", "extraction_failed", "none", None, None, INTERRUPTED_TEXT,
+            "digest", "document",
+        ),
+        ("mixed", "ready", "text_layer", "directml", None, None, "digest", "document"),
+        ("notext", "no_text_detected", "none", None, None, no_text, "digest", "document"),
+        (
+            "notext-ambiguous", "no_text_detected", "none", None, None, no_text,
+            "digest", "document",
+        ),
+        (
+            "notext-unmatched", "no_text_detected", "none", None, None, no_text,
+            "digest", "document",
+        ),
+        ("ocr", "ready", "text_recognition", "directml", image_warning, None, "digest", "document"),
+        (
+            "requirements", "extraction_failed", "none", None, None, REQUIREMENTS_TEXT,
+            "digest", "document",
+        ),
+        ("retried", "ready", "text_recognition", None, None, None, "digest", "document"),
+        ("runtime", "extraction_failed", "none", None, None, unreadable, "digest", "document"),
+        ("silent", "transcription_failed", "none", None, None, untranscribed, "digest", "audio"),
+        ("speech", "transcription_failed", "none", None, None, untranscribed, "digest", "audio"),
+    ]
+    assert first[1] == [
+        ("assets", "none", "kept text", "page", None, None),
+        ("audio", "transcription", "kept text", "time", 12, 30),
+        ("embedded", "text_layer", "kept text", "page", None, None),
+        ("exam", "none", "kept text", "page", None, None),
+        ("failed", "none", "kept text", "page", None, None),
+        ("interrupted", "none", "kept text", "page", None, None),
+        ("mixed", "text_layer", "kept text", "page", None, None),
+        ("notext", "none", "kept text", "page", None, None),
+        ("notext-ambiguous", "none", "kept text", "page", None, None),
+        ("notext-unmatched", "none", "kept text", "page", None, None),
+        ("ocr", "text_recognition", "kept text", "page", None, None),
+        ("requirements", "none", "kept text", "page", None, None),
+        ("retried", "text_recognition", "kept text", "page", None, None),
+        ("runtime", "none", "kept text", "page", None, None),
+        ("silent", "none", "kept text", "time", 12, 30),
+        ("speech", "none", "kept text", "time", 12, 30),
+    ]
+    assert first[2] == [
+        ("assets", ASSETS_TEXT),
+        ("failed", pdf_failure),
+        ("interrupted", INTERRUPTED_TEXT),
+        # Only the run that settled at the document's updated_at found no text, although
+        # 'notext-newer' was created later; the canceled run that settled at the same time
+        # stays as it was.
+        ("notext", no_text),
+        ("notext", None),
+        ("notext", unreadable),
+        # Two runs settled at the document's updated_at, or none did: no run is known to be
+        # the run without text.
+        ("notext-ambiguous", unreadable),
+        ("notext-ambiguous", unreadable),
+        ("notext-unmatched", unreadable),
+        ("notext-unmatched", unreadable),
+        ("ocr", image_unavailable),
+        ("requirements", REQUIREMENTS_TEXT),
+        ("retried", unreadable),
+        ("runtime", unreadable),
+        ("silent", untranscribed),
+        ("speech", untranscribed),
+    ]
+    assert RUNTIME_TEXT not in repr(first)
+
+    with Database(settings).connect() as connection:
+        outline_after = _extraction_schema_outline(connection)
+        counts_after = _row_counts(connection)
+    # The rebuild keeps every row, index, trigger and foreign key; only the
+    # retired columns go, the two message columns arrive and the default
+    # extraction method stops naming a retired value.
+    assert counts_after == {
+        **counts_before,
+        "schema_migrations": counts_before["schema_migrations"] + 1,
+    }
+    assert outline_after["objects"] == outline_before["objects"]
+    assert outline_after["foreign_keys"] == outline_before["foreign_keys"]
+    for table, dropped, added in (
+        ("documents", RETIRED_DOCUMENT_COLUMNS, {"extraction_warnings", "failure_message"}),
+        ("document_chunks", set(), set()),
+    ):
+        before_columns = outline_before["columns"][table]
+        after_columns = outline_after["columns"][table]
+        assert set(after_columns) == (set(before_columns) - dropped) | added
+        # Every kept column keeps its type, NOT NULL and default; only the default of the
+        # extraction method changes from the retired value to none.
+        type_, not_null, default, primary_key = before_columns["extraction_method"]
+        assert default == "'embedded'"
+        expected = {
+            name: definition
+            for name, definition in before_columns.items()
+            if name in after_columns
+        }
+        expected["extraction_method"] = (type_, not_null, "'none'", primary_key)
+        assert {
+            name: definition
+            for name, definition in after_columns.items()
+            if name in before_columns
+        } == expected
+
+    assert snapshot(Database(settings)) == first
+
+    # The triggers that name document_chunks and the cascades into the rebuilt tables still
+    # work on the rebuilt tables.
+    with Database(settings).connect() as connection:
+        insert_job = """INSERT INTO draft_generation_jobs(
+                id, project_id, document_id, chunk_id, source_chunk_id, page_number,
+                strategy, status, provider, model, created_at, updated_at
+            ) VALUES (?, 'p', ?, ?, ?, 1, 'hybrid_reasoning', 'pending', 'provider',
+                      'model', '2026-01-01', '2026-01-01')"""
+        connection.execute(insert_job, ("job", "embedded", "embedded", "embedded"))
+        with pytest.raises(sqlite3.IntegrityError, match="must belong to its document"):
+            connection.execute(insert_job, ("foreign-job", "embedded", "mixed", "mixed"))
+        with pytest.raises(sqlite3.IntegrityError, match="must belong to its document"):
+            connection.execute(
+                "UPDATE draft_generation_jobs SET chunk_id = 'mixed' WHERE id = 'job'"
+            )
+        connection.execute(
+            """INSERT INTO question_drafts(
+                id, project_id, document_id, chunk_id, question, choices_json,
+                status, created_at, updated_at
+            ) VALUES ('audio-q', 'p', 'audio', 'audio', 'Question', '[]',
+                      'approved', '2026-01-01', '2026-01-01')"""
+        )
+        citation = connection.execute(
+            """SELECT citation_locator_kind, citation_start_ms, citation_end_ms
+               FROM question_drafts WHERE id = 'audio-q'"""
+        ).fetchone()
+        assert tuple(citation) == ("time", 12, 30)
+
+        connection.execute("DELETE FROM documents WHERE id IN ('failed', 'embedded')")
+        for table, column in (
+            ("document_chunks", "document_id"),
+            ("document_operations", "document_id"),
+            ("draft_generation_jobs", "document_id"),
+        ):
+            remaining = connection.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE {column} IN ('failed', 'embedded')"
+            ).fetchone()[0]
+            assert remaining == 0, table
+        assert connection.execute("SELECT COUNT(*) FROM document_chunks").fetchone()[0] == 14
+
+
+def test_a_table_rebuild_names_the_foreign_keys_it_broke() -> None:
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.execute("CREATE TABLE parent(id TEXT PRIMARY KEY)")
+        connection.execute("CREATE TABLE child(id TEXT, parent_id TEXT REFERENCES parent(id))")
+        connection.execute("INSERT INTO child VALUES ('a', 'gone'), ('b', 'gone')")
+
+        with pytest.raises(sqlite3.IntegrityError, match=r"child -> parent \(2 rows\)"):
+            database_module._run_table_rebuild(connection, "DELETE FROM parent;")
+    finally:
+        connection.close()
+
+
+def _row_counts(connection: sqlite3.Connection) -> dict[str, int]:
+    tables = [
+        str(row[0])
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+        )
+    ]
+    return {
+        table: int(connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0])
+        for table in tables
+    }
+
+
+def _extraction_schema_outline(connection: sqlite3.Connection) -> dict[str, Any]:
+    tables = ("documents", "document_chunks")
+    return {
+        "columns": {
+            table: {
+                str(row[1]): (row[2], row[3], row[4], row[5])
+                for row in connection.execute(f"PRAGMA table_info({table})")
+            }
+            for table in tables
+        },
+        "foreign_keys": {
+            table: sorted(
+                tuple(row)[2:] for row in connection.execute(f"PRAGMA foreign_key_list({table})")
+            )
+            for table in tables
+        },
+        "objects": sorted(
+            tuple(row)
+            for row in connection.execute(
+                "SELECT type, name, tbl_name, sql FROM sqlite_master WHERE type != 'table'"
+            )
+        ),
+    }

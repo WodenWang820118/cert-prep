@@ -7,7 +7,7 @@ from cert_prep_backend.capture_integration.application.ports import CapturePubli
 from cert_prep_backend.capture_integration.infrastructure.host_models import CaptureReview
 from cert_prep_backend.capture_integration.infrastructure.mapping import (
     capture_document_to_audio_segments,
-    capture_document_to_pdf_extraction,
+    capture_document_to_page_extraction,
 )
 from cert_prep_backend.source_library.domain.document import SourceDocument
 
@@ -46,7 +46,7 @@ def publish_capture_document(
         raise ValueError(
             "Capture Runtime OCR projection is required for new PDF/image imports."
         )
-    extraction = capture_document_to_pdf_extraction(
+    extraction = capture_document_to_page_extraction(
         document,
         review=review,
         ocr_projection=ocr_projection,

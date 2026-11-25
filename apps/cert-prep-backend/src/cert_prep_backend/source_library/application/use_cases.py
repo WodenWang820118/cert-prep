@@ -127,7 +127,7 @@ def record_import_draft_count(
     documents: DocumentRepository, project_id: str, document_id: str, count: int
 ) -> None:
     """Record the document's count of drafts written after it was imported: ready when it has
-    text and chunks, exam_failed otherwise, and still processing if it was."""
+    text and chunks, no_text_detected otherwise, and still processing if it was."""
 
     document = documents.document(project_id, document_id)
     documents.record_exam_state(
@@ -326,10 +326,11 @@ async def import_document(
     language_hint: str,
     limits: SourceLimits,
     in_background: bool,
-) -> SourceDocument | DocumentOperation:
+) -> SourceDocument:
     """Import a PDF, image or recording without a capture review: claim the operation id,
     validate and store the file, attach its document, then extract its text and start its
-    drafts, in the background or within the request.
+    drafts, in the background or within the request. Returns the document; one whose
+    extraction found no text has the no_text_detected status and its failed operation.
 
     Once the id is claimed, a rejected or failed upload fails the operation; a cancellation,
     a conflict, or a missing project or document leaves it as it is.
@@ -408,7 +409,7 @@ async def import_document(
                 source=stored,
             )
             return documents.document(project_id, document.id)
-        return process(
+        processed = process(
             source=_SourceToExtract(
                 kind=prepared.kind,
                 canonical_suffix=prepared.canonical_suffix,
@@ -416,6 +417,10 @@ async def import_document(
                 content=prepared.raw_bytes,
             )
         )
+        if isinstance(processed, SourceDocument):
+            return processed
+        # Extraction found no text: the operation failed and the document records it.
+        return documents.document(project_id, document.id)
     except SourceTooLarge:
         if claimed:
             operations.fail(project_id, operation_id, error=_UPLOAD_REJECTED)

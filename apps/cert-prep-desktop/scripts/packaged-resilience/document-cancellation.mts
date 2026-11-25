@@ -415,11 +415,6 @@ function requireItems(
 function nonZeroDerivedMetricCount(document: Record<string, unknown>): number {
   const values = [
     document.processed_page_count,
-    document.ocr_duration_ms,
-    document.parse_wall_duration_ms,
-    document.render_duration_ms,
-    document.ocr_engine_duration_ms,
-    document.first_chunk_ms,
     document.exam_item_count,
   ];
   const count = values.filter(
@@ -458,20 +453,6 @@ function canceledDocumentMetrics(
       document.processed_page_count,
       'processed_page_count',
     ),
-    ocrDurationMs: numberField(document.ocr_duration_ms, 'ocr_duration_ms'),
-    parseWallDurationMs: numberField(
-      document.parse_wall_duration_ms,
-      'parse_wall_duration_ms',
-    ),
-    renderDurationMs: numberField(
-      document.render_duration_ms,
-      'render_duration_ms',
-    ),
-    ocrEngineDurationMs: numberField(
-      document.ocr_engine_duration_ms,
-      'ocr_engine_duration_ms',
-    ),
-    firstChunkMs: numberField(document.first_chunk_ms, 'first_chunk_ms'),
     examItemCount: numberField(document.exam_item_count, 'exam_item_count'),
   };
 }

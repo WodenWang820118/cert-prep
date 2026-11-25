@@ -12,6 +12,14 @@ import type {
 import { AppIconComponent } from '../../../core/ui';
 import { HlmBadge } from '@spartan-ng/helm/badge';
 
+// Only a failed document explains its failure; a document that became ready again may still
+// carry the message of an earlier run.
+const FAILURE_STATUSES: ReadonlySet<string> = new Set([
+  'extraction_failed',
+  'no_text_detected',
+  'transcription_failed',
+]);
+
 @Component({
   selector: 'app-source-document-status',
   imports: [AppIconComponent, HlmBadge],
@@ -49,7 +57,7 @@ export class SourceDocumentStatusComponent {
         return 'Source preparation canceled';
       case 'no_text_detected':
         return 'No reviewable text found';
-      case 'ocr_failed':
+      case 'extraction_failed':
         return 'Source could not be read';
       case 'transcription_failed':
         return 'Audio transcription failed';
@@ -67,7 +75,7 @@ export class SourceDocumentStatusComponent {
       return 'info';
     }
     if (
-      document?.status === 'ocr_failed' ||
+      document?.status === 'extraction_failed' ||
       document?.status === 'transcription_failed'
     ) {
       return 'danger';
@@ -100,13 +108,18 @@ export class SourceDocumentStatusComponent {
     ) {
       return 'Some audio segments need a quick review before practice.';
     }
-    if (
-      document?.ocr_fallback_reason !== null &&
-      document?.ocr_fallback_reason !== undefined
-    ) {
-      return 'The source was prepared with a fallback reader. Check the evidence before practice.';
+    if (document?.status === 'ready' && document.extraction_warnings) {
+      return 'Check the extracted text before practice.';
     }
     return null;
+  }
+
+  protected failureMessage(): string | null {
+    const document = this.model().document;
+    if (document === null || !FAILURE_STATUSES.has(document.status)) {
+      return null;
+    }
+    return document.failure_message ?? null;
   }
 
   protected selectDocument(documentId: string): void {
@@ -133,10 +146,9 @@ export class SourceDocumentStatusComponent {
   protected canRetryProcessing(): boolean {
     return [
       'canceled',
-      'ocr_failed',
+      'extraction_failed',
       'transcription_failed',
       'no_text_detected',
-      'exam_failed',
     ].includes(this.model().document?.status ?? '');
   }
 }

@@ -26,9 +26,6 @@ from capture_runtime_client import (
     CaptureStatus,
     CaptureEventType,
 )
-from cert_prep_backend.capture_integration.application.messages import (
-    PDF_OCR_UNAVAILABLE_MESSAGE,
-)
 from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeClient,
     CaptureRuntimeCompatibilityError,
@@ -50,8 +47,8 @@ _SOURCE_REQUIREMENTS: dict[
     CaptureSourceKind,
     tuple[CaptureRequirementId, str],
 ] = {
-    CaptureSourceKind.PDF: ("text-recognition", "WindowsML OCR"),
-    CaptureSourceKind.IMAGE: ("text-recognition", "WindowsML OCR"),
+    CaptureSourceKind.PDF: ("text-recognition", "Text recognition"),
+    CaptureSourceKind.IMAGE: ("text-recognition", "Text recognition"),
     CaptureSourceKind.RECORDING: ("speech-recognition", "Speech recognition"),
 }
 _TERMINAL_STATUSES = {
@@ -69,7 +66,7 @@ _TERMINAL_EVENTS = {
 class CaptureRuntimeJobError(RuntimeError):
     """The sidecar reached a terminal non-success state."""
 
-    def __init__(self, operation: CaptureOperation) -> None:
+    def __init__(self, operation: CaptureOperation, *, unexpected_status: bool = False) -> None:
         message = (
             operation.error.message
             if operation.error is not None
@@ -78,7 +75,14 @@ class CaptureRuntimeJobError(RuntimeError):
         super().__init__(message)
         self.capture_id = operation.capture_id
         self.last_event_sequence = operation.last_event_sequence
-        self.code = operation.error.code if operation.error is not None else "capture_failed"
+        # None when Capture gave no failure code, or when the status itself was unexpected
+        # (any error it carries does not describe this run's failure); no code is invented,
+        # so nothing downstream reads a diagnosis into it.
+        self.code: str | None = (
+            operation.error.code
+            if operation.error is not None and not unexpected_status
+            else None
+        )
         self.stage = (
             operation.error.stage
             if operation.error is not None and operation.error.stage is not None
@@ -532,7 +536,8 @@ class CertPrepCaptureCoordinator:
             should_cancel=should_cancel,
         )
         if operation.status is CaptureStatus.COMPLETED:
-            raise CaptureRuntimeJobError(operation)
+            # Completed before structuring is not a failure Capture reported.
+            raise CaptureRuntimeJobError(operation, unexpected_status=True)
         self._raise_for_terminal(operation)
         return operation
 
@@ -945,5 +950,4 @@ __all__ = [
     "CaptureRuntimeStateUnknownError",
     "CaptureRuntimeTimeoutError",
     "CertPrepCaptureCoordinator",
-    "PDF_OCR_UNAVAILABLE_MESSAGE",
 ]

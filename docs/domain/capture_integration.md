@@ -128,7 +128,7 @@ stateDiagram-v2
 - 檢閱修訂要指向存在的片段，文字不能是空白。和 runtime 原文相同的修訂不留下。
 - 確認時候選的 SHA-256 要等於教材。寫入時再對一次來源檔的 SHA-256。
 - 工作台建立只接受 PDF 與圖片。
-- PDF 區塊必須是頁面定位，音訊區塊必須是時間定位。空的投影不寫入。擷取引擎必須是 `text-recognition`，存成 `windowsml_ocr`。
+- PDF 區塊必須是頁面定位，音訊區塊必須是時間定位。空的投影不寫入。擷取引擎必須是 `text-recognition`，存成 `text_recognition`。
 - 檢閱疊加只能改區塊與文件的 targetText。
 - 公布 OCR 需要投影、已解析的來源證明，而且頁面證明要一致。
 
