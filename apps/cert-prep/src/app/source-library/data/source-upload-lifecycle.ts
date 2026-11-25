@@ -1,5 +1,5 @@
 import { inject, Injectable } from '@angular/core';
-import type { DocumentOperationRead, DocumentRead } from '../../core/domain';
+import type { SourceOperationRead, SourceRead } from '../../core/domain';
 import { EMPTY, from, Observable, of, ReplaySubject, Subject, catchError, concatMap, defer, map, switchMap, takeWhile, tap } from 'rxjs';
 import type { ObservableInput } from 'rxjs';
 import type {
@@ -12,14 +12,14 @@ import type {
   MutableUploadRun,
   TerminalUploadStatus,
 } from '../domain';
-import type { DocumentOperationEvent } from '../../core/domain';
+import type { SourceOperationEvent } from '../../core/domain';
 import { DetachedOperationTombstoneTracker } from './detached-operation-tombstone-tracker';
-import { DocumentOperationSnapshotService } from './document-operation-snapshot.service';
+import { SourceOperationSnapshotService } from './source-operation-snapshot.service';
 
 @Injectable({ providedIn: 'root' })
 export class SourceUploadLifecycle {
   private readonly detachedTombstones = inject(DetachedOperationTombstoneTracker);
-  private readonly snapshot = inject(DocumentOperationSnapshotService);
+  private readonly snapshot = inject(SourceOperationSnapshotService);
   private readonly attempts = new Map<string, UploadAttempt>();
   private activeRun: MutableUploadRun | null = null;
   private hooks!: SourceUploadLifecycleHooks;
@@ -101,7 +101,7 @@ export class SourceUploadLifecycle {
     if (this.activeRun !== null) {
       this.activeRun.queuedItemIds = [];
       this.activeRun.queuedReconciliationItemIds = [];
-      this.activeRun.documents.splice(0);
+      this.activeRun.sources.splice(0);
       this.completeRun(this.activeRun);
       this.activeRun = null;
     }
@@ -117,7 +117,7 @@ export class SourceUploadLifecycle {
 
   private createRun(projectId: string, contextEpoch: number, concurrency: number, itemIds: readonly string[] = []): MutableUploadRun {
     const doneSubject = new ReplaySubject<void>(1);
-    return { projectId, contextEpoch, concurrency, itemIds: [...itemIds], queuedItemIds: [...itemIds], queuedReconciliationItemIds: [], activeCount: 0, doneSubject, done: doneSubject.asObservable(), documents: [] };
+    return { projectId, contextEpoch, concurrency, itemIds: [...itemIds], queuedItemIds: [...itemIds], queuedReconciliationItemIds: [], activeCount: 0, doneSubject, done: doneSubject.asObservable(), sources: [] };
   }
 
   private pump(run: MutableUploadRun): void {
@@ -139,10 +139,10 @@ export class SourceUploadLifecycle {
       const itemId = run.queuedItemIds.shift();
       if (itemId === undefined) break;
       const item = this.hooks.item(itemId);
-      if (item === undefined || item.status !== 'queued' || item.document !== null) continue;
+      if (item === undefined || item.status !== 'queued' || item.source !== null) continue;
       const actions = new Subject<() => Observable<void>>();
       const actionSubscription = actions.pipe(concatMap((action) => defer(action).pipe(catchError(() => EMPTY)))).subscribe();
-      const attempt: UploadAttempt = { itemId: item.id, operationId: this.hooks.newOperationId(), controller: new AbortController(), actions, actionSubscription, cancellationSubscription: null, run, documentId: null, document: null, cancelRequested: false, slotHeld: true };
+      const attempt: UploadAttempt = { itemId: item.id, operationId: this.hooks.newOperationId(), controller: new AbortController(), actions, actionSubscription, cancellationSubscription: null, run, sourceId: null, source: null, cancelRequested: false, slotHeld: true };
       if (!this.hooks.patch(item.id, { status: 'uploading', error: null })) { actionSubscription.unsubscribe(); actions.complete(); continue; }
       run.activeCount += 1;
       this.attempts.set(item.id, attempt);
@@ -160,32 +160,32 @@ export class SourceUploadLifecycle {
 
   private execute(attempt: UploadAttempt, item: SourceUploadItem): void {
     from(this.hooks.upload(attempt.run.projectId, item, attempt.operationId, attempt.controller.signal)).subscribe({
-      next: (document) => this.enqueue(attempt, () => this.acceptUpload(attempt, document)),
+      next: (source) => this.enqueue(attempt, () => this.acceptUpload(attempt, source)),
       error: (error: unknown) => this.enqueue(attempt, () => this.reconcileTransportError(attempt, error)),
     });
   }
 
-  private acceptUpload(attempt: UploadAttempt, document: DocumentRead): Observable<void> {
+  private acceptUpload(attempt: UploadAttempt, source: SourceRead): Observable<void> {
     if (!this.owns(attempt)) return EMPTY;
     if (attempt.cancelRequested) {
-      this.observeDocument(attempt, document);
-      this.hooks.patch(attempt.itemId, { status: 'cancel_requested', document, error: null });
+      this.observeSource(attempt, source);
+      this.hooks.patch(attempt.itemId, { status: 'cancel_requested', source, error: null });
       return of(undefined);
     }
-    this.handoffDocument(attempt, document);
+    this.handoffSource(attempt, source);
     return of(undefined);
   }
 
   private reconcileTransportError(attempt: UploadAttempt, error: unknown): Observable<void> {
     if (!this.owns(attempt)) return EMPTY;
     if (!attempt.cancelRequested && !isAbortError(error) && isAuthoritativeClientFailure(error)) {
-      this.settle(attempt, 'failed', attempt.document, this.hooks.errorMessage(error));
+      this.settle(attempt, 'failed', attempt.source, this.hooks.errorMessage(error));
       return of(undefined);
     }
     return this.reconcile(attempt, 'get', this.hooks.getOperation(attempt.run.projectId, attempt.operationId));
   }
 
-  private reconcile(attempt: UploadAttempt, requestKind: 'get' | 'delete', request: Observable<DocumentOperationRead>): Observable<void> {
+  private reconcile(attempt: UploadAttempt, requestKind: 'get' | 'delete', request: Observable<SourceOperationRead>): Observable<void> {
     return this.reconcileCaptured(attempt, requestKind, captureOperationRequest(request));
   }
 
@@ -200,24 +200,24 @@ export class SourceUploadLifecycle {
     }));
   }
 
-  private reconcileSnapshot(attempt: UploadAttempt, operation: DocumentOperationRead): Observable<void> {
+  private reconcileSnapshot(attempt: UploadAttempt, operation: SourceOperationRead): Observable<void> {
     if (!this.owns(attempt)) return EMPTY;
-    if (!this.snapshot.isExpectedDocumentOperation(operation, attempt.operationId, attempt.run.projectId)) {
+    if (!this.snapshot.isExpectedSourceOperation(operation, attempt.operationId, attempt.run.projectId)) {
       this.pauseForTransportError(attempt);
       return of(undefined);
     }
-    if (operation.document_id !== null) attempt.documentId = operation.document_id;
-    return this.loadOperationDocument(attempt, operation).pipe(switchMap((document) => {
-      if (document === undefined || !this.owns(attempt)) return EMPTY;
-      if (operation.status === 'canceled') { this.settle(attempt, 'canceled', document, null); return of(undefined); }
-      if (operation.status === 'failed') { this.settle(attempt, 'failed', document, operation.error ?? 'The document operation failed.'); return of(undefined); }
-      if (operation.status === 'succeeded') { if (document !== null) this.handoffDocument(attempt, document); return of(undefined); }
+    if (operation.source_id !== null) attempt.sourceId = operation.source_id;
+    return this.loadOperationSource(attempt, operation).pipe(switchMap((source) => {
+      if (source === undefined || !this.owns(attempt)) return EMPTY;
+      if (operation.status === 'canceled') { this.settle(attempt, 'canceled', source, null); return of(undefined); }
+      if (operation.status === 'failed') { this.settle(attempt, 'failed', source, operation.error ?? 'The source operation failed.'); return of(undefined); }
+      if (operation.status === 'succeeded') { if (source !== null) this.handoffSource(attempt, source); return of(undefined); }
       if (operation.status === 'cancel_requested') attempt.cancelRequested = true;
       if (attempt.cancelRequested) {
-        this.hooks.patch(attempt.itemId, { status: 'cancel_requested', document, error: null });
+        this.hooks.patch(attempt.itemId, { status: 'cancel_requested', source, error: null });
         return this.streamOperation(attempt);
       }
-      if (document !== null) this.handoffDocument(attempt, document);
+      if (source !== null) this.handoffSource(attempt, source);
       else return this.streamOperation(attempt);
       return of(undefined);
     }));
@@ -240,73 +240,73 @@ export class SourceUploadLifecycle {
 
   private applyOperationEvent(
     attempt: UploadAttempt,
-    event: DocumentOperationEvent,
+    event: SourceOperationEvent,
   ): void {
-    const { operation, document } = event;
+    const { operation, source } = event;
     if (
-      !this.snapshot.isExpectedDocumentOperation(
+      !this.snapshot.isExpectedSourceOperation(
         operation,
         attempt.operationId,
         attempt.run.projectId,
       )
     ) {
-      throw new Error('Unexpected document operation event.');
+      throw new Error('Unexpected source operation event.');
     }
-    if (document !== null) {
-      this.observeDocument(attempt, document);
+    if (source !== null) {
+      this.observeSource(attempt, source);
     }
     if (operation.status === 'canceled') {
-      this.settle(attempt, 'canceled', document, null);
+      this.settle(attempt, 'canceled', source, null);
     } else if (operation.status === 'failed') {
       this.settle(
         attempt,
         'failed',
-        document,
-        operation.error ?? 'The document operation failed.',
+        source,
+        operation.error ?? 'The source operation failed.',
       );
-    } else if (operation.status === 'succeeded' && document !== null) {
-      this.handoffDocument(attempt, document);
+    } else if (operation.status === 'succeeded' && source !== null) {
+      this.handoffSource(attempt, source);
     } else if (operation.status === 'cancel_requested') {
       attempt.cancelRequested = true;
       this.hooks.patch(attempt.itemId, {
         status: 'cancel_requested',
-        document,
+        source,
         error: null,
       });
-    } else if (document !== null) {
-      this.handoffDocument(attempt, document);
+    } else if (source !== null) {
+      this.handoffSource(attempt, source);
     }
   }
 
-  private loadOperationDocument(attempt: UploadAttempt, operation: DocumentOperationRead): Observable<DocumentRead | null | undefined> {
-    const documentId = operation.document_id ?? attempt.documentId;
-    if (documentId === null) return of(attempt.document);
-    attempt.documentId = documentId;
-    return from(this.hooks.getDocument(attempt.run.projectId, documentId)).pipe(
-      tap((document) => this.observeDocument(attempt, document)),
-      map((document) => document as DocumentRead | null),
+  private loadOperationSource(attempt: UploadAttempt, operation: SourceOperationRead): Observable<SourceRead | null | undefined> {
+    const sourceId = operation.source_id ?? attempt.sourceId;
+    if (sourceId === null) return of(attempt.source);
+    attempt.sourceId = sourceId;
+    return from(this.hooks.getSource(attempt.run.projectId, sourceId)).pipe(
+      tap((source) => this.observeSource(attempt, source)),
+      map((source) => source as SourceRead | null),
       catchError(() => { this.pauseForTransportError(attempt); return of(undefined); }),
     );
   }
 
-  private handoffDocument(attempt: UploadAttempt, document: DocumentRead): void {
-    if (document.status === 'canceled') { this.observeDocument(attempt, document); this.settle(attempt, 'canceled', document, null); return; }
-    this.observeDocument(attempt, document);
-    const existingIndex = attempt.run.documents.findIndex((item) => item.id === document.id);
-    if (existingIndex === -1) attempt.run.documents.push(document); else attempt.run.documents[existingIndex] = document;
-    this.settle(attempt, 'uploaded', document, null);
+  private handoffSource(attempt: UploadAttempt, source: SourceRead): void {
+    if (source.status === 'canceled') { this.observeSource(attempt, source); this.settle(attempt, 'canceled', source, null); return; }
+    this.observeSource(attempt, source);
+    const existingIndex = attempt.run.sources.findIndex((item) => item.id === source.id);
+    if (existingIndex === -1) attempt.run.sources.push(source); else attempt.run.sources[existingIndex] = source;
+    this.settle(attempt, 'uploaded', source, null);
   }
 
-  private observeDocument(attempt: UploadAttempt, document: DocumentRead): void {
+  private observeSource(attempt: UploadAttempt, source: SourceRead): void {
     if (!this.owns(attempt)) return;
-    attempt.documentId = document.id;
-    attempt.document = document;
-    this.hooks.accept(document, attempt.operationId);
+    attempt.sourceId = source.id;
+    attempt.source = source;
+    this.hooks.accept(source, attempt.operationId);
   }
 
-  private settle(attempt: UploadAttempt, status: TerminalUploadStatus, document: DocumentRead | null, error: string | null): void {
+  private settle(attempt: UploadAttempt, status: TerminalUploadStatus, source: SourceRead | null, error: string | null): void {
     if (!this.owns(attempt)) return;
-    this.hooks.patch(attempt.itemId, { status, document, error });
+    this.hooks.patch(attempt.itemId, { status, source, error });
     this.attempts.delete(attempt.itemId);
     attempt.actions.complete();
     attempt.actionSubscription.unsubscribe();
@@ -324,7 +324,7 @@ export class SourceUploadLifecycle {
 
   private pauseForTransportError(attempt: UploadAttempt): void {
     if (!this.owns(attempt)) return;
-    this.hooks.patch(attempt.itemId, { status: 'status_unavailable', document: attempt.document, error: attempt.cancelRequested ? 'Cancellation status is unavailable. Retry status check.' : 'Upload status is unavailable. Retry status check.' });
+    this.hooks.patch(attempt.itemId, { status: 'status_unavailable', source: attempt.source, error: attempt.cancelRequested ? 'Cancellation status is unavailable. Retry status check.' : 'Upload status is unavailable. Retry status check.' });
     this.releaseSlot(attempt);
   }
 
@@ -370,6 +370,6 @@ function isAuthoritativeClientFailure(error: unknown): boolean {
   return typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 425 && status !== 429;
 }
 
-function captureOperationRequest(request: ObservableInput<DocumentOperationRead>): Observable<OperationRequestOutcome> {
+function captureOperationRequest(request: ObservableInput<SourceOperationRead>): Observable<OperationRequestOutcome> {
   return from(request).pipe(map((operation) => ({ ok: true, operation }) as const), catchError((error: unknown) => of({ ok: false, error }) as Observable<OperationRequestOutcome>));
 }

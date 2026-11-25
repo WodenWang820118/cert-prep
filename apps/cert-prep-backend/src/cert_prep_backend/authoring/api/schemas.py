@@ -28,7 +28,7 @@ class QuestionCreate(BaseModel):
     citation_page: int | None = Field(default=None, ge=1)
     source_excerpt: str | None = None
     confidence: float | None = Field(default=None, ge=0, le=1)
-    document_id: str | None = None
+    source_id: str | None = None
     chunk_id: str | None = None
     source_order: int | None = Field(default=None, ge=0)
     source_question_number: str | None = None
@@ -56,7 +56,7 @@ class QuestionUpdate(BaseModel):
 class QuestionRead(BaseModel):
     id: str
     project_id: str
-    document_id: str | None
+    source_id: str | None
     chunk_id: str | None
     question: str
     choices: list[str]
@@ -85,7 +85,7 @@ class QuestionList(BaseModel):
 class QuestionGenerationJobRead(BaseModel):
     id: str
     project_id: str
-    document_id: str
+    source_id: str
     chunk_id: str
     page_number: int
     strategy: QuestionGenerationStrategy
@@ -121,7 +121,7 @@ class UnavailableQuestionBlockRead(BaseModel):
 class ManualQuestionGenerationRead(BaseModel):
     id: str
     project_id: str
-    document_id: str
+    source_id: str
     limit: int
     strategy: QuestionGenerationStrategy
     status: ManualQuestionGenerationStatus

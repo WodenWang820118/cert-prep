@@ -4,9 +4,9 @@ import { certPrepSseJsonStream } from './cert-prep-sse-client.service';
 describe('certPrepSseJsonStream', () => {
   it('decodes frames split across UTF-8 chunks and sends the cursor', async () => {
     const payload =
-      'id: 8\nevent: document-operation\ndata: {"detail":"翻譯中"}\n\n' +
+      'id: 8\nevent: source-operation\ndata: {"detail":"翻譯中"}\n\n' +
       ': heartbeat\n\n' +
-      'id: 9\nevent: document-operation\ndata: {"detail":"完成"}\n\n';
+      'id: 9\nevent: source-operation\ndata: {"detail":"完成"}\n\n';
     const bytes = new TextEncoder().encode(payload);
     const split =
       new TextEncoder().encode(payload.slice(0, payload.indexOf('翻'))).byteLength +
@@ -30,7 +30,7 @@ describe('certPrepSseJsonStream', () => {
         fetchImplementation,
         'https://cert-prep.test/events',
         {
-          eventName: 'document-operation',
+          eventName: 'source-operation',
           lastEventId: 7,
           isTerminal: () => true,
           headers: { Authorization: 'Bearer test-token' },
@@ -55,7 +55,7 @@ describe('certPrepSseJsonStream', () => {
         certPrepSseJsonStream(
           fetchImplementation,
           'https://cert-prep.test/events',
-          { eventName: 'document-operation', isTerminal: () => true },
+          { eventName: 'source-operation', isTerminal: () => true },
         ),
       ),
     ).rejects.toThrow('invalid operation event stream');
@@ -78,7 +78,7 @@ describe('certPrepSseJsonStream', () => {
     const subscription = certPrepSseJsonStream(
       fetchImplementation,
       'https://cert-prep.test/events',
-      { eventName: 'document-operation', isTerminal: () => true },
+      { eventName: 'source-operation', isTerminal: () => true },
     ).subscribe();
     await Promise.resolve();
     subscription.unsubscribe();
@@ -93,7 +93,7 @@ describe('certPrepSseJsonStream', () => {
           start(controller) {
             controller.enqueue(
               new TextEncoder().encode(
-                'id: 1\nevent: document-operation\ndata: {"status":"running"}\n\n',
+                'id: 1\nevent: source-operation\ndata: {"status":"running"}\n\n',
               ),
             );
             controller.close();
@@ -109,7 +109,7 @@ describe('certPrepSseJsonStream', () => {
           fetchImplementation,
           'https://cert-prep.test/events',
           {
-            eventName: 'document-operation',
+            eventName: 'source-operation',
             isTerminal: (value) => value.status === 'succeeded',
           },
         ).pipe(toArray()),

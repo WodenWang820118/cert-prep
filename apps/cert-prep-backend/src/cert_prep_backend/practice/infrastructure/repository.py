@@ -12,7 +12,7 @@ from cert_prep_backend.platform.database import Database
 from cert_prep_backend.practice.application.ports import (
     PracticeSourceQuestion,
     PracticeQuestions,
-    ProjectDocuments,
+    ProjectSources,
     StudyProjects,
 )
 from cert_prep_backend.practice.domain.attempt import PracticeAttempt
@@ -26,13 +26,13 @@ class SqlitePracticeStore:
         db: Database,
         *,
         bind_reads: Callable[[Connection], tuple[StudyProjects, PracticeQuestions]],
-        documents: ProjectDocuments,
+        sources: ProjectSources,
     ) -> None:
         self._db = db
         # bind_reads joins Study Projects and Question Authoring to this unit of work's
         # connection, so their reads stay in practice's transaction.
         self._bind_reads = bind_reads
-        self._documents = documents
+        self._sources = sources
 
     @contextmanager
     def writing(self) -> Iterator[SqlitePracticeRepository]:
@@ -45,9 +45,9 @@ class SqlitePracticeStore:
         with self._db.connect() as connection:
             yield self._repository(connection)
 
-    def require_document(self, project_id: str, document_id: str) -> None:
+    def require_source(self, project_id: str, source_id: str) -> None:
         # Its own connection, opened before the write transaction, as before.
-        self._documents.require(project_id, document_id)
+        self._sources.require(project_id, source_id)
 
     def _repository(self, connection: Connection) -> SqlitePracticeRepository:
         projects, questions = self._bind_reads(connection)
@@ -83,11 +83,11 @@ class SqlitePracticeRepository:
         return None if row is None else _session_from_row(row)
 
     def source_questions(
-        self, project_id: str, *, document_id: str | None
+        self, project_id: str, *, source_id: str | None
     ) -> list[PracticeQuestion]:
         return [
             authored_question.as_question()
-            for authored_question in self._questions.for_source(project_id, document_id=document_id)
+            for authored_question in self._questions.for_source(project_id, source_id=source_id)
         ]
 
     def answer_history(self, project_id: str) -> list[AnsweredQuestion]:
@@ -153,7 +153,7 @@ class SqlitePracticeRepository:
         self._connection.execute(
             """
             INSERT INTO practice_sessions(
-                id, project_id, question_ids_json, mode, source_document_id,
+                id, project_id, question_ids_json, mode, source_id,
                 requested_question_count, random_seed, status, created_at, completed_at
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
@@ -163,7 +163,7 @@ class SqlitePracticeRepository:
                 session.project_id,
                 json.dumps(list(session.question_ids)),
                 session.mode.value,
-                session.source_document_id,
+                session.source_id,
                 session.requested_question_count,
                 session.random_seed,
                 session.status.value,
@@ -175,7 +175,7 @@ class SqlitePracticeRepository:
             INSERT INTO practice_session_questions(
                 session_id, project_id, question_id, question_order, question,
                 choices_json, correct_answer, rationale, citation_page, source_excerpt,
-                created_at, document_id
+                created_at, source_id
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
@@ -192,7 +192,7 @@ class SqlitePracticeRepository:
                     question.citation_page,
                     question.source_excerpt,
                     session.created_at,
-                    question.document_id,
+                    question.source_id,
                 )
                 for index, question in enumerate(session.questions)
             ],
@@ -233,7 +233,7 @@ class SqlitePracticeRepository:
                 rationale,
                 citation_page,
                 source_excerpt,
-                document_id
+                source_id
             FROM practice_session_questions
             WHERE project_id = ? AND session_id = ? AND question_id = ?
             """,
@@ -354,7 +354,7 @@ class SqlitePracticeRepository:
                 rationale,
                 citation_page,
                 source_excerpt,
-                document_id
+                source_id
             FROM practice_session_questions
             WHERE project_id = ? AND session_id = ?
             """,
@@ -407,7 +407,7 @@ class SqlitePracticeRepository:
                 rationale,
                 citation_page,
                 source_excerpt,
-                document_id
+                source_id
             FROM practice_session_questions
             WHERE project_id = ?
             """,
@@ -431,7 +431,7 @@ def _session_from_row(row: Row) -> PracticeSession:
         question_ids=tuple(json.loads(row["question_ids_json"])),
         status=row["status"],
         mode=row["mode"],
-        source_document_id=row["source_document_id"],
+        source_id=row["source_id"],
         requested_question_count=row["requested_question_count"],
         random_seed=row["random_seed"],
         created_at=row["created_at"],
@@ -449,7 +449,7 @@ def _question_from_row(row: Row) -> PracticeQuestion:
         rationale=row["rationale"],
         citation_page=row["citation_page"],
         source_excerpt=row["source_excerpt"],
-        document_id=row["document_id"],
+        source_id=row["source_id"],
         answer_key_source=_optional_text(row, "answer_key_source"),
     )
 
@@ -482,11 +482,11 @@ def _answered_question(project_id: str, row: Row, question: PracticeQuestion) ->
 
 
 def _snapshot_question(snapshot: Row, authored_question: PracticeSourceQuestion | None) -> PracticeQuestion:
-    """A stored snapshot. Its document id falls back to the question; the answer key always does."""
+    """A stored snapshot. Its source id falls back to the question; the answer key always does."""
 
-    document_id = snapshot["document_id"]
-    if document_id is None and authored_question is not None:
-        document_id = authored_question.document_id
+    source_id = snapshot["source_id"]
+    if source_id is None and authored_question is not None:
+        source_id = authored_question.source_id
     return PracticeQuestion(
         id=snapshot["id"],
         choices=tuple(json.loads(snapshot["choices_json"])),
@@ -495,7 +495,7 @@ def _snapshot_question(snapshot: Row, authored_question: PracticeSourceQuestion 
         rationale=snapshot["rationale"],
         citation_page=snapshot["citation_page"],
         source_excerpt=snapshot["source_excerpt"],
-        document_id=document_id,
+        source_id=source_id,
         answer_key_source=None if authored_question is None else authored_question.answer_key_source,
     )
 
@@ -507,14 +507,14 @@ def _question_as_answered(
 
     An attempt with neither is left out. The snapshot wins for the text that was shown;
     the answer-key source always comes from the current authored_question, and a null snapshot
-    document id falls back to the question's.
+    source id falls back to the question's.
     """
 
     if snapshot is None:
         return None if authored_question is None else authored_question.as_question()
-    document_id = snapshot["document_id"]
-    if document_id is None and authored_question is not None:
-        document_id = authored_question.document_id
+    source_id = snapshot["source_id"]
+    if source_id is None and authored_question is not None:
+        source_id = authored_question.source_id
     return PracticeQuestion(
         id=question_id,
         choices=tuple(json.loads(snapshot["choices_json"])),
@@ -523,7 +523,7 @@ def _question_as_answered(
         rationale=snapshot["rationale"],
         citation_page=snapshot["citation_page"],
         source_excerpt=snapshot["source_excerpt"],
-        document_id=document_id,
+        source_id=source_id,
         answer_key_source=None if authored_question is None else authored_question.answer_key_source,
     )
 

@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import type { ChunkRead } from '../../../core/domain';
-import { appDocument } from '../../../core/testing';
+import { appSource } from '../../../core/testing';
 import type {
   SourceEvidenceViewModel,
   SourceImportAction,
@@ -22,9 +22,9 @@ describe('SourceEvidencePreviewComponent', () => {
     expect(text).not.toContain('concurrency');
   });
 
-  it('renders document evidence without internal extraction metrics', () => {
+  it('renders source evidence without internal extraction metrics', () => {
     const fixture = createFixture({
-      document: appDocument,
+      source: appSource,
       chunks: [chunkRead()],
     });
     const text = fixture.nativeElement.textContent as string;
@@ -39,7 +39,7 @@ describe('SourceEvidencePreviewComponent', () => {
 
   it('emits transcript actions from typed inputs and one action output', () => {
     const fixture = createFixture({
-      document: { ...appDocument, source_kind: 'recording' },
+      source: { ...appSource, source_kind: 'recording' },
       chunks: [
         chunkRead({
           locator_kind: 'time',
@@ -76,7 +76,7 @@ describe('SourceEvidencePreviewComponent', () => {
 
   it('offers an audio retry when the authenticated preview fails', () => {
     const fixture = createFixture({
-      document: { ...appDocument, source_kind: 'recording' },
+      source: { ...appSource, source_kind: 'recording' },
       chunks: [chunkRead({ locator_kind: 'time', start_ms: 0, end_ms: 1_000 })],
       audio: {
         url: null,
@@ -97,7 +97,7 @@ function createFixture(
 ): ReturnType<typeof TestBed.createComponent<SourceEvidencePreviewComponent>> {
   const fixture = TestBed.createComponent(SourceEvidencePreviewComponent);
   fixture.componentRef.setInput('model', {
-    document: null,
+    source: null,
     chunks: [],
     hiddenChunkCount: 0,
     audio: { url: null, loading: false, error: null },
@@ -111,7 +111,7 @@ function createFixture(
 function chunkRead(overrides: Partial<ChunkRead> = {}): ChunkRead {
   return {
     id: 'chunk-1',
-    document_id: appDocument.id,
+    source_id: appSource.id,
     page_number: 2,
     chunk_index: 0,
     text: 'Readable source excerpt',

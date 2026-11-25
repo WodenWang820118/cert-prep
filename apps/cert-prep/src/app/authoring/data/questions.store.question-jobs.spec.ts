@@ -7,20 +7,20 @@ import { provideCertPrepHttpResourceClientFake } from '../../core/testing';
 import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../../source-library/data';
 import {
-  documentRead,
+  sourceRead,
   questionJob,
   questionFixture,
 } from './questions.store.spec-helpers';
 
 describe('QuestionsStore question jobs', () => {
   const apiClient = {
-    cancelDocumentQuestionJob: vi.fn(),
-    generateDocumentQuestions: vi.fn(),
-    getDocument: vi.fn(),
-    listDocumentChunks: vi.fn(),
-    listDocumentQuestionJobs: vi.fn(),
+    cancelSourceQuestionJob: vi.fn(),
+    generateSourceQuestions: vi.fn(),
+    getSource: vi.fn(),
+    listSourceChunks: vi.fn(),
+    listSourceQuestionJobs: vi.fn(),
     listQuestions: vi.fn(),
-    retryDocumentQuestionJobs: vi.fn(),
+    retrySourceQuestionJobs: vi.fn(),
     updateQuestion: vi.fn(),
   };
   let questionJobsStream: Subject<{ items: ReturnType<typeof questionJob>[] }>;
@@ -50,36 +50,36 @@ describe('QuestionsStore question jobs', () => {
     ]);
     projects.select('project-1');
 
-    apiClient.getDocument.mockReturnValue(of(documentRead()));
-    apiClient.listDocumentChunks.mockReturnValue(of({ items: [] }));
-    apiClient.listDocumentQuestionJobs.mockReturnValue(of({ items: [] }));
+    apiClient.getSource.mockReturnValue(of(sourceRead()));
+    apiClient.listSourceChunks.mockReturnValue(of({ items: [] }));
+    apiClient.listSourceQuestionJobs.mockReturnValue(of({ items: [] }));
   });
 
-  it('refreshes questions while a processing document has completed chunks', () => {
+  it('refreshes questions while a processing source has completed chunks', () => {
     const store = TestBed.inject(QuestionsStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const question = questionFixture();
     apiClient.listQuestions.mockReturnValue(of({ items: [question] }));
-    apiClient.listDocumentQuestionJobs.mockReturnValue(of({
+    apiClient.listSourceQuestionJobs.mockReturnValue(of({
       items: [
         questionJob({ status: 'running' }),
         questionJob({ id: 'job-2', status: 'succeeded', generated_count: 1 }),
       ],
     }));
 
-    activateDocument(
+    activateSource(
       sourceImport,
-      documentRead({ status: 'processing', chunks_count: 1 }),
+      sourceRead({ status: 'processing', chunks_count: 1 }),
     );
     TestBed.tick();
 
     expect(apiClient.listQuestions).toHaveBeenCalledWith('project-1');
-    expect(apiClient.listDocumentQuestionJobs).toHaveBeenCalledWith(
+    expect(apiClient.listSourceQuestionJobs).toHaveBeenCalledWith(
       'project-1',
-      'document-1',
+      'source-1',
     );
     expect(sseClient.streamJson).toHaveBeenCalledWith(
-      '/projects/project-1/documents/document-1/question-jobs/events',
+      '/projects/project-1/sources/source-1/question-jobs/events',
       'question-jobs',
       { isTerminal: expect.any(Function) },
     );
@@ -93,7 +93,7 @@ describe('QuestionsStore question jobs', () => {
       }),
     );
 
-    activateDocument(sourceImport, documentRead({ status: 'ready' }));
+    activateSource(sourceImport, sourceRead({ status: 'ready' }));
     TestBed.tick();
   });
 
@@ -102,13 +102,13 @@ describe('QuestionsStore question jobs', () => {
     const sourceImport = TestBed.inject(SourceImportStore);
     const question = questionFixture();
     apiClient.listQuestions.mockReturnValue(of({ items: [question] }));
-    apiClient.listDocumentQuestionJobs.mockReturnValue(
+    apiClient.listSourceQuestionJobs.mockReturnValue(
       throwError(() => new Error('jobs offline')),
     );
 
-    activateDocument(
+    activateSource(
       sourceImport,
-      documentRead({ status: 'processing', chunks_count: 1 }),
+      sourceRead({ status: 'processing', chunks_count: 1 }),
     );
     TestBed.tick();
 
@@ -120,11 +120,11 @@ describe('QuestionsStore question jobs', () => {
     const store = TestBed.inject(QuestionsStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     apiClient.listQuestions.mockReturnValue(of({ items: [] }));
-    apiClient.listDocumentQuestionJobs.mockReturnValue(of({ items: [] }));
+    apiClient.listSourceQuestionJobs.mockReturnValue(of({ items: [] }));
 
-    activateDocument(
+    activateSource(
       sourceImport,
-      documentRead({ status: 'processing', chunks_count: 1 }),
+      sourceRead({ status: 'processing', chunks_count: 1 }),
     );
     TestBed.tick();
     questionJobsStream.error(new Error('jobs offline'));
@@ -145,7 +145,7 @@ describe('QuestionsStore question jobs', () => {
     const store = TestBed.inject(QuestionsStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     apiClient.listQuestions.mockReturnValue(of({ items: [] }));
-    apiClient.listDocumentQuestionJobs.mockReturnValue(of({
+    apiClient.listSourceQuestionJobs.mockReturnValue(of({
       items: [
         questionJob({
           status: 'skipped_missing_model',
@@ -154,9 +154,9 @@ describe('QuestionsStore question jobs', () => {
       ],
     }));
 
-    activateDocument(
+    activateSource(
       sourceImport,
-      documentRead({ status: 'processing', chunks_count: 1 }),
+      sourceRead({ status: 'processing', chunks_count: 1 }),
     );
     TestBed.tick();
 
@@ -169,16 +169,16 @@ describe('QuestionsStore question jobs', () => {
     );
   });
 
-  it('ignores stale question job responses after the active document changes', () => {
+  it('ignores stale question job responses after the active source changes', () => {
     const store = TestBed.inject(QuestionsStore);
     const sourceImport = TestBed.inject(SourceImportStore);
-    const firstDocument = documentRead({
-      id: 'document-1',
+    const firstSource = sourceRead({
+      id: 'source-1',
       status: 'processing',
       chunks_count: 1,
     });
-    const secondDocument = documentRead({
-      id: 'document-2',
+    const secondSource = sourceRead({
+      id: 'source-2',
       filename: 'second.pdf',
       status: 'ready',
     });
@@ -186,22 +186,22 @@ describe('QuestionsStore question jobs', () => {
       items: ReturnType<typeof questionJob>[];
     }>();
     apiClient.listQuestions.mockReturnValue(of({ items: [] }));
-    apiClient.listDocumentQuestionJobs.mockReturnValueOnce(questionJobs.observable);
+    apiClient.listSourceQuestionJobs.mockReturnValueOnce(questionJobs.observable);
 
-    activateDocument(sourceImport, firstDocument, [firstDocument, secondDocument]);
+    activateSource(sourceImport, firstSource, [firstSource, secondSource]);
     TestBed.tick();
 
-    activateDocument(sourceImport, secondDocument, [firstDocument, secondDocument]);
+    activateSource(sourceImport, secondSource, [firstSource, secondSource]);
     TestBed.tick();
     questionJobs.resolve({
-      items: [questionJob({ document_id: firstDocument.id, status: 'running' })],
+      items: [questionJob({ source_id: firstSource.id, status: 'running' })],
     });
     TestBed.tick();
 
     expect(store.questionJobs()).toEqual([]);
   });
 
-  it('retries skipped question jobs for the current document', () => {
+  it('retries skipped question jobs for the current source', () => {
     const store = TestBed.inject(QuestionsStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const question = questionFixture();
@@ -214,25 +214,25 @@ describe('QuestionsStore question jobs', () => {
       generated_count: 1,
       retry_count: 1,
     });
-    activateDocument(sourceImport, documentRead());
+    activateSource(sourceImport, sourceRead());
     store.questionJobs.set([skippedJob]);
-    apiClient.retryDocumentQuestionJobs.mockReturnValue(of({ items: [succeededJob] }));
+    apiClient.retrySourceQuestionJobs.mockReturnValue(of({ items: [succeededJob] }));
     apiClient.listQuestions.mockReturnValue(of({ items: [question] }));
 
     store.retryQuestionJobs();
     TestBed.tick();
 
-    expect(apiClient.retryDocumentQuestionJobs).toHaveBeenCalledWith(
+    expect(apiClient.retrySourceQuestionJobs).toHaveBeenCalledWith(
       'project-1',
-      'document-1',
+      'source-1',
       { signal: expect.any(AbortSignal) },
     );
     expect(store.questionJobs()).toEqual([succeededJob]);
     expect(store.questions()).toEqual([question]);
-    expect(apiClient.getDocument).toHaveBeenCalledWith('project-1', 'document-1');
+    expect(apiClient.getSource).toHaveBeenCalledWith('project-1', 'source-1');
   });
 
-  it('cancels every cancellable background generation job for the active document', () => {
+  it('cancels every cancellable background generation job for the active source', () => {
     const store = TestBed.inject(QuestionsStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const runningJob = questionJob({ status: 'running', phase: 'generating' });
@@ -240,29 +240,29 @@ describe('QuestionsStore question jobs', () => {
       status: 'cancel_requested',
       phase: 'canceling',
     });
-    activateDocument(sourceImport, documentRead());
+    activateSource(sourceImport, sourceRead());
     store.questionJobs.set([runningJob]);
-    apiClient.cancelDocumentQuestionJob.mockReturnValue(of(canceledJob));
+    apiClient.cancelSourceQuestionJob.mockReturnValue(of(canceledJob));
 
     store.cancelActiveQuestionJobs();
     TestBed.tick();
 
-    expect(apiClient.cancelDocumentQuestionJob).toHaveBeenCalledWith(
+    expect(apiClient.cancelSourceQuestionJob).toHaveBeenCalledWith(
       'project-1',
-      'document-1',
+      'source-1',
       'job-1',
     );
     expect(store.questionJobs()).toEqual([canceledJob]);
   });
 });
 
-function activateDocument(
+function activateSource(
   sourceImport: SourceImportStore,
-  document: ReturnType<typeof documentRead>,
-  documents: ReturnType<typeof documentRead>[] = [document],
+  source: ReturnType<typeof sourceRead>,
+  sources: ReturnType<typeof sourceRead>[] = [source],
 ): void {
-  sourceImport.documents.set(documents);
-  sourceImport.setActiveDocumentId(document.id);
+  sourceImport.sources.set(sources);
+  sourceImport.setActiveSourceId(source.id);
 }
 
 function deferred<T>(): {

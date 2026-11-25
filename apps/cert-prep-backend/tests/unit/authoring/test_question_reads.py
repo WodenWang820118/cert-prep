@@ -12,7 +12,7 @@ def _question(question_id: str, *, source_order: int | None = None) -> Question:
     return Question(
         id=question_id,
         project_id="project",
-        document_id="document",
+        source_id="document",
         chunk_id=None,
         question=f"Question {question_id}?",
         choices=("A", "B"),
@@ -42,8 +42,8 @@ class RecordingQuestions:
         self.find_calls: list[tuple[str, str]] = []
         self.find_many_calls: list[tuple[str, tuple[str, ...]]] = []
 
-    def for_source(self, project_id: str, *, document_id: str | None) -> list[Question]:
-        self.source_calls.append((project_id, document_id))
+    def for_source(self, project_id: str, *, source_id: str | None) -> list[Question]:
+        self.source_calls.append((project_id, source_id))
         return list(self.questions.values())
 
     def find(self, project_id: str, question_id: str) -> Question | None:
@@ -64,7 +64,7 @@ def test_source_questions_returns_the_repository_order() -> None:
     first, second = _question("a", source_order=2), _question("b", source_order=1)
     questions = RecordingQuestions([first, second])
 
-    assert use_cases.source_questions(questions, "project", document_id="document") == [
+    assert use_cases.source_questions(questions, "project", source_id="document") == [
         first,
         second,
     ]

@@ -36,7 +36,7 @@ import {
 } from './evidence-fixtures.mts';
 import { verifyLocalResilienceEvidence } from './local-evidence-verifier.mts';
 
-const DOCUMENT_CHECKS = [
+const SOURCE_CHECKS = [
   'upload',
   'ocr',
   'cancelVsCompleteRace',
@@ -107,7 +107,7 @@ test('local verifier rejects incomplete or undeclared evidence trees', async (t)
   await t.test('missing required check', async () => {
     const fixture = evidenceFixture();
     try {
-      rmSync(join(fixture.documentOutputRoot, 'cancellation', 'ocr.json'));
+      rmSync(join(fixture.sourceOutputRoot, 'cancellation', 'ocr.json'));
       await assert.rejects(
         verifyFixture(fixture),
         /does not contain the exact required file set/,
@@ -139,7 +139,7 @@ test('local verifier rejects evidence identity and installation drift', async (t
     const fixture = evidenceFixture();
     try {
       const path = join(
-        fixture.documentOutputRoot,
+        fixture.sourceOutputRoot,
         'cancellation',
         'upload.json',
       );
@@ -248,9 +248,9 @@ test('local verifier rejects unsafe or ambiguous evidence roots', async (t) => {
       await assert.rejects(
         verifyFixture(fixture, {
           ...fixture.environment,
-          CERT_PREP_RESILIENCE_DOCUMENT_OUTPUT_ROOT: 'relative-document-run',
+          CERT_PREP_RESILIENCE_SOURCE_OUTPUT_ROOT: 'relative-source-run',
         }),
-        /CERT_PREP_RESILIENCE_DOCUMENT_OUTPUT_ROOT must be an absolute path/,
+        /CERT_PREP_RESILIENCE_SOURCE_OUTPUT_ROOT must be an absolute path/,
       );
     } finally {
       fixture.cleanup();
@@ -260,14 +260,14 @@ test('local verifier rejects unsafe or ambiguous evidence roots', async (t) => {
   await t.test('root outside the workspace evidence parent', async () => {
     const fixture = evidenceFixture();
     try {
-      const outsideRoot = join(fixture.workspaceRoot, 'outside-document-run');
+      const outsideRoot = join(fixture.workspaceRoot, 'outside-source-run');
       mkdirSync(outsideRoot);
       await assert.rejects(
         verifyFixture(fixture, {
           ...fixture.environment,
-          CERT_PREP_RESILIENCE_DOCUMENT_OUTPUT_ROOT: outsideRoot,
+          CERT_PREP_RESILIENCE_SOURCE_OUTPUT_ROOT: outsideRoot,
         }),
-        /CERT_PREP_RESILIENCE_DOCUMENT_OUTPUT_ROOT must stay under/,
+        /CERT_PREP_RESILIENCE_SOURCE_OUTPUT_ROOT must stay under/,
       );
     } finally {
       fixture.cleanup();
@@ -275,7 +275,7 @@ test('local verifier rejects unsafe or ambiguous evidence roots', async (t) => {
   });
 
   await t.test(
-    'document and remaining roots resolve to the same directory',
+    'source and remaining roots resolve to the same directory',
     async () => {
       const fixture = evidenceFixture();
       try {
@@ -283,7 +283,7 @@ test('local verifier rejects unsafe or ambiguous evidence roots', async (t) => {
           verifyFixture(fixture, {
             ...fixture.environment,
             CERT_PREP_RESILIENCE_REMAINING_OUTPUT_ROOT:
-              fixture.documentOutputRoot,
+              fixture.sourceOutputRoot,
           }),
           /evidence roots must be distinct/,
         );
@@ -306,10 +306,10 @@ test('local verifier rejects linked evidence paths', async (t) => {
           'cert-prep-desktop',
         );
         const targetParent = join(fixture.workspaceRoot, 'linked-target');
-        const targetDocumentRoot = join(targetParent, 'document-run');
+        const targetSourceRoot = join(targetParent, 'source-run');
         const linkedParent = join(evidenceParent, 'linked-parent');
         mkdirSync(targetParent);
-        renameSync(fixture.documentOutputRoot, targetDocumentRoot);
+        renameSync(fixture.sourceOutputRoot, targetSourceRoot);
         try {
           symlinkSync(
             targetParent,
@@ -327,9 +327,9 @@ test('local verifier rejects linked evidence paths', async (t) => {
         await assert.rejects(
           verifyFixture(fixture, {
             ...fixture.environment,
-            CERT_PREP_RESILIENCE_DOCUMENT_OUTPUT_ROOT: join(
+            CERT_PREP_RESILIENCE_SOURCE_OUTPUT_ROOT: join(
               linkedParent,
-              'document-run',
+              'source-run',
             ),
           }),
           /must not traverse a reparse point or path alias/,
@@ -344,7 +344,7 @@ test('local verifier rejects linked evidence paths', async (t) => {
     const fixture = evidenceFixture();
     try {
       const uploadPath = join(
-        fixture.documentOutputRoot,
+        fixture.sourceOutputRoot,
         'cancellation',
         'upload.json',
       );
@@ -416,7 +416,7 @@ test('local verifier CLI prints successful verification JSON', async () => {
 
 interface EvidenceFixture {
   readonly workspaceRoot: string;
-  readonly documentOutputRoot: string;
+  readonly sourceOutputRoot: string;
   readonly remainingOutputRoot: string;
   readonly environment: Record<string, string>;
   readonly binding: InstalledCandidateRunnerBinding;
@@ -434,20 +434,20 @@ function evidenceFixture(): EvidenceFixture {
     mkdtempSync(join(tmpdir(), 'cert-prep-local-evidence-')),
   );
   const evidenceParent = join(workspaceRoot, 'tmp', 'cert-prep-desktop');
-  const documentOutputRoot = join(evidenceParent, 'document-run');
+  const sourceOutputRoot = join(evidenceParent, 'source-run');
   const remainingOutputRoot = join(evidenceParent, 'remaining-run');
-  const documentCancellationRoot = join(documentOutputRoot, 'cancellation');
+  const sourceCancellationRoot = join(sourceOutputRoot, 'cancellation');
   const remainingCancellationRoot = join(remainingOutputRoot, 'cancellation');
-  mkdirSync(documentCancellationRoot, { recursive: true });
+  mkdirSync(sourceCancellationRoot, { recursive: true });
   mkdirSync(remainingCancellationRoot, { recursive: true });
 
   const candidate = {
     ...FIXTURE_CANDIDATE,
     tag: `cert-prep-local-v${FIXTURE_CANDIDATE.version}-${FIXTURE_CANDIDATE.commitSha.slice(0, 12)}`,
   };
-  for (const check of DOCUMENT_CHECKS) {
+  for (const check of SOURCE_CHECKS) {
     writeJson(
-      join(documentCancellationRoot, `${check}.json`),
+      join(sourceCancellationRoot, `${check}.json`),
       buildValidResilienceEvidence(check, { candidate }),
     );
   }
@@ -483,11 +483,11 @@ function evidenceFixture(): EvidenceFixture {
 
   return {
     workspaceRoot,
-    documentOutputRoot,
+    sourceOutputRoot,
     remainingOutputRoot,
     binding,
     environment: {
-      CERT_PREP_RESILIENCE_DOCUMENT_OUTPUT_ROOT: documentOutputRoot,
+      CERT_PREP_RESILIENCE_SOURCE_OUTPUT_ROOT: sourceOutputRoot,
       CERT_PREP_RESILIENCE_REMAINING_OUTPUT_ROOT: remainingOutputRoot,
     },
     cleanup() {
@@ -592,10 +592,10 @@ async function cliEvidenceFixture(): Promise<CliEvidenceFixture> {
     environment,
     WORKSPACE_ROOT,
   );
-  const documentOutputRoot = join(fixtureRoot, 'document-run');
+  const sourceOutputRoot = join(fixtureRoot, 'source-run');
   const remainingOutputRoot = join(fixtureRoot, 'remaining-run');
   writeEvidenceTrees(
-    documentOutputRoot,
+    sourceOutputRoot,
     remainingOutputRoot,
     binding.candidate,
     binding.installation,
@@ -605,7 +605,7 @@ async function cliEvidenceFixture(): Promise<CliEvidenceFixture> {
     remainingOutputRoot,
     environment: {
       ...environment,
-      CERT_PREP_RESILIENCE_DOCUMENT_OUTPUT_ROOT: documentOutputRoot,
+      CERT_PREP_RESILIENCE_SOURCE_OUTPUT_ROOT: sourceOutputRoot,
       CERT_PREP_RESILIENCE_REMAINING_OUTPUT_ROOT: remainingOutputRoot,
     },
     cleanup() {
@@ -634,18 +634,18 @@ function verifyFixture(
 }
 
 function writeEvidenceTrees(
-  documentOutputRoot: string,
+  sourceOutputRoot: string,
   remainingOutputRoot: string,
   candidate: CandidateBinding,
   installation: InstallationBinding,
 ): void {
-  const documentCancellationRoot = join(documentOutputRoot, 'cancellation');
+  const sourceCancellationRoot = join(sourceOutputRoot, 'cancellation');
   const remainingCancellationRoot = join(remainingOutputRoot, 'cancellation');
-  mkdirSync(documentCancellationRoot, { recursive: true });
+  mkdirSync(sourceCancellationRoot, { recursive: true });
   mkdirSync(remainingCancellationRoot, { recursive: true });
-  for (const check of DOCUMENT_CHECKS) {
+  for (const check of SOURCE_CHECKS) {
     writeJson(
-      join(documentCancellationRoot, `${check}.json`),
+      join(sourceCancellationRoot, `${check}.json`),
       withInstallationBinding(
         buildValidResilienceEvidence(check, { candidate }),
         installation,

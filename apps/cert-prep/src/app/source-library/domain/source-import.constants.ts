@@ -26,7 +26,7 @@ export const SUPPORTED_SOURCE_FILE_EXTENSIONS = [
   '.wav',
   '.m4a',
 ] as const;
-export const FINAL_DOCUMENT_STATUSES = new Set([
+export const FINAL_SOURCE_STATUSES = new Set([
   'ready',
   'no_text_detected',
   'extraction_failed',

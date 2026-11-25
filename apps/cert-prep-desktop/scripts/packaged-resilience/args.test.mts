@@ -16,15 +16,15 @@ import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 
 import {
-  loadDocumentCancellationOptions,
+  loadSourceCancellationOptions,
   loadInstalledCandidateBinding,
   loadInstalledExecutionBinding,
 } from './args.mts';
 
-test('document cancellation options verify the exact candidate and required files', async () => {
+test('source cancellation options verify the exact candidate and required files', async () => {
   const fixture = fixtureWorkspace();
   try {
-    const options = await loadDocumentCancellationOptions(
+    const options = await loadSourceCancellationOptions(
       fixture.environment,
       fixture.workspaceRoot,
     );
@@ -49,10 +49,10 @@ test('document cancellation options verify the exact candidate and required file
   }
 });
 
-test('document cancellation options accept the exact local nonpublishable candidate pair', async () => {
+test('source cancellation options accept the exact local nonpublishable candidate pair', async () => {
   const fixture = fixtureWorkspace({ profile: 'local_nonpublishable' });
   try {
-    const options = await loadDocumentCancellationOptions(
+    const options = await loadSourceCancellationOptions(
       fixture.environment,
       fixture.workspaceRoot,
     );
@@ -157,7 +157,7 @@ test('execution binding ignores release-plan commit policy while release binding
   });
 });
 
-test('document cancellation options reject hybrid and malformed distribution identities', async (t) => {
+test('source cancellation options reject hybrid and malformed distribution identities', async (t) => {
   await t.test('candidate profile does not match its public plan', async () => {
     const fixture = fixtureWorkspace({
       candidateOverrides: {
@@ -171,7 +171,7 @@ test('document cancellation options reject hybrid and malformed distribution ide
         fixture.workspaceRoot,
       );
       await assert.rejects(
-        loadDocumentCancellationOptions(
+        loadSourceCancellationOptions(
           fixture.environment,
           fixture.workspaceRoot,
         ),
@@ -189,7 +189,7 @@ test('document cancellation options reject hybrid and malformed distribution ide
     });
     try {
       await assert.rejects(
-        loadDocumentCancellationOptions(
+        loadSourceCancellationOptions(
           fixture.environment,
           fixture.workspaceRoot,
         ),
@@ -212,7 +212,7 @@ test('document cancellation options reject hybrid and malformed distribution ide
           fixture.workspaceRoot,
         );
         await assert.rejects(
-          loadDocumentCancellationOptions(
+          loadSourceCancellationOptions(
             fixture.environment,
             fixture.workspaceRoot,
           ),
@@ -242,7 +242,7 @@ test('document cancellation options reject hybrid and malformed distribution ide
           fixture.workspaceRoot,
         );
         await assert.rejects(
-          loadDocumentCancellationOptions(
+          loadSourceCancellationOptions(
             fixture.environment,
             fixture.workspaceRoot,
           ),
@@ -255,7 +255,7 @@ test('document cancellation options reject hybrid and malformed distribution ide
   );
 });
 
-test('document cancellation options require every candidate-bound input', async (t) => {
+test('source cancellation options require every candidate-bound input', async (t) => {
   const fixture = fixtureWorkspace();
   try {
     for (const name of [
@@ -272,7 +272,7 @@ test('document cancellation options require every candidate-bound input', async 
         const environment = { ...fixture.environment };
         delete environment[name];
         await assert.rejects(
-          loadDocumentCancellationOptions(environment, fixture.workspaceRoot),
+          loadSourceCancellationOptions(environment, fixture.workspaceRoot),
           new RegExp(`${name} is required`),
         );
       });
@@ -282,12 +282,12 @@ test('document cancellation options require every candidate-bound input', async 
   }
 });
 
-test('document cancellation options reject identity drift and reused output', async (t) => {
+test('source cancellation options reject identity drift and reused output', async (t) => {
   const fixture = fixtureWorkspace();
   try {
     await t.test('candidate ID drift', async () => {
       await assert.rejects(
-        loadDocumentCancellationOptions(
+        loadSourceCancellationOptions(
           {
             ...fixture.environment,
             CERT_PREP_RELEASE_CANDIDATE_ID: 'f'.repeat(64),
@@ -299,7 +299,7 @@ test('document cancellation options reject identity drift and reused output', as
     });
     await t.test('invalid harness digest', async () => {
       await assert.rejects(
-        loadDocumentCancellationOptions(
+        loadSourceCancellationOptions(
           {
             ...fixture.environment,
             CERT_PREP_ACCEPTANCE_HARNESS_SHA256: 'not-a-digest',
@@ -311,7 +311,7 @@ test('document cancellation options reject identity drift and reused output', as
     });
     await t.test('invalid run ID', async () => {
       await assert.rejects(
-        loadDocumentCancellationOptions(
+        loadSourceCancellationOptions(
           {
             ...fixture.environment,
             CERT_PREP_RESILIENCE_ACCEPTANCE_RUN_ID: 'short',
@@ -324,7 +324,7 @@ test('document cancellation options reject identity drift and reused output', as
     await t.test('reused output', async () => {
       mkdirSync(fixture.outputRoot);
       await assert.rejects(
-        loadDocumentCancellationOptions(
+        loadSourceCancellationOptions(
           fixture.environment,
           fixture.workspaceRoot,
         ),
@@ -336,12 +336,12 @@ test('document cancellation options reject identity drift and reused output', as
   }
 });
 
-test('document cancellation options reject a non-PDF payload', async () => {
+test('source cancellation options reject a non-PDF payload', async () => {
   const fixture = fixtureWorkspace();
   try {
     writeFileSync(fixture.pdfPath, 'not a PDF');
     await assert.rejects(
-      loadDocumentCancellationOptions(
+      loadSourceCancellationOptions(
         fixture.environment,
         fixture.workspaceRoot,
       ),
@@ -686,7 +686,7 @@ function fixtureWorkspace({
     workspaceRoot,
     'tmp',
     'cert-prep-desktop',
-    'packaged-document-cancellation',
+    'packaged-source-cancellation',
   );
   mkdirSync(join(outputRoot, '..'), { recursive: true });
   const receiptPath = join(workspaceRoot, 'install-receipt.json');

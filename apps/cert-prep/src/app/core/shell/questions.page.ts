@@ -12,6 +12,6 @@ import { SourceImportPanelComponent } from '../../source-library/feature';
 })
 export class QuestionsPage {
   // A layout of the two panels with no state or logic: Question Authoring's
-  // QuestionsStore reloads the questions on Source Library's document activity
+  // QuestionsStore reloads the questions on Source Library's source activity
   // (D19).
 }

@@ -6,7 +6,7 @@ from cert_prep_backend.practice.domain.exceptions import (
     PracticeSessionConflict,
 )
 from cert_prep_backend.practice.domain.session import (
-    DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE,
+    SOURCE_REQUIRED_FOR_FULL_SOURCE_MESSAGE,
     NO_PLAYABLE_QUESTIONS_MESSAGE,
     QUESTION_NOT_IN_SESSION_MESSAGE,
     SELECTED_ANSWER_NOT_AVAILABLE_MESSAGE,
@@ -28,7 +28,7 @@ from cert_prep_backend.practice.domain.wrong_answer import (
 )
 
 __all__ = [
-    "DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE",
+    "SOURCE_REQUIRED_FOR_FULL_SOURCE_MESSAGE",
     "NO_PLAYABLE_QUESTIONS_MESSAGE",
     "QUESTION_NOT_IN_SESSION_MESSAGE",
     "SELECTED_ANSWER_NOT_AVAILABLE_MESSAGE",

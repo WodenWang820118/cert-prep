@@ -62,7 +62,7 @@ classDiagram
 ```
 
 - 只有可練習的題目能進入新練習：題目與至少兩個選項不是空白、正確答案在選項裡、有解說，並有頁碼或原文摘錄（`PracticeQuestion.is_playable`）。錯題重練直接用錯題本身，不再檢查。
-- 開始時決定題目並保存快照（`select_questions`）：隨機抽題預設 10 題，用保存的種子抽；整份教材依教材順序；錯題重練依錯題順序。一個專案同時只能有一個進行中的練習。
+- 開始時決定題目並保存快照（`select_questions`）：隨機抽題預設 10 題，用保存的種子抽；整份教材（`full_source`）依教材順序；錯題重練依錯題順序。一個專案同時只能有一個進行中的練習。
 - 作答的題目必須屬於這次練習，選的答案必須是題目的選項；已放棄的練習不能再作答，已完成的仍可作答。
 - 每一題都有作答後，進行中的練習變成完成；已完成的練習不能放棄，已放棄的再放棄維持原樣。
 - 錯題是「最近一次作答答錯」的題目；答錯過、最近一次答對的題目算已訂正。
@@ -109,13 +109,13 @@ sequenceDiagram
   UC-->>API: PracticeAttempt
 ```
 
-`create_app` 建立 `SqlitePracticeStore` 放在 `app.state.practice_store`，並接上 `bind_practice_reads` 與 `practice_documents`；router 只依 `PracticeStore` 這個 port 呼叫用例。寫入的用例在同一個 `BEGIN IMMEDIATE` 交易裡讀、判斷、寫，兩個請求同時開始練習時只有一個成功。這個交易裡對專案與題目的讀取用同一條連線。確認教材（`require_document`）在寫入交易之前，用自己的連線。
+`create_app` 建立 `SqlitePracticeStore` 放在 `app.state.practice_store`，並接上 `bind_practice_reads` 與 `practice_sources`；router 只依 `PracticeStore` 這個 port 呼叫用例。寫入的用例在同一個 `BEGIN IMMEDIATE` 交易裡讀、判斷、寫，兩個請求同時開始練習時只有一個成功。這個交易裡對專案與題目的讀取用同一條連線。確認教材（`require_source`）在寫入交易之前，用自己的連線。
 
 ## 與其他上下文的關係
 
 - 學習專案：練習屬於一個專案；專案不存在時是 404。練習經 port `StudyProjects` 呼叫 `project_exists`，讀的是練習這次交易的連線。
 - 題目編寫：練習經 port `PracticeQuestions` 讀教材或專案的題目（`source_questions`、`find_question`、`questions_for`），同一條連線。
-- 教材來源：整份教材模式經 `view_document` 確認教材屬於這個專案。
+- 教材來源：整份教材模式經 `view_source` 確認教材屬於這個專案。
 - AI 供應：解說錯題用 LLM provider，型別是 AI 供應的 `LLMProvider` port；router 從 `create_app` 放在 `app.state.llm_provider` 的實作取得。
 
 其他上下文只能經 `practice.application` 與 `practice.domain` 使用練習（import-linter「Other contexts reach Practice and Review only through its application and domain」）。
@@ -123,7 +123,7 @@ sequenceDiagram
 ## 規則與資料來源
 
 - 資料表：`practice_sessions`、`practice_session_questions`（題目快照）、`practice_attempts` 屬練習與複習；migration 在 `platform/database.py`。專案、題目與教材由所屬上下文的用例讀取，練習的 infrastructure 不查那些資料表。
-- HTTP：`/projects/{project_id}/practice-sessions`、`/projects/{project_id}/wrong-answers`、`POST /projects/{project_id}/practice-questions/{question_id}/regrade`（DTO 在 `practice/api/schemas.py`）。
+- HTTP：`/projects/{project_id}/practice-sessions`、`/projects/{project_id}/wrong-answers`、`POST /projects/{project_id}/practice-questions/{question_id}/regrade`（DTO 在 `practice/api/schemas.py`，教材引用欄位為 `source_id`）。
 - API 的 `PracticeSessionStatus`、`PracticeSessionMode` 列舉值對應到概念集的 `practice.session-status.*`、`practice.session-mode.*`。
 
 ## 前端

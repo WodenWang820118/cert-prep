@@ -105,7 +105,7 @@ export function parseOcrTruthManifest(
  * Adapt Capture Runtime's privacy-safe `rawTextIncludes` expectation to the
  * Cert acceptance truth seam. The source contract intentionally carries no
  * private full-page transcription, so evaluation is anchor-only and never
- * invents a CER reference from the selected document.
+ * invents a CER reference from the selected source.
  */
 export function parseOcrAnchorExpectation(
   value: unknown,

@@ -89,10 +89,12 @@ classDiagram
 ```
 
 - 供應者一定能回報健康狀態；其他能力都是選用的，以 `provider_capability` 查詢。延遲建立的供應者只轉發能力，查詢時才建立真正的供應者。
-- Ollama 的健康狀態帶著實際載入的裝置：伺服器歸屬、要求的目標、驗證結果，以及日誌裡看得到的後端與顯示卡。不是 Ollama 時裝置是空的。單調時鐘與英文驗證說明留在 Ollama 套件，不進 API。
+- `GET /llm/health` 回報 `execution_mode`、`execution_warning` 與可為空的 `device`。Ollama 的 `device` 包含 `server`、`requested`（目標、後端、顯示卡名稱）、`verification`、`observed`（正規化的後端、顯示卡名稱、卸載層數與總層數）及 `corrective_restarts`。假供應者等其他供應者的 `device` 為空。子程序環境、PCI 匯流排、觀察時間與英文驗證說明留在 Ollama 套件。
+- 外部或未執行的伺服器，驗證為 `not_observable`，要求與觀察皆為空。外部伺服器的日誌不在協調器手上，健康檢查也不從模型用量推測裝置。自有伺服器還沒取得足夠的載入證據時回 `pending`；若政策是 `unmanaged` 且日誌已有可回報的證據，保留觀察結果並回 `unknown`。
+- 模型載入後若觀察與政策不符，且能從探索到的裝置推導修正，協調器最多矯正重啟一次。矯正只調整子程序的裝置限制，健康檢查的要求仍是原目標、後端與名稱。重啟後等下一次載入才驗證，再次不符就回 `mismatch`，不另退回 CPU。
 - 偏好是假供應者時才選假供應者；自動與 Ollama 都選 Ollama。選中 Ollama 時，它需要安裝 Ollama 與模型。
 - JSON 對話的工作階段：開始前檢查一次模型；裡面任何失敗，包括讀回覆時的失敗，都當作模型呼叫失敗（「Ollama unavailable for configured model …」）；只有成功的工作階段記入產生歸屬。
-- 只有供應者是 Ollama、而且設定檔啟用時才選設定檔；只有在選設定檔時才盤點機器。盤點結果保留 5 分鐘，要求重新盤點時才再量一次。
+- 只有供應者是 Ollama、而且設定檔啟用時才選設定檔；選設定檔、選運算裝置與機器盤點端點共用快取的盤點結果，快取保留 5 分鐘；機器盤點端點帶 `refresh=true` 時重新量測並更新快取。
 - 供應者不寫題目：題目編寫用 JSON 對話自己寫（D14）。
 
 ## 用例
@@ -130,6 +132,8 @@ sequenceDiagram
 
 `create_app` 把 `lazy_provider_from_settings(settings)`（測試可以注入自己的供應者）放在 `app.state.llm_provider`，把 `OllamaMachineInventory(settings)` 放在 `app.state.machine_inventory`，並經 `build_llm_installation` 交給語言模型佈建的 `LLMInstallation`。router 只呼叫 `application/use_cases.py` 的用例。
 
+每個應用程式建立一個 Ollama 伺服器協調器。健康檢查的 `list()` 沒有回應時才請協調器啟動伺服器；成功回應時，若沒有自己擁有的活程序，協調器可據此辨識已在執行的外部伺服器。非本機主機一律回報為外部。產生請求本身不啟動 Ollama。
+
 ## 與其他上下文的關係
 
 - 題目編寫：用 `question_writer_for` 為設定的供應者挑選題目編寫器，Ollama 經 JSON 對話寫題目；背景產生使用背景產生參數、產生歸屬與釋放資源。
@@ -145,10 +149,15 @@ sequenceDiagram
 - 設定：`CERT_PREP_LLM_PROVIDER`（`auto`、`ollama`、`fake`）、`CERT_PREP_OLLAMA_HOST`、`CERT_PREP_OLLAMA_MODEL`、`CERT_PREP_OLLAMA_PROFILE_ENABLED`、`CERT_PREP_OLLAMA_PROFILE_ID`、`CERT_PREP_OLLAMA_PROFILE_INVENTORY_TIMEOUT_SECONDS`（`platform/config.py`）。
 - 設定檔目錄、選設定檔與執行模式的規則：`packages/cert-prep-ollama`（`cert_prep_ollama.profiles`）；機器盤點：`cert_prep_ollama.inventory`。
 - HTTP：`/llm/health`、`/llm/provider-selection`、`/llm/profiles`、`/llm/profile-selection`、`GET /llm/device-preference`、`PUT /llm/device-preference`、`GET /llm/machine-inventory`（DTO 在 `ai_providers/api/schemas.py`）。
-- 資料表：`ollama_device_preference`（遷移 29，單列）。沒有資料列就是自動。選擇顯示卡時一併存名稱與 PCI 識別，供顯示卡換插槽後對回。
-- 查看與選擇裝置偏好是應用層用例；router 只做對應。`GET` 用快取的機器盤點；`PUT` 也先用快取，只有要求的顯示卡不在快取清單裡才重新盤點一次。`PUT` 回傳寫入後讀回的資料列。它把選擇交給協調器就回傳，不做 I/O、不拿生命週期的鎖、不等停止或啟動：擁有的伺服器跑的是別的選擇，或已經有切換在進行時，回 `pending`；伺服器已經跑這個選擇時，什麼都不做。
+- AI 供應透過 repository port 存取 SQLite 的 `ollama_device_preference`（遷移 29）。只允許 `id=1`，沒有資料列就是自動。資料列存模式與更新時間；選顯示卡時另存鍵值、名稱及 PCI 廠商與裝置識別，自動與 CPU 模式的這些欄位為空。
+- 顯示卡鍵值取第一個可用識別的 SHA-256 前 16 個十六進位字元，依序用 PnP 執行個體識別、NVIDIA UUID、或 PCI 廠商與裝置識別加上正規化名稱。DXGI LUID 每次開機可能改變；雜湊讓偏好 API 只需回傳不透明的鍵值。原鍵值找不到時，只有 PCI 廠商與裝置識別唯一對上且該卡分類為獨立或內建才套用，可處理換插槽等識別改變的情況。找不到或無法選取時保留原偏好、暫用自動並回報 `adapter_missing`。
+- 自動政策依序選已確認的獨立顯示卡、有分類不明的顯示卡時交給 Ollama、只剩內建顯示卡時用 Vulkan、沒有實體顯示卡時用 CPU。獨立卡先比專用記憶體，平手時依 NVIDIA、AMD、其他及名稱排序；NVIDIA 用 CUDA（有 UUID 才直接指定），AMD 用 ROCm，其他用 Vulkan。內建卡先比專用與共用記憶體總量，再比名稱。非 Windows 或無盤點時，政策為 `unmanaged`，偏好狀態為 `not_applicable`。
+- 選定顯示卡時沿用其類型與廠商的政策。內建卡啟用 `OLLAMA_IGPU_ENABLE` 並隱藏 CUDA 與 HIP；混合顯示卡的機器仍可能先用到獨立卡，此時矯正可用探索結果指定 Vulkan 裝置。CPU 政策遮蔽 GPU；`unmanaged` 原樣傳遞環境。Windows 管理子程序的環境變數時不分大小寫。
+- `GET` 與 `PUT /llm/device-preference` 成功時都回 200，內容是 `mode`、`adapter_key`、`adapter_name`、`status` 與 `choices`。每張卡列出鍵值、名稱、分類、後端與 `selectable`；省略軟體顯示卡，分類不明、無鍵值或鍵值重複的卡不能選。非 Windows 或無盤點時，清單為空。`PUT` 接受模式與選填鍵值；只含空白等同未給，多餘的欄位會被忽略。選卡缺少鍵值或鍵值無法選取時回 422 `unknown_device`；無效模式或自動／CPU 帶鍵值時回 422 `validation_error`。
+- 偏好狀態依序判定為 `not_applicable`、`adapter_missing`、`pending`、`external_server`，其餘為 `active`。自有伺服器未執行時狀態為 `active`，下次啟動才套用；若切換已停掉原伺服器但替代伺服器沒有起來，之後的選擇也維持 `pending`，直到下次成功啟動伺服器或辨識出外部伺服器。自有伺服器未在執行時，切換執行緒可探查本機 API，若已有外部伺服器回應就標記為外部。
+- 查看與選擇裝置偏好是應用層用例；router 只做對應。`GET` 用快取的機器盤點；`PUT` 也先用快取，只有要求的鍵值在快取中找不到可選的顯示卡才重新盤點一次。`PUT` 回傳寫入後讀回的資料列。它把選擇交給協調器就回傳；協調器登記選擇時不做 I/O、不拿生命週期的鎖、不等停止或啟動：擁有的伺服器跑的是別的選擇，或已經有切換在進行時，回 `pending`；伺服器已經跑這個選擇時，不重啟，矯正後的政策與重啟次數不變。
 - 畫面：執行環境管理畫面（`/runtime`）在有裝置資料時以分頁組織：「執行環境」（預設，包含 LLM 供應者摘要與各執行環境列）與「運算裝置」（裝置設定區塊）。若為假供應者等無裝置資料的狀況，不顯示分頁列，維持原先單一畫面。當裝置頁籤不在前景且需要注意（切換等待 `pending`、找不到選擇的顯示卡 `adapter_missing`、驗證不符 `mismatch` 或儲存錯誤）時，在「運算裝置」頁籤標籤顯示注意圓點與「需要注意」無障礙文字。裝置區塊內部標題改為視覺隱藏（`sr-only`），保留 `aria-labelledby`；單選按鈕群組包含「自動（建議）」、各可用顯示卡（標示名稱、獨立／內建顯示卡與後端）、若先前存下的顯示卡已不在機器上則列出該遺失卡（標示名稱，若無名稱則為「先前選擇的顯示卡」，不可選並選中，附註「目前找不到這張顯示卡」；若存下的卡匹配到不可選的實體卡則不重複列出；若存下的顯示卡鍵值改變但後端以名稱重新匹配到唯一可選顯示卡，該顯示卡維持選中；若無法唯一匹配且狀態非遺失，則以合成選項列出原存顯示卡且無遺失註記）、最後一項「只用 CPU（較慢）」；一行即時狀態（正在使用、預定與實際不符、載入模型後確認、切換等待、找不到選擇的顯示卡暫用自動選擇等）；外部伺服器時顯示常駐指引（說明 Cert Prep 不會更改它、請從系統匣結束 Ollama 再按「Refresh all」）；不適用（`not_applicable`）時顯示「這台電腦由 Ollama 自行決定運算裝置」並隱藏單選按鈕群組；儲存失敗時在區塊內顯示錯誤並回復先前選項；若為 422 `unknown_device` 則提示重新整理後再試並重新載入偏好；健康狀態沒有裝置資料且偏好無法載入時，不繪製分頁列與運算裝置區塊。
-- 健康檢查的 `device` 與 `GET /llm/device-preference` 讀一份狀態快照，只用一個小鎖，從不等切換、矯正重啟或 `ensure_running` 的啟動。切換等待或進行時，`device.requested` 還是正在跑的伺服器的政策，新伺服器啟動時才換成新選擇，並重新計算它自己的一次矯正重啟。
+- 健康檢查的 `device` 與 `GET /llm/device-preference` 讀一份狀態快照，只用一個小鎖，讀取快照時不等切換、矯正重啟或 `ensure_running` 的啟動。切換等待或進行時，`device.requested` 還是正在跑的伺服器的政策，新伺服器啟動時才換成新選擇，並重新計算它自己的一次矯正重啟。
 - 使用擁有的伺服器的工作分兩類，都只登記計數、不握住鎖。短工作：產生與翻譯。長工作：模型下載、設定檔的下載與建立。切換不會中斷任何一類。切換在等待、而且沒有長工作時，新的呼叫（兩類都算）先等，進行中的短工作做完就切換，所以接連不斷的呼叫也不會讓切換一直等下去。有長工作時新的呼叫照常進行，不讓下載卡住產生；最後一個長工作結束後才開始擋。最後一個工作結束時（成功或失敗都算）喚醒切換執行緒。
 - 切換由協調器自己的背景執行緒做，一次只做一個。它讀存下的選擇，停掉舊伺服器，用最新的選擇啟動；讀選擇與盤點時不拿鎖。切換中又存了新的選擇時，新伺服器就緒後若存的選擇已不同，再換一次；相同就不再重啟。切換不用矯正重啟的 30 秒期限；等待或進行切換時完成的那次載入用的是舊伺服器，所以不驗證。
 - 矯正重啟對短工作照舊：最多等 30 秒。發現不符時若有長工作，不重啟也不擋新的呼叫，驗證維持 `pending`，下一次載入模型時再判斷。

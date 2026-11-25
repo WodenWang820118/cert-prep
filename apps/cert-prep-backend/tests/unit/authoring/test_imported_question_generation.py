@@ -1,5 +1,5 @@
-"""Questions of an imported document: background queues jobs, writing at import writes them now,
-and an unavailable model leaves the document with none."""
+"""Questions of an imported source: background queues jobs, writing at import writes them now,
+and an unavailable model leaves the source with none."""
 
 from __future__ import annotations
 
@@ -39,14 +39,14 @@ class Recorder:
         self.calls: list[tuple] = []
 
     # QuestionGenerationWork
-    def enqueue_document(self, project_id: str, document_id: str) -> None:
-        self.calls.append(("enqueue", document_id))
+    def enqueue_source(self, project_id: str, source_id: str) -> None:
+        self.calls.append(("enqueue", source_id))
 
     # QuestionSources
-    def chunks_of(self, project_id: str, document_id: str) -> list[SourceChunk]:
+    def chunks_of(self, project_id: str, source_id: str) -> list[SourceChunk]:
         return [CHUNK]
 
-    def record_import_question_count(self, project_id: str, document_id: str, count: int) -> None:
+    def record_import_question_count(self, project_id: str, source_id: str, count: int) -> None:
         self.calls.append(("record", count))
 
     # QuestionWriting
@@ -57,12 +57,12 @@ class Recorder:
         return list(self._suggestions)
 
     # QuestionRepository
-    def add_generated(self, project_id: str, document_id: str, suggestions) -> list[object]:
+    def add_generated(self, project_id: str, source_id: str, suggestions) -> list[object]:
         self.calls.append(("add", len(suggestions)))
         self.stored += 1
         return list(suggestions)[:1]
 
-    def count_for_source(self, project_id: str, document_id: str) -> int:
+    def count_for_source(self, project_id: str, source_id: str) -> int:
         return self.stored
 
 
@@ -74,7 +74,7 @@ def _question(recorder: Recorder, *, streams: bool, writes: bool) -> None:
         recorder,
         "model",
         project_id="project",
-        document_id="document",
+        source_id="document",
         schedules_question_jobs=streams,
         writes_questions=writes,
         limit=7,
@@ -103,13 +103,13 @@ def test_questions_written_at_import_are_playable_and_counted() -> None:
     ]
 
 
-def test_writing_at_import_twice_records_the_documents_total() -> None:
+def test_writing_at_import_twice_records_the_sources_total() -> None:
     recorder = Recorder(suggestions=[_suggestion("Q1"), _suggestion("Q2")])
 
     _question(recorder, streams=False, writes=True)
     _question(recorder, streams=False, writes=True)
 
-    # Each run keeps one question; the count is every question the document has.
+    # Each run keeps one question; the count is every question the source has.
     assert [call for call in recorder.calls if call[0] == "record"] == [
         ("record", 1),
         ("record", 2),
@@ -130,7 +130,7 @@ def _job(status: QuestionGenerationJobStatus) -> QuestionGenerationJob:
     return QuestionGenerationJob(
         id="job",
         project_id="project",
-        document_id="document",
+        source_id="document",
         chunk_id="chunk",
         page_number=1,
         strategy="hybrid_reasoning",
@@ -150,7 +150,7 @@ def _job(status: QuestionGenerationJobStatus) -> QuestionGenerationJob:
     )
 
 
-def test_generation_ends_once_every_job_of_the_document_has_ended() -> None:
+def test_generation_ends_once_every_job_of_the_source_has_ended() -> None:
     ended = _job(QuestionGenerationJobStatus.SKIPPED_MISSING_MODEL)
 
     assert not all_jobs_ended([])

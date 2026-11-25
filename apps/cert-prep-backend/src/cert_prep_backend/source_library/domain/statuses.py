@@ -3,12 +3,12 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Final, TypeAlias
 
-from cert_prep_contracts.documents import (
-    DOCUMENT_STATUS_VALUES as DOCUMENT_STATUS_VALUES,
-    DocumentOperationPhase as DocumentOperationPhase,
-    DocumentOperationStatus as DocumentOperationStatus,
-    SourceDocumentStatus as SourceDocumentStatus,
-    SourceDocumentStatusValue as SourceDocumentStatusValue,
+from cert_prep_contracts.sources import (
+    SOURCE_STATUS_VALUES as SOURCE_STATUS_VALUES,
+    SourceOperationPhase as SourceOperationPhase,
+    SourceOperationStatus as SourceOperationStatus,
+    SourceStatus as SourceStatus,
+    SourceStatusValue as SourceStatusValue,
 )
 
 

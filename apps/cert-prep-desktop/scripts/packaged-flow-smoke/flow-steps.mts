@@ -17,7 +17,7 @@ import {
 } from './runner-context.mts';
 import {
   answerForVisiblePracticeQuestion,
-  captureDocumentOcrEvidence,
+  captureSourceOcrEvidence,
   captureWholeSourceSessionCreate,
   captureLlmHealth,
   EXPECTED_BASELINE_CHUNKS,
@@ -28,7 +28,7 @@ import {
   recordFirstChunkVisible,
   refreshFirstChunkGateMetrics,
   waitForQuestionJobsComplete,
-  waitForUploadDocumentResponse,
+  waitForUploadSourceResponse,
 } from './question-generation-observer.mts';
 import { FIRST_CHUNK_GATE_MS } from './question-generation-evidence.mts';
 import { captureGenerationReadinessAtProjectCreate } from './generation-readiness.mts';
@@ -79,7 +79,7 @@ export async function uploadAndParsePdf(run: SmokeRunState): Promise<void> {
   );
   await screenshot(run, 'pdf-selected-language-ja');
 
-  const uploadDocumentResponse = waitForUploadDocumentResponse(run);
+  const uploadSourceResponse = waitForUploadSourceResponse(run);
   const uploadStart = Date.now();
   await clickButtonText(run, 'Upload files', { timeout: 120_000 });
   await waitText(
@@ -99,15 +99,15 @@ export async function uploadAndParsePdf(run: SmokeRunState): Promise<void> {
   );
 
   try {
-    const uploadedDocument = await uploadDocumentResponse;
-    run.uploadedDocument = uploadedDocument;
-    if (uploadedDocument) {
+    const uploadedSource = await uploadSourceResponse;
+    run.uploadedSource = uploadedSource;
+    if (uploadedSource) {
       run.metrics.observations.push(
-        `Captured upload document reference for question generation API polling: ${uploadedDocument.documentId}.`,
+        `Captured upload source reference for question generation API polling: ${uploadedSource.sourceId}.`,
       );
     } else {
       run.metrics.observations.push(
-        'Upload document response was not captured; question generation evidence is limited to UI/API responses.',
+        'Upload source response was not captured; question generation evidence is limited to UI/API responses.',
       );
     }
     await screenshot(run, 'parsing-started');
@@ -139,7 +139,7 @@ export async function uploadAndParsePdf(run: SmokeRunState): Promise<void> {
       run,
       parseStart,
       parseCompletePromise,
-      uploadedDocument,
+      uploadedSource,
     );
     await parseCompletePromise;
     const terminalText = await bodyText(run);
@@ -153,23 +153,23 @@ export async function uploadAndParsePdf(run: SmokeRunState): Promise<void> {
       );
     }
     recordOcrCompletionFromText(run, terminalText);
-    if (uploadedDocument) {
-      await captureDocumentOcrEvidence(run, uploadedDocument);
-      await captureLlmHealth(run, uploadedDocument);
+    if (uploadedSource) {
+      await captureSourceOcrEvidence(run, uploadedSource);
+      await captureLlmHealth(run, uploadedSource);
     }
     if (run.options.waitForQuestionJobs) {
-      if (!uploadedDocument) {
+      if (!uploadedSource) {
         throw new Error(
           'Cannot wait for question generation completion without upload API reference.',
         );
       }
       try {
-        await waitForQuestionJobsComplete(run, uploadedDocument, parseStart);
+        await waitForQuestionJobsComplete(run, uploadedSource, parseStart);
       } catch (error) {
-        await captureLlmHealth(run, uploadedDocument);
+        await captureLlmHealth(run, uploadedSource);
         throw error;
       }
-      await captureLlmHealth(run, uploadedDocument);
+      await captureLlmHealth(run, uploadedSource);
     }
   } finally {
     firstChunkObservation.stop();
@@ -198,9 +198,9 @@ function recordOcrCompletionFromText(run: SmokeRunState, text: string): void {
 }
 
 export async function createAndEditQuestion(run: SmokeRunState): Promise<void> {
-  if (!run.uploadedDocument) {
+  if (!run.uploadedSource) {
     throw new Error(
-      'Cannot create QA question without uploaded document reference.',
+      'Cannot create QA question without uploaded source reference.',
     );
   }
 

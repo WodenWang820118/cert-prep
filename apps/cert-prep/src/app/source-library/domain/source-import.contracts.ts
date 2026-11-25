@@ -1,8 +1,8 @@
 import type {
-  DocumentOperationRead,
-  DocumentRead,
+  SourceOperationRead,
+  SourceRead,
 } from '../../core/domain';
-import type { DocumentOperationEvent } from '../../core/domain';
+import type { SourceOperationEvent } from '../../core/domain';
 import type { Observable, Subscription } from 'rxjs';
 
 /**
@@ -29,17 +29,17 @@ export interface SourceUploadItem {
   readonly id: string;
   readonly file: File;
   readonly status: SourceUploadStatus;
-  readonly document: DocumentRead | null;
+  readonly source: SourceRead | null;
   readonly error: string | null;
 }
 
 /**
- * One source document activity in a project: the learner uploaded or selected
- * a document (re-selecting the same one included), or a document became
+ * One source activity in a project: the learner uploaded or selected
+ * a source (re-selecting the same one included), or a source became
  * active. Every activity is a new object, so a reader sees each one even when
- * the active document did not change.
+ * the active source did not change.
  */
-export interface SourceDocumentActivity {
+export interface SourceActivity {
   readonly projectId: string;
 }
 
@@ -51,14 +51,14 @@ export interface SourceFileSelectionOptions {
 export type UploadPatch = Partial<Omit<SourceUploadItem, 'id' | 'file'>>;
 export type TerminalUploadStatus = 'uploaded' | 'failed' | 'canceled';
 export type OperationRequestOutcome =
-  | { readonly ok: true; readonly operation: DocumentOperationRead }
+  | { readonly ok: true; readonly operation: SourceOperationRead }
   | { readonly ok: false; readonly error: unknown };
 
 export interface UploadTransportRun {
   readonly projectId: string;
   readonly contextEpoch: number;
   readonly itemIds: string[];
-  readonly documents: DocumentRead[];
+  readonly sources: SourceRead[];
   readonly done: Observable<void>;
 }
 
@@ -70,29 +70,29 @@ export interface SourceUploadLifecycleHooks {
   readonly item: (itemId: string) => SourceUploadItem | undefined;
   readonly current: (projectId: string, contextEpoch: number) => boolean;
   readonly patch: (itemId: string, patch: UploadPatch) => boolean;
-  readonly accept: (document: DocumentRead, operationId: string) => void;
+  readonly accept: (source: SourceRead, operationId: string) => void;
   readonly upload: (
     projectId: string,
     item: SourceUploadItem,
     operationId: string,
     signal: AbortSignal,
-  ) => Observable<DocumentRead>;
-  readonly getDocument: (
+  ) => Observable<SourceRead>;
+  readonly getSource: (
     projectId: string,
-    documentId: string,
-  ) => Observable<DocumentRead>;
+    sourceId: string,
+  ) => Observable<SourceRead>;
   readonly getOperation: (
     projectId: string,
     operationId: string,
-  ) => Observable<DocumentOperationRead>;
+  ) => Observable<SourceOperationRead>;
   readonly streamOperation: (
     projectId: string,
     operationId: string,
-  ) => Observable<DocumentOperationEvent>;
+  ) => Observable<SourceOperationEvent>;
   readonly cancelOperation: (
     projectId: string,
     operationId: string,
-  ) => Observable<DocumentOperationRead>;
+  ) => Observable<SourceOperationRead>;
   readonly newOperationId: () => string;
   readonly errorMessage: (error: unknown) => string;
 }
@@ -113,8 +113,8 @@ export interface UploadAttempt {
   readonly actionSubscription: Subscription;
   cancellationSubscription: Subscription | null;
   run: MutableUploadRun;
-  documentId: string | null;
-  document: DocumentRead | null;
+  sourceId: string | null;
+  source: SourceRead | null;
   cancelRequested: boolean;
   slotHeld: boolean;
 }
@@ -123,15 +123,15 @@ export interface DetachedOperationTombstoneHooks {
   readonly getOperation: (
     projectId: string,
     operationId: string,
-  ) => Observable<DocumentOperationRead>;
+  ) => Observable<SourceOperationRead>;
   readonly cancelOperation: (
     projectId: string,
     operationId: string,
-  ) => Observable<DocumentOperationRead>;
+  ) => Observable<SourceOperationRead>;
   readonly streamOperation: (
     projectId: string,
     operationId: string,
-  ) => Observable<DocumentOperationEvent>;
+  ) => Observable<SourceOperationEvent>;
 }
 
 export interface DetachedTombstone {

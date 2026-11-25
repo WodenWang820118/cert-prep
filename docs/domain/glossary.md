@@ -13,28 +13,31 @@
 
 | 中文             | 程式名稱                                      | 意思                                                           |
 | ---------------- | --------------------------------------------- | -------------------------------------------------------------- |
-| 教材             | `SourceDocument`                              | 匯入的一份 PDF、圖片或錄音                                     |
+| 教材             | `Source`                              | 匯入的一份 PDF、圖片或錄音                                     |
 | 教材類型         | `SourceKind`                                   | `pdf`（PDF）、`image`（圖片）、`recording`（錄音）             |
 | 原始檔           | `SourceFile`                                  | 匯入的檔案、它的 SHA-256 與存放位置                            |
-| 段落             | `DocumentChunk`                               | 教材切成的一段文字，題目由段落產生；錄音的段落有時間區間與翻譯 |
-| 教材狀態         | `SourceDocumentStatus`                        | 處理中、取消中、已取消、可用，或處理失敗的原因                 |
+| 段落             | `SourceChunk`                               | 教材切成的一段文字，題目由段落產生；錄音的段落有時間區間與翻譯 |
+| 教材狀態         | `SourceStatus`                        | 處理中、取消中、已取消、可用，或處理失敗的原因                 |
 | 擷取結果         | `PageExtraction` | 一次擷取得到的頁面、狀態                           |
 | 擷取頁面         | `ExtractedPage`                               | 擷取出的一頁文字與擷取方式                                     |
 | 擷取方式         | `ExtractionMethod`                         | `text_recognition`、`transcription`、`none`，或歷史資料的 `text_layer`                            |
 | 擷取警告         | `extraction_warnings`                        | 擷取完成後需要試讀或檢查的提示                         |
 | 失敗訊息         | `failure_message`                             | 擷取失敗或沒有可用文字的原因：Cert 自己的說明，不含 Capture Runtime 的原文 |
-| 教材生命週期政策 | `SourceDocumentLifecyclePolicy`               | 教材什麼時候能產生題目、產生後是什麼狀態                       |
+| 教材匯入後狀態 | `Source.status_after_import_questions` | 匯入產生題目後記錄的教材狀態                       |
 | 內容類型         | `ContentProfile`                              | 教材的題型慣例，例如 `jlpt_vocabulary`、`jlpt_grouped`         |
 | 文字分類         | `TextClassification`                          | 一段文字判斷出的內容類型與判斷依據                             |
 | 行範圍           | `LineMetadata`                                | 段落在原文的起訖行與行數                                       |
 | 題目區塊         | `ParsedQuestionBlock`                         | 從教材文字切出的一題：題號、題幹、選項與所屬題組               |
 | 題目形式         | `QuestionItemKind`                            | 一題是單獨的字彙題，還是題組裡的一題                           |
 | Markdown 匯出    | `MarkdownProjection`                          | 可匯出的 PDF 與用來產生 Markdown 的段落                        |
-| 教材無法提供     | `SourceDocumentUnavailable`                   | 教材不能以要求的形式提供，例如圖片沒有 Markdown                |
-| 匯入作業         | `DocumentOperation`                           | 一次匯入、擷取、檢閱或重試，以及它還能不能取消                 |
-| 作業狀態         | `DocumentOperationStatus`                     | 排隊、執行中、要求取消、已取消、成功、失敗                     |
-| 作業階段         | `DocumentOperationPhase`                      | 上傳、處理、等待檢閱、轉錄、翻譯、取消中、寫入結果等           |
-| 失敗後的教材狀態 | `DocumentFailureState`                        | 作業失敗或取消後，頁面教材留下的狀態，之後可以重試             |
+| 教材無法提供     | `SourceUnavailable`                   | 教材不能以要求的形式提供，例如圖片沒有 Markdown                |
+| 匯入作業         | `SourceOperation`                           | 一次匯入、擷取、檢閱或重試，以及它還能不能取消                 |
+| 作業狀態         | `SourceOperationStatus`                     | 排隊、執行中、要求取消、已取消、成功、失敗                     |
+| 作業階段         | `SourceOperationPhase`                      | 上傳、處理、等待檢閱、轉錄、翻譯、取消中、寫入結果等           |
+| 教材檔案遺失 | `source_file_missing` | 找不到可重試的原始檔 |
+| 教材重試衝突 | `source_retry_conflict` | 教材已有作業，或作業 ID 與現有作業衝突 |
+| 教材無法重試 | `source_retry_not_allowed` | 目前狀態不允許重試 |
+| 失敗後的教材狀態 | `SourceFailureState`                        | 作業失敗或取消後，頁面教材留下的狀態，之後可以重試             |
 
 ## 擷取整合
 
@@ -46,7 +49,7 @@
 | 擷取檢閱狀態     | `CaptureReviewStatus`          | 等待、確認中、完成、取消，或失敗                   |
 | 擷取檢閱的結束   | `CaptureReviewEnding`          | 要求檢閱進入完成、取消或失敗，以及結束時的事件序號 |
 | 擷取檢閱無法轉換 | `CaptureReviewTransitionError` | 檢閱的狀態不允許這次轉換                           |
-| 擷取檢閱失敗 | `capture_review_failed` | 擷取檢閱以失敗結束；帶已儲存的文件作業階段與失敗訊息 |
+| 擷取檢閱失敗 | `capture_review_failed` | 擷取檢閱以失敗結束；帶已儲存的教材作業階段與失敗訊息 |
 | Capture Runtime 無法使用 | `CaptureRuntimeUnavailable` | Capture Runtime 沒有設定或連不上（`capture_runtime_unavailable`） |
 | 擷取需求無法使用 | `CaptureRequirementUnavailable` | runtime 在執行，但來源需要的擷取引擎沒有安裝（`capture_requirement_unavailable`） |
 | 語言模型無法使用 | `LanguageModelUnavailable` | Ollama 或模型連不上、沒有安裝，或回應無法使用 |
@@ -82,7 +85,7 @@
 | 預設題目編寫器 | `PlaceholderQuestionWriter`      | 假供應者用的固定題目，讓 app 與測試不需要模型也能跑             |
 | 產生工作         | `QuestionGenerationJob`          | 匯入教材後，為一個段落產生題目的背景工作（每個段落與策略一個）  |
 | 背景題目工作排程 | `QuestionJobScheduler`、`QuestionJobWork` | 擷取後安排及執行題目產生工作；工作本身不串流 |
-| 教材題目數 | `DocumentQuestionCount`、`question_count` | 記錄教材題目數與狀態的介面，以及 API 的題目數欄位；題目數一律是教材所有題目的總數 |
+| 教材題目數 | `SourceQuestionCount`、`question_count` | 記錄教材題目數與狀態的介面，以及 API 的題目數欄位；題目數一律是教材所有題目的總數 |
 | 產生工作狀態     | `QuestionGenerationJobStatus`    | 等待、執行中、要求取消、已取消、成功、因模型或供應者跳過、失敗  |
 | 手動產生作業     | `ManualQuestionGeneration`        | 學習者要求為整份教材產生題目；同一份教材同時只有一個進行中      |
 | 手動產生作業狀態 | `ManualQuestionGenerationStatus`  | 排隊、執行中、要求取消、已取消、成功、失敗                      |
@@ -95,7 +98,7 @@
 | ------------ | ------------------------- | ------------------------------------------------------------------ |
 | 練習         | `PracticeSession`         | 一次作答；模式有整份、隨機抽題、錯題重練                           |
 | 練習狀態     | `PracticeSessionStatus`   | 進行中、完成（每題都答過）、放棄                                   |
-| 練習模式     | `PracticeSessionMode`     | 隨機抽題、整份教材、錯題重練                                       |
+| 練習模式     | `PracticeSessionMode`     | 隨機抽題、整份教材（`full_source`）、錯題重練                                       |
 | 整份教材 | Whole source | `/whole-source`，使用一份教材的所有可練習題目 |
 | 隨機抽題 | Random draw | `/random-draw`，從可練習題目中隨機抽題 |
 | 錯題重練 | Wrong-answer retry | `/wrong-answer-retry`，重練目前的錯題 |
@@ -154,11 +157,11 @@
 
 | 中文             | 程式名稱                      | 意思                                                           |
 | ---------------- | ----------------------------- | -------------------------------------------------------------- |
-| 執行環境安裝     | `LLMInstallationJob`      | 安裝或檢查 Ollama 執行環境與語言模型等本機元件的背景工作 |
-| 執行環境安裝目標 | `LLMInstallationTarget`   | 安裝工作的需求種類、供應者名稱與模型                           |
-| 執行環境安裝階段 | `LLMInstallationPhase`    | 安裝工作的技術階段，例如排隊、執行中、提交中等                 |
-| 執行環境安裝進度 | `LLMInstallationProgress` | 安裝工作的進度更新：說明、完成度、總量、階段與是否可取消       |
-| 執行環境安裝快照 | `LLMInstallationSnapshot` | 執行環境安裝工作對外的序列化檢視                               |
-| 執行環境安裝已取消 | `LLMInstallationCanceledError` | 安裝工作已取消而拒絕狀態轉換的錯誤                             |
-| 執行環境需求種類 | `LLMRequirementKind`      | 可安裝的本機相依類別，例如 Ollama 執行環境或模型               |
-| 執行環境安裝狀態 | `LLMInstallationStatus`   | 執行環境安裝工作的生命週期狀態                                 |
+| 語言模型安裝     | `LLMInstallationJob`      | 安裝或檢查 Ollama 執行環境與語言模型等本機元件的背景工作 |
+| 語言模型安裝目標 | `LLMInstallationTarget`   | 安裝工作的需求種類、供應者名稱與模型                           |
+| 語言模型安裝階段 | `LLMInstallationPhase`    | 安裝工作的技術階段，例如排隊、執行中、提交中等                 |
+| 語言模型安裝進度 | `LLMInstallationProgress` | 安裝工作的進度更新：說明、完成度、總量、階段與是否可取消       |
+| 語言模型安裝快照 | `LLMInstallationSnapshot` | 語言模型安裝工作對外的序列化檢視                               |
+| 語言模型安裝已取消 | `LLMInstallationCanceledError` | 安裝工作已取消而拒絕狀態轉換的錯誤                             |
+| 語言模型需求種類 | `LLMRequirementKind`      | 可安裝的本機相依類別，例如 Ollama 執行環境或模型               |
+| 語言模型安裝狀態 | `LLMInstallationStatus`   | 語言模型安裝工作的生命週期狀態                                 |

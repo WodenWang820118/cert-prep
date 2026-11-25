@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.platform.config import Settings
 from conftest import AUTH_TOKEN, minimal_audio
-from document_test_helpers import _create_project
+from source_test_helpers import _create_project
 from test_capture_workbench_pipeline import DeterministicAudioCaptureRuntime, EchoCaptureProvider
 
 HEADERS = {"Authorization": f"Bearer {AUTH_TOKEN}"}
@@ -23,7 +23,7 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
         settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
         llm_provider=EchoCaptureProvider(),
         capture_runtime_client=DeterministicAudioCaptureRuntime(),
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
         background_question_jobs=False,
     )
     with TestClient(app) as test_client:
@@ -33,14 +33,14 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
 def _upload_recording(client: TestClient, tmp_path: Path) -> tuple[str, Path]:
     project_id = _create_project(client, HEADERS)
     uploaded = client.post(
-        f"/projects/{project_id}/documents",
+        f"/projects/{project_id}/sources",
         headers=HEADERS,
         files={"file": ("lecture.wav", minimal_audio(".wav"), "audio/wav")},
         data={"language_hint": "ja"},
     )
     assert uploaded.status_code == 201, uploaded.text
     (stored,) = (tmp_path / "uploads" / project_id).iterdir()
-    return f"/projects/{project_id}/documents/{uploaded.json()['id']}/source", stored
+    return f"/projects/{project_id}/sources/{uploaded.json()['id']}/audio", stored
 
 
 def test_a_stored_recording_plays_inline(client: TestClient, tmp_path: Path) -> None:

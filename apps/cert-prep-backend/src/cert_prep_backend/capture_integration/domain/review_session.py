@@ -85,7 +85,7 @@ class CaptureReviewSession:
 
     id: str
     project_id: str
-    document_id: str
+    source_id: str
     operation_id: str
     runtime_capture_id: str | None
     status: CaptureReviewStatus

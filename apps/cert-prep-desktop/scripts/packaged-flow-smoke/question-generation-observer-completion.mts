@@ -6,7 +6,7 @@ import type {
   QuestionJobSnapshot,
   QuestionJobCompletionState,
   QuestionSnapshot,
-  UploadedDocumentRef,
+  UploadedSourceRef,
 } from './types.mts';
 import { screenshot } from './runner-context.mts';
 import { pollQuestionGenerationApis } from './question-generation-observer-api.mts';
@@ -22,7 +22,7 @@ const QUESTION_JOBS_COMPLETE_POLL_INTERVAL_MS = 5_000;
 
 export async function waitForQuestionJobsComplete(
   run: SmokeRunState,
-  uploadedDocument: UploadedDocumentRef,
+  uploadedSource: UploadedSourceRef,
   parseStart: number,
 ): Promise<void> {
   const deadline = Date.now() + run.options.questionJobsCompleteTimeoutMs;
@@ -32,7 +32,7 @@ export async function waitForQuestionJobsComplete(
 
   while (Date.now() < deadline) {
     const elapsedMs = Date.now() - parseStart;
-    await pollQuestionGenerationApis(run, uploadedDocument, elapsedMs);
+    await pollQuestionGenerationApis(run, uploadedSource, elapsedMs);
     const latestJob = latestQuestionGenerationJobSnapshot(run);
     const latestQuestion = latestQuestionSnapshot(run);
 
@@ -66,7 +66,7 @@ export async function waitForQuestionJobsComplete(
   }
 
   throw new Error(
-    `Question generation question jobs did not reach a stable terminal state within ${run.options.questionJobsCompleteTimeoutMs}ms. Last state: ${JSON.stringify(
+    `Question jobs did not reach a stable terminal state within ${run.options.questionJobsCompleteTimeoutMs}ms. Last state: ${JSON.stringify(
       latestState,
     )}`,
   );
@@ -93,7 +93,7 @@ function assertSuccessfulQuestionGenerationBaseline(
   }
   if (latestJob.generated_count !== usableQuestionCount) {
     throw new Error(
-      `Question generation generated question count (${latestJob.generated_count}) did not match usable question count (${usableQuestionCount}).`,
+      `Generated question count (${latestJob.generated_count}) did not match usable question count (${usableQuestionCount}).`,
     );
   }
   const firstUsable =

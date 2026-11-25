@@ -225,7 +225,7 @@ def test_create_app_builds_one_coordinator_without_spawning_and_closes_it_on_shu
 
     app = create_app(
         settings=settings,
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
     )
 
     # 1. Assert one coordinator created in app.state.ollama_server

@@ -1,16 +1,16 @@
-"""Document worker pool as capture review's background work."""
+"""Source worker pool as capture review's background work."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 
-from cert_prep_backend.platform.document_worker_pool import DocumentWorkItem, DocumentWorkerPool
+from cert_prep_backend.platform.source_worker_pool import SourceWorkItem, SourceWorkerPool
 
 
 class PoolCaptureBackgroundWork:
-    """Submits capture review work to the process document worker pool."""
+    """Submits capture review work to the process source worker pool."""
 
-    def __init__(self, pool: DocumentWorkerPool) -> None:
+    def __init__(self, pool: SourceWorkerPool) -> None:
         self._pool = pool
 
     def submit(
@@ -21,7 +21,7 @@ class PoolCaptureBackgroundWork:
         cancel_queued: Callable[[], None],
     ) -> None:
         self._pool.submit(
-            DocumentWorkItem(operation_id=operation_id, run=run, cancel_queued=cancel_queued)
+            SourceWorkItem(operation_id=operation_id, run=run, cancel_queued=cancel_queued)
         )
 
     def is_closed(self) -> bool:

@@ -22,7 +22,7 @@ def create(
     db: Database,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     operation_id: str,
     expires_in_seconds: int = 1800,
 ) -> CaptureReviewSession:
@@ -33,14 +33,14 @@ def create(
         connection.execute(
             """
             INSERT INTO capture_review_sessions(
-                id, project_id, document_id, operation_id, runtime_capture_id,
+                id, project_id, source_id, operation_id, runtime_capture_id,
                 status, review_revision, expires_at, created_at, updated_at
             ) VALUES (?, ?, ?, ?, NULL, ?, 0, ?, ?, ?)
             """,
             (
                 session_id,
                 project_id,
-                document_id,
+                source_id,
                 operation_id,
                 CaptureReviewStatus.PENDING,
                 expires,
@@ -304,7 +304,7 @@ def _session(row: Row | None) -> CaptureReviewSession:
     return CaptureReviewSession(
         id=row["id"],
         project_id=row["project_id"],
-        document_id=row["document_id"],
+        source_id=row["source_id"],
         operation_id=row["operation_id"],
         runtime_capture_id=row["runtime_capture_id"],
         runtime_ingestion_id=row["runtime_ingestion_id"],
@@ -339,12 +339,12 @@ class CaptureReviewStoreAdapter:
         )
 
     def create(
-        self, *, project_id: str, document_id: str, operation_id: str
+        self, *, project_id: str, source_id: str, operation_id: str
     ) -> CaptureReviewSession:
         return create(
             self._db,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             operation_id=operation_id,
         )
 

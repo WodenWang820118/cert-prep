@@ -3,7 +3,7 @@ import { provideRouter, Router } from '@angular/router';
 import { of, Subject, throwError } from 'rxjs';
 import { CERT_PREP_API } from '../../../core/data';
 import type {
-  DocumentRead,
+  SourceRead,
   PracticeSessionRead,
   ProjectRead,
   QuestionRead,
@@ -37,12 +37,12 @@ describe('WrongAnswerRetryComponent', () => {
     rationale: 'The citation supports A.',
     citation_page: 3,
     source_excerpt: 'Relevant source excerpt.',
-    document_id: 'document-1',
+    source_id: 'source-1',
     created_at: '2026-06-23T00:00:00Z',
     answer_key_source: null,
   };
-  const document: DocumentRead = {
-    id: wrongAnswer.document_id ?? 'document-1',
+  const source: SourceRead = {
+    id: wrongAnswer.source_id ?? 'source-1',
     project_id: project.id,
     filename: 'security.pdf',
     source_kind: 'pdf',
@@ -71,7 +71,7 @@ describe('WrongAnswerRetryComponent', () => {
       {
         question_id: wrongAnswer.question_id,
         question: wrongAnswer.question,
-        document_id: wrongAnswer.document_id,
+        source_id: wrongAnswer.source_id,
         citation_page: wrongAnswer.citation_page,
         source_excerpt: wrongAnswer.source_excerpt,
         miss_count: 2,
@@ -80,7 +80,7 @@ describe('WrongAnswerRetryComponent', () => {
     ],
     clusters: [
       {
-        document_id: wrongAnswer.document_id,
+        source_id: wrongAnswer.source_id,
         citation_page: wrongAnswer.citation_page,
         current_wrong_count: 1,
         cleared_count: 2,
@@ -101,12 +101,12 @@ describe('WrongAnswerRetryComponent', () => {
         rationale: wrongAnswer.rationale,
         citation_page: wrongAnswer.citation_page,
         source_excerpt: wrongAnswer.source_excerpt,
-        document_id: wrongAnswer.document_id,
+        source_id: wrongAnswer.source_id,
         answer_key_source: null,
       },
     ],
     mode: 'review_retry',
-    document_id: null,
+    source_id: null,
     question_count: 1,
     random_seed: null,
     status: 'active',
@@ -189,7 +189,7 @@ describe('WrongAnswerRetryComponent', () => {
     const review = TestBed.inject(WrongAnswerRetryStore);
     projects.projects.set([project]);
     projects.selectedProjectId.set(null);
-    sourceImport.documents.set([document]);
+    sourceImport.sources.set([source]);
     review.wrongAnswers.set([wrongAnswer]);
 
     fixture.detectChanges();

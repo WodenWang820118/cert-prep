@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from cert_prep_backend.authoring.application.ports import (
     QuestionSources,
-    ProjectDocuments,
+    ProjectSources,
     StudyProjects,
 )
 from cert_prep_backend.authoring.domain.generation import (
@@ -22,7 +22,7 @@ def enqueue_chunk_job(
     db: Database,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     chunk_id: str,
     page_number: int,
     strategy: str,
@@ -35,24 +35,24 @@ def enqueue_chunk_job(
 
     if not projects.exists(project_id):
         raise NotFoundError("Project not found.")
-    sources.chunk(project_id, document_id, chunk_id)
+    sources.chunk(project_id, source_id, chunk_id)
     now = utc_now()
     with db.connect() as connection:
         connection.execute(
             """
             INSERT INTO question_generation_jobs(
-                id, project_id, document_id, chunk_id, source_chunk_id,
+                id, project_id, source_id, chunk_id, source_chunk_id,
                 page_number, strategy,
                 status, provider, model, generated_count, retry_count,
                 last_error, created_at, updated_at
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, ?, ?)
-            ON CONFLICT(document_id, chunk_id, strategy) DO NOTHING
+            ON CONFLICT(source_id, chunk_id, strategy) DO NOTHING
             """,
             (
                 str(uuid4()),
                 project_id,
-                document_id,
+                source_id,
                 chunk_id,
                 chunk_id,
                 page_number,
@@ -68,32 +68,32 @@ def enqueue_chunk_job(
             """
             SELECT *
             FROM question_generation_jobs
-            WHERE project_id = ? AND document_id = ? AND chunk_id = ? AND strategy = ?
+            WHERE project_id = ? AND source_id = ? AND chunk_id = ? AND strategy = ?
             """,
-            (project_id, document_id, chunk_id, strategy),
+            (project_id, source_id, chunk_id, strategy),
         ).fetchone()
     if row is None:
         raise NotFoundError("Question generation job not found.")
     return job_from_row(row)
 
 
-def list_document_jobs(
+def list_source_jobs(
     db: Database,
     project_id: str,
-    document_id: str,
+    source_id: str,
     *,
-    documents: ProjectDocuments,
+    sources: ProjectSources,
 ) -> list[QuestionGenerationJob]:
-    documents.require(project_id, document_id)
+    sources.require(project_id, source_id)
     with db.connect() as connection:
         rows = connection.execute(
             """
             SELECT *
             FROM question_generation_jobs
-            WHERE project_id = ? AND document_id = ?
+            WHERE project_id = ? AND source_id = ?
             ORDER BY page_number, created_at, id
             """,
-            (project_id, document_id),
+            (project_id, source_id),
         ).fetchall()
     return [job_from_row(row) for row in rows]
 
@@ -169,18 +169,18 @@ def recover_runnable_jobs(db: Database) -> list[QuestionGenerationJob]:
     return [job_from_row(row) for row in rows]
 
 
-def retry_document_jobs(
+def retry_source_jobs(
     db: Database,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     provider: str,
     model: str,
-    documents: ProjectDocuments,
+    sources: ProjectSources,
 ) -> list[QuestionGenerationJob]:
-    """Requeue retryable terminal jobs for a document after runtime blockers clear."""
+    """Requeue retryable terminal jobs for a source after runtime blockers clear."""
 
-    documents.require(project_id, document_id)
+    sources.require(project_id, source_id)
     now = utc_now()
     retryable_statuses = tuple(status.value for status in JOB_RETRYABLE_STATUSES)
     with db.connect() as connection:
@@ -200,7 +200,7 @@ def retry_document_jobs(
                 last_error = NULL,
                 updated_at = ?
             WHERE project_id = ?
-              AND document_id = ?
+              AND source_id = ?
               AND status IN (?, ?, ?, ?)
               AND chunk_id IS NOT NULL
             """,
@@ -210,7 +210,7 @@ def retry_document_jobs(
                 model,
                 now,
                 project_id,
-                document_id,
+                source_id,
                 *retryable_statuses,
             ),
         )
@@ -219,12 +219,12 @@ def retry_document_jobs(
             SELECT *
             FROM question_generation_jobs
             WHERE project_id = ?
-              AND document_id = ?
+              AND source_id = ?
               AND status = ?
               AND chunk_id IS NOT NULL
             ORDER BY updated_at, page_number, created_at, id
             """,
-            (project_id, document_id, QuestionGenerationJobStatus.PENDING),
+            (project_id, source_id, QuestionGenerationJobStatus.PENDING),
         ).fetchall()
     return [job_from_row(row) for row in rows]
 
@@ -254,18 +254,18 @@ def request_cancel(
     db: Database,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     job_id: str,
-    documents: ProjectDocuments,
+    sources: ProjectSources,
 ) -> QuestionGenerationJob:
     """Cancel pending work or request cooperative cancellation for running work."""
 
-    documents.require(project_id, document_id)
+    sources.require(project_id, source_id)
     return _transition(
         db,
         job_id,
         lambda job, now: job.cancel(now),
-        owner=(project_id, document_id),
+        owner=(project_id, source_id),
     )
 
 
@@ -291,7 +291,7 @@ def job_from_row(row: Row) -> QuestionGenerationJob:
     return QuestionGenerationJob(
         id=row["id"],
         project_id=row["project_id"],
-        document_id=row["document_id"],
+        source_id=row["source_id"],
         chunk_id=row["chunk_id"] or row["source_chunk_id"],
         page_number=row["page_number"],
         strategy=row["strategy"],
@@ -343,13 +343,13 @@ def _job_row(connection: Connection, job_id: str, owner: tuple[str, str] | None)
             "SELECT * FROM question_generation_jobs WHERE id = ?",
             (job_id,),
         ).fetchone()
-    project_id, document_id = owner
+    project_id, source_id = owner
     return connection.execute(
         """
         SELECT * FROM question_generation_jobs
-        WHERE id = ? AND project_id = ? AND document_id = ?
+        WHERE id = ? AND project_id = ? AND source_id = ?
         """,
-        (job_id, project_id, document_id),
+        (job_id, project_id, source_id),
     ).fetchone()
 
 
@@ -383,14 +383,14 @@ def _optional_row_value(row: Row, column: str):
     return row[column] if column in row.keys() else None
 
 
-def _discard_unfinished_jobs(connection: Connection, project_id: str, document_id: str) -> None:
+def _discard_unfinished_jobs(connection: Connection, project_id: str, source_id: str) -> None:
     connection.execute(
         """
         DELETE FROM question_generation_jobs
-        WHERE project_id = ? AND document_id = ?
+        WHERE project_id = ? AND source_id = ?
             AND status IN ('pending', 'running', 'cancel_requested')
         """,
-        (project_id, document_id),
+        (project_id, source_id),
     )
 
 
@@ -402,29 +402,29 @@ class SqliteQuestionGenerationJobRepository:
         db: Database,
         connection: Connection | None = None,
         *,
-        documents: ProjectDocuments,
+        sources: ProjectSources,
     ) -> None:
         # A caller's connection joins that transaction. Source Library passes the connection
-        # of the document run it stops or retries, so the jobs go with that run's writes.
+        # of the source run it stops or retries, so the jobs go with that run's writes.
         self._db = db
         self._connection = connection
-        self._documents = documents
+        self._sources = sources
 
-    def jobs_of(self, project_id: str, document_id: str) -> list[QuestionGenerationJob]:
-        return list_document_jobs(self._db, project_id, document_id, documents=self._documents)
+    def jobs_of(self, project_id: str, source_id: str) -> list[QuestionGenerationJob]:
+        return list_source_jobs(self._db, project_id, source_id, sources=self._sources)
 
-    def cancel(self, project_id: str, document_id: str, job_id: str) -> QuestionGenerationJob:
+    def cancel(self, project_id: str, source_id: str, job_id: str) -> QuestionGenerationJob:
         return request_cancel(
             self._db,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             job_id=job_id,
-            documents=self._documents,
+            sources=self._sources,
         )
 
-    def discard_unfinished(self, project_id: str, document_id: str) -> None:
+    def discard_unfinished(self, project_id: str, source_id: str) -> None:
         if self._connection is not None:
-            _discard_unfinished_jobs(self._connection, project_id, document_id)
+            _discard_unfinished_jobs(self._connection, project_id, source_id)
             return
         with self._db.connect() as connection:
-            _discard_unfinished_jobs(connection, project_id, document_id)
+            _discard_unfinished_jobs(connection, project_id, source_id)

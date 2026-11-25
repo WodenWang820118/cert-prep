@@ -1,0 +1,67 @@
+@if (model().sources.length > 0) {
+  <label class="workbench-field">
+    <span>Project source library</span>
+    <select
+      [value]="model().activeSourceId ?? ''"
+      (change)="selectSource($any($event.target).value)"
+    >
+      @for (source of model().sources; track source.id) {
+        <option [value]="source.id">{{ source.filename }}</option>
+      }
+    </select>
+  </label>
+}
+
+<section class="grid gap-3" aria-live="polite" aria-labelledby="source-status-heading">
+  <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 p-3">
+    <div class="min-w-0 flex-auto">
+      <h3 id="source-status-heading" class="m-0 text-sm font-semibold text-foreground">
+        {{ sourceStatusLabel() }}
+      </h3>
+      <p class="m-0 mt-1 text-sm text-muted-foreground">{{ statusGuidance() }}</p>
+    </div>
+    <span hlmBadge [variant]="sourceStatusSeverity()">{{ sourceStatusLabel() }}</span>
+    @if (canCancelProcessing()) {
+      <button
+        class="workbench-secondary-button"
+        type="button"
+        [disabled]="model().cancelBusy || model().source?.status === 'cancel_requested'"
+        (click)="cancelProcessing()"
+      >
+        <app-icon name="lucideX" />
+        <span>{{ model().source?.status === 'cancel_requested' ? 'Canceling' : 'Cancel' }}</span>
+      </button>
+    } @else if (canRetryProcessing()) {
+      <button
+        class="workbench-secondary-button"
+        type="button"
+        [disabled]="model().retryBusy"
+        (click)="retryProcessing()"
+      >
+        <app-icon name="lucideRefreshCw" />
+        <span>Retry source processing</span>
+      </button>
+    }
+  </div>
+
+  @if (failureMessage(); as message) {
+    <p class="m-0 text-sm" role="alert">
+      <span class="font-semibold">Why it failed:</span> {{ message }}
+    </p>
+  }
+  @if (sourceWarning(); as warning) {
+    <p class="m-0 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900" role="status">
+      {{ warning }}
+    </p>
+  }
+
+  @if (model().streamError) {
+    <div class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 p-3" role="alert">
+      <span class="text-sm font-semibold text-red-900">We could not update the source status.</span>
+      <button class="workbench-secondary-button" type="button" (click)="retryProgress()">
+        <app-icon name="lucideRefreshCw" />
+        <span>Retry source status</span>
+      </button>
+    </div>
+  }
+</section>

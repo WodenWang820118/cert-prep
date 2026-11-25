@@ -122,7 +122,7 @@ function uploadItem(
     id,
     file: new File(['source'], `${id}.pdf`, { type: 'application/pdf' }),
     status,
-    document: null,
+    source: null,
     error,
   };
 }

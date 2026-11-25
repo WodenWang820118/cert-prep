@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 import { CERT_PREP_API } from '../../core/data';
 import type {
-  DocumentRead,
+  SourceRead,
   PracticeSessionRead,
   ProjectRead,
   QuestionRead,
@@ -21,18 +21,18 @@ describe('PracticeStore session modes', () => {
     created_at: '2026-06-17T00:00:00Z',
     updated_at: '2026-06-17T00:00:00Z',
   };
-  const documents: DocumentRead[] = [
-    documentRead('document-1', 'domain-a.pdf'),
-    documentRead('document-2', 'domain-b.pdf'),
+  const sources: SourceRead[] = [
+    sourceRead('source-1', 'domain-a.pdf'),
+    sourceRead('source-2', 'domain-b.pdf'),
   ];
   const questions: QuestionRead[] = [
-    editableQuestion('question-1', documents[0].id),
-    editableQuestion('question-2', documents[1].id),
-    editableQuestion('question-3', documents[1].id),
-    editableQuestion('question-4', documents[1].id),
-    editableQuestion('question-5', documents[0].id, { question: '   ' }),
-    editableQuestion('question-6', documents[1].id, { answer: 'C' }),
-    editableQuestion('question-7', documents[1].id, {
+    editableQuestion('question-1', sources[0].id),
+    editableQuestion('question-2', sources[1].id),
+    editableQuestion('question-3', sources[1].id),
+    editableQuestion('question-4', sources[1].id),
+    editableQuestion('question-5', sources[0].id, { question: '   ' }),
+    editableQuestion('question-6', sources[1].id, { answer: 'C' }),
+    editableQuestion('question-7', sources[1].id, {
       citation_page: null,
       source_excerpt: null,
     }),
@@ -43,7 +43,7 @@ describe('PracticeStore session modes', () => {
     question_ids: ['question-1'],
     questions: [],
     mode: 'random_draw',
-    document_id: null,
+    source_id: null,
     question_count: 1,
     random_seed: 1234,
     status: 'active',
@@ -73,22 +73,22 @@ describe('PracticeStore session modes', () => {
     projects.projects.set([project]);
     projects.select(project.id);
 
-    TestBed.inject(SourceImportStore).documents.set(documents);
+    TestBed.inject(SourceImportStore).sources.set(sources);
     TestBed.inject(QuestionsStore).questions.set(questions);
   });
 
-  it('sends a full-document payload for the selected parsed document', () => {
+  it('sends a full-source payload for the selected parsed source', () => {
     const store = TestBed.inject(PracticeStore);
-    store.setSelectedDocumentId(documents[1].id);
+    store.setSelectedSourceId(sources[1].id);
 
-    expect(store.selectedDocumentQuestionCount()).toBe(3);
+    expect(store.selectedSourceQuestionCount()).toBe(3);
 
-    store.createPracticeSession('full_document');
+    store.createPracticeSession('full_source');
     TestBed.tick();
 
     expect(apiClient.createPracticeSession).toHaveBeenCalledWith(project.id, {
-      mode: 'full_document',
-      document_id: documents[1].id,
+      mode: 'full_source',
+      source_id: sources[1].id,
       question_count: 3,
     }, { signal: expect.any(AbortSignal) });
     expect(apiClient.getPracticeSession).toHaveBeenCalledWith(
@@ -98,16 +98,16 @@ describe('PracticeStore session modes', () => {
     );
   });
 
-  it('defaults full-document sessions to the active document when playable', () => {
+  it('defaults full-source sessions to the active source when playable', () => {
     const store = TestBed.inject(PracticeStore);
-    TestBed.inject(SourceImportStore).setActiveDocumentId(documents[1].id);
+    TestBed.inject(SourceImportStore).setActiveSourceId(sources[1].id);
 
-    store.createPracticeSession('full_document');
+    store.createPracticeSession('full_source');
     TestBed.tick();
 
     expect(apiClient.createPracticeSession).toHaveBeenCalledWith(project.id, {
-      mode: 'full_document',
-      document_id: documents[1].id,
+      mode: 'full_source',
+      source_id: sources[1].id,
       question_count: 3,
     }, { signal: expect.any(AbortSignal) });
   });
@@ -130,17 +130,17 @@ describe('PracticeStore session modes', () => {
 
   it('excludes non-playable questions from practice availability', () => {
     const store = TestBed.inject(PracticeStore);
-    store.setSelectedDocumentId(documents[1].id);
+    store.setSelectedSourceId(sources[1].id);
 
     expect(store.questionCount()).toBe(4);
-    expect(store.selectedDocumentQuestionCount()).toBe(3);
+    expect(store.selectedSourceQuestionCount()).toBe(3);
 
-    store.createPracticeSession('full_document');
+    store.createPracticeSession('full_source');
     TestBed.tick();
 
     expect(apiClient.createPracticeSession).toHaveBeenCalledWith(project.id, {
-      mode: 'full_document',
-      document_id: documents[1].id,
+      mode: 'full_source',
+      source_id: sources[1].id,
       question_count: 3,
     }, { signal: expect.any(AbortSignal) });
   });
@@ -184,7 +184,7 @@ describe('PracticeStore session modes', () => {
           rationale: 'Snapshot rationale.',
           citation_page: 7,
           source_excerpt: 'Snapshot source excerpt.',
-          document_id: documents[0].id,
+          source_id: sources[0].id,
           answer_key_source: null,
         },
       ],
@@ -198,7 +198,7 @@ describe('PracticeStore session modes', () => {
       rationale: 'Snapshot rationale.',
       citation_page: 7,
       source_excerpt: 'Snapshot source excerpt.',
-      document_id: documents[0].id,
+      source_id: sources[0].id,
       answer_key_source: null,
     });
   });
@@ -235,7 +235,7 @@ describe('PracticeStore session modes', () => {
           rationale: 'Because A is cited.',
           citation_page: 1,
           source_excerpt: 'Source excerpt.',
-          document_id: documents[0].id,
+          source_id: sources[0].id,
           answer_key_source: null,
         },
       ],
@@ -258,7 +258,7 @@ describe('PracticeStore session modes', () => {
       id: 'session-resume',
       project_id: project.id,
       mode: 'random_draw' as const,
-      document_id: null,
+      source_id: null,
       status: 'active' as const,
       created_at: '2026-07-11T00:00:00Z',
     };
@@ -310,8 +310,8 @@ describe('PracticeStore session modes', () => {
     const resumable = {
       id: 'session-abandon',
       project_id: project.id,
-      mode: 'full_document' as const,
-      document_id: documents[0].id,
+      mode: 'full_source' as const,
+      source_id: sources[0].id,
       status: 'active' as const,
       created_at: '2026-07-11T00:00:00Z',
     };
@@ -349,12 +349,12 @@ function sessionQuestion(id: string, question: string) {
     rationale: 'Grounded.',
     citation_page: 1,
     source_excerpt: 'Source.',
-    document_id: 'document-1',
+    source_id: 'source-1',
     answer_key_source: null,
   };
 }
 
-function documentRead(id: string, filename: string): DocumentRead {
+function sourceRead(id: string, filename: string): SourceRead {
   return {
     id,
     project_id: 'project-1',
@@ -381,13 +381,13 @@ function documentRead(id: string, filename: string): DocumentRead {
 
 function editableQuestion(
   id: string,
-  documentId: string,
+  sourceId: string,
   overrides: Partial<QuestionRead> = {},
 ): QuestionRead {
   return {
     id,
     project_id: 'project-1',
-    document_id: documentId,
+    source_id: sourceId,
     chunk_id: `${id}-chunk`,
     question: `Question ${id}`,
     choices: ['A', 'B'],

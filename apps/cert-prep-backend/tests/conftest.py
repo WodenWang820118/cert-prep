@@ -68,7 +68,7 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
         create_app(
             settings=settings,
             capture_runtime_client=TestCaptureRuntimeClient(),
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
         )
     ) as test_client:
         yield test_client

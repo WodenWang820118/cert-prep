@@ -1,8 +1,8 @@
 """Source Library's needs from other contexts: whether a project exists, and discarding a
-document's unfinished question jobs.
+source's unfinished question jobs.
 
 Source Library defines the ports. These adapters call the owning context's use cases. Stopping
-or retrying a document's run discards its unfinished question jobs on the run's connection, so
+or retrying a source's run discards its unfinished question jobs on the run's connection, so
 the jobs go in the run's transaction (BEGIN IMMEDIATE), as the DELETE in Source Library's own
 SQL used to.
 """
@@ -20,33 +20,33 @@ from cert_prep_backend.bootstrap.study_projects import ProjectExistence
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.projects.infrastructure.repository import SqliteProjectRepository
-from cert_prep_backend.source_library.application.ports import ChunkTranslator, DocumentQuestionJobs, StudyProjects
-from cert_prep_backend.source_library.infrastructure.audio import DocumentChunkTranslator
+from cert_prep_backend.source_library.application.ports import ChunkTranslator, SourceQuestionJobs, StudyProjects
+from cert_prep_backend.source_library.infrastructure.audio import SourceChunkTranslator
 from cert_prep_backend.source_library.infrastructure.operations import BindQuestionJobs
 from cert_prep_backend.source_library.infrastructure.repository import (
-    SqliteDocumentOperationRepository,
-    SqliteDocumentRepository,
+    SqliteSourceOperationRepository,
+    SqliteSourceRepository,
 )
 
 
-class QuestionJobsOfDocument:
+class QuestionJobsOfSource:
     """Question Authoring's `discard_unfinished_generation_jobs`, for Source Library's
-    `DocumentQuestionJobs` port."""
+    `SourceQuestionJobs` port."""
 
     def __init__(self, jobs: QuestionGenerationJobRepository) -> None:
         self._jobs = jobs
 
-    def discard_unfinished(self, project_id: str, document_id: str) -> None:
-        authoring.discard_unfinished_generation_jobs(self._jobs, project_id, document_id)
+    def discard_unfinished(self, project_id: str, source_id: str) -> None:
+        authoring.discard_unfinished_generation_jobs(self._jobs, project_id, source_id)
 
 
-def bind_document_question_jobs(db: Database) -> BindQuestionJobs:
-    """Question jobs on the connection of the document run that discards them."""
+def bind_source_question_jobs(db: Database) -> BindQuestionJobs:
+    """Question jobs on the connection of the source run that discards them."""
 
-    def bind(connection: Connection) -> DocumentQuestionJobs:
+    def bind(connection: Connection) -> SourceQuestionJobs:
         from cert_prep_backend.bootstrap.authoring_links import question_generation_job_repository
 
-        return QuestionJobsOfDocument(question_generation_job_repository(db, connection))
+        return QuestionJobsOfSource(question_generation_job_repository(db, connection))
 
     return bind
 
@@ -55,18 +55,18 @@ def source_library_projects(db: Database, connection: Connection | None = None) 
     return ProjectExistence(SqliteProjectRepository(db, connection))
 
 
-def document_repository(db: Database, connection: Connection | None = None) -> SqliteDocumentRepository:
-    """Source Library's documents; on `connection`, its reads and question count and status join that
+def source_repository(db: Database, connection: Connection | None = None) -> SqliteSourceRepository:
+    """Source Library's sources; on `connection`, its reads and question count and status join that
     transaction."""
 
-    return SqliteDocumentRepository(
+    return SqliteSourceRepository(
         db, projects=source_library_projects(db, connection), connection=connection
     )
 
 
-def document_operation_repository(db: Database) -> SqliteDocumentOperationRepository:
-    return SqliteDocumentOperationRepository(
-        db, projects=source_library_projects(db), question_jobs=bind_document_question_jobs(db)
+def source_operation_repository(db: Database) -> SqliteSourceOperationRepository:
+    return SqliteSourceOperationRepository(
+        db, projects=source_library_projects(db), question_jobs=bind_source_question_jobs(db)
     )
 
 
@@ -80,7 +80,7 @@ def chunk_translator(
     keep the previous client.
     """
 
-    return DocumentChunkTranslator(
+    return SourceChunkTranslator(
         db,
         translator=lambda: OllamaTraditionalChineseTranslator(settings, server=server),
         batch_translator=lambda: OllamaTraditionalChineseTranslator(

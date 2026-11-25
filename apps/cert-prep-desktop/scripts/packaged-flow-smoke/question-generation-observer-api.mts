@@ -9,12 +9,12 @@ import type {
   LlmHealthSnapshot,
   SmokeMetrics,
   SmokeRunState,
-  UploadedDocumentRef,
+  UploadedSourceRef,
 } from './types.mts';
 import { activePage } from './runner-context.mts';
 import { wholeSourceQuestionCountFromSession } from './question-generation-evidence.mts';
 import {
-  isProjectDocumentsCollectionResponse,
+  isProjectSourcesCollectionResponse,
   projectApiRefMatchesResponse,
 } from './generation-readiness.mts';
 import {
@@ -49,7 +49,7 @@ async function recordQuestionGenerationApiResponse(
   }
 
   const { pathname } = new URL(response.url());
-  const capturesQuestionJobs = /^\/projects\/[^/]+\/documents\/[^/]+\/question-jobs$/u.test(pathname);
+  const capturesQuestionJobs = /^\/projects\/[^/]+\/sources\/[^/]+\/question-jobs$/u.test(pathname);
   const capturesQuestions = /^\/projects\/[^/]+\/questions$/u.test(pathname);
   if (!capturesQuestionJobs && !capturesQuestions) {
     return;
@@ -67,9 +67,9 @@ async function recordQuestionGenerationApiResponse(
   }
 }
 
-export async function waitForUploadDocumentResponse(
+export async function waitForUploadSourceResponse(
   run: SmokeRunState,
-): Promise<UploadedDocumentRef | null> {
+): Promise<UploadedSourceRef | null> {
   if (!run.projectApi) {
     run.metrics.observations.push(
       'Upload response capture skipped because project API context was unavailable.',
@@ -79,12 +79,12 @@ export async function waitForUploadDocumentResponse(
   const response = await activePage(run)
     .waitForResponse(
       (candidate) =>
-        isProjectDocumentsCollectionResponse(run.projectApi, candidate),
+        isProjectSourcesCollectionResponse(run.projectApi, candidate),
       { timeout: 120_000 },
     )
     .catch(() => {
       run.metrics.observations.push(
-        'Upload document response capture timed out.',
+        'Upload source response capture timed out.',
       );
       return null;
     });
@@ -94,7 +94,7 @@ export async function waitForUploadDocumentResponse(
 
   if (response.status() !== 201) {
     run.metrics.observations.push(
-      'Upload document response did not return the expected status.',
+      'Upload source response did not return the expected status.',
     );
     return null;
   }
@@ -102,26 +102,26 @@ export async function waitForUploadDocumentResponse(
   const payload = await response.json().catch(() => null);
   if (!payload || typeof payload !== 'object') {
     run.metrics.observations.push(
-      'Upload document response was not valid JSON.',
+      'Upload source response was not valid JSON.',
     );
     return null;
   }
 
-  return uploadedDocumentRefFromResponse(run, response, payload);
+  return uploadedSourceRefFromResponse(run, response, payload);
 }
 
 export async function captureWholeSourceSessionCreate(
   run: SmokeRunState,
 ): Promise<number> {
-  const uploadedDocument = run.uploadedDocument;
-  if (!uploadedDocument) {
+  const uploadedSource = run.uploadedSource;
+  if (!uploadedSource) {
     throw new Error(
-      'Cannot prove Whole source scope without the uploaded document.',
+      'Cannot prove Whole source scope without the uploaded source.',
     );
   }
   const expectedUrl = new URL(
-    `${uploadedDocument.apiBaseUrl}/projects/${encodeURIComponent(
-      uploadedDocument.projectId,
+    `${uploadedSource.apiBaseUrl}/projects/${encodeURIComponent(
+      uploadedSource.projectId,
     )}/practice-sessions`,
   );
   const response = await activePage(run).waitForResponse(
@@ -159,23 +159,23 @@ export async function captureWholeSourceSessionCreate(
     requestPayload,
     responsePayload,
     {
-      projectId: uploadedDocument.projectId,
-      documentId: uploadedDocument.documentId,
+      projectId: uploadedSource.projectId,
+      sourceId: uploadedSource.sourceId,
     },
   );
   if (questionCount === null) {
     throw new Error(
-      'Whole source session did not prove a non-empty, practice-ready selected-document scope.',
+      'Whole source session did not prove a non-empty, practice-ready selected-source scope.',
     );
   }
   return questionCount;
 }
 
-function uploadedDocumentRefFromResponse(
+function uploadedSourceRefFromResponse(
   run: SmokeRunState,
   response: Response,
   payload: object,
-): UploadedDocumentRef | null {
+): UploadedSourceRef | null {
   const id = valueString(payload, 'id');
   const projectId = valueString(payload, 'project_id');
   const projectApi = run.projectApi;
@@ -188,7 +188,7 @@ function uploadedDocumentRefFromResponse(
     !projectApiRefMatchesResponse(projectApi, response)
   ) {
     run.metrics.observations.push(
-      'Upload document response did not match the captured project API context.',
+      'Upload source response did not match the captured project API context.',
     );
     return null;
   }
@@ -196,7 +196,7 @@ function uploadedDocumentRefFromResponse(
     apiBaseUrl: projectApi.apiBaseUrl,
     authorization: projectApi.authorization,
     projectId,
-    documentId: id,
+    sourceId: id,
   };
 }
 
@@ -215,21 +215,21 @@ function valueNumber(payload: object, key: string): number | null {
 
 export async function pollQuestionGenerationApis(
   run: SmokeRunState,
-  uploadedDocument: UploadedDocumentRef,
+  uploadedSource: UploadedSourceRef,
   elapsedMs: number,
 ): Promise<void> {
   const [jobs, questions] = await Promise.all([
     questionGenerationApiGet(
       run,
-      uploadedDocument,
-      `/projects/${encodeURIComponent(uploadedDocument.projectId)}/documents/${encodeURIComponent(
-        uploadedDocument.documentId,
+      uploadedSource,
+      `/projects/${encodeURIComponent(uploadedSource.projectId)}/sources/${encodeURIComponent(
+        uploadedSource.sourceId,
       )}/question-jobs`,
     ),
     questionGenerationApiGet(
       run,
-      uploadedDocument,
-      `/projects/${encodeURIComponent(uploadedDocument.projectId)}/questions`,
+      uploadedSource,
+      `/projects/${encodeURIComponent(uploadedSource.projectId)}/questions`,
     ),
   ]);
 
@@ -243,9 +243,9 @@ export async function pollQuestionGenerationApis(
 
 export async function captureLlmHealth(
   run: SmokeRunState,
-  uploadedDocument: UploadedDocumentRef,
+  uploadedSource: UploadedSourceRef,
 ): Promise<void> {
-  const payload = await questionGenerationApiGet(run, uploadedDocument, '/llm/health');
+  const payload = await questionGenerationApiGet(run, uploadedSource, '/llm/health');
   const health = sanitizeLlmHealth(payload);
   if (!health) {
     run.metrics.observations.push('LLM health response was not valid JSON.');
@@ -265,25 +265,25 @@ export async function captureLlmHealth(
   run.metrics.model_fallback_reason = health.fallback_reason;
 }
 
-export async function captureDocumentOcrEvidence(
+export async function captureSourceOcrEvidence(
   run: SmokeRunState,
-  uploadedDocument: UploadedDocumentRef,
+  uploadedSource: UploadedSourceRef,
 ): Promise<void> {
   const payload = await questionGenerationApiGet(
     run,
-    uploadedDocument,
-    `/projects/${encodeURIComponent(uploadedDocument.projectId)}/documents/${encodeURIComponent(
-      uploadedDocument.documentId,
+    uploadedSource,
+    `/projects/${encodeURIComponent(uploadedSource.projectId)}/sources/${encodeURIComponent(
+      uploadedSource.sourceId,
     )}`,
   );
   if (!isRecord(payload)) {
     run.metrics.observations.push(
-      'Document OCR evidence response was not valid JSON.',
+      'Source OCR evidence response was not valid JSON.',
     );
     return;
   }
 
-  recordDocumentOcrCompletionEvidence(run, payload);
+  recordSourceOcrCompletionEvidence(run, payload);
   if (run.options.acceptanceFixture?.truth) {
     if (payload.sha256 !== run.options.acceptanceFixture.sha256) {
       throw new Error(
@@ -300,9 +300,9 @@ export async function captureDocumentOcrEvidence(
     }
     const chunksPayload = await questionGenerationApiGet(
       run,
-      uploadedDocument,
-      `/projects/${encodeURIComponent(uploadedDocument.projectId)}/documents/${encodeURIComponent(
-        uploadedDocument.documentId,
+      uploadedSource,
+      `/projects/${encodeURIComponent(uploadedSource.projectId)}/sources/${encodeURIComponent(
+        uploadedSource.sourceId,
       )}/chunks`,
     );
     const chunks = responseItems(chunksPayload);
@@ -344,9 +344,9 @@ export async function captureDocumentOcrEvidence(
     }
     const pageRecords = buildOcrPageRecordEvidence({
       runId: process.env.E2E_ACCEPTANCE_RUN_ID ?? 'unknown',
-      expectedDocumentId: uploadedDocument.documentId,
-      expectedProjectId: uploadedDocument.projectId,
-      document: payload,
+      expectedSourceId: uploadedSource.sourceId,
+      expectedProjectId: uploadedSource.projectId,
+      source: payload,
       chunks,
       expectedPageNumbers: run.options.acceptanceFixture.truth.pages.map(
         (page) => page.pageNumber,
@@ -395,8 +395,8 @@ export async function captureDocumentOcrEvidence(
   const warning = stringField(payload.extraction_warnings).trim();
   run.metrics.observations.push(
     warning
-      ? `Document OCR completed on ${device}; extraction_warnings=${warning}.`
-      : `Document OCR completed on ${device}.`,
+      ? `Source OCR completed on ${device}; extraction_warnings=${warning}.`
+      : `Source OCR completed on ${device}.`,
   );
 }
 
@@ -415,7 +415,7 @@ export function assertPdfPageOneScope(
     persistedPageNumbers[0] !== 1
   ) {
     throw new Error(
-      `PDF page-one scope was not preserved through the durable document: ${JSON.stringify(
+      `PDF page-one scope was not preserved through the durable source: ${JSON.stringify(
         {
           pageCount,
           processedPageCount: valueNumber(payload, 'processed_page_count'),
@@ -428,7 +428,7 @@ export function assertPdfPageOneScope(
   return pageCount;
 }
 
-export function recordDocumentOcrCompletionEvidence(
+export function recordSourceOcrCompletionEvidence(
   run: SmokeRunState,
   payload: Record<string, unknown>,
 ): void {
@@ -449,15 +449,15 @@ export function recordDocumentOcrCompletionEvidence(
 
 async function questionGenerationApiGet(
   run: SmokeRunState,
-  uploadedDocument: UploadedDocumentRef,
+  uploadedSource: UploadedSourceRef,
   path: string,
 ): Promise<unknown | null> {
   try {
-    const headers = uploadedDocument.authorization
-      ? { Authorization: uploadedDocument.authorization }
+    const headers = uploadedSource.authorization
+      ? { Authorization: uploadedSource.authorization }
       : undefined;
     const response = await activePage(run).request.get(
-      `${uploadedDocument.apiBaseUrl}${path}`,
+      `${uploadedSource.apiBaseUrl}${path}`,
       {
         headers,
         timeout: 10_000,
@@ -488,15 +488,15 @@ export async function answerForVisiblePracticeQuestion(
   run: SmokeRunState,
   questionText: string,
 ): Promise<string> {
-  if (!run.uploadedDocument) {
+  if (!run.uploadedSource) {
     throw new Error(
-      'Cannot answer practice question because no document API reference was captured.',
+      'Cannot answer practice question because no source API reference was captured.',
     );
   }
   const payload = await questionGenerationApiGet(
     run,
-    run.uploadedDocument,
-    `/projects/${encodeURIComponent(run.uploadedDocument.projectId)}/questions`,
+    run.uploadedSource,
+    `/projects/${encodeURIComponent(run.uploadedSource.projectId)}/questions`,
   );
   const question = normalizedVisibleText(questionText);
   const match = responseItems(payload).find(

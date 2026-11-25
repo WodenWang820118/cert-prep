@@ -249,11 +249,11 @@ export interface QuestionSnapshot {
   usable_question_count: number;
 }
 
-export interface UploadedDocumentRef {
+export interface UploadedSourceRef {
   apiBaseUrl: string;
   authorization: string | null;
   projectId: string;
-  documentId: string;
+  sourceId: string;
 }
 
 export interface ProjectApiRef {
@@ -317,7 +317,7 @@ export interface SmokeRunState {
   port: number;
   processBaseline: ProcessSnapshot;
   projectApi: ProjectApiRef | null;
-  uploadedDocument: UploadedDocumentRef | null;
+  uploadedSource: UploadedSourceRef | null;
   questionObservationStartedAt: number | null;
   questionObservationActive: boolean;
   questionGenerationApiPollErrorCaptured: boolean;

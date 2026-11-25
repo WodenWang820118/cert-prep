@@ -7,7 +7,7 @@ import { QuestionsStore } from './questions.store';
 import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../../source-library/data';
 import {
-  documentRead,
+  sourceRead,
   manualQuestionGeneration,
   questionFixture,
 } from './questions.store.spec-helpers';
@@ -18,11 +18,11 @@ describe('QuestionsStore editable questions', () => {
     startManualQuestionGeneration: vi.fn(),
     getManualQuestionGeneration: vi.fn(),
     cancelManualQuestionGeneration: vi.fn(),
-    getDocument: vi.fn(),
-    listDocumentChunks: vi.fn(),
-    listDocumentQuestionJobs: vi.fn(),
+    getSource: vi.fn(),
+    listSourceChunks: vi.fn(),
+    listSourceQuestionJobs: vi.fn(),
     listQuestions: vi.fn(),
-    retryDocumentQuestionJobs: vi.fn(),
+    retrySourceQuestionJobs: vi.fn(),
     updateQuestion: vi.fn(),
   };
   let manualStream: Subject<ReturnType<typeof manualQuestionGeneration>>;
@@ -54,9 +54,9 @@ describe('QuestionsStore editable questions', () => {
     ]);
     projects.select('project-1');
 
-    apiClient.getDocument.mockReturnValue(of(documentRead()));
-    apiClient.listDocumentChunks.mockReturnValue(of({ items: [] }));
-    apiClient.listDocumentQuestionJobs.mockReturnValue(of({ items: [] }));
+    apiClient.getSource.mockReturnValue(of(sourceRead()));
+    apiClient.listSourceChunks.mockReturnValue(of({ items: [] }));
+    apiClient.listSourceQuestionJobs.mockReturnValue(of({ items: [] }));
   });
 
   it('exposes complete questions as playable and editable', () => {
@@ -100,30 +100,30 @@ describe('QuestionsStore editable questions', () => {
     }
   });
 
-  it('keeps project playable questions while scoping the Questions panel to the active document', () => {
+  it('keeps project playable questions while scoping the Questions panel to the active source', () => {
     const store = TestBed.inject(QuestionsStore);
     const sourceImport = TestBed.inject(SourceImportStore);
-    const firstDocument = documentRead({ id: 'document-1', filename: 'first.pdf' });
-    const secondDocument = documentRead({
-      id: 'document-2',
+    const firstSource = sourceRead({ id: 'source-1', filename: 'first.pdf' });
+    const secondSource = sourceRead({
+      id: 'source-2',
       filename: 'second.pdf',
     });
     const firstQuestion = questionFixture({
       id: 'first-question',
-      document_id: firstDocument.id,
+      source_id: firstSource.id,
     });
     const secondQuestion = questionFixture({
       id: 'second-question',
-      document_id: secondDocument.id,
+      source_id: secondSource.id,
     });
-    sourceImport.documents.set([firstDocument, secondDocument]);
-    sourceImport.setActiveDocumentId(secondDocument.id);
+    sourceImport.sources.set([firstSource, secondSource]);
+    sourceImport.setActiveSourceId(secondSource.id);
 
     store.questions.set([firstQuestion, secondQuestion]);
 
     expect(store.playableQuestions()).toEqual([firstQuestion, secondQuestion]);
-    expect(store.activeDocumentQuestions()).toEqual([secondQuestion]);
-    expect(store.activeDocumentPlayableQuestions()).toEqual([secondQuestion]);
+    expect(store.activeSourceQuestions()).toEqual([secondQuestion]);
+    expect(store.activeSourcePlayableQuestions()).toEqual([secondQuestion]);
   });
 
   it('ignores stale question loads after the selected project changes', () => {
@@ -187,16 +187,16 @@ describe('QuestionsStore editable questions', () => {
     expect(store.isEditing(saved)).toBe(false);
   });
 
-  it('refreshes document metadata after generated questions are returned', () => {
+  it('refreshes source metadata after generated questions are returned', () => {
     const store = TestBed.inject(QuestionsStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const question = questionFixture();
-    const refreshedDocument = documentRead({ question_count: 1 });
-    activateDocument(sourceImport, documentRead());
+    const refreshedSource = sourceRead({ question_count: 1 });
+    activateSource(sourceImport, sourceRead());
     apiClient.startManualQuestionGeneration.mockReturnValue(of(
       manualQuestionGeneration(),
     ));
-    apiClient.getDocument.mockReturnValue(of(refreshedDocument));
+    apiClient.getSource.mockReturnValue(of(refreshedSource));
     apiClient.listQuestions.mockReturnValue(of({ items: [question] }));
 
     store.generateQuestions('hybrid_reasoning');
@@ -210,20 +210,20 @@ describe('QuestionsStore editable questions', () => {
     TestBed.tick();
 
     expect(store.questions()).toEqual([question]);
-    expect(apiClient.listDocumentQuestionJobs).toHaveBeenCalledWith(
+    expect(apiClient.listSourceQuestionJobs).toHaveBeenCalledWith(
       'project-1',
-      'document-1',
+      'source-1',
     );
-    expect(sourceImport.documents()).toEqual([refreshedDocument]);
+    expect(sourceImport.sources()).toEqual([refreshedSource]);
   });
 });
 
-function activateDocument(
+function activateSource(
   sourceImport: SourceImportStore,
-  document: ReturnType<typeof documentRead>,
+  source: ReturnType<typeof sourceRead>,
 ): void {
-  sourceImport.documents.set([document]);
-  sourceImport.setActiveDocumentId(document.id);
+  sourceImport.sources.set([source]);
+  sourceImport.setActiveSourceId(source.id);
 }
 
 function deferred<T>(): {

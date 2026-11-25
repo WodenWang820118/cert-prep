@@ -134,20 +134,20 @@
         <dd>{{ provenance.status }}</dd>
       </div>
       }
-      @if (sourceImport.activeDocument(); as savedDocument) {
+      @if (sourceImport.activeSource(); as savedSource) {
       <div>
         <dt>Cert Prep status</dt>
-        <dd>{{ savedDocument.status }}</dd>
+        <dd>{{ savedSource.status }}</dd>
       </div>
       <div>
-        <dt>Document chunks</dt>
-        <dd>{{ savedDocument.chunks_count }}</dd>
+        <dt>Source chunks</dt>
+        <dd>{{ savedSource.chunks_count }}</dd>
       </div>
       <div>
         <dt>Extraction</dt>
-        <dd>{{ savedDocument.extraction_method }}</dd>
+        <dd>{{ savedSource.extraction_method }}</dd>
       </div>
-      @if (savedDocument.status === 'ready' && savedDocument.chunks_count > 0) {
+      @if (savedSource.status === 'ready' && savedSource.chunks_count > 0) {
       <div class="capture-download">
         <dt>Export</dt>
         <dd>
@@ -169,10 +169,10 @@
       } @else {
       <div>
         <dt>Cert Prep status</dt>
-        <dd>Waiting for saved document refresh</dd>
+        <dd>Waiting for saved source refresh</dd>
       </div>
       <div>
-        <dt>Document chunks</dt>
+        <dt>Source chunks</dt>
         <dd>--</dd>
       </div>
       <div>

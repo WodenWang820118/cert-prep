@@ -9,7 +9,7 @@ import { App } from './app.component';
 import { appRoutes } from './app-routes.constants';
 import { CERT_PREP_API } from '../data';
 import {
-  appDocument,
+  appSource,
   appProject,
   editableAppQuestion,
   availableLlmHealth,
@@ -608,9 +608,9 @@ function createApiClient() {
     startLlmInstallation: vi.fn(),
     getLlmInstallation: vi.fn(),
     listProjects: vi.fn().mockReturnValue(of({ items: [appProject] })),
-    listDocuments: vi.fn().mockReturnValue(of({ items: [appDocument] })),
-    getDocument: vi.fn().mockReturnValue(of(appDocument)),
-    listDocumentChunks: vi.fn().mockReturnValue(of({ items: [] })),
+    listSources: vi.fn().mockReturnValue(of({ items: [appSource] })),
+    getSource: vi.fn().mockReturnValue(of(appSource)),
+    listSourceChunks: vi.fn().mockReturnValue(of({ items: [] })),
     listQuestions: vi
       .fn()
       .mockReturnValue(of({ items: [editableAppQuestion] })),

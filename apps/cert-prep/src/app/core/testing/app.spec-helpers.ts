@@ -4,10 +4,10 @@ import type {
   WrongAnswerSummaryRead,
 } from '../domain';
 export {
-  appDocument,
+  appSource,
   appProject,
   editableAppQuestion,
-  secondAppDocument,
+  secondAppSource,
   secondAppProject,
 } from './constants/app-fixtures.constants';
 

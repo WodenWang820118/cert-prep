@@ -1,8 +1,8 @@
-"""Storage of document operations. The transition rules live on DocumentOperation; each
+"""Storage of source operations. The transition rules live on SourceOperation; each
 function loads the operation, lets the aggregate decide, and applies the result with an
 update guarded by the state it was decided from.
 
-Stopping or retrying a run discards the document's unfinished question generation jobs. Question
+Stopping or retrying a run discards the source's unfinished question generation jobs. Question
 Authoring owns those jobs, so the functions that do it take `question_jobs`, which binds that
 context's jobs to the run's connection: the jobs go in the run's transaction. The repositories
 check that the project exists before they call these functions.
@@ -15,44 +15,44 @@ from dataclasses import dataclass
 from sqlite3 import Connection, Row
 from uuid import uuid4
 
-from cert_prep_contracts.documents import SourceKind
+from cert_prep_contracts.sources import SourceKind
 from cert_prep_contracts.transcription import TranscriptSegment
 
 from cert_prep_backend.platform.database import Database, utc_now
 from cert_prep_backend.platform.errors import (
-    DocumentOperationStateError,
-    DocumentProcessingCanceledError,
+    SourceOperationStateError,
+    SourceProcessingCanceledError,
     NotFoundError,
 )
-from cert_prep_backend.source_library.application.ports import DocumentQuestionJobs
-from cert_prep_backend.source_library.domain.document import PageExtraction, SourceDocument
+from cert_prep_backend.source_library.application.ports import SourceQuestionJobs
+from cert_prep_backend.source_library.domain.source import PageExtraction, Source
 from cert_prep_backend.source_library.domain.operation import (
-    DocumentOperation,
+    SourceOperation,
     ensure_retry_allowed,
     failure_state,
     processing_to_cancel,
 )
 from cert_prep_backend.source_library.domain.statuses import (
-    DocumentOperationPhase,
-    DocumentOperationStatus,
+    SourceOperationPhase,
+    SourceOperationStatus,
 )
 from cert_prep_backend.source_library.infrastructure import chunks
-from cert_prep_backend.source_library.infrastructure.documents import insert_processing_document
+from cert_prep_backend.source_library.infrastructure.sources import insert_processing_source
 from cert_prep_backend.source_library.infrastructure.progress import (
-    complete_document_extraction_in_transaction,
+    complete_source_extraction_in_transaction,
 )
 from cert_prep_backend.source_library.infrastructure.records import (
-    document_from_row,
-    document_query,
+    source_from_row,
+    source_query,
 )
 
-BindQuestionJobs = Callable[[Connection], DocumentQuestionJobs]
+BindQuestionJobs = Callable[[Connection], SourceQuestionJobs]
 """Question Authoring's question jobs on the given connection, so they join its transaction."""
 
 
 @dataclass(frozen=True, slots=True)
-class DocumentOperationClaim:
-    operation: DocumentOperation
+class SourceOperationClaim:
+    operation: SourceOperation
     acquired: bool
 
 
@@ -61,18 +61,18 @@ def claim_operation(
     *,
     project_id: str,
     operation_id: str,
-) -> DocumentOperationClaim:
+) -> SourceOperationClaim:
     """Atomically claim a global upload operation id."""
 
-    claimed = DocumentOperation.claim_upload(
+    claimed = SourceOperation.claim_upload(
         operation_id=operation_id, project_id=project_id, now=utc_now()
     )
     with db.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
         inserted = connection.execute(
             """
-            INSERT INTO document_operations(
-                id, project_id, document_id, status, phase, cancellable,
+            INSERT INTO source_operations(
+                id, project_id, source_id, status, phase, cancellable,
                 error, created_at, updated_at
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -82,7 +82,7 @@ def claim_operation(
         )
         operation = _required_operation(_operation_query_by_id(connection, operation_id))
         operation.ensure_belongs_to(project_id)
-    return DocumentOperationClaim(operation=operation, acquired=inserted.rowcount == 1)
+    return SourceOperationClaim(operation=operation, acquired=inserted.rowcount == 1)
 
 
 def cancel_operation(
@@ -90,7 +90,7 @@ def cancel_operation(
     *,
     project_id: str,
     operation_id: str,
-) -> DocumentOperation:
+) -> SourceOperation:
     """Create a cancel tombstone or atomically request active-work cancellation."""
 
     now = utc_now()
@@ -98,13 +98,13 @@ def cancel_operation(
         connection.execute("BEGIN IMMEDIATE")
         row = _operation_query_by_id(connection, operation_id)
         if row is None:
-            tombstone = DocumentOperation.canceled_before_start(
+            tombstone = SourceOperation.canceled_before_start(
                 operation_id=operation_id, project_id=project_id, now=now
             )
             connection.execute(
                 """
-                INSERT INTO document_operations(
-                    id, project_id, document_id, status, phase, cancellable,
+                INSERT INTO source_operations(
+                    id, project_id, source_id, status, phase, cancellable,
                     error, created_at, updated_at
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -115,48 +115,48 @@ def cancel_operation(
         return _cancel(connection, _operation_from_row(row), project_id=project_id, now=now)
 
 
-def cancel_document_processing(
+def cancel_source_processing(
     db: Database,
     *,
     project_id: str,
-    document_id: str,
-) -> DocumentOperation:
-    """Cancel the operation owning a document without a lookup/cancel race."""
+    source_id: str,
+) -> SourceOperation:
+    """Cancel the operation owning a source without a lookup/cancel race."""
 
     now = utc_now()
     with db.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
-        document = connection.execute(
-            "SELECT status FROM documents WHERE project_id = ? AND id = ?",
-            (project_id, document_id),
+        source = connection.execute(
+            "SELECT status FROM sources WHERE project_id = ? AND id = ?",
+            (project_id, source_id),
         ).fetchone()
-        if document is None:
+        if source is None:
             raise NotFoundError("Document not found.")
         active = connection.execute(
             """
             SELECT *
-            FROM document_operations
-            WHERE project_id = ? AND document_id = ?
+            FROM source_operations
+            WHERE project_id = ? AND source_id = ?
                 AND status IN ('queued', 'running', 'cancel_requested')
             LIMIT 1
             """,
-            (project_id, document_id),
+            (project_id, source_id),
         ).fetchone()
         last_canceled = None
-        if active is None and document["status"] == "canceled":
+        if active is None and source["status"] == "canceled":
             last_canceled = connection.execute(
                 """
                 SELECT *
-                FROM document_operations
-                WHERE project_id = ? AND document_id = ? AND status = 'canceled'
+                FROM source_operations
+                WHERE project_id = ? AND source_id = ? AND status = 'canceled'
                 ORDER BY updated_at DESC, created_at DESC, id DESC
                 LIMIT 1
                 """,
-                (project_id, document_id),
+                (project_id, source_id),
             ).fetchone()
         operation = processing_to_cancel(
             active=None if active is None else _operation_from_row(active),
-            document_status=document["status"],
+            source_status=source["status"],
             last_canceled=None if last_canceled is None else _operation_from_row(last_canceled),
         )
         if active is None:
@@ -164,7 +164,7 @@ def cancel_document_processing(
         return _cancel(connection, operation, project_id=project_id, now=now)
 
 
-def create_and_attach_document(
+def create_and_attach_source(
     db: Database,
     *,
     project_id: str,
@@ -174,22 +174,22 @@ def create_and_attach_document(
     language_hint: str,
     storage_path: str,
     page_count: int,
-    document_id: str | None = None,
+    source_id: str | None = None,
     source_kind: SourceKind,
     duration_ms: int | None = None,
-) -> SourceDocument:
-    """Insert a document and attach it to the sole operation claimant atomically."""
+) -> Source:
+    """Insert a source and attach it to the sole operation claimant atomically."""
 
     now = utc_now()
-    next_document_id = document_id or str(uuid4())
+    next_source_id = source_id or str(uuid4())
     with db.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
         operation = _required_operation(_operation_query_by_id(connection, operation_id))
         operation.ensure_belongs_to(project_id)
-        attached = operation.attach_document(next_document_id, now)
-        document = insert_processing_document(
+        attached = operation.attach_source(next_source_id, now)
+        source = insert_processing_source(
             connection,
-            document_id=next_document_id,
+            source_id=next_source_id,
             project_id=project_id,
             filename=filename,
             sha256=sha256,
@@ -206,16 +206,16 @@ def create_and_attach_document(
             attached,
             "Document operation could not attach its processing document.",
         )
-    return document
+    return source
 
 
 def mark_capture_review_pending(
     db: Database,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     operation_id: str,
-) -> DocumentOperation:
+) -> SourceOperation:
     """Leave an uploaded capture cancellable while the user reviews OCR."""
 
     now = utc_now()
@@ -224,9 +224,9 @@ def mark_capture_review_pending(
         connection.execute("BEGIN IMMEDIATE")
         row = _operation_query_by_id(connection, operation_id)
         if row is None or row["project_id"] != project_id:
-            raise DocumentOperationStateError(failure)
+            raise SourceOperationStateError(failure)
         operation = _operation_from_row(row)
-        _apply(connection, operation, operation.enter_review(document_id, now), failure)
+        _apply(connection, operation, operation.enter_review(source_id, now), failure)
         return _required_operation(_operation_query_by_id(connection, operation_id))
 
 
@@ -234,15 +234,15 @@ def begin_capture_review_commit_in_connection(
     connection: Connection,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     operation_id: str,
     now: str | None = None,
-) -> DocumentOperation:
+) -> SourceOperation:
     """Transition review work inside the caller's enclosing transaction."""
 
     operation = _required_operation(_operation_query_by_id(connection, operation_id))
     operation.ensure_belongs_to(project_id)
-    confirmed = operation.begin_review_confirmation(document_id, now or utc_now())
+    confirmed = operation.begin_review_confirmation(source_id, now or utc_now())
     _apply(
         connection,
         operation,
@@ -257,14 +257,14 @@ def _begin_commit(
     *,
     project_id: str,
     operation_id: str,
-    document_id: str,
+    source_id: str,
     now: str,
-) -> DocumentOperation:
+) -> SourceOperation:
     """Win cancel-vs-complete inside the caller's uncommitted publication transaction."""
 
     operation = _required_operation(_operation_query_by_id(connection, operation_id))
     operation.ensure_belongs_to(project_id)
-    committing = operation.begin_commit(document_id, now)
+    committing = operation.begin_commit(source_id, now)
     _apply(
         connection,
         operation,
@@ -279,10 +279,10 @@ def publish_success(
     *,
     project_id: str,
     operation_id: str,
-    document_id: str,
+    source_id: str,
     extraction: PageExtraction,
     extraction_provenance: str | None = None,
-) -> SourceDocument:
+) -> Source:
     """Atomically publish final extraction data and terminal operation success."""
 
     now = utc_now()
@@ -290,19 +290,19 @@ def publish_success(
         connection.execute("BEGIN IMMEDIATE")
         operation = _required_operation(_operation_query_by_id(connection, operation_id))
         operation.ensure_belongs_to(project_id)
-        if operation.already_published(document_id, results="extraction results"):
-            return _document(connection, project_id, document_id)
+        if operation.already_published(source_id, results="extraction results"):
+            return _source(connection, project_id, source_id)
         committing = _begin_commit(
             connection,
             project_id=project_id,
             operation_id=operation_id,
-            document_id=document_id,
+            source_id=source_id,
             now=now,
         )
-        document = complete_document_extraction_in_transaction(
+        source = complete_source_extraction_in_transaction(
             connection,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             extraction=extraction,
             now=now,
             extraction_provenance=extraction_provenance,
@@ -313,7 +313,7 @@ def publish_success(
             committing.succeed(now),
             "Document operation success could not be committed.",
         )
-    return document
+    return source
 
 
 def publish_capture_audio_success(
@@ -321,13 +321,13 @@ def publish_capture_audio_success(
     *,
     project_id: str,
     operation_id: str,
-    document_id: str,
+    source_id: str,
     segments: Sequence[tuple[TranscriptSegment, str]],
     model: str,
     device: str | None,
     warning: str | None,
     extraction_provenance: str | None = None,
-) -> SourceDocument:
+) -> Source:
     """Atomically publish validated Capture Runtime transcript and translations."""
 
     if not segments:
@@ -337,48 +337,48 @@ def publish_capture_audio_success(
         connection.execute("BEGIN IMMEDIATE")
         operation = _required_operation(_operation_query_by_id(connection, operation_id))
         operation.ensure_belongs_to(project_id)
-        if operation.already_published(document_id, results="capture results"):
-            return _document(connection, project_id, document_id)
+        if operation.already_published(source_id, results="capture results"):
+            return _source(connection, project_id, source_id)
         committing = _begin_commit(
             connection,
             project_id=project_id,
             operation_id=operation_id,
-            document_id=document_id,
+            source_id=source_id,
             now=now,
         )
 
         chunks.delete_audio_segments(
             connection,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
         )
         for index, (segment, target_text) in enumerate(segments):
             chunks.insert_audio_segment(
                 connection,
                 project_id=project_id,
-                document_id=document_id,
+                source_id=source_id,
                 chunk_index=index,
                 segment=segment,
                 now=now,
             )
             translated = connection.execute(
                 """
-                UPDATE document_chunks
+                UPDATE source_chunks
                 SET translated_text = ?, translation_source_revision = source_revision
-                WHERE project_id = ? AND document_id = ?
+                WHERE project_id = ? AND source_id = ?
                     AND locator_kind = 'time' AND chunk_index = ?
                 """,
-                (target_text, project_id, document_id, index),
+                (target_text, project_id, source_id, index),
             )
             if translated.rowcount != 1:
-                raise DocumentOperationStateError(
+                raise SourceOperationStateError(
                     "Capture audio translation could not be persisted."
                 )
 
         duration_ms = max(segment.end_ms for segment, _target in segments)
         updated = connection.execute(
             """
-            UPDATE documents
+            UPDATE sources
             SET duration_ms = ?, has_text = 1, status = 'ready',
                 extraction_method = 'transcription', processed_page_count = ?,
                 failure_message = NULL,
@@ -400,11 +400,11 @@ def publish_capture_audio_success(
                 extraction_provenance,
                 now,
                 project_id,
-                document_id,
+                source_id,
             ),
         )
         if updated.rowcount != 1:
-            raise DocumentProcessingCanceledError(
+            raise SourceProcessingCanceledError(
                 "Document processing was canceled before capture publication."
             )
         _apply(
@@ -413,7 +413,7 @@ def publish_capture_audio_success(
             committing.succeed(now),
             "Capture audio operation success could not be committed.",
         )
-        return _document(connection, project_id, document_id)
+        return _source(connection, project_id, source_id)
 
 
 def acknowledge_cancellation(
@@ -422,7 +422,7 @@ def acknowledge_cancellation(
     project_id: str,
     operation_id: str,
     question_jobs: BindQuestionJobs,
-) -> DocumentOperation:
+) -> SourceOperation:
     now = utc_now()
     with db.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
@@ -431,7 +431,7 @@ def acknowledge_cancellation(
         canceled = operation.acknowledge_cancellation(now)
         if canceled is operation:
             return operation
-        _record_stopped_document(
+        _record_stopped_source(
             connection, canceled, question_jobs=question_jobs(connection), now=now
         )
         _apply(
@@ -450,9 +450,9 @@ def finish_failed(
     operation_id: str,
     error: str,
     question_jobs: BindQuestionJobs,
-    document_status: str | None = None,
+    source_status: str | None = None,
     extraction_method: str | None = None,
-) -> DocumentOperation:
+) -> SourceOperation:
     now = utc_now()
     with db.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
@@ -461,11 +461,11 @@ def finish_failed(
         stopped = operation.fail(error, now)
         if stopped is operation:
             return operation
-        _record_stopped_document(
+        _record_stopped_source(
             connection,
             stopped,
             question_jobs=question_jobs(connection),
-            document_status=document_status,
+            source_status=source_status,
             extraction_method=extraction_method,
             now=now,
         )
@@ -477,10 +477,10 @@ def start_retry_operation(
     db: Database,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     question_jobs: BindQuestionJobs,
     operation_id: str | None = None,
-) -> DocumentOperation:
+) -> SourceOperation:
     """Reset retryable parsing state and create its linked running operation atomically."""
 
     next_operation_id = operation_id or str(uuid4())
@@ -490,28 +490,28 @@ def start_retry_operation(
         existing = _operation_query_by_id(connection, next_operation_id)
         if existing is not None:
             _operation_from_row(existing).refuse_reuse_for_retry(project_id)
-        document = document_query(connection, project_id, document_id)
-        if document is None:
+        source = source_query(connection, project_id, source_id)
+        if source is None:
             raise NotFoundError("Document not found.")
         active = connection.execute(
             """
             SELECT id
-            FROM document_operations
-            WHERE project_id = ? AND document_id = ?
+            FROM source_operations
+            WHERE project_id = ? AND source_id = ?
                 AND status IN ('queued', 'running', 'cancel_requested')
             LIMIT 1
             """,
-            (project_id, document_id),
+            (project_id, source_id),
         ).fetchone()
         ensure_retry_allowed(
             has_active_operation=active is not None,
-            document_status=document["status"],
+            source_status=source["status"],
         )
-        _reset_document_derived_state(
+        _reset_source_derived_state(
             connection,
             question_jobs=question_jobs(connection),
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             status="processing",
             extraction_method="none",
             failure_message=None,
@@ -519,25 +519,25 @@ def start_retry_operation(
         )
         connection.execute(
             """
-            UPDATE documents
+            UPDATE sources
             SET duration_ms = NULL, transcription_status = 'pending',
                 translation_status = 'pending', configured_transcription_model = NULL,
                 effective_transcription_model = NULL, transcription_device = NULL,
                 transcription_warning = NULL
             WHERE project_id = ? AND id = ? AND source_kind = 'recording'
             """,
-            (project_id, document_id),
+            (project_id, source_id),
         )
-        retry = DocumentOperation.start_retry(
+        retry = SourceOperation.start_retry(
             operation_id=next_operation_id,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             now=now,
         )
         connection.execute(
             """
-            INSERT INTO document_operations(
-                id, project_id, document_id, status, phase, cancellable,
+            INSERT INTO source_operations(
+                id, project_id, source_id, status, phase, cancellable,
                 error, created_at, updated_at
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -554,7 +554,7 @@ def recover_operations(db: Database, *, question_jobs: BindQuestionJobs) -> int:
         rows = connection.execute(
             """
             SELECT id, project_id, status
-            FROM document_operations
+            FROM source_operations
             WHERE status IN ('queued', 'running', 'cancel_requested')
             ORDER BY created_at, id
             """
@@ -584,10 +584,10 @@ def get_operation(
     *,
     project_id: str,
     operation_id: str,
-) -> DocumentOperation:
+) -> SourceOperation:
     with db.connect() as connection:
         row = connection.execute(
-            "SELECT * FROM document_operations WHERE id = ? AND project_id = ?",
+            "SELECT * FROM source_operations WHERE id = ? AND project_id = ?",
             (operation_id, project_id),
         ).fetchone()
     if row is None:
@@ -596,22 +596,22 @@ def get_operation(
 
 
 
-def get_active_operation_for_document(
+def get_active_operation_for_source(
     db: Database,
     *,
     project_id: str,
-    document_id: str,
-) -> DocumentOperation | None:
+    source_id: str,
+) -> SourceOperation | None:
     with db.connect() as connection:
         row = connection.execute(
             """
-            SELECT * FROM document_operations
-            WHERE project_id = ? AND document_id = ?
+            SELECT * FROM source_operations
+            WHERE project_id = ? AND source_id = ?
               AND status IN ('queued', 'running', 'cancel_requested')
             ORDER BY updated_at DESC, id DESC
             LIMIT 1
             """,
-            (project_id, document_id),
+            (project_id, source_id),
         ).fetchone()
     return None if row is None else _operation_from_row(row)
 
@@ -619,21 +619,21 @@ def get_active_operation_for_document(
 
 def _apply(
     connection: Connection,
-    before: DocumentOperation,
-    after: DocumentOperation,
+    before: SourceOperation,
+    after: SourceOperation,
     failure_message: str,
 ) -> None:
     """Store a transition only if the operation is still in the state it was decided from."""
 
     updated = connection.execute(
         """
-        UPDATE document_operations
-        SET document_id = ?, status = ?, phase = ?, cancellable = ?, error = ?, updated_at = ?
+        UPDATE source_operations
+        SET source_id = ?, status = ?, phase = ?, cancellable = ?, error = ?, updated_at = ?
         WHERE id = ? AND project_id = ? AND status = ? AND phase = ? AND cancellable = ?
-            AND document_id IS ?
+            AND source_id IS ?
         """,
         (
-            after.document_id,
+            after.source_id,
             after.status.value,
             after.phase.value,
             int(after.cancellable),
@@ -644,20 +644,20 @@ def _apply(
             before.status.value,
             before.phase.value,
             int(before.cancellable),
-            before.document_id,
+            before.source_id,
         ),
     )
     if updated.rowcount != 1:
-        raise DocumentOperationStateError(failure_message)
+        raise SourceOperationStateError(failure_message)
 
 
 def _cancel(
     connection: Connection,
-    operation: DocumentOperation,
+    operation: SourceOperation,
     *,
     project_id: str,
     now: str,
-) -> DocumentOperation:
+) -> SourceOperation:
     operation.ensure_belongs_to(project_id)
     requested = operation.cancel(now)
     if requested is operation:
@@ -669,45 +669,45 @@ def _cancel(
         "Document operation changed while cancellation was requested.",
     )
     if (
-        requested.status is DocumentOperationStatus.CANCEL_REQUESTED
-        and requested.document_id is not None
+        requested.status is SourceOperationStatus.CANCEL_REQUESTED
+        and requested.source_id is not None
     ):
         connection.execute(
             """
-            UPDATE documents
+            UPDATE sources
             SET status = 'cancel_requested', updated_at = ?
             WHERE project_id = ? AND id = ? AND status = 'processing'
             """,
-            (now, project_id, requested.document_id),
+            (now, project_id, requested.source_id),
         )
     return _required_operation(_operation_query_by_id(connection, operation.id))
 
 
-def _record_stopped_document(
+def _record_stopped_source(
     connection: Connection,
-    stopped: DocumentOperation,
+    stopped: SourceOperation,
     *,
-    question_jobs: DocumentQuestionJobs,
-    document_status: str | None = None,
+    question_jobs: SourceQuestionJobs,
+    source_status: str | None = None,
     extraction_method: str | None = None,
     now: str,
 ) -> None:
-    """Leave the stopped run's document retryable; audio keeps the transcript it already has."""
+    """Leave the stopped run's source retryable; audio keeps the transcript it already has."""
 
-    if stopped.document_id is None:
+    if stopped.source_id is None:
         return
     project_id = stopped.project_id
-    document_id = str(stopped.document_id)
-    document = document_query(connection, project_id, document_id)
-    if document is None:
+    source_id = str(stopped.source_id)
+    source = source_query(connection, project_id, source_id)
+    if source is None:
         raise NotFoundError("Document not found.")
-    if document["source_kind"] == "recording":
-        if stopped.status is DocumentOperationStatus.CANCELED:
+    if source["source_kind"] == "recording":
+        if stopped.status is SourceOperationStatus.CANCELED:
             _preserve_canceled_audio_state(
                 connection,
                 question_jobs=question_jobs,
                 project_id=project_id,
-                document_id=document_id,
+                source_id=source_id,
                 now=now,
             )
         else:
@@ -715,22 +715,22 @@ def _record_stopped_document(
                 connection,
                 question_jobs=question_jobs,
                 project_id=project_id,
-                document_id=document_id,
+                source_id=source_id,
                 error=stopped.error,
                 now=now,
             )
         return
     state = failure_state(
         stopped,
-        document_status=document_status,
+        source_status=source_status,
         extraction_method=extraction_method,
-        page_count=int(document["page_count"] or 0),
+        page_count=int(source["page_count"] or 0),
     )
-    _reset_document_derived_state(
+    _reset_source_derived_state(
         connection,
         question_jobs=question_jobs,
         project_id=project_id,
-        document_id=document_id,
+        source_id=source_id,
         status=state.status,
         extraction_method=state.extraction_method,
         failure_message=state.failure_message,
@@ -739,20 +739,20 @@ def _record_stopped_document(
     )
 
 
-def _document(connection: Connection, project_id: str, document_id: str) -> SourceDocument:
-    row = document_query(connection, project_id, document_id)
+def _source(connection: Connection, project_id: str, source_id: str) -> Source:
+    row = source_query(connection, project_id, source_id)
     if row is None:
         raise NotFoundError("Document not found.")
-    return document_from_row(row)
+    return source_from_row(row)
 
 
 def _operation_values(
-    operation: DocumentOperation,
+    operation: SourceOperation,
 ) -> tuple[str, str, str | None, str, str, int, str | None, str, str]:
     return (
         operation.id,
         operation.project_id,
-        operation.document_id,
+        operation.source_id,
         operation.status.value,
         operation.phase.value,
         int(operation.cancellable),
@@ -762,27 +762,27 @@ def _operation_values(
     )
 
 
-def _reset_document_derived_state(
+def _reset_source_derived_state(
     connection: Connection,
     *,
-    question_jobs: DocumentQuestionJobs,
+    question_jobs: SourceQuestionJobs,
     project_id: str,
-    document_id: str,
+    source_id: str,
     status: str,
     extraction_method: str,
     failure_message: str | None,
     processed_page_count: int = 0,
     now: str,
 ) -> None:
-    question_jobs.discard_unfinished(project_id, document_id)
+    question_jobs.discard_unfinished(project_id, source_id)
     connection.execute(
-        "DELETE FROM document_chunks WHERE project_id = ? AND document_id = ?",
-        (project_id, document_id),
+        "DELETE FROM source_chunks WHERE project_id = ? AND source_id = ?",
+        (project_id, source_id),
     )
-    # The document's questions outlive its chunks, so its question count stays as it is.
+    # The source's questions outlive its chunks, so its question count stays as it is.
     updated = connection.execute(
         """
-        UPDATE documents
+        UPDATE sources
         SET status = ?, has_text = 0, extraction_method = ?,
             ocr_device = NULL, extraction_warnings = NULL, extraction_provenance = NULL,
             failure_message = ?,
@@ -798,7 +798,7 @@ def _reset_document_derived_state(
             processed_page_count,
             now,
             project_id,
-            document_id,
+            source_id,
         ),
     )
     if updated.rowcount != 1:
@@ -808,7 +808,7 @@ def _reset_document_derived_state(
 
 def _operation_query_by_id(connection: Connection, operation_id: str) -> Row | None:
     return connection.execute(
-        "SELECT * FROM document_operations WHERE id = ?",
+        "SELECT * FROM source_operations WHERE id = ?",
         (operation_id,),
     ).fetchone()
 
@@ -828,22 +828,22 @@ _KEEP_PROVENANCE_OF_COMPLETED_TRANSCRIPT = """CASE
 def _preserve_canceled_audio_state(
     connection: Connection,
     *,
-    question_jobs: DocumentQuestionJobs,
+    question_jobs: SourceQuestionJobs,
     project_id: str,
-    document_id: str,
+    source_id: str,
     now: str,
 ) -> None:
-    question_jobs.discard_unfinished(project_id, document_id)
+    question_jobs.discard_unfinished(project_id, source_id)
     chunks_count = connection.execute(
         """
-        SELECT COUNT(*) FROM document_chunks
-        WHERE project_id = ? AND document_id = ? AND locator_kind = 'time'
+        SELECT COUNT(*) FROM source_chunks
+        WHERE project_id = ? AND source_id = ? AND locator_kind = 'time'
         """,
-        (project_id, document_id),
+        (project_id, source_id),
     ).fetchone()[0]
     updated = connection.execute(
         """
-        UPDATE documents
+        UPDATE sources
         SET status = ?, has_text = ?, extraction_method = ?,
             ocr_device = NULL, extraction_warnings = NULL,
             extraction_provenance = """
@@ -872,7 +872,7 @@ def _preserve_canceled_audio_state(
             "study_material" if chunks_count > 0 else "unknown",
             now,
             project_id,
-            document_id,
+            source_id,
         ),
     )
     if updated.rowcount != 1:
@@ -883,25 +883,25 @@ def _preserve_canceled_audio_state(
 def _preserve_failed_audio_state(
     connection: Connection,
     *,
-    question_jobs: DocumentQuestionJobs,
+    question_jobs: SourceQuestionJobs,
     project_id: str,
-    document_id: str,
+    source_id: str,
     error: str | None,
     now: str,
 ) -> None:
     """Keep incremental transcript data while making an audio failure retryable."""
 
-    question_jobs.discard_unfinished(project_id, document_id)
+    question_jobs.discard_unfinished(project_id, source_id)
     chunks_count = connection.execute(
         """
-        SELECT COUNT(*) FROM document_chunks
-        WHERE project_id = ? AND document_id = ? AND locator_kind = 'time'
+        SELECT COUNT(*) FROM source_chunks
+        WHERE project_id = ? AND source_id = ? AND locator_kind = 'time'
         """,
-        (project_id, document_id),
+        (project_id, source_id),
     ).fetchone()[0]
     updated = connection.execute(
         """
-        UPDATE documents
+        UPDATE sources
         SET status = CASE
                 WHEN transcription_status = 'succeeded' THEN 'ready'
                 ELSE 'transcription_failed'
@@ -930,7 +930,7 @@ def _preserve_failed_audio_state(
             "study_material" if chunks_count > 0 else "unknown",
             now,
             project_id,
-            document_id,
+            source_id,
         ),
     )
     if updated.rowcount != 1:
@@ -938,20 +938,20 @@ def _preserve_failed_audio_state(
 
 
 
-def _required_operation(row: Row | None) -> DocumentOperation:
+def _required_operation(row: Row | None) -> SourceOperation:
     if row is None:
         raise NotFoundError("Document operation not found.")
     return _operation_from_row(row)
 
 
 
-def _operation_from_row(row: Row) -> DocumentOperation:
-    return DocumentOperation(
+def _operation_from_row(row: Row) -> SourceOperation:
+    return SourceOperation(
         id=row["id"],
         project_id=row["project_id"],
-        document_id=row["document_id"],
-        status=DocumentOperationStatus(row["status"]),
-        phase=DocumentOperationPhase(row["phase"]),
+        source_id=row["source_id"],
+        status=SourceOperationStatus(row["status"]),
+        phase=SourceOperationPhase(row["phase"]),
         cancellable=bool(row["cancellable"]),
         error=row["error"],
         created_at=row["created_at"],
@@ -962,12 +962,12 @@ def _operation_from_row(row: Row) -> DocumentOperation:
 
 __all__ = [
     "BindQuestionJobs",
-    "DocumentOperationClaim",
+    "SourceOperationClaim",
     "acknowledge_cancellation",
-    "cancel_document_processing",
+    "cancel_source_processing",
     "cancel_operation",
     "claim_operation",
-    "create_and_attach_document",
+    "create_and_attach_source",
     "finish_failed",
     "get_operation",
     "publish_success",

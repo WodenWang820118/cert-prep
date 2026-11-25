@@ -23,7 +23,7 @@ class PracticeSourceQuestion:
     rationale: str | None
     citation_page: int | None
     source_excerpt: str | None
-    document_id: str | None
+    source_id: str | None
     answer_key_source: str | None
 
     def __post_init__(self) -> None:
@@ -38,7 +38,7 @@ class PracticeSourceQuestion:
             rationale=self.rationale,
             citation_page=self.citation_page,
             source_excerpt=self.source_excerpt,
-            document_id=self.document_id,
+            source_id=self.source_id,
             answer_key_source=self.answer_key_source,
         )
 
@@ -49,11 +49,11 @@ class StudyProjects(Protocol):
     def exists(self, project_id: str) -> bool: ...
 
 
-class ProjectDocuments(Protocol):
-    """Whether a source document belongs to a project. Source Library owns that fact."""
+class ProjectSources(Protocol):
+    """Whether a source belongs to a project. Source Library owns that fact."""
 
-    def require(self, project_id: str, document_id: str) -> None:
-        """NotFoundError unless the document belongs to the project."""
+    def require(self, project_id: str, source_id: str) -> None:
+        """NotFoundError unless the source belongs to the project."""
         ...
 
 
@@ -61,9 +61,9 @@ class PracticeQuestions(Protocol):
     """Questions practice reads, mapped out of Question Authoring."""
 
     def for_source(
-        self, project_id: str, *, document_id: str | None
+        self, project_id: str, *, source_id: str | None
     ) -> list[PracticeSourceQuestion]:
-        """Questions of the project (by id), or of one document (in source order)."""
+        """Questions of the project (by id), or of one source (in source order)."""
         ...
 
     def current(self, project_id: str, question_id: str) -> PracticeSourceQuestion | None:
@@ -87,9 +87,9 @@ class PracticeRepository(Protocol):
         ...
 
     def source_questions(
-        self, project_id: str, *, document_id: str | None
+        self, project_id: str, *, source_id: str | None
     ) -> list[PracticeQuestion]:
-        """Questions of the project (by id), or of one document (in source order)."""
+        """Questions of the project (by id), or of one source (in source order)."""
         ...
 
     def answer_history(self, project_id: str) -> list[AnsweredQuestion]:
@@ -147,6 +147,6 @@ class PracticeStore(Protocol):
 
     def reading(self) -> AbstractContextManager[PracticeRepository]: ...
 
-    def require_document(self, project_id: str, document_id: str) -> None:
-        """NotFoundError unless the document belongs to the project."""
+    def require_source(self, project_id: str, source_id: str) -> None:
+        """NotFoundError unless the source belongs to the project."""
         ...

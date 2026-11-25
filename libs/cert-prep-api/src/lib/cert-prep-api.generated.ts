@@ -9,7 +9,7 @@ export interface Components {
     AnswerKeySource: string;
     ApiErrorRead: { "code": string; "message": string; "details"?: Record<string, unknown> | null };
     Body_create_capture_projects__project_id__capture_reviews_post: { "file": string };
-    Body_upload_document_projects__project_id__documents_post: { "file": string; "language_hint"?: string };
+    Body_upload_source_projects__project_id__sources_post: { "file": string; "language_hint"?: string };
     CaptureBlock: { "blockId": string; "order": number; "type": string; "sourceSegmentId": string; "locator": Components['schemas']['PageLocator'] | Components['schemas']['TimeLocator']; "sourceText": string; "targetText": string };
     CaptureDocument: { "schemaVersion"?: "2"; "source": Components['schemas']['CaptureSource']; "rawSegments": Components['schemas']['RawCaptureSegment'][]; "blocks": Components['schemas']['CaptureBlock'][]; "sourceText": string; "targetText": string; "extractionEngine": Components['schemas']['CaptureEngine']; "diarizationEngine"?: Components['schemas']['CaptureEngine'] | null; "speakers"?: Components['schemas']['CaptureSpeaker'][]; "suggestedRequirementIds"?: string[]; "structuringEngine": Components['schemas']['CaptureEngine']; "warnings"?: string[]; "createdAt": string; "completedAt": string };
     CaptureEngine: { "engine": string; "model": string; "digest": string; "device"?: string | null; "deviceName"?: string | null; "elapsedMs"?: number | null; "stageMs"?: Record<string, unknown> | null };
@@ -23,14 +23,14 @@ export interface Components {
     CaptureResultRead: { "operation": Components['schemas']['CaptureReviewOperationRead']; "raw": Components['schemas']['RawCapture']; "result": Components['schemas']['CaptureDocument']; "extractionProvenance": Components['schemas']['CaptureExtractionProvenanceRead'] };
     CaptureReview: { "reviewVersion"?: 2; "edits"?: Components['schemas']['CaptureReviewEdit'][] };
     CaptureReviewEdit: { "segmentId": string; "reviewedText": string };
-    CaptureReviewOperationRead: { "protocolVersion"?: "2"; "captureId": string; "ingestionId": string; "kind": Components['schemas']['CaptureSourceKind']; "status": Components['schemas']['CaptureStatus']; "progress"?: number | null; "partialRevision": number; "lastEventSequence": number; "source"?: Components['schemas']['CaptureSource'] | null; "error"?: Components['schemas']['OperationFailure'] | null; "createdAt": string; "updatedAt": string; "completedAt"?: string | null; "pagesTotal"?: number | null; "pagesDone"?: number | null; "durationMs"?: number | null; "coveredUntilMs"?: number | null; "documentId": string };
+    CaptureReviewOperationRead: { "protocolVersion"?: "2"; "captureId": string; "ingestionId": string; "kind": Components['schemas']['CaptureSourceKind']; "status": Components['schemas']['CaptureStatus']; "progress"?: number | null; "partialRevision": number; "lastEventSequence": number; "source"?: Components['schemas']['CaptureSource'] | null; "error"?: Components['schemas']['OperationFailure'] | null; "createdAt": string; "updatedAt": string; "completedAt"?: string | null; "pagesTotal"?: number | null; "pagesDone"?: number | null; "durationMs"?: number | null; "coveredUntilMs"?: number | null; "sourceId": string };
     CaptureReviewStructureRequest: { "clientRequestId": string; "review": Components['schemas']['CaptureReview'] };
     CaptureSource: { "sha256": string; "fileName": string; "mediaType": string; "bytes": number };
     CaptureSourceKind: string;
     CaptureSpeaker: { "speakerId": string; "sample"?: Components['schemas']['TimeLocator'] | null; "displayName"?: string | null };
     CaptureStatus: string;
     ChunkList: { "items": Components['schemas']['ChunkRead'][] };
-    ChunkRead: { "id": string; "document_id": string; "page_number": number; "chunk_index": number; "text": string; "raw_text": string; "line_start": number | null; "line_end": number | null; "line_count": number; "source_excerpt": string; "extraction_method": Components['schemas']['ExtractionMethod'] | string; "content_profile": Components['schemas']['ContentProfile'] | string; "created_at": string; "locator_kind"?: string; "start_ms"?: number | null; "end_ms"?: number | null; "source_revision"?: number; "translated_text"?: string | null; "translation_source_revision"?: number | null; "translation_stale"?: boolean };
+    ChunkRead: { "id": string; "source_id": string; "page_number": number; "chunk_index": number; "text": string; "raw_text": string; "line_start": number | null; "line_end": number | null; "line_count": number; "source_excerpt": string; "extraction_method": Components['schemas']['ExtractionMethod'] | string; "content_profile": Components['schemas']['ContentProfile'] | string; "created_at": string; "locator_kind"?: string; "start_ms"?: number | null; "end_ms"?: number | null; "source_revision"?: number; "translated_text"?: string | null; "translation_source_revision"?: number | null; "translation_stale"?: boolean };
     ChunkUpdate: { "text": string };
     CommitStructuredResultRequest: { "clientRequestId": string; "candidate": Components['schemas']['CaptureDocument'] };
     ContentProfile: string;
@@ -42,11 +42,6 @@ export interface Components {
     DevicePreferenceUpdate: { "mode": Components['schemas']['DevicePreferenceMode']; "adapter_key"?: string | null };
     DeviceTarget: string;
     DeviceVerification: string;
-    DocumentList: { "items": Components['schemas']['DocumentRead'][] };
-    DocumentOperationPhase: "uploading" | "processing" | "awaiting_review" | "transcribing" | "translating" | "canceling" | "committing" | "canceled" | "completed" | "failed";
-    DocumentOperationRead: { "id": string; "project_id": string; "document_id": string | null; "status": Components['schemas']['DocumentOperationStatus']; "phase": Components['schemas']['DocumentOperationPhase']; "cancellable": boolean; "error": string | null; "created_at": string; "updated_at": string };
-    DocumentOperationStatus: "queued" | "running" | "cancel_requested" | "canceled" | "succeeded" | "failed";
-    DocumentRead: { "id": string; "project_id": string; "filename": string; "sha256": string; "language_hint": string; "page_count": number; "has_text": boolean; "status": Components['schemas']['SourceDocumentStatus'] | string; "extraction_method": Components['schemas']['ExtractionMethod'] | string; "ocr_device": string | null; "extraction_warnings": string | null; "failure_message": string | null; "processed_page_count": number; "question_count": number; "content_profile": Components['schemas']['ContentProfile'] | string; "classification_detail": string; "chunks_count": number; "created_at": string; "updated_at": string; "source_kind": Components['schemas']['SourceKind']; "duration_ms"?: number | null; "transcription_status"?: string; "translation_status"?: string; "configured_transcription_model"?: string | null; "effective_transcription_model"?: string | null; "transcription_device"?: string | null; "transcription_warning"?: string | null };
     ExtractionMethod: string;
     HTTPValidationError: { "detail"?: Components['schemas']['ValidationError'][] };
     HealthResponse: { "status": string; "app": string; "version": string; "python_version": string; "runtime_mode": string };
@@ -65,7 +60,7 @@ export interface Components {
     MachineInventoryRead: { "platform": string; "platform_version": string; "architecture": string; "cpu": Components['schemas']['MachineCpuRead']; "ram": Components['schemas']['MachineRamRead']; "storage": Components['schemas']['MachineStorageRead']; "accelerators"?: Components['schemas']['MachineAcceleratorRead'][]; "warnings"?: string[]; "schema_version"?: number };
     MachineRamRead: { "total_bytes"?: number | null; "available_bytes"?: number | null };
     MachineStorageRead: { "path": string; "free_bytes"?: number | null; "total_bytes"?: number | null };
-    ManualQuestionGenerationRead: { "id": string; "project_id": string; "document_id": string; "limit": number; "strategy": Components['schemas']['QuestionGenerationStrategy']; "status": Components['schemas']['ManualQuestionGenerationStatus']; "phase": string; "cancellable": boolean; "provider": string; "model": string; "effective_provider"?: string | null; "effective_model"?: string | null; "fallback_reason"?: string | null; "generated_count": number; "unavailable_blocks"?: Components['schemas']['UnavailableQuestionBlockRead'][]; "error"?: string | null; "created_at": string; "updated_at": string; "commit_started_at"?: string | null };
+    ManualQuestionGenerationRead: { "id": string; "project_id": string; "source_id": string; "limit": number; "strategy": Components['schemas']['QuestionGenerationStrategy']; "status": Components['schemas']['ManualQuestionGenerationStatus']; "phase": string; "cancellable": boolean; "provider": string; "model": string; "effective_provider"?: string | null; "effective_model"?: string | null; "fallback_reason"?: string | null; "generated_count": number; "unavailable_blocks"?: Components['schemas']['UnavailableQuestionBlockRead'][]; "error"?: string | null; "created_at": string; "updated_at": string; "commit_started_at"?: string | null };
     ManualQuestionGenerationStatus: "queued" | "running" | "cancel_requested" | "canceled" | "succeeded" | "failed";
     ObservedDeviceRead: { "backend"?: Components['schemas']['DeviceBackend'] | null; "adapter_name"?: string | null; "offloaded_layers"?: number | null; "total_layers"?: number | null };
     OcrAdapterClass: string;
@@ -84,26 +79,26 @@ export interface Components {
     PartialCapture: { "protocolVersion"?: "2"; "captureId": string; "source": Components['schemas']['CaptureSource']; "revision": number; "coveredUntilMs"?: number | null; "segments"?: Components['schemas']['RawCaptureSegment'][]; "sourceText"?: string; "extractionEngine"?: Components['schemas']['CaptureEngine'] | null; "updatedAt": string };
     PracticeAttemptCreate: { "question_id": string; "selected_answer": string };
     PracticeAttemptRead: { "id": string; "session_id": string; "project_id": string; "question_id": string; "selected_answer": string; "is_correct": boolean; "created_at": string };
-    PracticeSessionCreate: { "mode"?: Components['schemas']['PracticeSessionMode']; "document_id"?: string | null; "question_count"?: number | null; "random_seed"?: number | null; "wrong_attempt_ids"?: string[] | null };
+    PracticeSessionCreate: { "mode"?: Components['schemas']['PracticeSessionMode']; "source_id"?: string | null; "question_count"?: number | null; "random_seed"?: number | null; "wrong_attempt_ids"?: string[] | null };
     PracticeSessionList: { "items": Components['schemas']['PracticeSessionSummaryRead'][] };
     PracticeSessionMode: string;
-    PracticeSessionQuestionRead: { "id": string; "question": string; "choices": string[]; "answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "document_id": string | null; "answer_key_source": string | null };
-    PracticeSessionRead: { "id": string; "project_id": string; "question_ids": string[]; "questions": Components['schemas']['PracticeSessionQuestionRead'][]; "mode": Components['schemas']['PracticeSessionMode']; "document_id": string | null; "question_count": number; "random_seed": number | null; "status": Components['schemas']['PracticeSessionStatus']; "created_at": string; "completed_at": string | null; "abandoned_at": string | null; "attempts": Components['schemas']['PracticeAttemptRead'][] };
+    PracticeSessionQuestionRead: { "id": string; "question": string; "choices": string[]; "answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "source_id": string | null; "answer_key_source": string | null };
+    PracticeSessionRead: { "id": string; "project_id": string; "question_ids": string[]; "questions": Components['schemas']['PracticeSessionQuestionRead'][]; "mode": Components['schemas']['PracticeSessionMode']; "source_id": string | null; "question_count": number; "random_seed": number | null; "status": Components['schemas']['PracticeSessionStatus']; "created_at": string; "completed_at": string | null; "abandoned_at": string | null; "attempts": Components['schemas']['PracticeAttemptRead'][] };
     PracticeSessionStatus: string;
-    PracticeSessionSummaryRead: { "id": string; "project_id": string; "mode": Components['schemas']['PracticeSessionMode']; "document_id": string | null; "status": Components['schemas']['PracticeSessionStatus']; "created_at": string };
+    PracticeSessionSummaryRead: { "id": string; "project_id": string; "mode": Components['schemas']['PracticeSessionMode']; "source_id": string | null; "status": Components['schemas']['PracticeSessionStatus']; "created_at": string };
     ProjectCreate: { "name": string; "description"?: string };
     ProjectList: { "items": Components['schemas']['ProjectRead'][] };
     ProjectRead: { "id": string; "name": string; "description": string; "created_at": string; "updated_at": string };
     ProjectUpdate: { "name"?: string | null; "description"?: string | null };
-    QuestionCreate: { "question"?: string; "choices"?: string[]; "answer"?: string | null; "answer_key_source"?: Components['schemas']['AnswerKeySource'] | string; "rationale"?: string | null; "citation_page"?: number | null; "source_excerpt"?: string | null; "confidence"?: number | null; "document_id"?: string | null; "chunk_id"?: string | null; "source_order"?: number | null; "source_question_number"?: string | null; "item_kind"?: Components['schemas']['QuestionItemKind'] | string; "group_key"?: string | null; "group_prompt"?: string | null };
+    QuestionCreate: { "question"?: string; "choices"?: string[]; "answer"?: string | null; "answer_key_source"?: Components['schemas']['AnswerKeySource'] | string; "rationale"?: string | null; "citation_page"?: number | null; "source_excerpt"?: string | null; "confidence"?: number | null; "source_id"?: string | null; "chunk_id"?: string | null; "source_order"?: number | null; "source_question_number"?: string | null; "item_kind"?: Components['schemas']['QuestionItemKind'] | string; "group_key"?: string | null; "group_prompt"?: string | null };
     QuestionGenerateRequest: { "limit"?: number; "strategy"?: Components['schemas']['QuestionGenerationStrategy'] };
     QuestionGenerationJobList: { "items": Components['schemas']['QuestionGenerationJobRead'][] };
-    QuestionGenerationJobRead: { "id": string; "project_id": string; "document_id": string; "chunk_id": string; "page_number": number; "strategy": Components['schemas']['QuestionGenerationStrategy']; "status": Components['schemas']['QuestionGenerationJobStatus']; "phase": string; "cancellable": boolean; "provider": string; "model": string; "effective_provider": string | null; "effective_model": string | null; "fallback_reason": string | null; "generated_count": number; "retry_count": number; "last_error": string | null; "created_at": string; "updated_at": string };
+    QuestionGenerationJobRead: { "id": string; "project_id": string; "source_id": string; "chunk_id": string; "page_number": number; "strategy": Components['schemas']['QuestionGenerationStrategy']; "status": Components['schemas']['QuestionGenerationJobStatus']; "phase": string; "cancellable": boolean; "provider": string; "model": string; "effective_provider": string | null; "effective_model": string | null; "fallback_reason": string | null; "generated_count": number; "retry_count": number; "last_error": string | null; "created_at": string; "updated_at": string };
     QuestionGenerationJobStatus: "pending" | "running" | "cancel_requested" | "canceled" | "succeeded" | "skipped_provider_unavailable" | "skipped_missing_model" | "failed";
     QuestionGenerationStrategy: string;
     QuestionItemKind: string;
     QuestionList: { "items": Components['schemas']['QuestionRead'][] };
-    QuestionRead: { "id": string; "project_id": string; "document_id": string | null; "chunk_id": string | null; "question": string; "choices": string[]; "answer": string | null; "answer_key_source": Components['schemas']['AnswerKeySource'] | string; "rationale": string | null; "citation_page": number | null; "citation_locator_kind"?: string; "citation_start_ms"?: number | null; "citation_end_ms"?: number | null; "source_excerpt": string | null; "confidence": number | null; "source_order": number | null; "source_question_number": string | null; "item_kind": Components['schemas']['QuestionItemKind'] | string; "group_key": string | null; "group_prompt": string | null; "created_at": string; "updated_at": string };
+    QuestionRead: { "id": string; "project_id": string; "source_id": string | null; "chunk_id": string | null; "question": string; "choices": string[]; "answer": string | null; "answer_key_source": Components['schemas']['AnswerKeySource'] | string; "rationale": string | null; "citation_page": number | null; "citation_locator_kind"?: string; "citation_start_ms"?: number | null; "citation_end_ms"?: number | null; "source_excerpt": string | null; "confidence": number | null; "source_order": number | null; "source_question_number": string | null; "item_kind": Components['schemas']['QuestionItemKind'] | string; "group_key": string | null; "group_prompt": string | null; "created_at": string; "updated_at": string };
     QuestionRegradeRead: { "question_id": string; "regraded_attempts": number; "latest_attempt_wrong": boolean };
     QuestionUpdate: { "question"?: string | null; "choices"?: string[] | null; "answer"?: string | null; "answer_key_source"?: Components['schemas']['AnswerKeySource'] | string | null; "rationale"?: string | null; "citation_page"?: number | null; "source_excerpt"?: string | null; "confidence"?: number | null; "source_order"?: number | null; "source_question_number"?: string | null; "item_kind"?: Components['schemas']['QuestionItemKind'] | string | null; "group_key"?: string | null; "group_prompt"?: string | null };
     RawCapture: { "schemaVersion"?: "2"; "diagnosticOnly"?: true; "source": Components['schemas']['CaptureSource']; "segments": Components['schemas']['RawCaptureSegment'][]; "sourceText": string; "extractionEngine": Components['schemas']['CaptureEngine']; "diarizationEngine"?: Components['schemas']['CaptureEngine'] | null; "speakers"?: Components['schemas']['CaptureSpeaker'][]; "suggestedRequirementIds"?: string[]; "warnings"?: string[]; "ocrPageScope"?: Components['schemas']['OcrPageScope'] | null; "createdAt": string };
@@ -119,20 +114,25 @@ export interface Components {
     RuntimeRequirement: { "requirementId": string; "kind": string; "displayName": string; "status": Components['schemas']['RuntimeRequirementStatus']; "requiredFor": string[]; "installStrategy": string; "optional"?: boolean; "detail"?: string | null; "artifact"?: Components['schemas']['RuntimeArtifactDescriptor'] | null; "downloadBytes"?: number | null };
     RuntimeRequirementStatus: string;
     RuntimeRequirements: { "items": Components['schemas']['RuntimeRequirement'][] };
-    SourceDocumentStatus: string;
     SourceKind: "pdf" | "image" | "recording";
+    SourceList: { "items": Components['schemas']['SourceRead'][] };
+    SourceOperationPhase: "uploading" | "processing" | "awaiting_review" | "transcribing" | "translating" | "canceling" | "committing" | "canceled" | "completed" | "failed";
+    SourceOperationRead: { "id": string; "project_id": string; "source_id": string | null; "status": Components['schemas']['SourceOperationStatus']; "phase": Components['schemas']['SourceOperationPhase']; "cancellable": boolean; "error": string | null; "created_at": string; "updated_at": string };
+    SourceOperationStatus: "queued" | "running" | "cancel_requested" | "canceled" | "succeeded" | "failed";
+    SourceRead: { "id": string; "project_id": string; "filename": string; "sha256": string; "language_hint": string; "page_count": number; "has_text": boolean; "status": Components['schemas']['SourceStatus'] | string; "extraction_method": Components['schemas']['ExtractionMethod'] | string; "ocr_device": string | null; "extraction_warnings": string | null; "failure_message": string | null; "processed_page_count": number; "question_count": number; "content_profile": Components['schemas']['ContentProfile'] | string; "classification_detail": string; "chunks_count": number; "created_at": string; "updated_at": string; "source_kind": Components['schemas']['SourceKind']; "duration_ms"?: number | null; "transcription_status"?: string; "translation_status"?: string; "configured_transcription_model"?: string | null; "effective_transcription_model"?: string | null; "transcription_device"?: string | null; "transcription_warning"?: string | null };
+    SourceStatus: string;
     StartLLMInstallationRequest: { "kind": Components['schemas']['LLMRequirementKind'] };
     StartRuntimeInstallationRequest: { "requirementId": string; "consent": true };
     StructuringMode: string;
     TimeLocator: { "kind"?: "time"; "startMs": number; "endMs": number };
     UnavailableQuestionBlockRead: { "status"?: string; "chunk_id": string; "citation_page": number; "source_excerpt": string; "source_order"?: number | null; "source_question_number"?: string | null; "reason": string };
     ValidationError: { "loc": (string | number)[]; "msg": string; "type": string; "input"?: unknown; "ctx"?: Record<string, unknown> };
-    WrongAnswerClusterRead: { "document_id": string | null; "citation_page": number | null; "current_wrong_count": number; "cleared_count": number; "last_wrong_at": string | null };
+    WrongAnswerClusterRead: { "source_id": string | null; "citation_page": number | null; "current_wrong_count": number; "cleared_count": number; "last_wrong_at": string | null };
     WrongAnswerExplanationRead: { "attempt_id": string; "explanation": string; "provider": string; "model": string; "grounded_fields": Components['schemas']['WrongAnswerGroundedFields']; "fallback": boolean };
     WrongAnswerGroundedFields: { "question": string; "selected_answer": string; "correct_answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null };
     WrongAnswerList: { "items": Components['schemas']['WrongAnswerRead'][] };
-    WrongAnswerRead: { "attempt_id": string; "session_id": string; "question_id": string; "question": string; "selected_answer": string; "correct_answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "document_id": string | null; "created_at": string; "answer_key_source": string | null };
-    WrongAnswerRepeatedMissRead: { "question_id": string; "question": string; "document_id": string | null; "citation_page": number | null; "source_excerpt": string | null; "miss_count": number; "last_wrong_at": string };
+    WrongAnswerRead: { "attempt_id": string; "session_id": string; "question_id": string; "question": string; "selected_answer": string; "correct_answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "source_id": string | null; "created_at": string; "answer_key_source": string | null };
+    WrongAnswerRepeatedMissRead: { "question_id": string; "question": string; "source_id": string | null; "citation_page": number | null; "source_excerpt": string | null; "miss_count": number; "last_wrong_at": string };
     WrongAnswerSummaryRead: { "current_wrong_count": number; "cleared_count": number; "last_wrong_date": string | null; "repeated_misses": Components['schemas']['WrongAnswerRepeatedMissRead'][]; "clusters": Components['schemas']['WrongAnswerClusterRead'][] };
   };
 }
@@ -140,7 +140,7 @@ export interface Components {
 export type AnswerKeySource = Components['schemas']['AnswerKeySource'];
 export type ApiErrorRead = Components['schemas']['ApiErrorRead'];
 export type Body_create_capture_projects__project_id__capture_reviews_post = Components['schemas']['Body_create_capture_projects__project_id__capture_reviews_post'];
-export type Body_upload_document_projects__project_id__documents_post = Components['schemas']['Body_upload_document_projects__project_id__documents_post'];
+export type Body_upload_source_projects__project_id__sources_post = Components['schemas']['Body_upload_source_projects__project_id__sources_post'];
 export type CaptureBlock = Components['schemas']['CaptureBlock'];
 export type CaptureDocument = Components['schemas']['CaptureDocument'];
 export type CaptureEngine = Components['schemas']['CaptureEngine'];
@@ -173,11 +173,6 @@ export type DevicePreferenceStatus = Components['schemas']['DevicePreferenceStat
 export type DevicePreferenceUpdate = Components['schemas']['DevicePreferenceUpdate'];
 export type DeviceTarget = Components['schemas']['DeviceTarget'];
 export type DeviceVerification = Components['schemas']['DeviceVerification'];
-export type DocumentList = Components['schemas']['DocumentList'];
-export type DocumentOperationPhase = Components['schemas']['DocumentOperationPhase'];
-export type DocumentOperationRead = Components['schemas']['DocumentOperationRead'];
-export type DocumentOperationStatus = Components['schemas']['DocumentOperationStatus'];
-export type DocumentRead = Components['schemas']['DocumentRead'];
 export type ExtractionMethod = Components['schemas']['ExtractionMethod'];
 export type HTTPValidationError = Components['schemas']['HTTPValidationError'];
 export type HealthResponse = Components['schemas']['HealthResponse'];
@@ -250,8 +245,13 @@ export type RuntimeReady = Components['schemas']['RuntimeReady'];
 export type RuntimeRequirement = Components['schemas']['RuntimeRequirement'];
 export type RuntimeRequirementStatus = Components['schemas']['RuntimeRequirementStatus'];
 export type RuntimeRequirements = Components['schemas']['RuntimeRequirements'];
-export type SourceDocumentStatus = Components['schemas']['SourceDocumentStatus'];
 export type SourceKind = Components['schemas']['SourceKind'];
+export type SourceList = Components['schemas']['SourceList'];
+export type SourceOperationPhase = Components['schemas']['SourceOperationPhase'];
+export type SourceOperationRead = Components['schemas']['SourceOperationRead'];
+export type SourceOperationStatus = Components['schemas']['SourceOperationStatus'];
+export type SourceRead = Components['schemas']['SourceRead'];
+export type SourceStatus = Components['schemas']['SourceStatus'];
 export type StartLLMInstallationRequest = Components['schemas']['StartLLMInstallationRequest'];
 export type StartRuntimeInstallationRequest = Components['schemas']['StartRuntimeInstallationRequest'];
 export type StructuringMode = Components['schemas']['StructuringMode'];
@@ -293,26 +293,26 @@ export interface CertPrepGeneratedClient {
   getProject(projectId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ProjectRead']>;
   updateProject(projectId: string, body: Components['schemas']['ProjectUpdate'], options?: CertPrepRequestOptions): Observable<Components['schemas']['ProjectRead']>;
   deleteProject(projectId: string, options?: CertPrepRequestOptions): Observable<void>;
-  listDocuments(projectId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['DocumentList']>;
-  uploadDocument(projectId: string, body: FormData, options?: CertPrepRequestOptions): Observable<Components['schemas']['DocumentRead']>;
-  getDocument(projectId: string, documentId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['DocumentRead']>;
-  getDocumentMarkdown(projectId: string, documentId: string, options?: CertPrepRequestOptions): Observable<Blob>;
-  getDocumentAudioSource(projectId: string, documentId: string, options?: CertPrepRequestOptions): Observable<Blob>;
-  cancelDocumentProcessing(projectId: string, documentId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['DocumentOperationRead']>;
-  retryDocumentProcessing(projectId: string, documentId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['DocumentOperationRead']>;
-  listDocumentChunks(projectId: string, documentId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ChunkList']>;
-  updateDocumentChunk(projectId: string, documentId: string, chunkId: string, body: Components['schemas']['ChunkUpdate'], options?: CertPrepRequestOptions): Observable<Components['schemas']['ChunkRead']>;
-  translateDocumentChunk(projectId: string, documentId: string, chunkId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ChunkRead']>;
-  translateDocumentStaleChunks(projectId: string, documentId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ChunkList']>;
-  getDocumentOperation(projectId: string, operationId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['DocumentOperationRead']>;
-  cancelDocumentOperation(projectId: string, operationId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['DocumentOperationRead']>;
-  generateDocumentQuestions(projectId: string, documentId: string, body: Components['schemas']['QuestionGenerateRequest'], options?: CertPrepRequestOptions): Observable<Components['schemas']['QuestionList']>;
-  listDocumentQuestionJobs(projectId: string, documentId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['QuestionGenerationJobList']>;
-  retryDocumentQuestionJobs(projectId: string, documentId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['QuestionGenerationJobList']>;
-  cancelDocumentQuestionJob(projectId: string, documentId: string, jobId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['QuestionGenerationJobRead']>;
-  startManualQuestionGeneration(projectId: string, documentId: string, body: Components['schemas']['QuestionGenerateRequest'], options?: CertPrepRequestOptions): Observable<Components['schemas']['ManualQuestionGenerationRead']>;
-  getManualQuestionGeneration(projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ManualQuestionGenerationRead']>;
-  cancelManualQuestionGeneration(projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ManualQuestionGenerationRead']>;
+  listSources(projectId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['SourceList']>;
+  uploadSource(projectId: string, body: FormData, options?: CertPrepRequestOptions): Observable<Components['schemas']['SourceRead']>;
+  getSource(projectId: string, sourceId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['SourceRead']>;
+  getSourceMarkdown(projectId: string, sourceId: string, options?: CertPrepRequestOptions): Observable<Blob>;
+  getSourceAudio(projectId: string, sourceId: string, options?: CertPrepRequestOptions): Observable<Blob>;
+  cancelSourceProcessing(projectId: string, sourceId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['SourceOperationRead']>;
+  retrySourceProcessing(projectId: string, sourceId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['SourceOperationRead']>;
+  listSourceChunks(projectId: string, sourceId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ChunkList']>;
+  updateSourceChunk(projectId: string, sourceId: string, chunkId: string, body: Components['schemas']['ChunkUpdate'], options?: CertPrepRequestOptions): Observable<Components['schemas']['ChunkRead']>;
+  translateSourceChunk(projectId: string, sourceId: string, chunkId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ChunkRead']>;
+  translateSourceStaleChunks(projectId: string, sourceId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ChunkList']>;
+  getSourceOperation(projectId: string, operationId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['SourceOperationRead']>;
+  cancelSourceOperation(projectId: string, operationId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['SourceOperationRead']>;
+  generateSourceQuestions(projectId: string, sourceId: string, body: Components['schemas']['QuestionGenerateRequest'], options?: CertPrepRequestOptions): Observable<Components['schemas']['QuestionList']>;
+  listSourceQuestionJobs(projectId: string, sourceId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['QuestionGenerationJobList']>;
+  retrySourceQuestionJobs(projectId: string, sourceId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['QuestionGenerationJobList']>;
+  cancelSourceQuestionJob(projectId: string, sourceId: string, jobId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['QuestionGenerationJobRead']>;
+  startManualQuestionGeneration(projectId: string, sourceId: string, body: Components['schemas']['QuestionGenerateRequest'], options?: CertPrepRequestOptions): Observable<Components['schemas']['ManualQuestionGenerationRead']>;
+  getManualQuestionGeneration(projectId: string, sourceId: string, operationId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ManualQuestionGenerationRead']>;
+  cancelManualQuestionGeneration(projectId: string, sourceId: string, operationId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ManualQuestionGenerationRead']>;
   createQuestion(projectId: string, body: Components['schemas']['QuestionCreate'], options?: CertPrepRequestOptions): Observable<Components['schemas']['QuestionRead']>;
   listQuestions(projectId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['QuestionList']>;
   updateQuestion(projectId: string, questionId: string, body: Components['schemas']['QuestionUpdate'], options?: CertPrepRequestOptions): Observable<Components['schemas']['QuestionRead']>;
@@ -354,10 +354,10 @@ export interface CertPrepGeneratedClient {
   reportStructuringFailure(projectId: string, captureId: string, body: Components['schemas']['ReportStructuringFailureRequest'], options?: CertPrepRequestOptions): Observable<Components['schemas']['CaptureReviewOperationRead']>;
   cancelCapture(projectId: string, captureId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['CaptureReviewOperationRead']>;
   getResult(projectId: string, captureId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['CaptureResultRead']>;
-  documentOperationEvents(projectId: string, operationId: string, options?: CertPrepRequestOptions): Observable<unknown>;
-  currentDocumentOperationEvents(projectId: string, documentId: string, options?: CertPrepRequestOptions): Observable<unknown>;
-  questionJobsEvents(projectId: string, documentId: string, options?: CertPrepRequestOptions): Observable<unknown>;
-  questionGenerationEvents(projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions): Observable<unknown>;
+  sourceOperationEvents(projectId: string, operationId: string, options?: CertPrepRequestOptions): Observable<unknown>;
+  currentSourceOperationEvents(projectId: string, sourceId: string, options?: CertPrepRequestOptions): Observable<unknown>;
+  questionJobsEvents(projectId: string, sourceId: string, options?: CertPrepRequestOptions): Observable<unknown>;
+  questionGenerationEvents(projectId: string, sourceId: string, operationId: string, options?: CertPrepRequestOptions): Observable<unknown>;
   llmInstallationEvents(jobId: string, options?: CertPrepRequestOptions): Observable<unknown>;
 }
 
@@ -368,26 +368,26 @@ export interface CertPrepRequestFactory {
   getProject(projectId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
   updateProject(projectId: string, body: Components['schemas']['ProjectUpdate'], options?: CertPrepRequestOptions): CertPrepHttpRequest;
   deleteProject(projectId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  listDocuments(projectId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  uploadDocument(projectId: string, body: FormData, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  getDocument(projectId: string, documentId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  getDocumentMarkdown(projectId: string, documentId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  getDocumentAudioSource(projectId: string, documentId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  cancelDocumentProcessing(projectId: string, documentId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  retryDocumentProcessing(projectId: string, documentId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  listDocumentChunks(projectId: string, documentId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  updateDocumentChunk(projectId: string, documentId: string, chunkId: string, body: Components['schemas']['ChunkUpdate'], options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  translateDocumentChunk(projectId: string, documentId: string, chunkId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  translateDocumentStaleChunks(projectId: string, documentId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  getDocumentOperation(projectId: string, operationId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  cancelDocumentOperation(projectId: string, operationId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  generateDocumentQuestions(projectId: string, documentId: string, body: Components['schemas']['QuestionGenerateRequest'], options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  listDocumentQuestionJobs(projectId: string, documentId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  retryDocumentQuestionJobs(projectId: string, documentId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  cancelDocumentQuestionJob(projectId: string, documentId: string, jobId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  startManualQuestionGeneration(projectId: string, documentId: string, body: Components['schemas']['QuestionGenerateRequest'], options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  getManualQuestionGeneration(projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  cancelManualQuestionGeneration(projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  listSources(projectId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  uploadSource(projectId: string, body: FormData, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  getSource(projectId: string, sourceId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  getSourceMarkdown(projectId: string, sourceId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  getSourceAudio(projectId: string, sourceId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  cancelSourceProcessing(projectId: string, sourceId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  retrySourceProcessing(projectId: string, sourceId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  listSourceChunks(projectId: string, sourceId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  updateSourceChunk(projectId: string, sourceId: string, chunkId: string, body: Components['schemas']['ChunkUpdate'], options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  translateSourceChunk(projectId: string, sourceId: string, chunkId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  translateSourceStaleChunks(projectId: string, sourceId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  getSourceOperation(projectId: string, operationId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  cancelSourceOperation(projectId: string, operationId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  generateSourceQuestions(projectId: string, sourceId: string, body: Components['schemas']['QuestionGenerateRequest'], options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  listSourceQuestionJobs(projectId: string, sourceId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  retrySourceQuestionJobs(projectId: string, sourceId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  cancelSourceQuestionJob(projectId: string, sourceId: string, jobId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  startManualQuestionGeneration(projectId: string, sourceId: string, body: Components['schemas']['QuestionGenerateRequest'], options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  getManualQuestionGeneration(projectId: string, sourceId: string, operationId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  cancelManualQuestionGeneration(projectId: string, sourceId: string, operationId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
   createQuestion(projectId: string, body: Components['schemas']['QuestionCreate'], options?: CertPrepRequestOptions): CertPrepHttpRequest;
   listQuestions(projectId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
   updateQuestion(projectId: string, questionId: string, body: Components['schemas']['QuestionUpdate'], options?: CertPrepRequestOptions): CertPrepHttpRequest;
@@ -429,10 +429,10 @@ export interface CertPrepRequestFactory {
   reportStructuringFailure(projectId: string, captureId: string, body: Components['schemas']['ReportStructuringFailureRequest'], options?: CertPrepRequestOptions): CertPrepHttpRequest;
   cancelCapture(projectId: string, captureId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
   getResult(projectId: string, captureId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  documentOperationEvents(projectId: string, operationId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  currentDocumentOperationEvents(projectId: string, documentId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  questionJobsEvents(projectId: string, documentId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  questionGenerationEvents(projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  sourceOperationEvents(projectId: string, operationId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  currentSourceOperationEvents(projectId: string, sourceId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  questionJobsEvents(projectId: string, sourceId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  questionGenerationEvents(projectId: string, sourceId: string, operationId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
   llmInstallationEvents(jobId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
 }
 
@@ -456,65 +456,65 @@ export function createCertPrepRequestFactory(): CertPrepRequestFactory {
     deleteProject: (projectId: string, options?: CertPrepRequestOptions) => {
       return { method: 'DELETE' as const, path: `/projects/${encodeURIComponent(projectId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    listDocuments: (projectId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    listSources: (projectId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/sources`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    uploadDocument: (projectId: string, body: FormData, options?: CertPrepRequestOptions) => {
-      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/documents`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    uploadSource: (projectId: string, body: FormData, options?: CertPrepRequestOptions) => {
+      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/sources`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    getDocument: (projectId: string, documentId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    getSource: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    getDocumentMarkdown: (projectId: string, documentId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/markdown`, responseType: 'blob' as const, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    getSourceMarkdown: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/markdown`, responseType: 'blob' as const, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    getDocumentAudioSource: (projectId: string, documentId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/source`, responseType: 'blob' as const, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    getSourceAudio: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/audio`, responseType: 'blob' as const, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    cancelDocumentProcessing: (projectId: string, documentId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'DELETE' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/processing`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    cancelSourceProcessing: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'DELETE' as const, path: `/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/processing`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    retryDocumentProcessing: (projectId: string, documentId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/retry`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    retrySourceProcessing: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/retry`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    listDocumentChunks: (projectId: string, documentId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/chunks`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    listSourceChunks: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/chunks`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    updateDocumentChunk: (projectId: string, documentId: string, chunkId: string, body: Components['schemas']['ChunkUpdate'], options?: CertPrepRequestOptions) => {
-      return { method: 'PATCH' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/chunks/${encodeURIComponent(chunkId)}`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    updateSourceChunk: (projectId: string, sourceId: string, chunkId: string, body: Components['schemas']['ChunkUpdate'], options?: CertPrepRequestOptions) => {
+      return { method: 'PATCH' as const, path: `/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/chunks/${encodeURIComponent(chunkId)}`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    translateDocumentChunk: (projectId: string, documentId: string, chunkId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/chunks/${encodeURIComponent(chunkId)}/translation`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    translateSourceChunk: (projectId: string, sourceId: string, chunkId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/chunks/${encodeURIComponent(chunkId)}/translation`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    translateDocumentStaleChunks: (projectId: string, documentId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/translations`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    translateSourceStaleChunks: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/translations`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    getDocumentOperation: (projectId: string, operationId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/document-operations/${encodeURIComponent(operationId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    getSourceOperation: (projectId: string, operationId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/source-operations/${encodeURIComponent(operationId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    cancelDocumentOperation: (projectId: string, operationId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'DELETE' as const, path: `/projects/${encodeURIComponent(projectId)}/document-operations/${encodeURIComponent(operationId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    cancelSourceOperation: (projectId: string, operationId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'DELETE' as const, path: `/projects/${encodeURIComponent(projectId)}/source-operations/${encodeURIComponent(operationId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    generateDocumentQuestions: (projectId: string, documentId: string, body: Components['schemas']['QuestionGenerateRequest'], options?: CertPrepRequestOptions) => {
-      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/questions`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    generateSourceQuestions: (projectId: string, sourceId: string, body: Components['schemas']['QuestionGenerateRequest'], options?: CertPrepRequestOptions) => {
+      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/questions`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    listDocumentQuestionJobs: (projectId: string, documentId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/question-jobs`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    listSourceQuestionJobs: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/question-jobs`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    retryDocumentQuestionJobs: (projectId: string, documentId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/question-jobs/retry`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    retrySourceQuestionJobs: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/question-jobs/retry`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    cancelDocumentQuestionJob: (projectId: string, documentId: string, jobId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'DELETE' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/question-jobs/${encodeURIComponent(jobId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    cancelSourceQuestionJob: (projectId: string, sourceId: string, jobId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'DELETE' as const, path: `/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/question-jobs/${encodeURIComponent(jobId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    startManualQuestionGeneration: (projectId: string, documentId: string, body: Components['schemas']['QuestionGenerateRequest'], options?: CertPrepRequestOptions) => {
-      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/question-generations`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    startManualQuestionGeneration: (projectId: string, sourceId: string, body: Components['schemas']['QuestionGenerateRequest'], options?: CertPrepRequestOptions) => {
+      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/question-generations`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    getManualQuestionGeneration: (projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/question-generations/${encodeURIComponent(operationId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    getManualQuestionGeneration: (projectId: string, sourceId: string, operationId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/question-generations/${encodeURIComponent(operationId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    cancelManualQuestionGeneration: (projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'DELETE' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/question-generations/${encodeURIComponent(operationId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    cancelManualQuestionGeneration: (projectId: string, sourceId: string, operationId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'DELETE' as const, path: `/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/question-generations/${encodeURIComponent(operationId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
     createQuestion: (projectId: string, body: Components['schemas']['QuestionCreate'], options?: CertPrepRequestOptions) => {
       return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/questions`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
@@ -639,17 +639,17 @@ export function createCertPrepRequestFactory(): CertPrepRequestFactory {
     getResult: (projectId: string, captureId: string, options?: CertPrepRequestOptions) => {
       return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-reviews/${encodeURIComponent(captureId)}/result`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    documentOperationEvents: (projectId: string, operationId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/document-operations/${encodeURIComponent(operationId)}/events`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    sourceOperationEvents: (projectId: string, operationId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/source-operations/${encodeURIComponent(operationId)}/events`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    currentDocumentOperationEvents: (projectId: string, documentId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/document-operation/events`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    currentSourceOperationEvents: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/source-operation/events`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    questionJobsEvents: (projectId: string, documentId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/question-jobs/events`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    questionJobsEvents: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/question-jobs/events`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    questionGenerationEvents: (projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/question-generations/${encodeURIComponent(operationId)}/events`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    questionGenerationEvents: (projectId: string, sourceId: string, operationId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/question-generations/${encodeURIComponent(operationId)}/events`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
     llmInstallationEvents: (jobId: string, options?: CertPrepRequestOptions) => {
       return { method: 'GET' as const, path: `/llm/installations/${encodeURIComponent(jobId)}/events`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
@@ -674,46 +674,46 @@ export function createCertPrepGeneratedClient(
       transport.request<Components['schemas']['ProjectRead']>(requests.updateProject(projectId, body, options)),
     deleteProject: (projectId: string, options?: CertPrepRequestOptions) =>
       transport.request<void>(requests.deleteProject(projectId, options)),
-    listDocuments: (projectId: string, options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['DocumentList']>(requests.listDocuments(projectId, options)),
-    uploadDocument: (projectId: string, body: FormData, options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['DocumentRead']>(requests.uploadDocument(projectId, body, options)),
-    getDocument: (projectId: string, documentId: string, options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['DocumentRead']>(requests.getDocument(projectId, documentId, options)),
-    getDocumentMarkdown: (projectId: string, documentId: string, options?: CertPrepRequestOptions) =>
-      transport.request<Blob>(requests.getDocumentMarkdown(projectId, documentId, options)),
-    getDocumentAudioSource: (projectId: string, documentId: string, options?: CertPrepRequestOptions) =>
-      transport.request<Blob>(requests.getDocumentAudioSource(projectId, documentId, options)),
-    cancelDocumentProcessing: (projectId: string, documentId: string, options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['DocumentOperationRead']>(requests.cancelDocumentProcessing(projectId, documentId, options)),
-    retryDocumentProcessing: (projectId: string, documentId: string, options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['DocumentOperationRead']>(requests.retryDocumentProcessing(projectId, documentId, options)),
-    listDocumentChunks: (projectId: string, documentId: string, options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['ChunkList']>(requests.listDocumentChunks(projectId, documentId, options)),
-    updateDocumentChunk: (projectId: string, documentId: string, chunkId: string, body: Components['schemas']['ChunkUpdate'], options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['ChunkRead']>(requests.updateDocumentChunk(projectId, documentId, chunkId, body, options)),
-    translateDocumentChunk: (projectId: string, documentId: string, chunkId: string, options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['ChunkRead']>(requests.translateDocumentChunk(projectId, documentId, chunkId, options)),
-    translateDocumentStaleChunks: (projectId: string, documentId: string, options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['ChunkList']>(requests.translateDocumentStaleChunks(projectId, documentId, options)),
-    getDocumentOperation: (projectId: string, operationId: string, options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['DocumentOperationRead']>(requests.getDocumentOperation(projectId, operationId, options)),
-    cancelDocumentOperation: (projectId: string, operationId: string, options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['DocumentOperationRead']>(requests.cancelDocumentOperation(projectId, operationId, options)),
-    generateDocumentQuestions: (projectId: string, documentId: string, body: Components['schemas']['QuestionGenerateRequest'], options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['QuestionList']>(requests.generateDocumentQuestions(projectId, documentId, body, options)),
-    listDocumentQuestionJobs: (projectId: string, documentId: string, options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['QuestionGenerationJobList']>(requests.listDocumentQuestionJobs(projectId, documentId, options)),
-    retryDocumentQuestionJobs: (projectId: string, documentId: string, options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['QuestionGenerationJobList']>(requests.retryDocumentQuestionJobs(projectId, documentId, options)),
-    cancelDocumentQuestionJob: (projectId: string, documentId: string, jobId: string, options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['QuestionGenerationJobRead']>(requests.cancelDocumentQuestionJob(projectId, documentId, jobId, options)),
-    startManualQuestionGeneration: (projectId: string, documentId: string, body: Components['schemas']['QuestionGenerateRequest'], options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['ManualQuestionGenerationRead']>(requests.startManualQuestionGeneration(projectId, documentId, body, options)),
-    getManualQuestionGeneration: (projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['ManualQuestionGenerationRead']>(requests.getManualQuestionGeneration(projectId, documentId, operationId, options)),
-    cancelManualQuestionGeneration: (projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['ManualQuestionGenerationRead']>(requests.cancelManualQuestionGeneration(projectId, documentId, operationId, options)),
+    listSources: (projectId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['SourceList']>(requests.listSources(projectId, options)),
+    uploadSource: (projectId: string, body: FormData, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['SourceRead']>(requests.uploadSource(projectId, body, options)),
+    getSource: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['SourceRead']>(requests.getSource(projectId, sourceId, options)),
+    getSourceMarkdown: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Blob>(requests.getSourceMarkdown(projectId, sourceId, options)),
+    getSourceAudio: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Blob>(requests.getSourceAudio(projectId, sourceId, options)),
+    cancelSourceProcessing: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['SourceOperationRead']>(requests.cancelSourceProcessing(projectId, sourceId, options)),
+    retrySourceProcessing: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['SourceOperationRead']>(requests.retrySourceProcessing(projectId, sourceId, options)),
+    listSourceChunks: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['ChunkList']>(requests.listSourceChunks(projectId, sourceId, options)),
+    updateSourceChunk: (projectId: string, sourceId: string, chunkId: string, body: Components['schemas']['ChunkUpdate'], options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['ChunkRead']>(requests.updateSourceChunk(projectId, sourceId, chunkId, body, options)),
+    translateSourceChunk: (projectId: string, sourceId: string, chunkId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['ChunkRead']>(requests.translateSourceChunk(projectId, sourceId, chunkId, options)),
+    translateSourceStaleChunks: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['ChunkList']>(requests.translateSourceStaleChunks(projectId, sourceId, options)),
+    getSourceOperation: (projectId: string, operationId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['SourceOperationRead']>(requests.getSourceOperation(projectId, operationId, options)),
+    cancelSourceOperation: (projectId: string, operationId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['SourceOperationRead']>(requests.cancelSourceOperation(projectId, operationId, options)),
+    generateSourceQuestions: (projectId: string, sourceId: string, body: Components['schemas']['QuestionGenerateRequest'], options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['QuestionList']>(requests.generateSourceQuestions(projectId, sourceId, body, options)),
+    listSourceQuestionJobs: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['QuestionGenerationJobList']>(requests.listSourceQuestionJobs(projectId, sourceId, options)),
+    retrySourceQuestionJobs: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['QuestionGenerationJobList']>(requests.retrySourceQuestionJobs(projectId, sourceId, options)),
+    cancelSourceQuestionJob: (projectId: string, sourceId: string, jobId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['QuestionGenerationJobRead']>(requests.cancelSourceQuestionJob(projectId, sourceId, jobId, options)),
+    startManualQuestionGeneration: (projectId: string, sourceId: string, body: Components['schemas']['QuestionGenerateRequest'], options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['ManualQuestionGenerationRead']>(requests.startManualQuestionGeneration(projectId, sourceId, body, options)),
+    getManualQuestionGeneration: (projectId: string, sourceId: string, operationId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['ManualQuestionGenerationRead']>(requests.getManualQuestionGeneration(projectId, sourceId, operationId, options)),
+    cancelManualQuestionGeneration: (projectId: string, sourceId: string, operationId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['ManualQuestionGenerationRead']>(requests.cancelManualQuestionGeneration(projectId, sourceId, operationId, options)),
     createQuestion: (projectId: string, body: Components['schemas']['QuestionCreate'], options?: CertPrepRequestOptions) =>
       transport.request<Components['schemas']['QuestionRead']>(requests.createQuestion(projectId, body, options)),
     listQuestions: (projectId: string, options?: CertPrepRequestOptions) =>
@@ -796,14 +796,14 @@ export function createCertPrepGeneratedClient(
       transport.request<Components['schemas']['CaptureReviewOperationRead']>(requests.cancelCapture(projectId, captureId, options)),
     getResult: (projectId: string, captureId: string, options?: CertPrepRequestOptions) =>
       transport.request<Components['schemas']['CaptureResultRead']>(requests.getResult(projectId, captureId, options)),
-    documentOperationEvents: (projectId: string, operationId: string, options?: CertPrepRequestOptions) =>
-      transport.request<unknown>(requests.documentOperationEvents(projectId, operationId, options)),
-    currentDocumentOperationEvents: (projectId: string, documentId: string, options?: CertPrepRequestOptions) =>
-      transport.request<unknown>(requests.currentDocumentOperationEvents(projectId, documentId, options)),
-    questionJobsEvents: (projectId: string, documentId: string, options?: CertPrepRequestOptions) =>
-      transport.request<unknown>(requests.questionJobsEvents(projectId, documentId, options)),
-    questionGenerationEvents: (projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions) =>
-      transport.request<unknown>(requests.questionGenerationEvents(projectId, documentId, operationId, options)),
+    sourceOperationEvents: (projectId: string, operationId: string, options?: CertPrepRequestOptions) =>
+      transport.request<unknown>(requests.sourceOperationEvents(projectId, operationId, options)),
+    currentSourceOperationEvents: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) =>
+      transport.request<unknown>(requests.currentSourceOperationEvents(projectId, sourceId, options)),
+    questionJobsEvents: (projectId: string, sourceId: string, options?: CertPrepRequestOptions) =>
+      transport.request<unknown>(requests.questionJobsEvents(projectId, sourceId, options)),
+    questionGenerationEvents: (projectId: string, sourceId: string, operationId: string, options?: CertPrepRequestOptions) =>
+      transport.request<unknown>(requests.questionGenerationEvents(projectId, sourceId, operationId, options)),
     llmInstallationEvents: (jobId: string, options?: CertPrepRequestOptions) =>
       transport.request<unknown>(requests.llmInstallationEvents(jobId, options)),
   };

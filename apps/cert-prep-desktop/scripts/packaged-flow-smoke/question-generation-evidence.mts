@@ -10,7 +10,7 @@ export const FIRST_CHUNK_GATE_MS = 15_000;
 
 interface WholeSourceScope {
   projectId: string;
-  documentId: string;
+  sourceId: string;
 }
 
 const TERMINAL_QUESTION_JOB_STATUSES = new Set([
@@ -198,7 +198,7 @@ export function sanitizeQuestionSnapshot(
   };
 }
 
-/** Returns the actual Whole source size only when request and response prove one document scope. */
+/** Returns the actual Whole source size only when request and response prove one source scope. */
 export function wholeSourceQuestionCountFromSession(
   requestPayload: unknown,
   responsePayload: unknown,
@@ -216,11 +216,11 @@ export function wholeSourceQuestionCountFromSession(
     ? responsePayload.questions
     : [];
   if (
-    requestPayload.mode !== 'full_document' ||
-    requestPayload.document_id !== expected.documentId ||
-    responsePayload.mode !== 'full_document' ||
+    requestPayload.mode !== 'full_source' ||
+    requestPayload.source_id !== expected.sourceId ||
+    responsePayload.mode !== 'full_source' ||
     responsePayload.project_id !== expected.projectId ||
-    responsePayload.document_id !== expected.documentId ||
+    responsePayload.source_id !== expected.sourceId ||
     responsePayload.status !== 'active' ||
     !nullableTrimmedString(responsePayload.id) ||
     requestedCount === null ||
@@ -244,7 +244,7 @@ export function wholeSourceQuestionCountFromSession(
     if (
       !isRecord(question) ||
       question.id !== normalizedIds[index] ||
-      question.document_id !== expected.documentId ||
+      question.source_id !== expected.sourceId ||
       !practiceReadyQuestion(question)
     ) {
       return null;

@@ -1,26 +1,26 @@
 import { Injectable } from '@angular/core';
-import type { SourceDocumentLabel } from '../domain';
+import type { SourceLabel } from '../domain';
 
 @Injectable({ providedIn: 'root' })
 export class ReviewDisplayService {
-  documentLabel(
-    documents: readonly SourceDocumentLabel[],
-    documentId: string | null,
+  sourceLabel(
+    sources: readonly SourceLabel[],
+    sourceId: string | null,
   ): string | null {
-    if (documentId === null) {
+    if (sourceId === null) {
       return null;
     }
     return (
-      documents.find((document) => document.id === documentId)?.filename ??
-      documentId
+      sources.find((source) => source.id === sourceId)?.filename ??
+      sourceId
     );
   }
 
-  requiredDocumentLabel(
-    documents: readonly SourceDocumentLabel[],
-    documentId: string | null,
+  requiredSourceLabel(
+    sources: readonly SourceLabel[],
+    sourceId: string | null,
   ): string {
-    return this.documentLabel(documents, documentId) ?? 'No source document';
+    return this.sourceLabel(sources, sourceId) ?? 'No source';
   }
 
   pageLabel(page: number | null): string {

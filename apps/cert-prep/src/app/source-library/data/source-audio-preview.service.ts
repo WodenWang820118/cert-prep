@@ -13,7 +13,7 @@ export class SourceAudioPreviewService {
   );
   private requestId = 0;
   private requestedKey: string | null = null;
-  private currentContext: { projectId: string; documentId: string } | null =
+  private currentContext: { projectId: string; sourceId: string } | null =
     null;
   private abortController: AbortController | null = null;
   private objectUrl: string | null = null;
@@ -25,20 +25,20 @@ export class SourceAudioPreviewService {
     this.destroyRef.onDestroy(() => this.destroy());
   }
 
-  load(projectId: string | null, documentId: string | null): void {
+  load(projectId: string | null, sourceId: string | null): void {
     const key =
-      projectId === null || documentId === null
+      projectId === null || sourceId === null
         ? null
-        : `${projectId}:${documentId}`;
+        : `${projectId}:${sourceId}`;
     if (key === this.requestedKey && !this.destroyed) {
       return;
     }
 
     this.requestedKey = key;
     this.currentContext =
-      projectId === null || documentId === null
+      projectId === null || sourceId === null
         ? null
-        : { projectId, documentId };
+        : { projectId, sourceId };
     const requestId = ++this.requestId;
     this.abortController?.abort();
     this.abortController = null;
@@ -51,11 +51,11 @@ export class SourceAudioPreviewService {
 
     const controller = new AbortController();
     this.abortController = controller;
-    const { projectId: currentProjectId, documentId: currentDocumentId } =
+    const { projectId: currentProjectId, sourceId: currentSourceId } =
       this.currentContext;
     this.requestState.set({ url: null, loading: true, error: null });
     this.api
-      .getDocumentAudioSource(currentProjectId, currentDocumentId, {
+      .getSourceAudio(currentProjectId, currentSourceId, {
         signal: controller.signal,
       })
       .pipe(catchError(() => of(null)))
@@ -111,7 +111,7 @@ export class SourceAudioPreviewService {
       return;
     }
     this.requestedKey = null;
-    this.load(context.projectId, context.documentId);
+    this.load(context.projectId, context.sourceId);
   }
 
   destroy(): void {

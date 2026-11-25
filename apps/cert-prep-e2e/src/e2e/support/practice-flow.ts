@@ -1,5 +1,5 @@
 import { expect, type Page } from '@playwright/test';
-import type { DocumentRead, ProjectRead } from '@cert-prep/api';
+import type { SourceRead, ProjectRead } from '@cert-prep/api';
 import type {
   CompleteQuestion,
   CompleteQuestionWithExcerpt,
@@ -38,21 +38,21 @@ export async function createProject(
   ).toBeVisible();
 }
 
-export async function uploadDocumentAndExpectQuestion(
+export async function uploadSourceAndExpectQuestion(
   page: Page,
   api: MockCertPrepApi,
   options: {
-    readonly document?: DocumentRead;
+    readonly source?: SourceRead;
     readonly question?: CompleteQuestionWithExcerpt;
   } = {},
 ): Promise<void> {
-  const document = options.document ?? api.document;
+  const source = options.source ?? api.source;
   const question = options.question ?? api.question;
 
   const sourceFileInput = page.locator('input[aria-label="Source files"]');
   await sourceFileInput.setInputFiles([]);
   await sourceFileInput.setInputFiles({
-    name: document.filename,
+    name: source.filename,
     mimeType: 'application/pdf',
     buffer: Buffer.from('%PDF-1.4\n% mocked text pdf\n'),
   });
@@ -60,7 +60,7 @@ export async function uploadDocumentAndExpectQuestion(
   await expect(
     page
       .locator('.workbench-file-name')
-      .getByText(document.filename, { exact: true }),
+      .getByText(source.filename, { exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole('heading', { name: 'Ready to review' }),
@@ -78,12 +78,12 @@ export async function uploadDocumentAndExpectQuestion(
   ).toBeVisible();
 }
 
-export async function createWorkspaceWithUploadedDocument(
+export async function createWorkspaceWithUploadedSource(
   page: Page,
   api: MockCertPrepApi,
   options: {
     readonly project?: ProjectRead;
-    readonly document?: DocumentRead;
+    readonly source?: SourceRead;
     readonly question?: CompleteQuestionWithExcerpt;
   } = {},
 ): Promise<void> {
@@ -91,7 +91,7 @@ export async function createWorkspaceWithUploadedDocument(
   await page.goto('/');
   await createProject(page, api, project);
   await expectWorkspaceReady(page);
-  await uploadDocumentAndExpectQuestion(page, api, options);
+  await uploadSourceAndExpectQuestion(page, api, options);
 }
 
 export async function startRandomDraw(
@@ -111,21 +111,21 @@ export async function startRandomDraw(
 export async function startWholeSource(
   page: Page,
   api: MockCertPrepApi,
-  document = api.wholeSourceDocument,
+  source = api.wholeSource,
 ): Promise<void> {
-  const questionCount = api.playableQuestionsForDocument(document.id).length;
+  const questionCount = api.playableQuestionsForSource(source.id).length;
 
   await page.getByRole('link', { name: 'Whole source' }).click();
   await expect(page.getByRole('heading', { name: 'Whole source' })).toBeVisible();
-  const documentSelect = page
-    .getByRole('region', { name: 'Source Document' })
+  const sourceSelect = page
+    .getByRole('region', { name: 'Source', exact: true })
     .getByRole('combobox');
   await expect(
-    documentSelect.locator(`option[value="${document.id}"]`),
+    sourceSelect.locator(`option[value="${source.id}"]`),
   ).toHaveCount(1);
-  await documentSelect.selectOption(document.id);
+  await sourceSelect.selectOption(source.id);
   await expect(
-    page.getByText(`${questionCount} questions in selected document`),
+    page.getByText(`${questionCount} questions in selected source`),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Start whole source' }).click();
   await expectCurrentSessionVisible(page, api);
@@ -138,16 +138,16 @@ export async function selectProjectInRail(
   await page.getByRole('button', { name: new RegExp(project.name) }).click();
 }
 
-export async function selectActiveDocument(
+export async function selectActiveSource(
   page: Page,
-  document: DocumentRead,
+  source: SourceRead,
 ): Promise<void> {
   await page.getByRole('link', { name: 'Questions', exact: true }).click();
-  await page.getByLabel('Project source library').selectOption(document.id);
+  await page.getByLabel('Project source library').selectOption(source.id);
   await expect(
     page
       .locator('.workbench-file-name')
-      .getByText(document.filename, { exact: true }),
+      .getByText(source.filename, { exact: true }),
   ).toBeVisible();
 }
 
@@ -155,23 +155,23 @@ export async function runMultiPdfIsolationScenario(
   page: Page,
   api: MockCertPrepApi,
 ): Promise<void> {
-  await createWorkspaceWithUploadedDocument(page, api);
+  await createWorkspaceWithUploadedSource(page, api);
   await selectProjectInRail(page, api.project);
-  const alternateDocument = api.documents[1];
-  const defaultDocument = api.documents[0];
-  if (alternateDocument === undefined || defaultDocument === undefined) {
-    throw new Error('Multi-PDF isolation requires two mocked documents.');
+  const alternateSource = api.sources[1];
+  const defaultSource = api.sources[0];
+  if (alternateSource === undefined || defaultSource === undefined) {
+    throw new Error('Multi-PDF isolation requires two mocked sources.');
   }
 
-  for (const document of [alternateDocument, defaultDocument]) {
-    const selectedDocumentQuestions = api.playableQuestionsForDocument(document.id);
-    await selectActiveDocument(page, document);
-    await startWholeSource(page, api, document);
-    expectWholeSourceSessionToUseOnlyDocument(api, document);
+  for (const source of [alternateSource, defaultSource]) {
+    const selectedSourceQuestions = api.playableQuestionsForSource(source.id);
+    await selectActiveSource(page, source);
+    await startWholeSource(page, api, source);
+    expectWholeSourceSessionToUseOnlySource(api, source);
     await completePracticeQuestions(
       page,
       api,
-      selectedDocumentQuestions,
+      selectedSourceQuestions,
       (question) => question.answer,
     );
     expect(api.wrongAnswers()).toHaveLength(0);
@@ -182,9 +182,9 @@ export async function runMultiPdfBatchUploadScenario(
   page: Page,
   api: MockCertPrepApi,
 ): Promise<void> {
-  const [firstDocument, secondDocument] = api.documents;
-  if (firstDocument === undefined || secondDocument === undefined) {
-    throw new Error('Multi-PDF batch upload requires two mocked documents.');
+  const [firstSource, secondSource] = api.sources;
+  if (firstSource === undefined || secondSource === undefined) {
+    throw new Error('Multi-PDF batch upload requires two mocked sources.');
   }
 
   await page.goto('/');
@@ -193,79 +193,79 @@ export async function runMultiPdfBatchUploadScenario(
 
   const requestMarker = api.markRequestLog();
   await page.locator('input[aria-label="Source files"]').setInputFiles(
-    [firstDocument, secondDocument].map((document) => ({
-      name: document.filename,
+    [firstSource, secondSource].map((source) => ({
+      name: source.filename,
       mimeType: 'application/pdf',
-      buffer: Buffer.from(`%PDF-1.4\n% mocked ${document.id} pdf\n`),
+      buffer: Buffer.from(`%PDF-1.4\n% mocked ${source.id} pdf\n`),
     })),
   );
   await page.getByRole('button', { name: 'Upload files' }).click();
 
-  await expectDocumentLibraryOption(page, firstDocument);
-  await expectDocumentLibraryOption(page, secondDocument);
+  await expectSourceLibraryOption(page, firstSource);
+  await expectSourceLibraryOption(page, secondSource);
   expect(
     api
       .requestLogSince(requestMarker)
       .filter(
-        (path) => path === `POST /projects/${api.project.id}/documents`,
+        (path) => path === `POST /projects/${api.project.id}/sources`,
       ),
   ).toHaveLength(2);
 
-  for (const document of [firstDocument, secondDocument]) {
-    await selectDocumentFromLibrary(page, document);
-    const [question] = api.playableQuestionsForDocument(document.id);
+  for (const source of [firstSource, secondSource]) {
+    await selectSourceFromLibrary(page, source);
+    const [question] = api.playableQuestionsForSource(source.id);
     if (question === undefined) {
-      throw new Error(`Document ${document.id} needs a playable mocked question.`);
+      throw new Error(`Source ${source.id} needs a playable mocked question.`);
     }
     await expectAiInferredPlayableQuestion(page, question);
   }
 
-  await startWholeSource(page, api, secondDocument);
-  expectWholeSourceSessionToUseOnlyDocument(api, secondDocument);
+  await startWholeSource(page, api, secondSource);
+  expectWholeSourceSessionToUseOnlySource(api, secondSource);
 }
 
-export function expectWholeSourceSessionToUseOnlyDocument(
+export function expectWholeSourceSessionToUseOnlySource(
   api: MockCertPrepApi,
-  document: DocumentRead,
+  source: SourceRead,
 ): void {
-  const selectedDocumentQuestions = api.playableQuestionsForDocument(document.id);
+  const selectedSourceQuestions = api.playableQuestionsForSource(source.id);
   const excludedQuestionIds = api.playableQuestions
-    .filter((question) => question.document_id !== document.id)
+    .filter((question) => question.source_id !== source.id)
     .map((question) => question.id);
   const session = api.currentSession();
 
   expect(session).not.toBeNull();
   expect(api.practiceSessionPayload()).toMatchObject({
-    mode: 'full_document',
-    document_id: document.id,
-    question_count: selectedDocumentQuestions.length,
+    mode: 'full_source',
+    source_id: source.id,
+    question_count: selectedSourceQuestions.length,
   });
   expect(session?.question_ids).toEqual(
-    selectedDocumentQuestions.map((question) => question.id),
+    selectedSourceQuestions.map((question) => question.id),
   );
   expect(session?.question_ids).toEqual(
     expect.not.arrayContaining(excludedQuestionIds),
   );
 }
 
-async function expectDocumentLibraryOption(
+async function expectSourceLibraryOption(
   page: Page,
-  document: DocumentRead,
+  source: SourceRead,
 ): Promise<void> {
   await expect(
     page
       .getByLabel('Project source library')
-      .locator('option', { hasText: document.filename }),
+      .locator('option', { hasText: source.filename }),
   ).toHaveCount(1);
 }
 
-async function selectDocumentFromLibrary(
+async function selectSourceFromLibrary(
   page: Page,
-  document: DocumentRead,
+  source: SourceRead,
 ): Promise<void> {
-  const documentLibrary = page.getByLabel('Project source library');
-  await documentLibrary.selectOption(document.id);
-  await expect(documentLibrary).toHaveValue(document.id);
+  const sourceLibrary = page.getByLabel('Project source library');
+  await sourceLibrary.selectOption(source.id);
+  await expect(sourceLibrary).toHaveValue(source.id);
 }
 
 async function expectAiInferredPlayableQuestion(
@@ -291,29 +291,29 @@ export async function expectRandomDrawAvailableCount(
   await expect(page.getByText(`${count} questions available`)).toBeVisible();
 }
 
-export async function expectWholeSourceDocumentOptions(
+export async function expectWholeSourceOptions(
   page: Page,
   api: MockCertPrepApi,
 ): Promise<void> {
   await page.getByRole('link', { name: 'Whole source' }).click();
   await expect(page.getByRole('heading', { name: 'Whole source' })).toBeVisible();
-  const documentSelect = page
-    .getByRole('region', { name: 'Source Document' })
+  const sourceSelect = page
+    .getByRole('region', { name: 'Source', exact: true })
     .getByRole('combobox');
-  const selectedDocumentQuestionCount = api.playableQuestionsForDocument(
-    api.wholeSourceDocument.id,
+  const selectedSourceQuestionCount = api.playableQuestionsForSource(
+    api.wholeSource.id,
   ).length;
   await expect(
-    documentSelect.locator('option', {
-      hasText: `${api.wholeSourceDocument.filename} - ${selectedDocumentQuestionCount} questions`,
+    sourceSelect.locator('option', {
+      hasText: `${api.wholeSource.filename} - ${selectedSourceQuestionCount} questions`,
     }),
   ).toHaveCount(1);
 
-  for (const document of api.documents) {
-    const questionCount = api.playableQuestionsForDocument(document.id).length;
+  for (const source of api.sources) {
+    const questionCount = api.playableQuestionsForSource(source.id).length;
     if (questionCount === 0) {
       await expect(
-        documentSelect.locator('option', { hasText: document.filename }),
+        sourceSelect.locator('option', { hasText: source.filename }),
       ).toHaveCount(0);
     }
   }
@@ -445,7 +445,7 @@ export async function expectWrongAnswerSummary(
   await expect(page.getByText('Weak Areas By Source')).toBeVisible();
   await expect(page.getByText('Answer Patterns')).toBeVisible();
   await expect(
-    page.locator('.weak-area-list').getByText(api.document.filename).first(),
+    page.locator('.weak-area-list').getByText(api.source.filename).first(),
   ).toBeVisible();
 
   const summary = api.wrongAnswerSummary();
@@ -470,7 +470,7 @@ export async function startWrongAnswerSummaryWeakAreaRetry(
   page: Page,
   api: MockCertPrepApi,
   area: {
-    readonly documentId: string;
+    readonly sourceId: string;
     readonly citationPage: number;
   },
 ): Promise<void> {
@@ -478,7 +478,7 @@ export async function startWrongAnswerSummaryWeakAreaRetry(
     .wrongAnswers()
     .filter(
       (wrongAnswer) =>
-        wrongAnswer.document_id === area.documentId &&
+        wrongAnswer.source_id === area.sourceId &&
         wrongAnswer.citation_page === area.citationPage,
     )
     .map((wrongAnswer) => wrongAnswer.attempt_id);

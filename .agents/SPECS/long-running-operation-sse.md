@@ -12,7 +12,7 @@ state, and non-streaming consumers.
 
 This slice covers:
 
-- document upload/processing operations;
+- source upload/processing operations;
 - background question generation jobs;
 - manual question generations;
 - HTTP LLM installation jobs (Ollama and its model).
@@ -41,10 +41,10 @@ All endpoints require the same bearer authentication as the REST API, accept
 
 | Endpoint | Event name | Data snapshot |
 | --- | --- | --- |
-| `GET /projects/{project_id}/document-operations/{operation_id}/events` | `document-operation` | document operation plus current document when available |
-| `GET /projects/{project_id}/documents/{document_id}/document-operation/events` | `document-operation` | active document operation plus current document |
-| `GET /projects/{project_id}/documents/{document_id}/question-jobs/events` | `question-jobs` | `{ "items": QuestionGenerationJobRead[] }` |
-| `GET /projects/{project_id}/documents/{document_id}/question-generations/{operation_id}/events` | `question-generation` | manual question generation |
+| `GET /projects/{project_id}/source-operations/{operation_id}/events` | `source-operation` | source operation plus current source when available |
+| `GET /projects/{project_id}/sources/{source_id}/source-operation/events` | `source-operation` | active source operation plus current source |
+| `GET /projects/{project_id}/sources/{source_id}/question-jobs/events` | `question-jobs` | `{ "items": QuestionGenerationJobRead[] }` |
+| `GET /projects/{project_id}/sources/{source_id}/question-generations/{operation_id}/events` | `question-generation` | manual question generation |
 | `GET /llm/installations/{job_id}/events` | `llm-installation` | LLM installation snapshot |
 
 Each connection emits monotonically increasing stream-local SSE `id` values;
@@ -99,7 +99,7 @@ duplicated retry/timer state), and SSE generators that poll SQLite on a timer
   connection completes.
 - A client unsubscribe or abort must not cancel or alter server-side work.
 - Malformed or oversized SSE frames must fail closed on the client.
-- Unknown operation/job/project/document IDs must retain existing 404 behavior.
+- Unknown operation/job/project/source IDs must retain existing 404 behavior.
 - Runtime jobs may be evicted from the in-memory manager; their existing
   snapshot error semantics remain unchanged.
 - A reconnect receives the current snapshot and may skip intermediate states;
@@ -108,14 +108,14 @@ duplicated retry/timer state), and SSE generators that poll SQLite on a timer
 ## Acceptance Criteria
 
 - No production Angular code in the scoped HTTP flows uses a timer to refresh
-  an operation/job/document status.
+  an operation/job/source status.
 - Each scoped operation has an authenticated SSE endpoint with the documented
   event name and snapshot shape.
 - A database state transition wakes the matching stream without a client timer.
 - Unrelated database transitions do not produce duplicate operation snapshots.
 - Terminal streams emit one terminal frame and close.
 - Client unsubscribe aborts the underlying fetch/reader.
-- Document, question, runtime, and model store tests prove live snapshot handling,
+- Source, question, runtime, and model store tests prove live snapshot handling,
   context cleanup, terminal cleanup, and stream errors.
 - Existing REST command/snapshot behavior and Capture Workbench SSE behavior
   remain green.

@@ -34,7 +34,7 @@ def _schema(*, request_required: bool = True) -> dict:
                     "properties": {"value": {"type": "string"}},
                     "required": ["value"],
                 },
-                "DocumentOperationStatus": {
+                "SourceOperationStatus": {
                     "type": "string",
                     "enum": ["queued", "running", "canceled"],
                 },
@@ -228,7 +228,7 @@ def test_generated_client_conditionally_forwards_headers_and_abort_signal() -> N
 def test_generated_client_preserves_openapi_enum_literals() -> None:
     output = render_typescript(_schema())
 
-    assert 'DocumentOperationStatus: "queued" | "running" | "canceled";' in output
+    assert 'SourceOperationStatus: "queued" | "running" | "canceled";' in output
     assert 'QuestionGenerationJobStatus: "pending" | "running" | "canceled";' in output
     assert 'ManualQuestionGenerationStatus: "queued" | "running" | "canceled";' in output
     assert 'LLMInstallationStatus: "queued" | "running" | "canceled";' in output

@@ -21,7 +21,7 @@ export interface LazyRuntimePhaseSnapshot {
   readonly pythonBackendConsentCompleted?: boolean;
   readonly backendConfigurationChanged?: boolean;
   readonly priorBackendAccessRejected?: boolean;
-  readonly persistedDocumentVisible?: boolean;
+  readonly persistedSourceVisible?: boolean;
 }
 
 export interface LazyCaptureRuntimeJourney {
@@ -137,10 +137,10 @@ export function assertLazyCaptureRuntimeJourney(
     journey.relaunchedRunningPersisted.captureStatus !== 'running' ||
     journey.relaunchedRunningPersisted.captureProcesses.length === 0 ||
     journey.relaunchedRunningPersisted.captureListenerPorts.length === 0 ||
-    journey.relaunchedRunningPersisted.persistedDocumentVisible !== true
+    journey.relaunchedRunningPersisted.persistedSourceVisible !== true
   ) {
     throw new Error(
-      'The second explicit Start must expose the persisted document with an owned sidecar listener.',
+      'The second explicit Start must expose the persisted source with an owned sidecar listener.',
     );
   }
 

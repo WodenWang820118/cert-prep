@@ -32,17 +32,17 @@ class InstallerUnavailable(BackendError):
     """An installer or download cannot run."""
 
 
-class DocumentOperationConflictError(BackendError):
-    """Raised when an operation id or document already belongs to other work."""
+class SourceOperationConflictError(BackendError):
+    """Raised when an operation id or source already belongs to other work."""
 
 
-class DocumentProcessingCanceledError(BackendError):
-    """Raised when canceled document work reaches a persistence checkpoint."""
+class SourceProcessingCanceledError(BackendError):
+    """Raised when canceled source work reaches a persistence checkpoint."""
 
 
 class OperationNotCancellableError(BackendError):
     """Raised when work has entered a non-interruptible commit phase."""
 
 
-class DocumentOperationStateError(BackendError):
-    """Raised when a document operation cannot perform the requested transition."""
+class SourceOperationStateError(BackendError):
+    """Raised when a source operation cannot perform the requested transition."""

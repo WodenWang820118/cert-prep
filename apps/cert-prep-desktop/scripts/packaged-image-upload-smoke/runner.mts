@@ -34,7 +34,7 @@ import {
   ensureCaptureRuntimeReady,
   installPythonRuntimeIfNeeded,
 } from '../packaged-flow-smoke/runtime-install-flow.mts';
-import { waitForUploadDocumentResponse } from '../packaged-flow-smoke/question-generation-observer-api.mts';
+import { waitForUploadSourceResponse } from '../packaged-flow-smoke/question-generation-observer-api.mts';
 import { errorMessage, isRecord } from '../packaged-flow-smoke/text-utils.mts';
 import {
   evaluateOcrTruth,
@@ -49,7 +49,7 @@ import type {
   SmokeMetrics,
   SmokeOptions,
   SmokeRunState,
-  UploadedDocumentRef,
+  UploadedSourceRef,
 } from '../packaged-flow-smoke/types.mts';
 import {
   installProcessShutdownCleanup,
@@ -62,9 +62,9 @@ import {
   PACKAGED_STATIC_IMAGE_HEIGHT,
   PACKAGED_STATIC_IMAGE_WIDTH,
   packagedStaticImage,
-  type PackagedImageDocumentEvidence,
-  waitForExpectedOcrImageDocument,
-  waitForExpectedTerminalImageDocument,
+  type PackagedImageSourceEvidence,
+  waitForExpectedOcrImageSource,
+  waitForExpectedTerminalImageSource,
 } from './image-contract.mts';
 
 export interface PackagedImageUploadSmokeEvidence {
@@ -82,7 +82,7 @@ export interface PackagedImageUploadSmokeEvidence {
     readonly width?: number;
     readonly height?: number;
   };
-  readonly document: PackagedImageDocumentEvidence;
+  readonly source: PackagedImageSourceEvidence;
   readonly ocrTruth?: OcrTruthEvaluation;
   readonly ocrSemanticEvidence?: PrivacySafeOcrSemanticEvidence;
   readonly screenshots: readonly string[];
@@ -169,7 +169,7 @@ export async function runPackagedImageUploadSmoke(
     },
   });
 
-  let document: PackagedImageDocumentEvidence | null = null;
+  let source: PackagedImageSourceEvidence | null = null;
   let ocrTruth: OcrTruthEvaluation | undefined;
   let ocrSemanticEvidence: PrivacySafeOcrSemanticEvidence | undefined;
   let primaryError: unknown = null;
@@ -195,7 +195,7 @@ export async function runPackagedImageUploadSmoke(
       options.languageHint ?? 'auto',
       options.ocrTruth,
     );
-    document = imageResult.document;
+    source = imageResult.source;
     ocrTruth = imageResult.ocrTruth;
     if (ocrTruth && options.ocrTruth && imageResult.actualPages) {
       ocrSemanticEvidence = serializePrivacySafeOcrSemanticEvidence({
@@ -239,9 +239,9 @@ export async function runPackagedImageUploadSmoke(
       'Packaged image upload cleanup did not finish without residue.',
     );
   }
-  if (!document && primaryError === null) {
+  if (!source && primaryError === null) {
     primaryError = new Error(
-      'Packaged image upload did not produce document evidence.',
+      'Packaged image upload did not produce source evidence.',
     );
   }
   if (primaryError !== null || cleanupError !== null) {
@@ -271,9 +271,9 @@ export async function runPackagedImageUploadSmoke(
     cdpPort: true,
     temporaryAppData: true,
   };
-  if (document === null) {
+  if (source === null) {
     throw new Error(
-      'Packaged image upload document evidence was unexpectedly absent.',
+      'Packaged image upload source evidence was unexpectedly absent.',
     );
   }
 
@@ -291,7 +291,7 @@ export async function runPackagedImageUploadSmoke(
           }
         : {}),
     },
-    document,
+    source,
     ...(ocrTruth ? { ocrTruth } : {}),
     ...(ocrSemanticEvidence ? { ocrSemanticEvidence } : {}),
     screenshots: run.metrics.screenshots,
@@ -319,7 +319,7 @@ async function uploadAndVerifyImage(
   languageHint: string,
   ocrTruth: PackagedImageUploadSmokeOptions['ocrTruth'],
 ): Promise<{
-  readonly document: PackagedImageDocumentEvidence;
+  readonly source: PackagedImageSourceEvidence;
   readonly textAnchors?: ImageTextAnchorEvidence;
   readonly ocrTruth?: OcrTruthEvaluation;
   readonly actualPages?: readonly OcrActualPage[];
@@ -341,19 +341,19 @@ async function uploadAndVerifyImage(
   );
   await screenshot(run, 'static-image-selected');
 
-  const uploadResponse = waitForUploadDocumentResponse(run);
+  const uploadResponse = waitForUploadSourceResponse(run);
   await clickButtonText(run, 'Upload files', { timeout: 120_000 });
-  const uploadedDocument = await uploadResponse;
-  if (!uploadedDocument) {
+  const uploadedSource = await uploadResponse;
+  if (!uploadedSource) {
     throw new Error('Packaged image upload response was not captured.');
   }
-  run.uploadedDocument = uploadedDocument;
+  run.uploadedSource = uploadedSource;
 
-  const readUploadedDocument = () => readDocument(run, uploadedDocument);
-  const document = expectedTextIncludes?.length
-    ? await waitForExpectedOcrImageDocumentWithOneRetry(
+  const readUploadedSource = () => readSource(run, uploadedSource);
+  const source = expectedTextIncludes?.length
+    ? await waitForExpectedOcrImageSourceWithOneRetry(
         run,
-        readUploadedDocument,
+        readUploadedSource,
         {
           timeoutMs,
           expectation: {
@@ -362,22 +362,22 @@ async function uploadAndVerifyImage(
           },
         },
       )
-    : await waitForExpectedTerminalImageDocument(readUploadedDocument, {
+    : await waitForExpectedTerminalImageSource(readUploadedSource, {
         timeoutMs,
       });
   if (
-    document.id !== uploadedDocument.documentId ||
-    document.project_id !== uploadedDocument.projectId
+    source.id !== uploadedSource.sourceId ||
+    source.project_id !== uploadedSource.projectId
   ) {
     throw new Error(
-      'Packaged image terminal evidence did not match the captured upload document.',
+      'Packaged image terminal evidence did not match the captured upload source.',
     );
   }
   let textAnchors: ImageTextAnchorEvidence | undefined;
   let truthEvaluation: OcrTruthEvaluation | undefined;
   let actualPages: readonly OcrActualPage[] | undefined;
   if (expectedTextIncludes?.length) {
-    const chunks = await readDocumentChunks(run, uploadedDocument);
+    const chunks = await readSourceChunks(run, uploadedSource);
     textAnchors = inspectExpectedTextAnchors(chunks, expectedTextIncludes);
     if (textAnchors.missing.length > 0) {
       throw new Error(
@@ -406,19 +406,19 @@ async function uploadAndVerifyImage(
   }
   log(
     run,
-    `image completed status=${document.status} pages=${document.processed_page_count}/${document.page_count} chunks=${document.chunks_count}`,
+    `image completed status=${source.status} pages=${source.processed_page_count}/${source.page_count} chunks=${source.chunks_count}`,
   );
   return {
-    document,
+    source,
     textAnchors,
     ocrTruth: truthEvaluation,
     actualPages,
   };
 }
 
-async function waitForExpectedOcrImageDocumentWithOneRetry(
+async function waitForExpectedOcrImageSourceWithOneRetry(
   run: SmokeRunState,
-  readDocument: () => Promise<unknown>,
+  readSource: () => Promise<unknown>,
   options: {
     readonly timeoutMs: number;
     readonly expectation: {
@@ -426,9 +426,9 @@ async function waitForExpectedOcrImageDocumentWithOneRetry(
       readonly sha256: string;
     };
   },
-): Promise<PackagedImageDocumentEvidence> {
+): Promise<PackagedImageSourceEvidence> {
   try {
-    return await waitForExpectedOcrImageDocument(readDocument, options);
+    return await waitForExpectedOcrImageSource(readSource, options);
   } catch (error) {
     if (
       !(error instanceof Error) ||
@@ -445,45 +445,45 @@ async function waitForExpectedOcrImageDocumentWithOneRetry(
       'JPEG OCR reached extraction_failed during the packaged image journey; retrying the product retry-parsing action once.',
     );
     await retry.click({ timeout: 30_000 });
-    await waitForImageDocumentToLeaveFailure(readDocument, 30_000);
-    return await waitForExpectedOcrImageDocument(readDocument, options);
+    await waitForImageSourceToLeaveFailure(readSource, 30_000);
+    return await waitForExpectedOcrImageSource(readSource, options);
   }
 }
 
-async function waitForImageDocumentToLeaveFailure(
-  readDocument: () => Promise<unknown>,
+async function waitForImageSourceToLeaveFailure(
+  readSource: () => Promise<unknown>,
   timeoutMs: number,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const latest = await readDocument();
+    const latest = await readSource();
     if (isRecord(latest) && latest.status !== 'extraction_failed') return;
     await new Promise<void>((resolve) => setTimeout(resolve, 250));
   }
   throw new Error('JPEG OCR retry did not leave the initial extraction_failed state.');
 }
 
-async function readDocument(
+async function readSource(
   run: SmokeRunState,
-  uploadedDocument: UploadedDocumentRef,
+  uploadedSource: UploadedSourceRef,
 ): Promise<unknown> {
   const response = await activePage(run).request.get(
-    `${uploadedDocument.apiBaseUrl}/projects/${encodeURIComponent(uploadedDocument.projectId)}/documents/${encodeURIComponent(uploadedDocument.documentId)}`,
+    `${uploadedSource.apiBaseUrl}/projects/${encodeURIComponent(uploadedSource.projectId)}/sources/${encodeURIComponent(uploadedSource.sourceId)}`,
     {
-      headers: uploadedDocument.authorization
-        ? { Authorization: uploadedDocument.authorization }
+      headers: uploadedSource.authorization
+        ? { Authorization: uploadedSource.authorization }
         : undefined,
       timeout: 10_000,
     },
   );
   if (!response.ok()) {
     throw new Error(
-      `Packaged image document poll returned HTTP ${response.status()}.`,
+      `Packaged image source poll returned HTTP ${response.status()}.`,
     );
   }
   const payload = await response.json().catch(() => null);
   if (!isRecord(payload)) {
-    throw new Error('Packaged image document poll was not valid JSON.');
+    throw new Error('Packaged image source poll was not valid JSON.');
   }
   return payload;
 }
@@ -543,15 +543,15 @@ function sha256File(path: string): string {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
-async function readDocumentChunks(
+async function readSourceChunks(
   run: SmokeRunState,
-  uploadedDocument: UploadedDocumentRef,
+  uploadedSource: UploadedSourceRef,
 ): Promise<readonly Record<string, unknown>[]> {
   const response = await activePage(run).request.get(
-    `${uploadedDocument.apiBaseUrl}/projects/${encodeURIComponent(uploadedDocument.projectId)}/documents/${encodeURIComponent(uploadedDocument.documentId)}/chunks`,
+    `${uploadedSource.apiBaseUrl}/projects/${encodeURIComponent(uploadedSource.projectId)}/sources/${encodeURIComponent(uploadedSource.sourceId)}/chunks`,
     {
-      headers: uploadedDocument.authorization
-        ? { Authorization: uploadedDocument.authorization }
+      headers: uploadedSource.authorization
+        ? { Authorization: uploadedSource.authorization }
         : undefined,
       timeout: 10_000,
     },

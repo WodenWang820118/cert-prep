@@ -61,22 +61,22 @@ def test_inference_paths_and_saved_attribution(tmp_path, path, enabled, text, ca
         settings=settings,
         llm_provider=provider,
         capture_runtime_client=TestCaptureRuntimeClient(),
-        document_processing_async_jobs=False,
+        source_processing_async_jobs=False,
         background_question_jobs=False,
     )) as client:
         project_id = client.post("/projects", headers=HEADERS, json={"name": "讀音"}).json()["id"]
-        document = client.post(
-            f"/projects/{project_id}/documents", headers=HEADERS,
+        source = client.post(
+            f"/projects/{project_id}/sources", headers=HEADERS,
             files={"file": ("source.pdf", minimal_pdf("Reference page."), "application/pdf")},
         ).json()
-        document_id = document["id"]
+        source_id = source["id"]
         chunk = client.get(
-            f"/projects/{project_id}/documents/{document_id}/chunks", headers=HEADERS,
+            f"/projects/{project_id}/sources/{source_id}/chunks", headers=HEADERS,
         ).json()["items"][0]
         database = client.app.state.database
         with database.connect() as connection:
             connection.execute(
-                "UPDATE document_chunks SET text = ?, raw_text = ? WHERE id = ?",
+                "UPDATE source_chunks SET text = ?, raw_text = ? WHERE id = ?",
                 (text, text, chunk["id"]),
             )
         manager = client.app.state.question_job_scheduler
@@ -94,12 +94,12 @@ def test_inference_paths_and_saved_attribution(tmp_path, path, enabled, text, ca
         else:
             if path == "background":
                 settings.question_jobs_on_upload = True
-                jobs = manager.enqueue_document(database, project_id=project_id, document_id=document_id)
+                jobs = manager.enqueue_source(database, project_id=project_id, source_id=source_id)
                 assert len(jobs) == 1
                 attribution = jobs[0]
             else:
                 attribution = manager.start_manual_operation(
-                    database, project_id=project_id, document_id=document_id, limit=1,
+                    database, project_id=project_id, source_id=source_id, limit=1,
                     strategy=QuestionGenerationStrategy.HYBRID_REASONING,
                 )
             assert attribution.status == "succeeded", attribution

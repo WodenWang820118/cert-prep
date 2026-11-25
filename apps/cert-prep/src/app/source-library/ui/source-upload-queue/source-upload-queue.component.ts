@@ -109,14 +109,14 @@ export class SourceUploadQueueComponent {
     return (
       ['queued', 'uploading', 'cancel_requested'].includes(item.status) ||
       (item.status === 'uploaded' &&
-        ['processing', 'cancel_requested'].includes(item.document?.status ?? ''))
+        ['processing', 'cancel_requested'].includes(item.source?.status ?? ''))
     );
   }
 
   protected canRetry(item: SourceUploadQueueViewModel['items'][number]): boolean {
     return (
       item.status === 'status_unavailable' ||
-      (item.document === null && ['failed', 'canceled'].includes(item.status))
+      (item.source === null && ['failed', 'canceled'].includes(item.status))
     );
   }
 }

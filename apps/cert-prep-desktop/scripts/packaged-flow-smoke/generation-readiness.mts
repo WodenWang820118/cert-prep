@@ -229,7 +229,7 @@ export function projectApiRefMatchesResponse(
   );
 }
 
-export function isProjectDocumentsCollectionResponse(
+export function isProjectSourcesCollectionResponse(
   projectApi: ProjectApiRef | null,
   response: Response,
 ): boolean {
@@ -243,7 +243,7 @@ export function isProjectDocumentsCollectionResponse(
   try {
     return (
       new URL(response.url()).pathname ===
-      `/projects/${encodeURIComponent(projectApi.projectId)}/documents`
+      `/projects/${encodeURIComponent(projectApi.projectId)}/sources`
     );
   } catch {
     return false;

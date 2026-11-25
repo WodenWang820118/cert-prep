@@ -100,8 +100,8 @@ def _page_question_text(chunk: SourceChunk) -> str:
 
 def _continued_question(left: SourceChunk, right: SourceChunk) -> ParsedQuestionBlock | None:
     if (
-        not left.document_id
-        or left.document_id != right.document_id
+        not left.source_id
+        or left.source_id != right.source_id
         or right.page_number != left.page_number + 1
         or right.chunk_index != left.chunk_index + 1
         or _is_notice_chunk(left)

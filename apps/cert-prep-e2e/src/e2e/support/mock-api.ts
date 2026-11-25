@@ -2,7 +2,7 @@ import type { Page, Route } from '@playwright/test';
 import type {
   DevicePreferenceRead,
   DevicePreferenceUpdate,
-  DocumentRead,
+  SourceRead,
   HealthResponse,
   LLMHealthRead,
   LLMProviderSelectionRead,
@@ -28,7 +28,7 @@ export const devToken = 'cert-prep-local-dev-token';
 
 export type CompleteQuestion = QuestionRead & {
   readonly answer: string;
-  readonly document_id: string;
+  readonly source_id: string;
   readonly rationale: string;
 };
 
@@ -47,22 +47,22 @@ export interface MockUploadedSourceFile {
 export interface MockCertPrepApi {
   readonly project: ProjectRead;
   readonly secondaryProject: ProjectRead;
-  readonly document: DocumentRead;
-  readonly secondaryDocument: DocumentRead;
-  readonly documents: readonly DocumentRead[];
+  readonly source: SourceRead;
+  readonly secondarySource: SourceRead;
+  readonly sources: readonly SourceRead[];
   readonly question: CompleteQuestionWithExcerpt;
   readonly secondaryQuestion: CompleteQuestionWithExcerpt;
   readonly questions: readonly QuestionRead[];
   readonly playableQuestions: readonly CompleteQuestion[];
   readonly secondaryPlayableQuestions: readonly CompleteQuestion[];
   readonly incompleteQuestions: readonly QuestionRead[];
-  readonly wholeSourceDocument: DocumentRead;
+  readonly wholeSource: SourceRead;
   attempts(projectId?: string): readonly PracticeAttemptRead[];
   currentSession(projectId?: string): PracticeSessionRead | null;
   holdUpload(filename: string): void;
   markRequestLog(): number;
-  playableQuestionsForDocument(
-    documentId: string,
+  playableQuestionsForSource(
+    sourceId: string,
     projectId?: string,
   ): readonly CompleteQuestion[];
   practiceSessionPayload(projectId?: string): PracticeSessionCreate | null;
@@ -72,7 +72,7 @@ export interface MockCertPrepApi {
   releaseUpload(filename: string): void;
   seenPaths(): Set<string>;
   startedUploads(): readonly string[];
-  uploadedDocuments(projectId?: string): readonly DocumentRead[];
+  uploadedSources(projectId?: string): readonly SourceRead[];
   uploadedSourceFiles(projectId?: string): readonly MockUploadedSourceFile[];
   wrongAnswerExplanations(
     projectId?: string,
@@ -100,21 +100,21 @@ interface MockUploadHold {
 
 interface MockProjectState {
   readonly project: ProjectRead;
-  readonly document: DocumentRead;
-  readonly documents: readonly DocumentRead[];
+  readonly source: SourceRead;
+  readonly sources: readonly SourceRead[];
   readonly question: CompleteQuestionWithExcerpt;
   readonly questions: readonly QuestionRead[];
   readonly playableQuestions: readonly CompleteQuestion[];
   readonly incompleteQuestions: readonly QuestionRead[];
-  readonly wholeSourceDocument: DocumentRead;
-  readonly uploadedDocuments: DocumentRead[];
+  readonly wholeSource: SourceRead;
+  readonly uploadedSources: SourceRead[];
   readonly uploadedSourceFiles: MockUploadedSourceFile[];
   readonly sessions: Map<string, PracticeSessionRead>;
   readonly practiceSessionPayloads: PracticeSessionCreate[];
   readonly attempts: PracticeAttemptRead[];
   readonly wrongAnswerExplanations: MockWrongAnswerExplanationRead[];
   readonly wrongAnswers: WrongAnswerRead[];
-  documentUploaded: boolean;
+  sourceUploaded: boolean;
   currentSession: PracticeSessionRead | null;
   practiceSessionPayload: PracticeSessionCreate | null;
   sessionCounter: number;
@@ -137,38 +137,38 @@ export async function installMockCertPrepApi(
     updated_at: '2026-06-09T00:00:00Z',
   } satisfies ProjectRead;
 
-  const documents = [
-    documentRead(project.id, {
-      id: 'document-1',
+  const sources = [
+    sourceRead(project.id, {
+      id: 'source-1',
       filename: 'jlpt-n1-vocabulary.pdf',
-      sha256: 'document-1-sha',
+      sha256: 'source-1-sha',
       page_count: 3,
       processed_page_count: 3,
       question_count: 4,
       chunks_count: 3,
     }),
-    documentRead(project.id, {
-      id: 'document-2',
+    sourceRead(project.id, {
+      id: 'source-2',
       filename: 'jlpt-n1-reading.pdf',
-      sha256: 'document-2-sha',
+      sha256: 'source-2-sha',
       page_count: 4,
       processed_page_count: 4,
       question_count: 3,
       chunks_count: 4,
     }),
-    documentRead(project.id, {
-      id: 'document-3',
+    sourceRead(project.id, {
+      id: 'source-3',
       filename: 'jlpt-n1-incomplete-outline.pdf',
-      sha256: 'document-3-sha',
+      sha256: 'source-3-sha',
       page_count: 1,
       processed_page_count: 1,
       question_count: 1,
       chunks_count: 1,
     }),
-  ] as const satisfies readonly DocumentRead[];
+  ] as const satisfies readonly SourceRead[];
 
   const questions = [
-    completeQuestion(project.id, documents[0].id, {
+    completeQuestion(project.id, sources[0].id, {
       id: 'question-1',
       chunk_id: 'chunk-1',
       question: 'Which access control principle is cited by the source?',
@@ -185,7 +185,7 @@ export async function installMockCertPrepApi(
       source_order: 10001,
       source_question_number: '1',
     }),
-    completeQuestion(project.id, documents[0].id, {
+    completeQuestion(project.id, sources[0].id, {
       id: 'question-2',
       answer_key_source: 'source',
       chunk_id: 'chunk-2',
@@ -203,7 +203,7 @@ export async function installMockCertPrepApi(
       source_order: 10002,
       source_question_number: '2',
     }),
-    completeQuestion(project.id, documents[0].id, {
+    completeQuestion(project.id, sources[0].id, {
       id: 'question-source-excerpt-only',
       chunk_id: 'chunk-source-only',
       question: 'Which evidence is enough when page metadata is unavailable?',
@@ -222,24 +222,24 @@ export async function installMockCertPrepApi(
       source_order: 10003,
       source_question_number: '3',
     }),
-    completeQuestion(project.id, documents[1].id, {
+    completeQuestion(project.id, sources[1].id, {
       id: 'question-3',
       chunk_id: 'chunk-3',
       question: 'Which study action best matches a whole source review?',
       choices: [
-        'Complete every question from the selected document',
+        'Complete every question from the selected source',
         'Mix questions from unrelated PDFs',
         'Skip questions with citations',
         'Answer only the first item',
       ],
-      answer: 'Complete every question from the selected document',
-      rationale: 'Whole source mode is document-scoped.',
+      answer: 'Complete every question from the selected source',
+      rationale: 'Whole source mode is source-scoped.',
       citation_page: 1,
-      source_excerpt: 'Whole source sessions use questions from one document.',
+      source_excerpt: 'Whole source sessions use questions from one source.',
       source_order: 20001,
       source_question_number: '1',
     }),
-    completeQuestion(project.id, documents[1].id, {
+    completeQuestion(project.id, sources[1].id, {
       id: 'question-4',
       chunk_id: 'chunk-4',
       question: 'What does the source say to preserve after a wrong answer?',
@@ -258,7 +258,7 @@ export async function installMockCertPrepApi(
       source_order: 20002,
       source_question_number: '2',
     }),
-    incompleteQuestion(project.id, documents[0].id, {
+    incompleteQuestion(project.id, sources[0].id, {
       id: 'question-missing-answer',
       chunk_id: 'chunk-incomplete-1',
       question: 'Question missing an answer',
@@ -268,7 +268,7 @@ export async function installMockCertPrepApi(
       citation_page: 3,
       source_order: 10003,
     }),
-    incompleteQuestion(project.id, documents[1].id, {
+    incompleteQuestion(project.id, sources[1].id, {
       id: 'question-answer-not-in-choices',
       chunk_id: 'chunk-incomplete-2',
       question: 'Question with an answer outside the choices',
@@ -279,7 +279,7 @@ export async function installMockCertPrepApi(
       citation_page: 4,
       source_order: 20003,
     }),
-    incompleteQuestion(project.id, documents[2].id, {
+    incompleteQuestion(project.id, sources[2].id, {
       id: 'question-missing-source',
       chunk_id: 'chunk-incomplete-3',
       question: 'Question missing source grounding',
@@ -307,26 +307,26 @@ export async function installMockCertPrepApi(
     created_at: '2026-06-10T00:00:00Z',
     updated_at: '2026-06-10T00:00:00Z',
   } satisfies ProjectRead;
-  const secondaryDocuments = [
-    documentRead(secondaryProject.id, {
-      id: 'document-4',
+  const secondarySources = [
+    sourceRead(secondaryProject.id, {
+      id: 'source-4',
       filename: 'jlpt-n2-grammar.pdf',
-      sha256: 'document-4-sha',
+      sha256: 'source-4-sha',
       page_count: 2,
       processed_page_count: 2,
       question_count: 1,
       chunks_count: 2,
     }),
-  ] as const satisfies readonly DocumentRead[];
+  ] as const satisfies readonly SourceRead[];
   const secondaryQuestions = [
-    completeQuestion(secondaryProject.id, secondaryDocuments[0].id, {
+    completeQuestion(secondaryProject.id, secondarySources[0].id, {
       id: 'question-project-2-1',
       chunk_id: 'chunk-project-2-1',
       question: 'Which grammar review habit belongs to the second project?',
       choices: [
         'Keep the second project isolated',
         'Reuse the first project session',
-        'Submit the old PDF document id',
+        'Submit the old PDF source id',
         'Mix unrelated review cards',
       ],
       answer: 'Keep the second project isolated',
@@ -347,23 +347,23 @@ export async function installMockCertPrepApi(
 
   const primaryState = createMockProjectState({
     project,
-    document: documents[0],
-    documents,
+    source: sources[0],
+    sources,
     question: primaryQuestion,
     questions,
     playableQuestions,
     incompleteQuestions,
-    wholeSourceDocument: documents[0],
+    wholeSource: sources[0],
   });
   const secondaryState = createMockProjectState({
     project: secondaryProject,
-    document: secondaryDocuments[0],
-    documents: secondaryDocuments,
+    source: secondarySources[0],
+    sources: secondarySources,
     question: secondaryQuestion,
     questions: secondaryQuestions,
     playableQuestions: secondaryPlayableQuestions,
     incompleteQuestions: [],
-    wholeSourceDocument: secondaryDocuments[0],
+    wholeSource: secondarySources[0],
   });
   const projectStates = new Map(
     [primaryState, secondaryState].map((state) => [state.project.id, state]),
@@ -559,50 +559,50 @@ export async function installMockCertPrepApi(
       await fulfillJson(
         route,
         200,
-        projectState.documentUploaded
+        projectState.sourceUploaded
           ? { items: projectState.questions }
           : { items: [] },
       );
       return;
     }
 
-    if (method === 'GET' && path === `/projects/${projectId}/documents`) {
+    if (method === 'GET' && path === `/projects/${projectId}/sources`) {
       await fulfillJson(
         route,
         200,
-        projectState.documentUploaded
-          ? { items: visibleProjectDocuments(projectState) }
+        projectState.sourceUploaded
+          ? { items: visibleProjectSources(projectState) }
           : { items: [] },
       );
       return;
     }
 
-    const requestedDocument = visibleProjectDocuments(projectState).find(
-      (document) => path === `/projects/${projectId}/documents/${document.id}`,
+    const requestedSource = visibleProjectSources(projectState).find(
+      (source) => path === `/projects/${projectId}/sources/${source.id}`,
     );
-    if (method === 'GET' && requestedDocument) {
-      await fulfillJson(route, 200, requestedDocument);
+    if (method === 'GET' && requestedSource) {
+      await fulfillJson(route, 200, requestedSource);
       return;
     }
 
-    const questionWorkDocument = visibleProjectDocuments(projectState).find((document) => {
-      const prefix = `/projects/${projectId}/documents/${document.id}/`;
+    const questionWorkSource = visibleProjectSources(projectState).find((source) => {
+      const prefix = `/projects/${projectId}/sources/${source.id}/`;
       return path.startsWith(`${prefix}question-jobs`) ||
         path.startsWith(`${prefix}question-generations`);
     });
-    if (questionWorkDocument !== undefined) {
-      const documentPath = `/projects/${projectId}/documents/${questionWorkDocument.id}`;
-      const jobsPath = `${documentPath}/question-jobs`;
-      const generationsPath = `${documentPath}/question-generations`;
+    if (questionWorkSource !== undefined) {
+      const sourcePath = `/projects/${projectId}/sources/${questionWorkSource.id}`;
+      const jobsPath = `${sourcePath}/question-jobs`;
+      const generationsPath = `${sourcePath}/question-generations`;
       const storedQuestions = projectState.questions.filter(
-        (question) => question.document_id === questionWorkDocument.id,
+        (question) => question.source_id === questionWorkSource.id,
       );
       if (method === 'GET' && (path === jobsPath || path === `${jobsPath}/events`)) {
         const payload = {
           items: storedQuestions.length === 0 ? [] : [{
-            id: `job-${questionWorkDocument.id}`,
+            id: `job-${questionWorkSource.id}`,
             project_id: projectId,
-            document_id: questionWorkDocument.id,
+            source_id: questionWorkSource.id,
             chunk_id: storedQuestions[0].chunk_id ?? 'mock-chunk',
             page_number: storedQuestions[0].citation_page ?? 1,
             strategy: 'deterministic_only',
@@ -617,8 +617,8 @@ export async function installMockCertPrepApi(
             generated_count: storedQuestions.length,
             retry_count: 0,
             last_error: null,
-            created_at: questionWorkDocument.created_at,
-            updated_at: questionWorkDocument.updated_at,
+            created_at: questionWorkSource.created_at,
+            updated_at: questionWorkSource.updated_at,
           }],
         } satisfies QuestionGenerationJobList;
         if (path === jobsPath) {
@@ -633,9 +633,9 @@ export async function installMockCertPrepApi(
         const requestBody = parseJsonBody<QuestionGenerateRequest>(request.postData());
         const limit = requestBody.limit ?? 3;
         const operation = {
-          id: `generation-${manualGenerations.size + 1}-${questionWorkDocument.id}`,
+          id: `generation-${manualGenerations.size + 1}-${questionWorkSource.id}`,
           project_id: projectId,
-          document_id: questionWorkDocument.id,
+          source_id: questionWorkSource.id,
           limit,
           strategy: requestBody.strategy ?? 'hybrid_reasoning',
           status: 'succeeded',
@@ -644,8 +644,8 @@ export async function installMockCertPrepApi(
           provider: 'mock',
           model: 'mock-model',
           generated_count: Math.min(limit, storedQuestions.length),
-          created_at: questionWorkDocument.created_at,
-          updated_at: questionWorkDocument.updated_at,
+          created_at: questionWorkSource.created_at,
+          updated_at: questionWorkSource.updated_at,
         } satisfies ManualQuestionGenerationRead;
         manualGenerations.set(`${generationsPath}/${operation.id}`, operation);
         await fulfillJson(route, 202, {
@@ -667,11 +667,11 @@ export async function installMockCertPrepApi(
       }
     }
 
-    const chunksDocument = visibleProjectDocuments(projectState).find(
-      (document) =>
-        path === `/projects/${projectId}/documents/${document.id}/chunks`,
+    const chunksSource = visibleProjectSources(projectState).find(
+      (source) =>
+        path === `/projects/${projectId}/sources/${source.id}/chunks`,
     );
-    if (method === 'GET' && chunksDocument) {
+    if (method === 'GET' && chunksSource) {
       await fulfillJson(route, 200, { items: [] });
       return;
     }
@@ -711,7 +711,7 @@ export async function installMockCertPrepApi(
       return;
     }
 
-    if (method === 'POST' && path === `/projects/${projectId}/documents`) {
+    if (method === 'POST' && path === `/projects/${projectId}/sources`) {
       const uploadedSourceFile = multipartUploadFile(
         request.postDataBuffer(),
         request.headers()['content-type'],
@@ -728,20 +728,20 @@ export async function installMockCertPrepApi(
       if (hold !== undefined) {
         await hold.promise;
       }
-      const uploadedDocument = nextUploadDocument(
+      const uploadedSource = nextUploadSource(
         projectState,
         uploadedSourceFile.filename,
       );
-      projectState.documentUploaded = true;
+      projectState.sourceUploaded = true;
       projectState.uploadedSourceFiles.push(uploadedSourceFile);
       if (
-        !projectState.uploadedDocuments.some(
-          (document) => document.id === uploadedDocument.id,
+        !projectState.uploadedSources.some(
+          (source) => source.id === uploadedSource.id,
         )
       ) {
-        projectState.uploadedDocuments.push(uploadedDocument);
+        projectState.uploadedSources.push(uploadedSource);
       }
-      await fulfillJson(route, 201, uploadedDocument);
+      await fulfillJson(route, 201, uploadedSource);
       return;
     }
 
@@ -844,16 +844,16 @@ export async function installMockCertPrepApi(
   return {
     project,
     secondaryProject,
-    document: documents[0],
-    secondaryDocument: secondaryDocuments[0],
-    documents,
+    source: sources[0],
+    secondarySource: secondarySources[0],
+    sources,
     question: primaryQuestion,
     secondaryQuestion,
     questions,
     playableQuestions,
     secondaryPlayableQuestions,
     incompleteQuestions,
-    wholeSourceDocument: documents[0],
+    wholeSource: sources[0],
     attempts: (projectId) => [
       ...stateFor(projectStates, projectId, lastProjectState).attempts,
     ],
@@ -870,9 +870,9 @@ export async function installMockCertPrepApi(
       uploadHolds.set(filename, { promise, release });
     },
     markRequestLog: () => requestLog.length,
-    playableQuestionsForDocument: (documentId, projectId) =>
+    playableQuestionsForSource: (sourceId, projectId) =>
       stateFor(projectStates, projectId, primaryState).playableQuestions.filter(
-        (question) => question.document_id === documentId,
+        (question) => question.source_id === sourceId,
       ),
     practiceSessionPayload: (projectId) =>
       stateFor(projectStates, projectId, lastProjectState)
@@ -893,8 +893,8 @@ export async function installMockCertPrepApi(
     },
     seenPaths: () => new Set(seenPaths),
     startedUploads: () => [...startedUploads],
-    uploadedDocuments: (projectId) => [
-      ...stateFor(projectStates, projectId, lastProjectState).uploadedDocuments,
+    uploadedSources: (projectId) => [
+      ...stateFor(projectStates, projectId, lastProjectState).uploadedSources,
     ],
     uploadedSourceFiles: (projectId) => [
       ...stateFor(projectStates, projectId, lastProjectState)
@@ -929,24 +929,24 @@ export async function installMockCertPrepApi(
 
 function createMockProjectState(args: {
   readonly project: ProjectRead;
-  readonly document: DocumentRead;
-  readonly documents: readonly DocumentRead[];
+  readonly source: SourceRead;
+  readonly sources: readonly SourceRead[];
   readonly question: CompleteQuestionWithExcerpt;
   readonly questions: readonly QuestionRead[];
   readonly playableQuestions: readonly CompleteQuestion[];
   readonly incompleteQuestions: readonly QuestionRead[];
-  readonly wholeSourceDocument: DocumentRead;
+  readonly wholeSource: SourceRead;
 }): MockProjectState {
   return {
     ...args,
-    uploadedDocuments: [],
+    uploadedSources: [],
     uploadedSourceFiles: [],
     sessions: new Map<string, PracticeSessionRead>(),
     practiceSessionPayloads: [],
     attempts: [],
     wrongAnswerExplanations: [],
     wrongAnswers: [],
-    documentUploaded: false,
+    sourceUploaded: false,
     currentSession: null,
     practiceSessionPayload: null,
     sessionCounter: 0,
@@ -954,54 +954,54 @@ function createMockProjectState(args: {
   };
 }
 
-function nextUploadDocument(
+function nextUploadSource(
   projectState: MockProjectState,
   filename: string | null,
-): DocumentRead {
+): SourceRead {
   const uploadedIds = new Set(
-    projectState.uploadedDocuments.map((document) => document.id),
+    projectState.uploadedSources.map((source) => source.id),
   );
-  const matchedDocument = projectState.documents.find(
-    (document) => document.filename === filename,
+  const matchedSource = projectState.sources.find(
+    (source) => source.filename === filename,
   );
-  if (matchedDocument !== undefined) {
-    return uploadedIds.has(matchedDocument.id)
-      ? createAdditionalUploadDocument(projectState, matchedDocument, filename)
-      : matchedDocument;
+  if (matchedSource !== undefined) {
+    return uploadedIds.has(matchedSource.id)
+      ? createAdditionalUploadSource(projectState, matchedSource, filename)
+      : matchedSource;
   }
 
-  const remainingDocument = projectState.documents.find(
-    (document) => !uploadedIds.has(document.id),
+  const remainingSource = projectState.sources.find(
+    (source) => !uploadedIds.has(source.id),
   );
 
-  if (remainingDocument !== undefined && filename === null) {
-    return remainingDocument;
+  if (remainingSource !== undefined && filename === null) {
+    return remainingSource;
   }
-  return createAdditionalUploadDocument(
+  return createAdditionalUploadSource(
     projectState,
-    remainingDocument ?? projectState.document,
+    remainingSource ?? projectState.source,
     filename,
   );
 }
 
-function createAdditionalUploadDocument(
+function createAdditionalUploadSource(
   projectState: MockProjectState,
-  baseDocument: DocumentRead,
+  baseSource: SourceRead,
   filename: string | null,
-): DocumentRead {
+): SourceRead {
   const usedIds = new Set([
-    ...projectState.documents.map((document) => document.id),
-    ...projectState.uploadedDocuments.map((document) => document.id),
+    ...projectState.sources.map((source) => source.id),
+    ...projectState.uploadedSources.map((source) => source.id),
   ]);
-  let index = projectState.uploadedDocuments.length + 1;
-  let id = `document-upload-${index}`;
+  let index = projectState.uploadedSources.length + 1;
+  let id = `source-upload-${index}`;
   while (usedIds.has(id)) {
     index += 1;
-    id = `document-upload-${index}`;
+    id = `source-upload-${index}`;
   }
 
   const extension = filename?.match(/\.([^.]+)$/u)?.[1]?.toLowerCase();
-  let sourceKind = baseDocument.source_kind ?? 'pdf';
+  let sourceKind = baseSource.source_kind ?? 'pdf';
   if (extension === 'pdf') {
     sourceKind = 'pdf';
   } else if (extension && ['jpg', 'jpeg', 'png', 'webp'].includes(extension)) {
@@ -1011,10 +1011,10 @@ function createAdditionalUploadDocument(
   }
 
   return {
-    ...baseDocument,
+    ...baseSource,
     source_kind: sourceKind,
     id,
-    filename: filename ?? `${baseDocument.filename}-upload-${index}`,
+    filename: filename ?? `${baseSource.filename}-upload-${index}`,
     sha256: `${id}-sha`,
     created_at: '2026-06-09T00:00:00Z',
     updated_at: '2026-06-09T00:00:00Z',
@@ -1181,17 +1181,17 @@ function unquoteHeaderValue(value: string): string {
     : trimmed;
 }
 
-function visibleProjectDocuments(
+function visibleProjectSources(
   projectState: MockProjectState,
-): readonly DocumentRead[] {
-  const documents = new Map(
-    projectState.documents.map((document) => [document.id, document]),
+): readonly SourceRead[] {
+  const sources = new Map(
+    projectState.sources.map((source) => [source.id, source]),
   );
-  for (const document of projectState.uploadedDocuments) {
-    documents.set(document.id, document);
+  for (const source of projectState.uploadedSources) {
+    sources.set(source.id, source);
   }
 
-  return [...documents.values()];
+  return [...sources.values()];
 }
 
 function projectStateForPath(
@@ -1231,10 +1231,10 @@ export function expectedSeenPaths(api: MockCertPrepApi): Set<string> {
     'GET /llm/requirements',
     'GET /projects',
     'POST /projects',
-    `GET /projects/${api.project.id}/documents`,
-    `POST /projects/${api.project.id}/documents`,
-    `GET /projects/${api.project.id}/documents/${api.document.id}`,
-    `GET /projects/${api.project.id}/documents/${api.document.id}/chunks`,
+    `GET /projects/${api.project.id}/sources`,
+    `POST /projects/${api.project.id}/sources`,
+    `GET /projects/${api.project.id}/sources/${api.source.id}`,
+    `GET /projects/${api.project.id}/sources/${api.source.id}/chunks`,
     `GET /projects/${api.project.id}/questions`,
     `GET /projects/${api.project.id}/practice-sessions`,
     `POST /projects/${api.project.id}/practice-sessions`,
@@ -1250,12 +1250,12 @@ export function expectedSeenPaths(api: MockCertPrepApi): Set<string> {
   ]);
 }
 
-function documentRead(
+function sourceRead(
   projectId: string,
-  overrides: Partial<DocumentRead>,
-): DocumentRead {
+  overrides: Partial<SourceRead>,
+): SourceRead {
   return {
-    id: 'document-1',
+    id: 'source-1',
     project_id: projectId,
     filename: 'jlpt-n1.pdf',
     source_kind: 'pdf',
@@ -1281,13 +1281,13 @@ function documentRead(
 
 function completeQuestion(
   projectId: string,
-  documentId: string,
+  sourceId: string,
   overrides: Partial<CompleteQuestion>,
 ): CompleteQuestion {
   return {
     id: 'question-1',
     project_id: projectId,
-    document_id: documentId,
+    source_id: sourceId,
     chunk_id: 'chunk-1',
     question: 'Which answer is supported by the cited source?',
     choices: ['A', 'B', 'C', 'D'],
@@ -1312,11 +1312,11 @@ function completeQuestion(
 
 function incompleteQuestion(
   projectId: string,
-  documentId: string,
+  sourceId: string,
   overrides: Partial<QuestionRead>,
 ): QuestionRead {
   return {
-    ...completeQuestion(projectId, documentId, {
+    ...completeQuestion(projectId, sourceId, {
       id: 'question-incomplete',
       question: 'Incomplete question',
       choices: ['Choice A', 'Choice B', 'Choice C', 'Choice D'],
@@ -1339,8 +1339,8 @@ function createPracticeSession(args: {
   readonly sessionNumber: number;
 }): PracticeSessionRead {
   const mode = args.payload.mode ?? 'random_draw';
-  const documentId =
-    mode === 'full_document' ? (args.payload.document_id ?? null) : null;
+  const sourceId =
+    mode === 'full_source' ? (args.payload.source_id ?? null) : null;
   const pool = practiceSessionPool(
     args.payload,
     args.playableQuestions,
@@ -1362,7 +1362,7 @@ function createPracticeSession(args: {
       .slice(0, Math.min(requestedCount, pool.length))
       .map(practiceSessionQuestion),
     mode,
-    document_id: documentId,
+    source_id: sourceId,
     question_count: questionIds.length,
     random_seed: args.payload.random_seed ?? 42,
     status: 'active',
@@ -1389,9 +1389,9 @@ function practiceSessionPool(
     return playableQuestions.filter((question) => questionIds.has(question.id));
   }
 
-  if (mode === 'full_document' && payload.document_id != null) {
+  if (mode === 'full_source' && payload.source_id != null) {
     return playableQuestions.filter(
-      (question) => question.document_id === payload.document_id,
+      (question) => question.source_id === payload.source_id,
     );
   }
 
@@ -1409,7 +1409,7 @@ function practiceSessionQuestion(
     rationale: question.rationale,
     citation_page: question.citation_page,
     source_excerpt: question.source_excerpt,
-    document_id: question.document_id,
+    source_id: question.source_id,
     answer_key_source: question.answer_key_source,
   };
 }
@@ -1446,7 +1446,7 @@ function createWrongAnswer(
     rationale: question.rationale,
     citation_page: question.citation_page,
     source_excerpt: question.source_excerpt,
-    document_id: question.document_id,
+    source_id: question.source_id,
     created_at: attempt.created_at,
     answer_key_source: question.answer_key_source,
   };
@@ -1522,7 +1522,7 @@ function repeatedMisses(
         {
           question_id: questionId,
           question: question.question,
-          document_id: question.document_id,
+          source_id: question.source_id,
           citation_page: question.citation_page,
           source_excerpt: question.source_excerpt,
           miss_count: missCount,
@@ -1540,10 +1540,10 @@ function wrongAnswerClusters(
     WrongAnswerSummaryRead['clusters'][number]
   >();
   for (const wrongAnswer of projectState.wrongAnswers) {
-    const key = `${wrongAnswer.document_id ?? 'none'}:${wrongAnswer.citation_page ?? 'none'}`;
+    const key = `${wrongAnswer.source_id ?? 'none'}:${wrongAnswer.citation_page ?? 'none'}`;
     const current = clusters.get(key);
     clusters.set(key, {
-      document_id: wrongAnswer.document_id,
+      source_id: wrongAnswer.source_id,
       citation_page: wrongAnswer.citation_page,
       current_wrong_count: (current?.current_wrong_count ?? 0) + 1,
       cleared_count: current?.cleared_count ?? 0,
@@ -1598,7 +1598,7 @@ function isCompletePlayableQuestion(
 
   return (
 
-    question.document_id !== null &&
+    question.source_id !== null &&
     question.answer !== null &&
     question.answer.length > 0 &&
     question.choices.includes(question.answer) &&

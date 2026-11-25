@@ -66,8 +66,8 @@
 
         <div class="review-card-meta">
           <span class="page-chip">Page {{ wrong.citation_page ?? 'n/a' }}</span>
-          @if (documentLabel(wrong.document_id); as label) {
-            <span class="document-chip">{{ label }}</span>
+          @if (sourceLabel(wrong.source_id); as label) {
+            <span class="source-chip">{{ label }}</span>
           }
         </div>
 

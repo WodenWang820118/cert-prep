@@ -1,10 +1,10 @@
 export {
   answerForVisiblePracticeQuestion,
-  captureDocumentOcrEvidence,
+  captureSourceOcrEvidence,
   captureWholeSourceSessionCreate,
   captureLlmHealth,
   observeQuestionGenerationApiResponses,
-  waitForUploadDocumentResponse,
+  waitForUploadSourceResponse,
 } from './question-generation-observer-api.mts';
 export {
   EXPECTED_BASELINE_CHUNKS,

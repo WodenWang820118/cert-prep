@@ -19,7 +19,7 @@ from cert_prep_backend.practice.domain.exceptions import (
     PracticeSessionConflict,
 )
 from cert_prep_backend.practice.domain.session import (
-    DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE,
+    SOURCE_REQUIRED_FOR_FULL_SOURCE_MESSAGE,
     PracticeQuestion,
     PracticeSession,
     PracticeSessionMode,
@@ -66,7 +66,7 @@ def start_practice(
     project_id: str,
     *,
     mode: PracticeSessionMode,
-    document_id: str | None,
+    source_id: str | None,
     question_count: int | None,
     random_seed: int | None,
     wrong_attempt_ids: Sequence[str] | None,
@@ -74,10 +74,10 @@ def start_practice(
     new_seed: Callable[[], int] = lambda: secrets.randbits(63),
 ) -> PracticeSessionDetails:
     mode = PracticeSessionMode(mode)
-    if mode is PracticeSessionMode.FULL_DOCUMENT and document_id is None:
-        raise ValidationError(DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE)
-    if mode is PracticeSessionMode.FULL_DOCUMENT:
-        store.require_document(project_id, document_id)
+    if mode is PracticeSessionMode.FULL_SOURCE and source_id is None:
+        raise ValidationError(SOURCE_REQUIRED_FOR_FULL_SOURCE_MESSAGE)
+    if mode is PracticeSessionMode.FULL_SOURCE:
+        store.require_source(project_id, source_id)
     session_id = str(uuid4())
     with store.writing() as practice:
         _require_project(practice, project_id)
@@ -88,14 +88,14 @@ def start_practice(
                 "An active practice session already exists for this project.",
                 active_session=active,
             )
-        candidates = _candidates(practice, project_id, mode, document_id, wrong_attempt_ids)
+        candidates = _candidates(practice, project_id, mode, source_id, wrong_attempt_ids)
         try:
             selection = select_questions(
                 mode,
                 [question.id for question in candidates],
                 requested_count=question_count,
                 random_seed=random_seed,
-                document_id=document_id,
+                source_id=source_id,
                 new_seed=new_seed,
             )
         except PracticeRuleViolation as exc:
@@ -241,14 +241,14 @@ def _candidates(
     practice: PracticeRepository,
     project_id: str,
     mode: PracticeSessionMode,
-    document_id: str | None,
+    source_id: str | None,
     wrong_attempt_ids: Sequence[str] | None,
 ) -> list[PracticeQuestion]:
     if mode is PracticeSessionMode.REVIEW_RETRY:
         return _retry_candidates(practice, project_id, wrong_attempt_ids)
     questions = practice.source_questions(
         project_id,
-        document_id=document_id if mode is PracticeSessionMode.FULL_DOCUMENT else None,
+        source_id=source_id if mode is PracticeSessionMode.FULL_SOURCE else None,
     )
     return [question for question in questions if question.is_playable()]
 

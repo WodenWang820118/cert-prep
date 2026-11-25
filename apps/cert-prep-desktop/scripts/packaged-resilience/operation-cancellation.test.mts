@@ -44,19 +44,19 @@ class ScriptedTransport implements JsonTransport {
 test('records a live committing question response and exact 409 rejection', async () => {
   const scenario: CancelableOperationScenario = {
     kind: 'question',
-    startPath: '/projects/project-1/documents/document-1/question-generations',
+    startPath: '/projects/project-1/sources/source-1/question-generations',
     operationPath: (operationId) =>
-      `/projects/project-1/documents/document-1/question-generations/${operationId}`,
+      `/projects/project-1/sources/source-1/question-generations/${operationId}`,
     startData: { limit: 5 },
     projectId: 'project-1',
-    documentId: 'document-1',
+    sourceId: 'source-1',
     provider: 'fake',
     model: 'fixture-question-model',
     timeoutMs: 1_000,
   };
   const scope = {
     project_id: scenario.projectId,
-    document_id: scenario.documentId,
+    source_id: scenario.sourceId,
     provider: scenario.provider,
     model: scenario.model,
   };
@@ -84,13 +84,13 @@ test('records a live committing question response and exact 409 rejection', asyn
   assert.deepEqual(
     {
       projectId: proof.projectId,
-      documentId: proof.documentId,
+      sourceId: proof.sourceId,
       provider: proof.provider,
       model: proof.model,
     },
     {
       projectId: scenario.projectId,
-      documentId: scenario.documentId,
+      sourceId: scenario.sourceId,
       provider: scenario.provider,
       model: scenario.model,
     },
@@ -237,19 +237,19 @@ test('rejects model scope drift on the durable commit response', async () => {
 test('fails fast when the commit probe terminates before committing', async () => {
   const scenario: CancelableOperationScenario = {
     kind: 'question',
-    startPath: '/projects/project-1/documents/document-1/question-generations',
+    startPath: '/projects/project-1/sources/source-1/question-generations',
     operationPath: (operationId) =>
-      `/projects/project-1/documents/document-1/question-generations/${operationId}`,
+      `/projects/project-1/sources/source-1/question-generations/${operationId}`,
     startData: { limit: 5 },
     projectId: 'project-1',
-    documentId: 'document-1',
+    sourceId: 'source-1',
     provider: 'ollama',
     model: 'qwen3.5:4b',
     timeoutMs: 1_000,
   };
   const scope = {
     project_id: scenario.projectId,
-    document_id: scenario.documentId,
+    source_id: scenario.sourceId,
     provider: scenario.provider,
     model: scenario.model,
   };

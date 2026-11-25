@@ -165,7 +165,7 @@ export async function ensureCaptureRuntimeReady(
   await page.getByRole('link', { name: 'Questions', exact: true }).click();
   await waitText(
     run,
-    /Workspace ready|Select a source document/i,
+    /Workspace ready|Select a source to begin generating questions/i,
     60_000,
     'Questions page restored after Capture Runtime start',
   );

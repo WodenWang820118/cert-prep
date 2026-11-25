@@ -236,7 +236,7 @@ test('forced crash reconnect terminates the app tree without a graceful close re
       authorization: 'Bearer stale',
       projectId: 'project-1',
     },
-    uploadedDocument: { documentId: 'document-1' },
+    uploadedSource: { sourceId: 'source-1' },
     metrics: { observations: [] },
     port: 9591,
   } as unknown as SmokeRunState;
@@ -279,7 +279,7 @@ test('forced crash reconnect terminates the app tree without a graceful close re
   assert.strictEqual(run.app, replacementApp);
   assert.equal(run.port, 9592);
   assert.equal(run.projectApi, null);
-  assert.equal(run.uploadedDocument, null);
+  assert.equal(run.uploadedSource, null);
   assert.match(
     run.metrics.observations[0] ?? '',
     /without a graceful close request/,
@@ -321,7 +321,7 @@ test('forced crash detects a captured child after it is reparented', async () =>
       authorization: 'Bearer stale',
       projectId: 'project-1',
     },
-    uploadedDocument: { documentId: 'document-1' },
+    uploadedSource: { sourceId: 'source-1' },
     metrics: { observations: [] },
     port: 9591,
   } as unknown as SmokeRunState;
@@ -388,7 +388,7 @@ test('forced crash ignores stale parent PID links from processes older than the 
       authorization: 'Bearer stale',
       projectId: 'project-1',
     },
-    uploadedDocument: { documentId: 'document-1' },
+    uploadedSource: { sourceId: 'source-1' },
     metrics: { observations: [] },
     port: 9591,
   } as unknown as SmokeRunState;

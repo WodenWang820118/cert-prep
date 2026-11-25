@@ -19,7 +19,7 @@ export function createSmokeRunState(
     port: options.cdpPort,
     processBaseline: { all: [], nodePids: new Set() },
     projectApi: null,
-    uploadedDocument: null,
+    uploadedSource: null,
     questionObservationStartedAt: null,
     questionObservationActive: false,
     questionGenerationApiPollErrorCaptured: false,

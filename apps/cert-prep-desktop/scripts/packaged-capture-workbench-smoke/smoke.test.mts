@@ -369,7 +369,7 @@ function validLazyJourney(): LazyCaptureRuntimeJourney {
       backendListenerPorts: [8423],
       captureProcesses: [identity(71, 'capture-runtime.exe')],
       captureListenerPorts: [9411],
-      persistedDocumentVisible: true,
+      persistedSourceVisible: true,
     },
     finalClose: phase('closed', false),
   };

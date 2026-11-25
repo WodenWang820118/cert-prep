@@ -64,14 +64,14 @@ export class QuestionsStore {
   readonly playableQuestions = computed(() =>
     this.questions().filter((question) => this.isPlayableQuestion(question)),
   );
-  readonly activeDocumentQuestions = computed(() => {
-    const documentId = this.sourceImport.activeDocumentId();
-    return documentId === null
+  readonly activeSourceQuestions = computed(() => {
+    const sourceId = this.sourceImport.activeSourceId();
+    return sourceId === null
       ? this.questions()
-      : this.questions().filter((question) => question.document_id === documentId);
+      : this.questions().filter((question) => question.source_id === sourceId);
   });
-  readonly activeDocumentPlayableQuestions = computed(() =>
-    this.activeDocumentQuestions().filter((question) => this.isPlayableQuestion(question)),
+  readonly activeSourcePlayableQuestions = computed(() =>
+    this.activeSourceQuestions().filter((question) => this.isPlayableQuestion(question)),
   );
   readonly questionJobSummary = this.questionJobsStore.questionJobSummary;
   readonly canRetryQuestionJobs = this.questionJobsStore.canRetryQuestionJobs;
@@ -107,26 +107,26 @@ export class QuestionsStore {
   constructor() {
     effect(() => {
       const projectId = this.projects.selectedProjectId();
-      const document = this.sourceImport.activeDocument();
+      const source = this.sourceImport.activeSource();
       const operation = this.manualQuestionGeneration();
       if (
         operation !== null &&
-        (operation.project_id !== projectId || operation.document_id !== document?.id)
+        (operation.project_id !== projectId || operation.source_id !== source?.id)
       ) {
          this.clearManualQuestionGenerationStream();
          this.manualQuestionGeneration.set(null);
          this.resetManualQuestionGenerationStreamError();
        }
-       this.questionJobsStore.syncJobStream(projectId, document, (id) => {
+       this.questionJobsStore.syncJobStream(projectId, source, (id) => {
         this.load(id);
       });
     });
     effect(() => {
-      // Source Library reports uploads, document selections (the same
-      // document again included) and a document becoming active. Reload the
+      // Source Library reports uploads, source selections (the same
+      // source again included) and a source becoming active. Reload the
       // project's questions on each, so an upload that finishes after the first
       // question query is not taken for a project without questions (D19).
-      const activity = this.sourceImport.documentActivity();
+      const activity = this.sourceImport.sourceActivity();
       if (activity !== null) {
         untracked(() => this.load(activity.projectId));
       }
@@ -206,8 +206,8 @@ export class QuestionsStore {
     strategy: QuestionGenerationStrategy = 'hybrid_reasoning',
   ): void {
     const project = this.projects.selectedProject();
-    const document = this.sourceImport.activeDocument();
-    if (project === null || document === null) {
+    const source = this.sourceImport.activeSource();
+    if (project === null || source === null) {
       this.operations.fail(
         'Upload a source file with extractable text before generating questions.',
       );
@@ -227,7 +227,7 @@ export class QuestionsStore {
         (signal) =>
           from(this.api.startManualQuestionGeneration(
             project.id,
-            document.id,
+            source.id,
             this.generatePayload(strategy),
             { signal },
           )),
@@ -252,7 +252,7 @@ export class QuestionsStore {
     from(this.api
       .cancelManualQuestionGeneration(
         operation.project_id,
-        operation.document_id,
+        operation.source_id,
         operation.id,
       ))
       .subscribe({
@@ -309,35 +309,35 @@ export class QuestionsStore {
 
   retryQuestionJobs(): void {
     const project = this.projects.selectedProject();
-    const document = this.sourceImport.activeDocument();
-    if (project === null || document === null) {
-      this.operations.fail('Select a parsed document before retrying question generation.');
+    const source = this.sourceImport.activeSource();
+    if (project === null || source === null) {
+      this.operations.fail('Select a parsed source before retrying question generation.');
       return;
     }
 
     this.operations
       .run('questions', 'Question generation retry queued', (signal) =>
-        from(this.api.retryDocumentQuestionJobs(project.id, document.id, { signal })),
+        from(this.api.retrySourceQuestionJobs(project.id, source.id, { signal })),
       )
       .subscribe((jobs) => {
         if (jobs === null) return;
         this.questionJobsStore.setQuestionJobs(jobs.items);
         this.load(project.id);
-        this.sourceImport.refreshUploadedDocument(project.id, document.id);
+        this.sourceImport.refreshUploadedSource(project.id, source.id);
         if (this.questionJobsStore.hasActiveQuestionJobs(jobs.items)) {
-          this.questionJobsStore.ensureJobStream(project.id, document.id, (id) => this.load(id));
+          this.questionJobsStore.ensureJobStream(project.id, source.id, (id) => this.load(id));
         }
       });
   }
 
   retryQuestionStream(): void {
     const project = this.projects.selectedProject();
-    const document = this.sourceImport.activeDocument();
-    if (project === null || document === null) {
+    const source = this.sourceImport.activeSource();
+    if (project === null || source === null) {
       return;
     }
 
-    this.questionJobsStore.retryJobStream(project.id, document.id, (projectId) => {
+    this.questionJobsStore.retryJobStream(project.id, source.id, (projectId) => {
       this.load(projectId);
     });
   }
@@ -417,7 +417,7 @@ export class QuestionsStore {
     this.clearManualQuestionGenerationStream();
     this.manualQuestionGenerationStreamSubscription = this.sse
       .streamJson<QuestionGenerationEvent>(
-        `/projects/${encodeURIComponent(operation.project_id)}/documents/${encodeURIComponent(operation.document_id)}/question-generations/${encodeURIComponent(operation.id)}/events`,
+        `/projects/${encodeURIComponent(operation.project_id)}/sources/${encodeURIComponent(operation.source_id)}/question-generations/${encodeURIComponent(operation.id)}/events`,
         'question-generation',
         { isTerminal: isQuestionGenerationEventTerminal },
       )
@@ -463,8 +463,8 @@ export class QuestionsStore {
       return;
     }
     this.load(operation.project_id);
-    this.questionJobsStore.loadQuestionJobs(operation.project_id, operation.document_id).subscribe();
-    this.sourceImport.refreshUploadedDocument(operation.project_id, operation.document_id);
+    this.questionJobsStore.loadQuestionJobs(operation.project_id, operation.source_id).subscribe();
+    this.sourceImport.refreshUploadedSource(operation.project_id, operation.source_id);
   }
 
   private isCurrentManualQuestionGeneration(
@@ -473,7 +473,7 @@ export class QuestionsStore {
     return (
       this.manualQuestionGeneration()?.id === operation.id &&
       this.projects.selectedProjectId() === operation.project_id &&
-      this.sourceImport.activeDocument()?.id === operation.document_id
+      this.sourceImport.activeSource()?.id === operation.source_id
     );
   }
 

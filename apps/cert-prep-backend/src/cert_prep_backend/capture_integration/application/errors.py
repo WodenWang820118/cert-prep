@@ -85,7 +85,7 @@ class CaptureEventStreamFailed(Exception):
 
 
 class CaptureSourceMissing(Exception):
-    """A completed capture's document has lost its source record. It is not answered as 404."""
+    """A completed capture has lost its source record. It is not answered as 404."""
 
 
 class CaptureRuntimeSetupRejected(Exception):

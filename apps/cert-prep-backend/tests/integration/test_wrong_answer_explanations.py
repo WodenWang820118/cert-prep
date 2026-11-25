@@ -10,7 +10,7 @@ from practice_test_support import (
     UnavailableExplanationProvider,
     _create_manual_question,
     _create_project,
-    _upload_document,
+    _upload_source,
 )
 
 
@@ -18,8 +18,8 @@ def test_wrong_answer_explanation_uses_current_grounded_fields(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    question = _create_manual_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    question = _create_manual_question(client, auth_headers, project_id, source_id)
     session = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
@@ -61,8 +61,8 @@ def test_wrong_answer_explanation_returns_not_found_after_attempt_is_cleared(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    question = _create_manual_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    question = _create_manual_question(client, auth_headers, project_id, source_id)
     session = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
@@ -102,8 +102,8 @@ def test_wrong_answer_explanation_returns_not_found_for_cross_project_attempt(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    question = _create_manual_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    question = _create_manual_question(client, auth_headers, project_id, source_id)
     session = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
@@ -134,8 +134,8 @@ def test_wrong_answer_explanation_uses_targeted_attempt_lookup(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    question = _create_manual_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    question = _create_manual_question(client, auth_headers, project_id, source_id)
     session = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
@@ -156,7 +156,7 @@ def test_wrong_answer_explanation_uses_targeted_attempt_lookup(
         connection.execute(
             """
             INSERT INTO questions(
-                id, project_id, document_id, chunk_id, question, choices_json, answer,
+                id, project_id, source_id, chunk_id, question, choices_json, answer,
                 rationale, citation_page, source_excerpt, created_at, updated_at
             )
             VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -164,7 +164,7 @@ def test_wrong_answer_explanation_uses_targeted_attempt_lookup(
             (
                 corrupt_question_id,
                 project_id,
-                document_id,
+                source_id,
                 "Malformed unrelated question?",
                 "not-json",
                 "Correct",
@@ -210,12 +210,12 @@ def test_wrong_answer_explanation_falls_back_when_provider_unavailable(
             settings=settings,
             capture_runtime_client=TestCaptureRuntimeClient(),
             llm_provider=UnavailableExplanationProvider(),
-            document_processing_async_jobs=False,
+            source_processing_async_jobs=False,
         )
     ) as test_client:
         project_id = _create_project(test_client, auth_headers)
-        document_id = _upload_document(test_client, auth_headers, project_id)
-        question = _create_manual_question(test_client, auth_headers, project_id, document_id)
+        source_id = _upload_source(test_client, auth_headers, project_id)
+        question = _create_manual_question(test_client, auth_headers, project_id, source_id)
         session = test_client.post(
             f"/projects/{project_id}/practice-sessions",
             headers=auth_headers,

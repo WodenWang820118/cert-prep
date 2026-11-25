@@ -51,7 +51,7 @@ import {
 import type { CaptureRecord, CaptureRuntimeReady } from '../domain';
 
 /**
- * Adapts Cert Prep's durable document pipeline to the Capture 0.11.0 v2
+ * Adapts Cert Prep's durable source pipeline to the Capture 0.11.0 v2
  * client contract. Browser requests only reach the authenticated Cert Prep
  * backend; the Capture Runtime address and sidecar credential remain private
  * to the backend coordinator.
@@ -66,19 +66,19 @@ export class CertPrepCaptureClient
   private readonly captures = new Map<string, CaptureRecord>();
   private readonly extractionProvenance =
     new Map<string, CaptureExtractionProvenanceRead>();
-  private readonly completedDocuments = new Map<string, string>();
-  private latestDocumentId: string | null = null;
+  private readonly completedSources = new Map<string, string>();
+  private latestSourceId: string | null = null;
 
   getReady(signal?: AbortSignal): Observable<CaptureRuntimeReady> {
     return this.api.captureRuntimeReady({ signal }).pipe(map(mapReady));
   }
 
-  getDocumentMarkdown(
+  getSourceMarkdown(
     projectId: string,
-    documentId: string,
+    sourceId: string,
     signal?: AbortSignal,
   ): Observable<Blob> {
-    return this.api.getDocumentMarkdown(projectId, documentId, { signal });
+    return this.api.getSourceMarkdown(projectId, sourceId, { signal });
   }
 
   getRequirements(
@@ -251,7 +251,7 @@ export class CertPrepCaptureClient
           result.operation,
           record.projectId,
           captureId,
-          record.documentId,
+          record.sourceId,
         ),
         raw: result.raw,
         result: result.result,
@@ -262,11 +262,11 @@ export class CertPrepCaptureClient
           result.result.source.sha256,
           result.extractionProvenance,
         );
-        this.completedDocuments.set(
+        this.completedSources.set(
           result.result.source.sha256,
-          record.documentId,
+          record.sourceId,
         );
-        this.latestDocumentId = record.documentId;
+        this.latestSourceId = record.sourceId;
       }),
     );
   }
@@ -368,41 +368,41 @@ export class CertPrepCaptureClient
     return this.extractionProvenance.get(sourceSha256) ?? null;
   }
 
-  documentIdForSourceSha256(sourceSha256: string): string | null {
-    const completedDocumentId = this.completedDocuments.get(sourceSha256);
-    if (completedDocumentId !== undefined) return completedDocumentId;
+  sourceIdForSha256(sourceSha256: string): string | null {
+    const completedSourceId = this.completedSources.get(sourceSha256);
+    if (completedSourceId !== undefined) return completedSourceId;
     for (const record of [...this.captures.values()].reverse()) {
-      if (record.sourceSha256 === sourceSha256) return record.documentId;
+      if (record.sourceSha256 === sourceSha256) return record.sourceId;
     }
-    return this.latestDocumentId;
+    return this.latestSourceId;
   }
 
   private rememberOperation(
     response: unknown,
     projectId: string,
     expectedCaptureId?: string,
-    fallbackDocumentId?: string,
+    fallbackSourceId?: string,
   ): CaptureOperation {
     const decoded = mapCaptureOperation(response, expectedCaptureId);
     const responseRecord = record(response, 'capture operation');
-    const documentId =
-      responseRecord['documentId'] === undefined
-        ? text(fallbackDocumentId, 'documentId')
-        : text(responseRecord['documentId'], 'documentId');
+    const sourceId =
+      responseRecord['sourceId'] === undefined
+        ? text(fallbackSourceId, 'sourceId')
+        : text(responseRecord['sourceId'], 'sourceId');
     const existing = this.captures.get(decoded.captureId);
     const sourceSha256 = decoded.source?.sha256 ?? existing?.sourceSha256 ?? '';
     this.captures.set(decoded.captureId, {
       projectId,
-      documentId,
+      sourceId,
       sourceSha256,
       structuringRequestId:
         existing?.structuringRequestId ??
         structuringRequestId(decoded.captureId),
     });
     if (sourceSha256 !== '') {
-      this.completedDocuments.set(sourceSha256, documentId);
+      this.completedSources.set(sourceSha256, sourceId);
     }
-    this.latestDocumentId = documentId;
+    this.latestSourceId = sourceId;
     return exactCaptureOperation(decoded);
   }
 
@@ -421,7 +421,7 @@ export class CertPrepCaptureClient
     if (existing !== undefined) return existing;
     return {
       projectId: this.requireProjectId(),
-      documentId: id,
+      sourceId: id,
       sourceSha256: '',
       structuringRequestId: structuringRequestId(id),
     };

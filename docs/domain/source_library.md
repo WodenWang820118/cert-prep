@@ -1,6 +1,6 @@
 # 教材來源（Source Library）
 
-程式：`apps/cert-prep-backend/src/cert_prep_backend/source_library`。
+程式：`apps/cert-prep-backend/src/cert_prep_backend/source_library`。教材聚合在 `domain/source.py`，教材資料存取在 `infrastructure/sources.py`。
 
 ## 負責與不負責
 
@@ -12,22 +12,22 @@
 
 | 中文             | 程式名稱                    | 意思                                                   |
 | ---------------- | --------------------------- | ------------------------------------------------------ |
-| 教材             | `SourceDocument`            | 匯入的一份 PDF、圖片或錄音                             |
+| 教材             | `Source`            | 匯入的一份 PDF、圖片或錄音                             |
 | 教材類型         | `SourceKind`                 | `pdf`（PDF）、`image`（圖片）、`recording`（錄音）     |
 | 原始檔           | `SourceFile`                | 匯入的檔案、它的 SHA-256 與存放位置                    |
-| 段落             | `DocumentChunk`             | 教材切成的一段文字；錄音的段落有時間區間與翻譯         |
-| 教材狀態         | `SourceDocumentStatus`      | 處理中、取消中、已取消、可用，或處理失敗的原因         |
+| 段落             | `SourceChunk`             | 教材切成的一段文字；錄音的段落有時間區間與翻譯         |
+| 教材狀態         | `SourceStatus`      | 處理中、取消中、已取消、可用，或處理失敗的原因         |
 | 擷取結果         | `PageExtraction`             | 一次擷取得到的頁面、狀態                   |
 | 擷取頁面         | `ExtractedPage`             | 擷取出的一頁文字與擷取方式                             |
 | 擷取方式         | `ExtractionMethod`       | `text_recognition`、`transcription`、`none`，或歷史資料的 `text_layer`                    |
 | 內容類型         | `ContentProfile`            | 教材的題型慣例，例如 `jlpt_vocabulary`、`jlpt_grouped` |
 | 題目形式         | `QuestionItemKind`          | 一題是單獨的字彙題，還是題組裡的一題                   |
 | Markdown 匯出    | `MarkdownProjection`        | 可匯出的 PDF 與用來產生 Markdown 的段落                |
-| 教材無法提供     | `SourceDocumentUnavailable` | 教材不能以要求的形式提供，例如圖片沒有 Markdown        |
-| 匯入作業         | `DocumentOperation`         | 一次匯入、擷取、檢閱或重試，以及它還能不能取消         |
-| 作業狀態         | `DocumentOperationStatus`   | 排隊、執行中、要求取消、已取消、成功、失敗             |
-| 作業階段         | `DocumentOperationPhase`    | 上傳、處理、等待檢閱、轉錄、翻譯、取消中、寫入結果等   |
-| 失敗後的教材狀態 | `DocumentFailureState`      | 作業失敗或取消後，頁面教材留下的狀態，之後可以重試     |
+| 教材無法提供     | `SourceUnavailable` | 教材不能以要求的形式提供，例如圖片沒有 Markdown        |
+| 匯入作業         | `SourceOperation`         | 一次匯入、擷取、檢閱或重試，以及它還能不能取消         |
+| 作業狀態         | `SourceOperationStatus`   | 排隊、執行中、要求取消、已取消、成功、失敗             |
+| 作業階段         | `SourceOperationPhase`    | 上傳、處理、等待檢閱、轉錄、翻譯、取消中、寫入結果等   |
+| 失敗後的教材狀態 | `SourceFailureState`      | 作業失敗或取消後，頁面教材留下的狀態，之後可以重試     |
 
 完整對照見 [glossary](glossary.md)；API 的列舉值對應到[概念集](../../packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json)。
 
@@ -35,19 +35,19 @@
 
 ```mermaid
 classDiagram
-  class SourceDocument {
+  class Source {
     id
     project_id
     filename
     source_kind
-    status: SourceDocumentStatus
+    status: SourceStatus
     extraction_method: ExtractionMethod
     content_profile: ContentProfile
     chunks_count
     ensure_markdown_exportable()
     ensure_playable()
   }
-  class DocumentChunk {
+  class SourceChunk {
     page_number
     text
     start_ms
@@ -57,39 +57,39 @@ classDiagram
     translation_stale
   }
   class MarkdownProjection {
-    document: SourceDocument
-    chunks: DocumentChunk[]
+    source: Source
+    chunks: SourceChunk[]
   }
-  class DocumentOperation {
+  class SourceOperation {
     id
     project_id
-    document_id
-    status: DocumentOperationStatus
-    phase: DocumentOperationPhase
+    source_id
+    status: SourceOperationStatus
+    phase: SourceOperationPhase
     cancellable
     claim_upload(operation_id, project_id, now)$
-    attach_document(document_id, now)
-    enter_review(document_id, now)
-    begin_review_confirmation(document_id, now)
-    begin_commit(document_id, now)
+    attach_source(source_id, now)
+    enter_review(source_id, now)
+    begin_review_confirmation(source_id, now)
+    begin_commit(source_id, now)
     succeed(now)
     cancel(now)
     acknowledge_cancellation(now)
     fail(error, now)
   }
-  SourceDocument *-- DocumentChunk : 段落
-  MarkdownProjection ..> SourceDocument
-  DocumentOperation ..> SourceDocument : 處理
+  Source *-- SourceChunk : 段落
+  MarkdownProjection ..> Source
+  SourceOperation ..> Source : 處理
 ```
 
-教材（`SourceDocument`）：
+教材（`Source`）：
 
 - 只有處理完成的 PDF 能匯出 Markdown，而且至少要有一個段落（`ensure_markdown_exportable`、`MarkdownProjection`）。
-- 只有錄音能播放；播放前確認原始檔仍在專案的上傳資料夾、大小在上限內、SHA-256 與匯入時相同；原始檔不見或被改過時是 `SourceDocumentUnavailable`（`ensure_playable`、`open_audio_source`）。
-- 修正轉錄段落時去掉前後空白，不能是空字串；修正後段落的版本加一，它的翻譯變成過期（`edited_transcript_text`、`DocumentChunk.translation_stale`）。
-- 狀態是可用、有文字、已處理的頁數大於 0 的教材才能產生題目（`SourceDocumentLifecyclePolicy`）。
+- 只有錄音能播放；播放前確認原始檔仍在專案的上傳資料夾、大小在上限內、SHA-256 與匯入時相同；原始檔不見或被改過時是 `SourceUnavailable`（`ensure_playable`、`open_audio_source`）。
+- 修正轉錄段落時去掉前後空白，不能是空字串；修正後段落的版本加一，它的翻譯變成過期（`edited_transcript_text`、`SourceChunk.translation_stale`）。
+- 狀態是可用、有文字、已處理的頁數大於 0 的教材才能產生題目；匯入產生題目後的教材狀態由 `Source.status_after_import_questions` 決定。
 
-匯入作業（`DocumentOperation`）：
+匯入作業（`SourceOperation`）：
 
 - 一個作業 id 只屬於一個專案；別的專案用同一個 id 是衝突。
 - 新上傳的作業排隊等待上傳；附上教材後開始處理。只有剛認領、還沒有教材的作業能附上教材。
@@ -98,7 +98,7 @@ classDiagram
 - 等待使用者檢閱時仍可取消；確認後回到處理，同一次檢閱只能確認一次。
 - 已要求取消的作業失敗時記為已取消，不記錯誤。失敗或取消的頁面教材回到可以重試的狀態（`failure_state`）；錄音保留已經轉錄的段落。
 - 重試要用新的作業 id；教材必須是可重試的結果（已取消、OCR 失敗、沒有文字、轉錄失敗），而且沒有進行中的作業（`ensure_retry_allowed`）。
-- 每一次轉換由 `DocumentOperation` 決定；存回時以「仍是決定時的狀態」為條件，狀態已被別的請求改變就失敗，不會覆蓋。
+- 每一次轉換由 `SourceOperation` 決定；存回時以「仍是決定時的狀態」為條件，狀態已被別的請求改變就失敗，不會覆蓋。
 
 ```mermaid
 stateDiagram-v2
@@ -110,7 +110,7 @@ stateDiagram-v2
   [*] --> uploading : claim_upload
   [*] --> canceled : 開始前就取消
   [*] --> processing : start_retry
-  uploading --> processing : attach_document
+  uploading --> processing : attach_source
   uploading --> canceled : cancel
   processing --> review : enter_review
   review --> processing : begin_review_confirmation
@@ -129,9 +129,9 @@ stateDiagram-v2
 
 | 用例               | 程式名稱                    | 說明                                                                                     |
 | ------------------ | --------------------------- | ---------------------------------------------------------------------------------------- |
-| 列出教材           | `list_documents`            | 專案的所有教材                                                                           |
-| 查看教材           | `view_document`             | 一份教材與它的處理結果                                                                   |
-| 匯出 Markdown      | `export_markdown`           | 處理完成的 PDF 依段落產生 Markdown；其他教材是 `SourceDocumentUnavailable`               |
+| 列出教材           | `list_sources`            | 專案的所有教材                                                                           |
+| 查看教材           | `view_source`             | 一份教材與它的處理結果                                                                   |
+| 匯出 Markdown      | `export_markdown`           | 處理完成的 PDF 依段落產生 Markdown；其他教材是 `SourceUnavailable`               |
 | 播放錄音           | `open_audio_source`         | 驗證過完整性的錄音原始檔；原始檔不見或被改過時無法播放                                   |
 | 查看作業           | `view_operation`            | 一個匯入作業的狀態與階段                                                                 |
 | 取消作業           | `cancel_operation`          | 取消一個作業；還沒開始的作業 id 先記為已取消，之後不能再用                               |
@@ -143,8 +143,8 @@ stateDiagram-v2
 | 翻譯過期段落       | `translate_stale_chunks`    | 翻譯所有修正後還沒重新翻譯的段落                                                         |
 | 重新開機復原       | `recover_interrupted_work`  | 確認已要求的取消、讓中斷的作業失敗、整理仍標成處理中的教材                               |
 | 接收上傳           | `receive_upload`            | 讀入上傳的檔案，超過大小上限時立即拒絕（`SourceTooLarge`）；擷取檢閱的上傳也用它         |
-| 匯入教材           | `import_document`           | 不經檢閱的匯入：認領作業 id、驗證並保存原始檔、附上教材，再擷取文字並開始產生題目        |
-| 重試處理           | `retry_document_processing` | 以新的作業 id 從保存的原始檔重新處理教材；原始檔不見或被改過時無法重試                   |
+| 匯入教材           | `import_source`           | 不經檢閱的匯入：認領作業 id、驗證並保存原始檔、附上教材，再擷取文字並開始產生題目        |
+| 重試處理           | `retry_source_processing` | 以新的作業 id 從保存的原始檔重新處理教材；原始檔不見或被改過時無法重試                   |
 | 查看作業進度       | `view_operation_progress`   | 作業與它處理的教材，作業事件串流的快照                                                   |
 | 查看進行中作業     | `view_active_operation`     | 教材仍在排隊、執行或取消中的作業；沒有時是 `NotFoundError`                               |
 | 記錄題目數         | `record_question_count`        | 給題目編寫：學習者要求的題目寫好後記錄教材所有題目的總數；處理中的教材維持處理中，其他變成可用 |
@@ -154,9 +154,9 @@ stateDiagram-v2
 
 - 認領作業 id 前先確認專案存在。id 已被使用時，已取消或要求取消的是「上傳已取消」，其他是衝突；兩者都不改變那個作業。
 - 錄音（上傳前依檔名的副檔名判斷）的大小上限是 `max_recording_upload_bytes`（`CERT_PREP_MAX_RECORDING_UPLOAD_BYTES`）；頁面教材使用 `max_page_source_upload_bytes`（`CERT_PREP_MAX_PAGE_SOURCE_UPLOAD_BYTES`）。語言提示不是已知的值時記為 `auto`（`language_hint_or_auto`）。
-- 驗證與保存之後各確認一次作業仍在等待上傳（`DocumentOperation.ensure_awaiting_upload`）；這時被取消的上傳停止，不附上教材。
+- 驗證與保存之後各確認一次作業仍在等待上傳（`SourceOperation.ensure_awaiting_upload`）；這時被取消的上傳停止，不附上教材。
 - 認領之後，檔案太大、格式不符、擷取無法使用或其他失敗都讓作業失敗；取消、衝突、專案或教材不存在不改變作業。
-- 處理在背景（`DocumentWork`，即 document worker pool）或在請求內執行。排隊中被取消的工作直接確認取消；開始處理後，作業不再是「處理這份教材、可以取消」（`DocumentOperation.is_processing`）或 app 正在關閉時，擷取停止並確認取消。
+- 處理在背景（`SourceWork`，即 source worker pool）或在請求內執行。排隊中被取消的工作直接確認取消；開始處理後，作業不再是「處理這份教材、可以取消」（`SourceOperation.is_processing`）或 app 正在關閉時，擷取停止並確認取消。
 - 擷取經 port `SourceExtraction`（擷取整合的 `CaptureSourceExtraction`）寫入段落；沒有文字時作業失敗、教材記為 `no_text_detected`（`SourceTextNotDetected`），其他擷取失敗記下擷取的訊息（`SourceExtractionFailed`）。
 - 有段落時經 port `ImportedQuestionGeneration`（題目編寫的 `generate_imported_questions`）開始產生題目。
 
@@ -166,41 +166,42 @@ stateDiagram-v2
 sequenceDiagram
   participant API as source_library.api
   participant UC as source_library.application
-  participant Repo as SqliteDocumentOperationRepository
-  participant Op as DocumentOperation
-  participant Pool as DocumentWorkerPool
-  API->>UC: cancel_processing(project_id, document_id)
-  UC->>Repo: cancel_processing_of(project_id, document_id)
+  participant Repo as SqliteSourceOperationRepository
+  participant Op as SourceOperation
+  participant Pool as SourceWorkerPool
+  API->>UC: cancel_processing(project_id, source_id)
+  UC->>Repo: cancel_processing_of(project_id, source_id)
   Repo->>Repo: BEGIN IMMEDIATE，讀出作業
   Repo->>Op: cancel(now)
   Op-->>Repo: 下一個狀態（或領域錯誤）
   Repo->>Repo: UPDATE … WHERE 仍是原狀態
   UC->>Pool: cancel(operation_id)（還在排隊就移除）
   UC->>Repo: operation(...)（排隊的工作被移除時重新讀取）
-  UC-->>API: DocumentOperation
+  UC-->>API: SourceOperation
 ```
 
-`create_app` 經 `bootstrap/source_library_links.py` 的 `document_repository` 與 `document_operation_repository` 建立 `SqliteDocumentRepository`、`SqliteDocumentOperationRepository`，再建立 `LocalSourceFileStore`、`DocumentChunkTranslator`、`PoolDocumentWork`，放在 `app.state.document_repository`、`document_operation_repository`、`source_file_store`、`chunk_translator`、`document_work`；擷取與題目產生的 port 由下游的上下文實作，放在 `app.state.source_extraction`（Capture Runtime 沒有設定時是 `None`，匯入與重試回 503）與 `imported_question_generation`。router 只依 `application/ports.py` 的 port 呼叫用例。作業的每一次轉換是一個交易，在 repository 裡讀出作業、交給 `DocumentOperation` 決定、以原狀態為條件寫回。作業失敗、取消或重試時，同一個交易也重設教材、刪掉它的段落，並刪掉它還沒結束的題目產生工作（見下節「題目編寫」）。
+`create_app` 經 `bootstrap/source_library_links.py` 的 `source_repository` 與 `source_operation_repository` 建立 `SqliteSourceRepository`、`SqliteSourceOperationRepository`，再建立 `LocalSourceFileStore`、`SourceChunkTranslator`、`PoolSourceWork`，放在 `app.state.source_repository`、`source_operation_repository`、`source_file_store`、`chunk_translator`、`source_work`；擷取與題目產生的 port 由下游的上下文實作，放在 `app.state.source_extraction`（Capture Runtime 沒有設定時是 `None`，匯入與重試回 503）與 `imported_question_generation`。router 只依 `application/ports.py` 的 port 呼叫用例。作業的每一次轉換是一個交易，在 repository 裡讀出作業、交給 `SourceOperation` 決定、以原狀態為條件寫回。作業失敗、取消或重試時，同一個交易也重設教材、刪掉它的段落，並刪掉它還沒結束的題目產生工作（見下節「題目編寫」）。
 
 ## 與其他上下文的關係
 
 - 學習專案：教材與作業屬於一個專案；專案不存在時是 404。`projects` 屬學習專案。repository 在呼叫儲存函式之前經教材來源的 port `StudyProjects` 呼叫學習專案的 `project_exists`（`bootstrap/source_library_links.py` 接線），用自己的連線，在作業的交易之前，和以前查 `projects` 資料表時一樣。
 - 擷取整合：不經檢閱的匯入經 port `SourceExtraction` 交給擷取整合的 `CaptureSourceExtraction`；擷取檢閱的上傳用 `receive_upload`。擷取結果寫成段落與檢閱流程經擷取整合的 port（`CapturePublication`、`BindCaptureReviewCommit`、`CaptureOperations`），由 `bootstrap/capture_links.py` 組裝，不直接呼叫 `source_library.infrastructure`。
 - 題目編寫：匯入或重試出段落後，經 port `ImportedQuestionGeneration` 開始產生題目；教材來源不依賴題目編寫。
-- 題目編寫：作業失敗、取消或重試時，教材還沒結束的題目產生工作（`pending`、`running`、`cancel_requested`）要刪掉，已結束的留作紀錄。`question_generation_jobs` 屬題目編寫，所以教材來源經自己的 port `DocumentQuestionJobs` 呼叫 `discard_unfinished_generation_jobs`。`SqliteDocumentOperationRepository` 把作業交易（`BEGIN IMMEDIATE`）的連線交給題目編寫的 repository，工作和作業、教材、段落在同一個交易裡寫入或一起復原。擷取整合的檢閱復原與確認失敗也經 `DocumentOperationRepository` 停止作業，所以同樣刪掉這些工作。
-- 題目編寫：寫入產生的題目時，題目編寫經它的 port `DocumentQuestionCount` 呼叫 `record_question_count` 或 `record_import_question_count`；實作把題目編寫寫入交易的連線交給 `SqliteDocumentRepository`，教材的狀態與題目數和題目一起寫入。
-- 題目編寫：讀段落與更新題目數經題目編寫的 port `QuestionSources` 與教材來源用例 `list_chunks`、`view_chunk`、`record_question_count`、`record_import_question_count`，教材存在檢查經 `ProjectDocuments`，不直接呼叫 `source_library.infrastructure`。
-- 練習與複習：整份教材模式經 `view_document` 確認教材屬於這個專案。這次讀取用自己的連線，在練習的寫入交易之前。
+- 題目編寫：作業失敗、取消或重試時，教材還沒結束的題目產生工作（`pending`、`running`、`cancel_requested`）要刪掉，已結束的留作紀錄。`question_generation_jobs` 屬題目編寫，所以教材來源經自己的 port `SourceQuestionJobs` 呼叫 `discard_unfinished_generation_jobs`。`SqliteSourceOperationRepository` 把作業交易（`BEGIN IMMEDIATE`）的連線交給題目編寫的 repository，工作和作業、教材、段落在同一個交易裡寫入或一起復原。擷取整合的檢閱復原與確認失敗也經 `SourceOperationRepository` 停止作業，所以同樣刪掉這些工作。
+- 題目編寫：寫入產生的題目時，題目編寫經它的 port `SourceQuestionCount` 呼叫 `record_question_count` 或 `record_import_question_count`；實作把題目編寫寫入交易的連線交給 `SqliteSourceRepository`，教材的狀態與題目數和題目一起寫入。
+- 題目編寫：讀段落與更新題目數經題目編寫的 port `QuestionSources` 與教材來源用例 `list_chunks`、`view_chunk`、`record_question_count`、`record_import_question_count`，教材存在檢查經 `ProjectSources`，不直接呼叫 `source_library.infrastructure`。
+- 練習與複習：整份教材模式經 `view_source` 確認教材屬於這個專案。這次讀取用自己的連線，在練習的寫入交易之前。
 - AI 供應：經 `application/ports.py` 的 `TraditionalChineseTranslator` 翻譯文字；`ChunkTranslator` 仍負責段落翻譯操作。`bootstrap/source_library_links.py` 注入 AI 供應的 `OllamaTraditionalChineseTranslator`，教材來源負責段落版本檢查、取消、翻譯結果的保存與批次結束時釋放資源。
 
 其他上下文只能經 `source_library.application` 與 `source_library.domain` 使用教材來源（import-linter「Other contexts reach Source Library only through its application and domain」），該契約的所有已知例外已在 C5 第三部分完全消除。
 
 ## 規則與資料來源
 
-- 資料表：`documents`、`document_chunks`、`document_operations` 屬教材來源；migration 在 `platform/database.py`。`projects` 與 `question_generation_jobs` 由所屬上下文的用例使用，教材來源的 infrastructure 不查那些資料表。
+- 資料表：`sources`、`source_chunks`、`source_operations` 屬教材來源；migration 在 `platform/database.py`。`projects` 與 `question_generation_jobs` 由所屬上下文的用例使用，教材來源的 infrastructure 不查那些資料表。
 - 原始檔：`<data_dir>/uploads/<project_id>/<sha256><副檔名>`（`infrastructure/storage.py`）。
-- HTTP：`/projects/{project_id}/documents`、`/projects/{project_id}/document-operations`（`api/router.py`；DTO 在 `source_library/api/schemas.py` 與 `cert_prep_contracts.documents`）。作業的即時狀態經 `api/operation_events.py` 的 server-sent events（`…/document-operations/{operation_id}/events`、`…/documents/{document_id}/document-operation/events`）；串流由 `platform/sse.py` 提供，快照來自 `view_operation_progress`，作業結束時串流結束。
-- API 的 `SourceKind`、`SourceDocumentStatus`、`ExtractionMethod`、`ContentProfile`、`QuestionItemKind`、`DocumentOperationStatus`、`DocumentOperationPhase` 列舉值對應到概念集的 `source-library.*`。
+- HTTP：`/projects/{project_id}/sources`、`/projects/{project_id}/source-operations`（`api/router.py`；DTO 在 `source_library/api/schemas.py` 與 `cert_prep_contracts.sources`）。作業的即時狀態經 `api/operation_events.py` 的 server-sent events（`…/source-operations/{operation_id}/events`、`…/sources/{source_id}/source-operation/events`）；串流由 `platform/sse.py` 提供，事件為 `source-operation`，快照含 `operation` 與 `source`，來自 `view_operation_progress`，作業結束時串流結束。
+- Cert API 的教材引用欄位為 `source_id`。重試錯誤代碼為 `source_file_missing`、`source_retry_conflict`、`source_retry_not_allowed`。
+- API 的 `SourceKind`、`SourceStatus`、`ExtractionMethod`、`ContentProfile`、`QuestionItemKind`、`SourceOperationStatus`、`SourceOperationPhase` 列舉值對應到概念集的 `source-library.*`。
 
 ## 前端
 
@@ -210,11 +211,11 @@ sequenceDiagram
 | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `domain`  | 全部（`export *`）                                                                                                                                          | 上傳佇列與匯入作業的型別（`SourceUploadItem`、`LanguageHint`、上傳生命週期的 hook）、可上傳的檔案類型與段落預覽的常數、匯入面板的動作與 view model（`SourceImportAction`）、裁切圖片的型別與常數                                                                                 |
 | `data`    | `SourceImportStore`、`SourceAudioPreviewService`                                                                                                            | 教材清單與目前的教材、段落預覽、上傳佇列（`SourceUploadLifecycle`、持續向後端取消使用者已取消的上傳、直到作業結束的 `DetachedOperationTombstoneTracker`）、作業事件串流、轉錄段落的修正與翻譯；都是 `providedIn: 'root'`。`SourceAudioPreviewService` 讀錄音，由匯入面板自己提供 |
-| `ui`      | `SourceUploadQueueComponent`、`SourceDocumentStatusComponent`、`SourceEvidencePreviewComponent`、`SourceImageCropDialogComponent`、`SourceImageCropService` | 只收 view model、送出 `SourceImportAction` 的元件：上傳佇列、教材狀態、段落與錄音預覽、上傳前裁切圖片的對話框；`SourceImageCropService` 做裁切的計算與畫布轉換                                                                                                                   |
+| `ui`      | `SourceUploadQueueComponent`、`SourceStatusComponent`、`SourceEvidencePreviewComponent`、`SourceImageCropDialogComponent`、`SourceImageCropService` | 只收 view model、送出 `SourceImportAction` 的元件：上傳佇列、教材狀態、段落與錄音預覽、上傳前裁切圖片的對話框；`SourceImageCropService` 做裁切的計算與畫布轉換                                                                                                                   |
 | `feature` | `SourceImportPanelComponent`                                                                                                                                | 匯入面板（`app-source-import-panel`）：注入 store、組出 view model、處理 `ui` 的動作                                                                                                                                                                                             |
 
 教材來源只引用自己、學習專案（`projects/data` 的 `ProjectStore`）與 `core`（`core/data` 的 `CERT_PREP_API`、`CertPrepHttpResourceClient`、`CertPrepSseClient`、`OperationStore`，`core/domain` 的型別，`core/ui` 的圖示與按鈕）。
 
-教材來源是題目編寫的上游，不知道題目：`SourceImportStore.documentActivity`（`SourceDocumentActivity`，目前專案的 id）在學習者上傳、選教材（再選同一份也算），以及有教材變成目前的教材時換成新的物件。題目編寫的 題目 store 監看它並重新載入專案的題目，所以上傳之後才完成的教材不會被當成專案沒有題目（[決策 D19](../../.agents/PLANS/ddd-refactor/decisions.md)）。匯入面板只呼叫 store，不送出事件；`/questions` 頁（`core/shell` 的 `QuestionsPage`）只排版兩個面板。
+教材來源是題目編寫的上游，不知道題目：`SourceImportStore.sourceActivity`（`SourceActivity`，目前專案的 id）在學習者上傳、選教材（再選同一份也算），以及有教材變成目前的教材時換成新的物件。題目編寫的 題目 store 監看它並重新載入專案的題目，所以上傳之後才完成的教材不會被當成專案沒有題目（[決策 D19](../../.agents/PLANS/ddd-refactor/decisions.md)）。匯入面板只呼叫 store，不送出事件；`/questions` 頁（`core/shell` 的 `QuestionsPage`）只排版兩個面板。
 
 下游經 `source-library/data` 讀 `SourceImportStore`：題目編寫（題目 store、背景題目工作 store、題目面板）、練習（`PracticeStore`、練習面板、錯題）、擷取整合（`capture/feature` 的 `CaptureWorkbenchPage`）與殼層（`WorkspaceFacade` 切換專案時重設並載入最新的教材）。

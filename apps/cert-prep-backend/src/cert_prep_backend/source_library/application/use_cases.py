@@ -1,6 +1,6 @@
 """Use cases of the Source Library context, named after what the learner does with a source.
 
-Importing a document runs its extraction (Capture Integration) and starts its questions
+Importing a source runs its extraction (Capture Integration) and starts its questions
 (Question Authoring) through ports, so this context does not depend on either.
 """
 
@@ -14,14 +14,14 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
-from cert_prep_contracts.documents import SourceKind
+from cert_prep_contracts.sources import SourceKind
 
 from cert_prep_backend.platform.errors import (
     CaptureRequirementUnavailable,
     CaptureRuntimeUnavailable,
-    DocumentOperationConflictError,
-    DocumentOperationStateError,
-    DocumentProcessingCanceledError,
+    SourceOperationConflictError,
+    SourceOperationStateError,
+    SourceProcessingCanceledError,
     InvalidSourceError,
     NotFoundError,
     OperationNotCancellableError,
@@ -35,49 +35,49 @@ from cert_prep_backend.source_library.application.errors import (
 )
 from cert_prep_backend.source_library.application.ports import (
     ChunkTranslator,
-    DocumentOperationRepository,
-    DocumentRepository,
-    DocumentWork,
+    SourceOperationRepository,
+    SourceRepository,
+    SourceWork,
     ImportedQuestionGeneration,
-    QueuedDocumentWork,
+    QueuedSourceWork,
     SourceExtraction,
     SourceFileStore,
     SourceLimits,
     SourceUpload,
 )
-from cert_prep_backend.source_library.domain.document import (
+from cert_prep_backend.source_library.domain.source import (
     AUDIO_MEDIA_TYPES,
     AUDIO_SOURCE_UNAVAILABLE,
-    DocumentChunk,
+    SourceChunk,
     MarkdownProjection,
-    SourceDocument,
+    Source,
     edited_transcript_text,
     language_hint_or_auto,
     upload_size_limit,
 )
-from cert_prep_backend.source_library.domain.exceptions import SourceDocumentUnavailable
-from cert_prep_backend.source_library.domain.operation import DocumentOperation
-from cert_prep_backend.source_library.domain.statuses import DocumentOperationStatus
+from cert_prep_backend.source_library.domain.exceptions import SourceUnavailable
+from cert_prep_backend.source_library.domain.operation import SourceOperation
+from cert_prep_backend.source_library.domain.statuses import SourceOperationStatus
 
 __all__ = [
     "cancel_operation",
     "cancel_processing",
     "edit_chunk",
     "export_markdown",
-    "import_document",
+    "import_source",
     "list_chunks",
-    "list_documents",
+    "list_sources",
     "open_audio_source",
     "receive_upload",
     "record_question_count",
     "record_import_question_count",
     "recover_interrupted_work",
-    "retry_document_processing",
+    "retry_source_processing",
     "translate_chunk",
     "translate_stale_chunks",
     "view_active_operation",
     "view_chunk",
-    "view_document",
+    "view_source",
     "view_operation",
     "view_operation_progress",
 ]
@@ -104,86 +104,86 @@ class AudioSource:
     filename: str
 
 
-def list_documents(documents: DocumentRepository, project_id: str) -> list[SourceDocument]:
-    return documents.documents_of(project_id)
+def list_sources(sources: SourceRepository, project_id: str) -> list[Source]:
+    return sources.sources_of(project_id)
 
 
-def view_document(
-    documents: DocumentRepository, project_id: str, document_id: str
-) -> SourceDocument:
-    return documents.document(project_id, document_id)
+def view_source(
+    sources: SourceRepository, project_id: str, source_id: str
+) -> Source:
+    return sources.source(project_id, source_id)
 
 
 def record_question_count(
-    documents: DocumentRepository, project_id: str, document_id: str, count: int
+    sources: SourceRepository, project_id: str, source_id: str, count: int
 ) -> None:
-    """Record the document's count of questions after the learner had questions written: a processing
-    document stays processing, any other becomes ready."""
+    """Record the source's count of questions after the learner had questions written: a processing
+    source stays processing, any other becomes ready."""
 
-    document = documents.document(project_id, document_id)
-    documents.record_question_count(
-        project_id, document_id, status=document.status_after_questions(), question_count=count
+    source = sources.source(project_id, source_id)
+    sources.record_question_count(
+        project_id, source_id, status=source.status_after_questions(), question_count=count
     )
 
 
 def record_import_question_count(
-    documents: DocumentRepository, project_id: str, document_id: str, count: int
+    sources: SourceRepository, project_id: str, source_id: str, count: int
 ) -> None:
-    """Record the document's count of questions written after it was imported: ready when it has
+    """Record the source's count of questions written after it was imported: ready when it has
     text and chunks, no_text_detected otherwise, and still processing if it was."""
 
-    document = documents.document(project_id, document_id)
-    documents.record_question_count(
+    source = sources.source(project_id, source_id)
+    sources.record_question_count(
         project_id,
-        document_id,
-        status=document.status_after_import_questions(),
+        source_id,
+        status=source.status_after_import_questions(),
         question_count=count,
     )
 
 
 def export_markdown(
-    documents: DocumentRepository, project_id: str, document_id: str
+    sources: SourceRepository, project_id: str, source_id: str
 ) -> MarkdownProjection:
-    document = documents.document(project_id, document_id)
-    document.ensure_markdown_exportable()
-    return MarkdownProjection(document, tuple(documents.chunks_of(project_id, document_id)))
+    source = sources.source(project_id, source_id)
+    source.ensure_markdown_exportable()
+    return MarkdownProjection(source, tuple(sources.chunks_of(project_id, source_id)))
 
 
 def open_audio_source(
-    documents: DocumentRepository,
+    sources: SourceRepository,
     files: SourceFileStore,
     project_id: str,
-    document_id: str,
+    source_id: str,
 ) -> AudioSource:
-    documents.document(project_id, document_id).ensure_playable()
-    source_file = documents.source_file(project_id, document_id)
+    sources.source(project_id, source_id).ensure_playable()
+    source_file = sources.source_file(project_id, source_id)
     try:
         path = files.resolve(project_id, source_file.storage_path)
         media_type = AUDIO_MEDIA_TYPES.get(path.suffix.lower())
         intact = media_type is not None and files.sha256(path) == source_file.sha256
     except InvalidSourceError as exc:
-        raise SourceDocumentUnavailable(
+        raise SourceUnavailable(
             AUDIO_SOURCE_UNAVAILABLE, "The stored audio source is unavailable."
         ) from exc
     if not intact:
-        raise SourceDocumentUnavailable(
+        raise SourceUnavailable(
             AUDIO_SOURCE_UNAVAILABLE, "The stored audio source failed integrity verification."
         )
     return AudioSource(path=path, media_type=media_type, filename=source_file.filename)
 
 
 def view_operation(
-    operations: DocumentOperationRepository, project_id: str, operation_id: str
-) -> DocumentOperation:
+    operations: SourceOperationRepository, project_id: str, operation_id: str
+) -> SourceOperation:
     return operations.operation(project_id, operation_id)
 
 
 def cancel_operation(
-    operations: DocumentOperationRepository,
-    queued_work: QueuedDocumentWork,
+    operations: SourceOperationRepository,
+    queued_work: QueuedSourceWork,
     project_id: str,
     operation_id: str,
-) -> DocumentOperation:
+) -> SourceOperation:
     """Cancel an import or processing run; work still waiting in the queue stops at once."""
 
     operation = operations.cancel(project_id, operation_id)
@@ -193,95 +193,95 @@ def cancel_operation(
 
 
 def cancel_processing(
-    operations: DocumentOperationRepository,
-    queued_work: QueuedDocumentWork,
+    operations: SourceOperationRepository,
+    queued_work: QueuedSourceWork,
     project_id: str,
-    document_id: str,
-) -> DocumentOperation:
-    """Cancel whatever is processing a document."""
+    source_id: str,
+) -> SourceOperation:
+    """Cancel whatever is processing a source."""
 
-    operation = operations.cancel_processing_of(project_id, document_id)
+    operation = operations.cancel_processing_of(project_id, source_id)
     if queued_work.cancel(operation.id):
         return operations.operation(project_id, operation.id)
     return operation
 
 
 def list_chunks(
-    documents: DocumentRepository, project_id: str, document_id: str
-) -> list[DocumentChunk]:
-    return documents.chunks_of(project_id, document_id)
+    sources: SourceRepository, project_id: str, source_id: str
+) -> list[SourceChunk]:
+    return sources.chunks_of(project_id, source_id)
 
 
 def view_chunk(
-    documents: DocumentRepository, project_id: str, document_id: str, chunk_id: str
-) -> DocumentChunk:
-    """One chunk of a document, which another context cites as a question's source."""
-    return documents.chunk(project_id, document_id, chunk_id)
+    sources: SourceRepository, project_id: str, source_id: str, chunk_id: str
+) -> SourceChunk:
+    """One chunk of a source, which another context cites as a question's source."""
+    return sources.chunk(project_id, source_id, chunk_id)
 
 
 def edit_chunk(
-    documents: DocumentRepository,
+    sources: SourceRepository,
     project_id: str,
-    document_id: str,
+    source_id: str,
     chunk_id: str,
     text: str,
-) -> DocumentChunk:
+) -> SourceChunk:
     """Correct a transcript chunk; its translation becomes stale."""
 
-    return documents.edit_chunk_text(
-        project_id, document_id, chunk_id, edited_transcript_text(text)
+    return sources.edit_chunk_text(
+        project_id, source_id, chunk_id, edited_transcript_text(text)
     )
 
 
 def translate_chunk(
-    translator: ChunkTranslator, project_id: str, document_id: str, chunk_id: str
-) -> DocumentChunk:
-    return translator.translate_chunk(project_id, document_id, chunk_id)
+    translator: ChunkTranslator, project_id: str, source_id: str, chunk_id: str
+) -> SourceChunk:
+    return translator.translate_chunk(project_id, source_id, chunk_id)
 
 
 def translate_stale_chunks(
-    translator: ChunkTranslator, project_id: str, document_id: str
-) -> list[DocumentChunk]:
-    return translator.translate_stale_chunks(project_id, document_id)
+    translator: ChunkTranslator, project_id: str, source_id: str
+) -> list[SourceChunk]:
+    return translator.translate_stale_chunks(project_id, source_id)
 
 
 def recover_interrupted_work(
-    operations: DocumentOperationRepository, documents: DocumentRepository
+    operations: SourceOperationRepository, sources: SourceRepository
 ) -> None:
-    """After an app restart, settle the operations and documents it interrupted."""
+    """After an app restart, settle the operations and sources it interrupted."""
 
     operations.recover_interrupted()
-    documents.recover_processing()
+    sources.recover_processing()
 
 
 
 @dataclass(frozen=True, slots=True)
 class OperationProgress:
-    """An operation and the document it processes, as the operation's event stream shows them."""
+    """An operation and the source it processes, as the operation's event stream shows them."""
 
-    operation: DocumentOperation
-    document: SourceDocument | None
+    operation: SourceOperation
+    source: Source | None
 
 
 def view_operation_progress(
-    operations: DocumentOperationRepository,
-    documents: DocumentRepository,
+    operations: SourceOperationRepository,
+    sources: SourceRepository,
     project_id: str,
     operation_id: str,
 ) -> OperationProgress:
     operation = operations.operation(project_id, operation_id)
-    document = None
-    if operation.document_id is not None:
-        document = documents.document(project_id, str(operation.document_id))
-    return OperationProgress(operation=operation, document=document)
+    source = None
+    if operation.source_id is not None:
+        source = sources.source(project_id, str(operation.source_id))
+    return OperationProgress(operation=operation, source=source)
 
 
 def view_active_operation(
-    operations: DocumentOperationRepository, project_id: str, document_id: str
-) -> DocumentOperation:
-    """The operation still queued, running or canceling for a document."""
+    operations: SourceOperationRepository, project_id: str, source_id: str
+) -> SourceOperation:
+    """The operation still queued, running or canceling for a source."""
 
-    operation = operations.active_operation_of(project_id, document_id)
+    operation = operations.active_operation_of(project_id, source_id)
     if operation is None:
         raise NotFoundError(_NO_ACTIVE_OPERATION)
     return operation
@@ -313,12 +313,12 @@ class _SourceToExtract:
     content: bytes | None = None
 
 
-async def import_document(
+async def import_source(
     projects: ProjectRepository,
-    documents: DocumentRepository,
-    operations: DocumentOperationRepository,
+    sources: SourceRepository,
+    operations: SourceOperationRepository,
     files: SourceFileStore,
-    work: DocumentWork,
+    work: SourceWork,
     extraction: SourceExtraction,
     question_generation: ImportedQuestionGeneration,
     *,
@@ -329,14 +329,14 @@ async def import_document(
     language_hint: str,
     limits: SourceLimits,
     in_background: bool,
-) -> SourceDocument:
+) -> Source:
     """Import a PDF, image or recording without a capture review: claim the operation id,
-    validate and store the file, attach its document, then extract its text and start its
-    questions, in the background or within the request. Returns the document; one whose
+    validate and store the file, attach its source, then extract its text and start its
+    questions, in the background or within the request. Returns the source; one whose
     extraction found no text has the no_text_detected status and its failed operation.
 
     Once the id is claimed, a rejected or failed upload fails the operation; a cancellation,
-    a conflict, or a missing project or document leaves it as it is.
+    a conflict, or a missing project or source leaves it as it is.
     """
 
     claimed = False
@@ -345,8 +345,8 @@ async def import_document(
         operation, acquired = operations.claim(project_id, operation_id)
         if not acquired:
             if operation.is_canceling_or_canceled:
-                raise DocumentProcessingCanceledError(_UPLOAD_CANCELED)
-            raise DocumentOperationConflictError(_OPERATION_IN_USE)
+                raise SourceProcessingCanceledError(_UPLOAD_CANCELED)
+            raise SourceOperationConflictError(_OPERATION_IN_USE)
         claimed = True
         content = await receive_upload(
             upload,
@@ -372,7 +372,7 @@ async def import_document(
             canonical_suffix=prepared.canonical_suffix,
         )
         operations.operation(project_id, operation_id).ensure_awaiting_upload()
-        document = documents.attach_document(
+        source = sources.attach_source(
             project_id,
             operation_id,
             filename=filename or f"{sha256}{prepared.canonical_suffix}",
@@ -384,14 +384,14 @@ async def import_document(
             duration_ms=prepared.duration_ms,
         )
         process = partial(
-            _process_document,
+            _process_source,
             operations,
-            documents,
+            sources,
             files,
             extraction,
             question_generation,
             project_id=project_id,
-            document_id=document.id,
+            source_id=source.id,
             operation_id=operation_id,
         )
         if in_background:
@@ -399,7 +399,7 @@ async def import_document(
                 kind=prepared.kind,
                 canonical_suffix=prepared.canonical_suffix,
                 sha256=sha256,
-                file_name=document.filename,
+                file_name=source.filename,
                 storage_path=storage_path,
             )
             _queue_processing(
@@ -407,11 +407,11 @@ async def import_document(
                 work,
                 process,
                 project_id=project_id,
-                document_id=document.id,
+                source_id=source.id,
                 operation_id=operation_id,
                 source=stored,
             )
-            return documents.document(project_id, document.id)
+            return sources.source(project_id, source.id)
         processed = process(
             source=_SourceToExtract(
                 kind=prepared.kind,
@@ -420,10 +420,10 @@ async def import_document(
                 content=prepared.raw_bytes,
             )
         )
-        if isinstance(processed, SourceDocument):
+        if isinstance(processed, Source):
             return processed
-        # Extraction found no text: the operation failed and the document records it.
-        return documents.document(project_id, document.id)
+        # Extraction found no text: the operation failed and the source records it.
+        return sources.source(project_id, source.id)
     except SourceTooLarge:
         if claimed:
             operations.fail(project_id, operation_id, error=_UPLOAD_REJECTED)
@@ -438,10 +438,10 @@ async def import_document(
         raise
     except (
         NotFoundError,
-        DocumentProcessingCanceledError,
-        DocumentOperationConflictError,
+        SourceProcessingCanceledError,
+        SourceOperationConflictError,
         OperationNotCancellableError,
-        DocumentOperationStateError,
+        SourceOperationStateError,
     ):
         raise
     except Exception:
@@ -450,33 +450,33 @@ async def import_document(
         raise
 
 
-async def retry_document_processing(
-    documents: DocumentRepository,
-    operations: DocumentOperationRepository,
+async def retry_source_processing(
+    sources: SourceRepository,
+    operations: SourceOperationRepository,
     files: SourceFileStore,
-    work: DocumentWork,
+    work: SourceWork,
     extraction: SourceExtraction,
     question_generation: ImportedQuestionGeneration,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     operation_id: str,
     limits: SourceLimits,
     in_background: bool,
-) -> DocumentOperation:
-    """Process a document again from its stored source, under a new operation id.
+) -> SourceOperation:
+    """Process a source again from its stored file, under a new operation id.
 
-    InvalidSourceError when the stored source is missing or was changed."""
+    InvalidSourceError when the stored file is missing or was changed."""
 
-    document = documents.document(project_id, document_id)
-    source_file = documents.source_file(project_id, document_id)
+    imported_source = sources.source(project_id, source_id)
+    source_file = sources.source_file(project_id, source_id)
     source_path = await asyncio.to_thread(
         files.verified_path, project_id, source_file.storage_path, source_file.sha256
     )
     canonical_suffix = source_path.suffix.lower()
     if in_background:
         source = _SourceToExtract(
-            kind=document.source_kind,
+            kind=imported_source.source_kind,
             canonical_suffix=canonical_suffix,
             sha256=source_file.sha256,
             file_name=source_file.filename,
@@ -494,21 +494,21 @@ async def retry_document_processing(
             filename=source_file.filename,
         )
         source = _SourceToExtract(
-            kind=document.source_kind,
+            kind=imported_source.source_kind,
             canonical_suffix=prepared.canonical_suffix,
             sha256=source_file.sha256,
             content=prepared.raw_bytes,
         )
-    operations.start_retry(project_id, document_id, operation_id)
+    operations.start_retry(project_id, source_id, operation_id)
     process = partial(
-        _process_document,
+        _process_source,
         operations,
-        documents,
+        sources,
         files,
         extraction,
         question_generation,
         project_id=project_id,
-        document_id=document_id,
+        source_id=source_id,
         operation_id=operation_id,
     )
     if in_background:
@@ -517,7 +517,7 @@ async def retry_document_processing(
             work,
             process,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             operation_id=operation_id,
             source=source,
         )
@@ -539,12 +539,12 @@ def _store_source(
 
 
 def _queue_processing(
-    operations: DocumentOperationRepository,
-    work: DocumentWork,
+    operations: SourceOperationRepository,
+    work: SourceWork,
     process: Callable[..., object],
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     operation_id: str,
     source: _SourceToExtract,
 ) -> None:
@@ -567,69 +567,69 @@ def _queue_processing(
         raise
     operation = operations.operation(project_id, operation_id)
     if (
-        operation.document_id == document_id
-        and operation.status == DocumentOperationStatus.RUNNING
+        operation.source_id == source_id
+        and operation.status == SourceOperationStatus.RUNNING
     ):
         return
     if (
         work.cancel(operation_id) is False
-        and operation.status == DocumentOperationStatus.CANCEL_REQUESTED
+        and operation.status == SourceOperationStatus.CANCEL_REQUESTED
     ):
         operations.acknowledge_cancellation(project_id, operation_id)
 
 
 def _cancel_queued_processing(
-    operations: DocumentOperationRepository, *, project_id: str, operation_id: str
+    operations: SourceOperationRepository, *, project_id: str, operation_id: str
 ) -> None:
     operation = operations.operation(project_id, operation_id)
     if operation.is_terminal:
         return
-    if operation.status != DocumentOperationStatus.CANCEL_REQUESTED:
+    if operation.status != SourceOperationStatus.CANCEL_REQUESTED:
         operation = operations.cancel(project_id, operation_id)
-    if operation.status == DocumentOperationStatus.CANCEL_REQUESTED:
+    if operation.status == SourceOperationStatus.CANCEL_REQUESTED:
         operations.acknowledge_cancellation(project_id, operation_id)
 
 
-def _process_document(
-    operations: DocumentOperationRepository,
-    documents: DocumentRepository,
+def _process_source(
+    operations: SourceOperationRepository,
+    sources: SourceRepository,
     files: SourceFileStore,
     extraction: SourceExtraction,
     question_generation: ImportedQuestionGeneration,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     operation_id: str,
     source: _SourceToExtract,
     shutdown_requested: Callable[[], bool] = lambda: False,
-) -> SourceDocument | DocumentOperation:
-    """Extract a document's text and start its questions; settle the operation when it stops.
+) -> Source | SourceOperation:
+    """Extract a source's text and start its questions; settle the operation when it stops.
 
     A canceled run is acknowledged. When extraction finds no text, the failed operation is
-    returned and the document keeps the no_text_detected status. Other failures fail the
+    returned and the source keeps the no_text_detected status. Other failures fail the
     operation and propagate."""
 
     try:
         return _extract_and_generate_questions(
             operations,
-            documents,
+            sources,
             files,
             extraction,
             question_generation,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             operation_id=operation_id,
             source=source,
             shutdown_requested=shutdown_requested,
         )
-    except DocumentProcessingCanceledError:
+    except SourceProcessingCanceledError:
         try:
             if shutdown_requested():
                 operations.cancel(project_id, operation_id)
             operations.acknowledge_cancellation(project_id, operation_id)
-        except (DocumentOperationStateError, OperationNotCancellableError):
+        except (SourceOperationStateError, OperationNotCancellableError):
             operations.fail(project_id, operation_id, error=_CANCEL_CLEANUP_FAILED)
-        return documents.document(project_id, document_id)
+        return sources.source(project_id, source_id)
     except CaptureRequirementUnavailable as exc:
         operations.fail(project_id, operation_id, error=str(exc))
         raise
@@ -639,7 +639,7 @@ def _process_document(
         # reports capture_runtime_unavailable.
         logger.warning(
             "Capture Runtime is unavailable for document processing",
-            extra={"project_id": project_id, "document_id": document_id},
+            extra={"project_id": project_id, "source_id": source_id},
         )
         operations.fail(project_id, operation_id, error=_PROCESSING_FAILED)
         raise
@@ -648,7 +648,7 @@ def _process_document(
             project_id,
             operation_id,
             error=str(exc),
-            document_status="no_text_detected",
+            source_status="no_text_detected",
             extraction_method="none",
         )
     except SourceExtractionFailed as exc:
@@ -657,26 +657,26 @@ def _process_document(
     except Exception:
         logger.exception(
             "Document processing failed",
-            extra={"project_id": project_id, "document_id": document_id},
+            extra={"project_id": project_id, "source_id": source_id},
         )
         operations.fail(project_id, operation_id, error=_PROCESSING_FAILED)
         raise
 
 
 def _extract_and_generate_questions(
-    operations: DocumentOperationRepository,
-    documents: DocumentRepository,
+    operations: SourceOperationRepository,
+    sources: SourceRepository,
     files: SourceFileStore,
     extraction: SourceExtraction,
     question_generation: ImportedQuestionGeneration,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     operation_id: str,
     source: _SourceToExtract,
     shutdown_requested: Callable[[], bool],
-) -> SourceDocument:
-    document = documents.document(project_id, document_id)
+) -> Source:
+    imported_source = sources.source(project_id, source_id)
     if source.content is None:
         assert source.storage_path is not None
         content = files.verified_content(project_id, source.storage_path, source.sha256)
@@ -684,29 +684,31 @@ def _extract_and_generate_questions(
     else:
         content = source.content
         sha256 = hashlib.sha256(content).hexdigest()
-    file_name = source.file_name if source.file_name is not None else document.filename
+    file_name = (
+        source.file_name if source.file_name is not None else imported_source.filename
+    )
 
     def should_cancel() -> bool:
         if shutdown_requested():
             return True
-        return not operations.operation(project_id, operation_id).is_processing(document_id)
+        return not operations.operation(project_id, operation_id).is_processing(source_id)
 
     try:
-        document = extraction.extract(
+        imported_source = extraction.extract(
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             operation_id=operation_id,
             file_name=str(file_name),
             content=content,
             canonical_suffix=source.canonical_suffix,
             source_kind=source.kind,
             sha256=sha256,
-            language_hint=document.language_hint,
+            language_hint=imported_source.language_hint,
             should_cancel=should_cancel,
         )
     finally:
         del content
-    if document.chunks_count > 0:
-        question_generation.start_question_generation(project_id, document_id)
-        document = documents.document(project_id, document_id)
-    return document
+    if imported_source.chunks_count > 0:
+        question_generation.start_question_generation(project_id, source_id)
+        imported_source = sources.source(project_id, source_id)
+    return imported_source

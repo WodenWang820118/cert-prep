@@ -76,7 +76,7 @@ def create_practice_session(
             store,
             project_id,
             mode=payload.mode,
-            document_id=payload.document_id,
+            source_id=payload.source_id,
             question_count=payload.question_count,
             random_seed=payload.random_seed,
             wrong_attempt_ids=payload.wrong_attempt_ids,
@@ -235,7 +235,7 @@ def _summary_read(session: PracticeSession) -> PracticeSessionSummaryRead:
         id=session.id,
         project_id=session.project_id,
         mode=session.mode,
-        document_id=session.source_document_id,
+        source_id=session.source_id,
         status=session.status,
         created_at=session.created_at,
     )
@@ -249,7 +249,7 @@ def _session_read(details: PracticeSessionDetails) -> PracticeSessionRead:
         question_ids=list(session.question_ids),
         questions=[_question_read(question) for question in session.questions],
         mode=session.mode,
-        document_id=session.source_document_id,
+        source_id=session.source_id,
         question_count=session.requested_question_count,
         random_seed=session.random_seed,
         status=session.status,
@@ -269,7 +269,7 @@ def _question_read(question: PracticeQuestion) -> PracticeSessionQuestionRead:
         rationale=question.rationale,
         citation_page=question.citation_page,
         source_excerpt=question.source_excerpt,
-        document_id=question.document_id,
+        source_id=question.source_id,
         answer_key_source=question.answer_key_source,
     )
 
@@ -297,7 +297,7 @@ def _wrong_answer_read(wrong_answer: WrongAnswer) -> WrongAnswerRead:
         rationale=wrong_answer.rationale,
         citation_page=wrong_answer.citation_page,
         source_excerpt=wrong_answer.source_excerpt,
-        document_id=wrong_answer.document_id,
+        source_id=wrong_answer.source_id,
         created_at=wrong_answer.created_at,
         answer_key_source=wrong_answer.answer_key_source,
     )
@@ -312,7 +312,7 @@ def _summary_of_wrong_answers(summary: WrongAnswerSummary) -> WrongAnswerSummary
             WrongAnswerRepeatedMissRead(
                 question_id=miss.question_id,
                 question=miss.question,
-                document_id=miss.document_id,
+                source_id=miss.source_id,
                 citation_page=miss.citation_page,
                 source_excerpt=miss.source_excerpt,
                 miss_count=miss.miss_count,
@@ -322,7 +322,7 @@ def _summary_of_wrong_answers(summary: WrongAnswerSummary) -> WrongAnswerSummary
         ],
         clusters=[
             WrongAnswerClusterRead(
-                document_id=cluster.document_id,
+                source_id=cluster.source_id,
                 citation_page=cluster.citation_page,
                 current_wrong_count=cluster.current_wrong_count,
                 cleared_count=cluster.cleared_count,

@@ -32,7 +32,7 @@ export class PracticeStore {
   private readonly wrongAnswers = inject(WrongAnswerRetryStore);
 
   readonly sessionQuestionCount = signal(5);
-  readonly selectedDocumentId = signal<string | null>(null);
+  readonly selectedSourceId = signal<string | null>(null);
   readonly practiceSession = signal<PracticeSessionRead | null>(null);
   private readonly activeSessionsResource =
     this.resources.activePracticeSessions(() =>
@@ -63,54 +63,54 @@ export class PracticeStore {
       this.questionCount(),
     ),
   );
-  readonly questionsByDocument = computed(() => {
+  readonly questionsBySource = computed(() => {
     const counts = new Map<string, number>();
     for (const question of this.questionsStore.playableQuestions()) {
-      if (question.document_id === null) {
+      if (question.source_id === null) {
         continue;
       }
-      counts.set(question.document_id, (counts.get(question.document_id) ?? 0) + 1);
+      counts.set(question.source_id, (counts.get(question.source_id) ?? 0) + 1);
     }
     return counts;
   });
-  readonly wholeSourceDocuments = computed(() => {
-    const counts = this.questionsByDocument();
+  readonly wholeSources = computed(() => {
+    const counts = this.questionsBySource();
     return this.sourceImport
-      .documents()
+      .sources()
       .filter(
-        (document) =>
-          document.status === 'ready' && (counts.get(document.id) ?? 0) > 0,
+        (source) =>
+          source.status === 'ready' && (counts.get(source.id) ?? 0) > 0,
       );
   });
-  readonly effectiveWholeSourceDocumentId = computed(() => {
-    const activeDocumentId = this.sourceImport.activeDocumentId();
+  readonly effectiveWholeSourceId = computed(() => {
+    const activeSourceId = this.sourceImport.activeSourceId();
     if (
-      activeDocumentId !== null &&
-      this.wholeSourceDocuments().some(
-        (document) => document.id === activeDocumentId,
+      activeSourceId !== null &&
+      this.wholeSources().some(
+        (source) => source.id === activeSourceId,
       )
     ) {
-      return activeDocumentId;
+      return activeSourceId;
     }
 
-    const selectedId = this.selectedDocumentId();
+    const selectedId = this.selectedSourceId();
     if (
       selectedId !== null &&
-      this.wholeSourceDocuments().some((document) => document.id === selectedId)
+      this.wholeSources().some((source) => source.id === selectedId)
     ) {
       return selectedId;
     }
 
-    return this.wholeSourceDocuments()[0]?.id ?? null;
+    return this.wholeSources()[0]?.id ?? null;
   });
-  readonly selectedDocumentQuestionCount = computed(() => {
-    const documentId = this.effectiveWholeSourceDocumentId();
-    return documentId === null
+  readonly selectedSourceQuestionCount = computed(() => {
+    const sourceId = this.effectiveWholeSourceId();
+    return sourceId === null
       ? 0
-      : (this.questionsByDocument().get(documentId) ?? 0);
+      : (this.questionsBySource().get(sourceId) ?? 0);
   });
-  readonly wholeSourceDocumentSelectValue = computed(
-    () => this.effectiveWholeSourceDocumentId() ?? '',
+  readonly wholeSourceSelectValue = computed(
+    () => this.effectiveWholeSourceId() ?? '',
   );
   readonly activeQuestion = computed(() => {
     const session = this.practiceSession();
@@ -159,7 +159,7 @@ export class PracticeStore {
   });
 
   reset(): void {
-    this.selectedDocumentId.set(null);
+    this.selectedSourceId.set(null);
     this.practiceSession.set(null);
     this.resumableSession.set(null);
     this.abandonConfirmationPending.set(false);
@@ -178,18 +178,18 @@ export class PracticeStore {
     this.selectedAnswer.set(choice);
   }
 
-  setSelectedDocumentId(documentId: string): void {
-    const nextDocument = this.wholeSourceDocuments().find(
-      (document) => document.id === documentId,
+  setSelectedSourceId(sourceId: string): void {
+    const nextSource = this.wholeSources().find(
+      (source) => source.id === sourceId,
     );
-    this.selectedDocumentId.set(nextDocument?.id ?? null);
-    if (nextDocument !== undefined) {
-      this.sourceImport.setActiveDocumentId(nextDocument.id);
+    this.selectedSourceId.set(nextSource?.id ?? null);
+    if (nextSource !== undefined) {
+      this.sourceImport.setActiveSourceId(nextSource.id);
     }
   }
 
-  questionCountForDocument(documentId: string): number {
-    return this.questionsByDocument().get(documentId) ?? 0;
+  questionCountForSource(sourceId: string): number {
+    return this.questionsBySource().get(sourceId) ?? 0;
   }
 
   canCreatePracticeSession(mode: PracticeSessionMode): boolean {
@@ -205,10 +205,10 @@ export class PracticeStore {
       return false;
     }
 
-    if (mode === 'full_document') {
+    if (mode === 'full_source') {
       return (
-        this.effectiveWholeSourceDocumentId() !== null &&
-        this.selectedDocumentQuestionCount() > 0
+        this.effectiveWholeSourceId() !== null &&
+        this.selectedSourceQuestionCount() > 0
       );
     }
 
@@ -228,8 +228,8 @@ export class PracticeStore {
       return 'Finish the active review retry before starting a new practice session.';
     }
 
-    if (mode === 'full_document') {
-      return 'Choose a parsed document with generated questions.';
+    if (mode === 'full_source') {
+      return 'Choose a parsed source with generated questions.';
     }
 
     return 'Generate at least one question before starting a random draw.';
@@ -386,8 +386,8 @@ export class PracticeStore {
   private sessionPayload(mode: PracticeSessionMode): PracticeSessionPayload {
     return this.sessionPayloads.createPayload({
       mode,
-      wholeSourceDocumentId: this.effectiveWholeSourceDocumentId(),
-      selectedDocumentQuestionCount: this.selectedDocumentQuestionCount(),
+      wholeSourceId: this.effectiveWholeSourceId(),
+      selectedSourceQuestionCount: this.selectedSourceQuestionCount(),
       sessionQuestionCount: this.sessionQuestionCount(),
       questionCount: this.questionCount(),
     });

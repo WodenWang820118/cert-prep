@@ -10,20 +10,20 @@ import pytest
 
 from cert_prep_backend.platform.errors import InvalidSourceError
 from cert_prep_backend.source_library.application import use_cases
-from cert_prep_backend.source_library.domain.document import (
-    DocumentChunk,
-    SourceDocument,
+from cert_prep_backend.source_library.domain.source import (
+    SourceChunk,
+    Source,
     SourceFile,
 )
-from cert_prep_backend.source_library.domain.exceptions import SourceDocumentUnavailable
-from cert_prep_backend.source_library.domain.operation import DocumentOperation
-from cert_prep_backend.source_library.domain.statuses import SourceDocumentStatus
+from cert_prep_backend.source_library.domain.exceptions import SourceUnavailable
+from cert_prep_backend.source_library.domain.operation import SourceOperation
+from cert_prep_backend.source_library.domain.statuses import SourceStatus
 
 NOW = "2026-10-27T00:00:00+00:00"
 
 
-def _document(**changes: object) -> SourceDocument:
-    document = SourceDocument(
+def _source(**changes: object) -> Source:
+    source = Source(
         id="document",
         project_id="project",
         filename="notes.pdf",
@@ -32,7 +32,7 @@ def _document(**changes: object) -> SourceDocument:
         language_hint="auto",
         page_count=1,
         has_text=True,
-        status=SourceDocumentStatus.READY,
+        status=SourceStatus.READY,
         extraction_method="text_recognition",
         ocr_device=None,
         extraction_warnings=None,
@@ -45,13 +45,13 @@ def _document(**changes: object) -> SourceDocument:
         created_at=NOW,
         updated_at=NOW,
     )
-    return replace(document, **changes)
+    return replace(source, **changes)
 
 
-def _chunk() -> DocumentChunk:
-    return DocumentChunk(
+def _chunk() -> SourceChunk:
+    return SourceChunk(
         id="chunk",
-        document_id="document",
+        source_id="document",
         page_number=1,
         chunk_index=0,
         text="本文",
@@ -66,33 +66,33 @@ def _chunk() -> DocumentChunk:
     )
 
 
-class FakeDocuments:
-    def __init__(self, document: SourceDocument, chunks: list[DocumentChunk]) -> None:
-        self.stored = document
+class FakeSources:
+    def __init__(self, source: Source, chunks: list[SourceChunk]) -> None:
+        self.stored = source
         self.chunks = chunks
         self.edits: list[str] = []
         self.calls: list[str] = []
 
-    def documents_of(self, project_id: str) -> list[SourceDocument]:
+    def sources_of(self, project_id: str) -> list[Source]:
         return [self.stored]
 
-    def document(self, project_id: str, document_id: str) -> SourceDocument:
+    def source(self, project_id: str, source_id: str) -> Source:
         return self.stored
 
-    def source_file(self, project_id: str, document_id: str) -> SourceFile:
+    def source_file(self, project_id: str, source_id: str) -> SourceFile:
         return SourceFile(filename="talk.m4a", sha256="abc", storage_path="uploads/abc.m4a")
 
-    def chunks_of(self, project_id: str, document_id: str) -> list[DocumentChunk]:
+    def chunks_of(self, project_id: str, source_id: str) -> list[SourceChunk]:
         return self.chunks
 
     def edit_chunk_text(
-        self, project_id: str, document_id: str, chunk_id: str, text: str
-    ) -> DocumentChunk:
+        self, project_id: str, source_id: str, chunk_id: str, text: str
+    ) -> SourceChunk:
         self.edits.append(text)
         return replace(self.chunks[0], text=text)
 
     def recover_processing(self) -> int:
-        self.calls.append("documents")
+        self.calls.append("sources")
         return 0
 
 
@@ -110,21 +110,21 @@ class FakeFiles:
 
 class FakeOperations:
     def __init__(self) -> None:
-        running = DocumentOperation.start_retry(
-            operation_id="op", project_id="project", document_id="document", now=NOW
+        running = SourceOperation.start_retry(
+            operation_id="op", project_id="project", source_id="document", now=NOW
         )
         self.requested = running.cancel(NOW)
         self.after_queue_cancel = self.requested.acknowledge_cancellation(NOW)
         self.calls: list[str] = []
 
-    def operation(self, project_id: str, operation_id: str) -> DocumentOperation:
+    def operation(self, project_id: str, operation_id: str) -> SourceOperation:
         self.calls.append("reread")
         return self.after_queue_cancel
 
-    def cancel(self, project_id: str, operation_id: str) -> DocumentOperation:
+    def cancel(self, project_id: str, operation_id: str) -> SourceOperation:
         return self.requested
 
-    def cancel_processing_of(self, project_id: str, document_id: str) -> DocumentOperation:
+    def cancel_processing_of(self, project_id: str, source_id: str) -> SourceOperation:
         return self.requested
 
     def recover_interrupted(self) -> int:
@@ -144,57 +144,57 @@ class FakeQueue:
 
 def test_a_ready_pdf_exports_markdown_from_its_chunks() -> None:
     projection = use_cases.export_markdown(
-        FakeDocuments(_document(), [_chunk()]), "project", "document"
+        FakeSources(_source(), [_chunk()]), "project", "document"
     )
 
-    assert projection.document.filename == "notes.pdf"
+    assert projection.source.filename == "notes.pdf"
     assert projection.chunks == (_chunk(),)
 
 
 @pytest.mark.parametrize(
-    ("document", "message"),
+    ("source", "message"),
     [
-        (_document(filename="scan.png", source_kind="image"), "PDF documents only"),
-        (_document(source_kind="recording", filename="talk.pdf"), "PDF documents only"),
-        (_document(status=SourceDocumentStatus.PROCESSING), "after document processing completes"),
+        (_source(filename="scan.png", source_kind="image"), "PDF documents only"),
+        (_source(source_kind="recording", filename="talk.pdf"), "PDF documents only"),
+        (_source(status=SourceStatus.PROCESSING), "after document processing completes"),
     ],
 )
-def test_only_a_processed_pdf_has_markdown(document: SourceDocument, message: str) -> None:
-    with pytest.raises(SourceDocumentUnavailable, match=message) as raised:
-        use_cases.export_markdown(FakeDocuments(document, [_chunk()]), "project", "document")
+def test_only_a_processed_pdf_has_markdown(source: Source, message: str) -> None:
+    with pytest.raises(SourceUnavailable, match=message) as raised:
+        use_cases.export_markdown(FakeSources(source, [_chunk()]), "project", "document")
 
     assert raised.value.code == "markdown_unavailable"
 
 
 def test_markdown_needs_at_least_one_chunk() -> None:
-    with pytest.raises(SourceDocumentUnavailable, match="at least one persisted document chunk"):
-        use_cases.export_markdown(FakeDocuments(_document(), []), "project", "document")
+    with pytest.raises(SourceUnavailable, match="at least one persisted document chunk"):
+        use_cases.export_markdown(FakeSources(_source(), []), "project", "document")
 
 
 def test_a_verified_recording_is_played_with_its_media_type(tmp_path: Path) -> None:
-    documents = FakeDocuments(_document(source_kind="recording", filename="talk.m4a"), [])
+    sources = FakeSources(_source(source_kind="recording", filename="talk.m4a"), [])
 
     source = use_cases.open_audio_source(
-        documents, FakeFiles(tmp_path / "abc.m4a", "abc"), "project", "document"
+        sources, FakeFiles(tmp_path / "abc.m4a", "abc"), "project", "document"
     )
 
     assert (source.media_type, source.filename) == ("audio/mp4", "talk.m4a")
 
 
 @pytest.mark.parametrize(
-    ("document", "path", "sha256", "message"),
+    ("source", "path", "sha256", "message"),
     [
-        (_document(), "abc.m4a", "abc", "Only recordings"),
-        (_document(source_kind="recording"), "abc.m4a", "changed", "failed integrity verification"),
-        (_document(source_kind="recording"), "abc.ogg", "abc", "failed integrity verification"),
+        (_source(), "abc.m4a", "abc", "Only recordings"),
+        (_source(source_kind="recording"), "abc.m4a", "changed", "failed integrity verification"),
+        (_source(source_kind="recording"), "abc.ogg", "abc", "failed integrity verification"),
     ],
 )
 def test_only_an_intact_recording_can_be_played(
-    tmp_path: Path, document: SourceDocument, path: str, sha256: str, message: str
+    tmp_path: Path, source: Source, path: str, sha256: str, message: str
 ) -> None:
-    with pytest.raises(SourceDocumentUnavailable, match=message) as raised:
+    with pytest.raises(SourceUnavailable, match=message) as raised:
         use_cases.open_audio_source(
-            FakeDocuments(document, []), FakeFiles(tmp_path / path, sha256), "project", "document"
+            FakeSources(source, []), FakeFiles(tmp_path / path, sha256), "project", "document"
         )
 
     assert raised.value.code == "audio_source_unavailable"
@@ -209,25 +209,25 @@ class MissingFiles:
 
 
 def test_a_recording_whose_file_is_gone_is_unavailable() -> None:
-    documents = FakeDocuments(_document(source_kind="recording"), [])
+    sources = FakeSources(_source(source_kind="recording"), [])
 
     with pytest.raises(
-        SourceDocumentUnavailable, match="stored audio source is unavailable"
+        SourceUnavailable, match="stored audio source is unavailable"
     ) as raised:
-        use_cases.open_audio_source(documents, MissingFiles(), "project", "document")
+        use_cases.open_audio_source(sources, MissingFiles(), "project", "document")
 
     assert raised.value.code == "audio_source_unavailable"
 
 
 def test_a_transcript_edit_is_trimmed_and_never_empty() -> None:
-    documents = FakeDocuments(_document(source_kind="recording"), [_chunk()])
+    sources = FakeSources(_source(source_kind="recording"), [_chunk()])
 
-    edited = use_cases.edit_chunk(documents, "project", "document", "chunk", "  新しい本文 \n")
+    edited = use_cases.edit_chunk(sources, "project", "document", "chunk", "  新しい本文 \n")
 
     assert edited.text == "新しい本文"
     with pytest.raises(ValueError, match="must not be empty"):
-        use_cases.edit_chunk(documents, "project", "document", "chunk", "   ")
-    assert documents.edits == ["新しい本文"]
+        use_cases.edit_chunk(sources, "project", "document", "chunk", "   ")
+    assert sources.edits == ["新しい本文"]
 
 
 @pytest.mark.parametrize("cancel", [use_cases.cancel_operation, use_cases.cancel_processing])
@@ -254,13 +254,13 @@ def test_canceling_running_work_returns_the_requested_cancellation(cancel) -> No
     assert operation is operations.requested
 
 
-def test_a_restart_settles_operations_before_documents() -> None:
+def test_a_restart_settles_operations_before_sources() -> None:
     operations = FakeOperations()
-    documents = FakeDocuments(_document(), [])
+    sources = FakeSources(_source(), [])
     order: list[str] = []
     operations.calls = order
-    documents.calls = order
+    sources.calls = order
 
-    use_cases.recover_interrupted_work(operations, documents)
+    use_cases.recover_interrupted_work(operations, sources)
 
-    assert order == ["operations", "documents"]
+    assert order == ["operations", "sources"]

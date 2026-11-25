@@ -4,12 +4,12 @@ import { test } from 'node:test';
 import { buildOcrPageRecordEvidence } from '../ocr-page-record-evidence.mts';
 import {
   assertPdfPageOneScope,
-  recordDocumentOcrCompletionEvidence,
+  recordSourceOcrCompletionEvidence,
 } from './question-generation-observer-api.mts';
 import type { SmokeRunState } from './types.mts';
 import { PDF_PARSE_TERMINAL_TEXT_PATTERN } from './flow-steps.mts';
 
-test('document API OCR evidence overrides stale visible chunk text metrics', () => {
+test('source API OCR evidence overrides stale visible chunk text metrics', () => {
   const run = {
     options: {},
     metrics: {
@@ -23,7 +23,7 @@ test('document API OCR evidence overrides stale visible chunk text metrics', () 
     },
   } as unknown as SmokeRunState;
 
-  recordDocumentOcrCompletionEvidence(run, {
+  recordSourceOcrCompletionEvidence(run, {
     processed_page_count: 46,
     page_count: 46,
     chunks_count: 46,
@@ -68,9 +68,9 @@ test('PDF completion accepts the current review-ready terminal label', () => {
 test('OCR page-record evidence is private-safe and independently re-hashable', () => {
   const evidence = buildOcrPageRecordEvidence({
     runId: 'acceptance-run-1',
-    expectedDocumentId: 'document-1',
+    expectedSourceId: 'source-1',
     expectedProjectId: 'project-1',
-    document: ocrDocumentRecord(),
+    source: ocrSourceRecord(),
     chunks: [ocrChunkRecord()],
     expectedPageNumbers: [1],
     appDataEmptyAtLaunch: true,
@@ -90,9 +90,9 @@ test('OCR page-record evidence is private-safe and independently re-hashable', (
   const build = (chunk: Record<string, unknown>) =>
     buildOcrPageRecordEvidence({
       runId: 'acceptance-run-1',
-      expectedDocumentId: 'document-1',
+      expectedSourceId: 'source-1',
       expectedProjectId: 'project-1',
-      document: ocrDocumentRecord(),
+      source: ocrSourceRecord(),
       chunks: [chunk],
       expectedPageNumbers: [1],
       appDataEmptyAtLaunch: true,
@@ -115,38 +115,38 @@ test('OCR page-record evidence is private-safe and independently re-hashable', (
   assert.equal(otherText.pageRecordsSha256, evidence.pageRecordsSha256);
 });
 
-test('OCR page-record evidence rejects embedded or cross-document records', () => {
+test('OCR page-record evidence rejects embedded or cross-source records', () => {
   assert.throws(
     () =>
       buildOcrPageRecordEvidence({
         runId: 'acceptance-run-1',
-        expectedDocumentId: 'document-1',
+        expectedSourceId: 'source-1',
         expectedProjectId: 'project-1',
-        document: { ...ocrDocumentRecord(), extraction_method: 'text_layer' },
+        source: { ...ocrSourceRecord(), extraction_method: 'text_layer' },
         chunks: [ocrChunkRecord()],
         expectedPageNumbers: [1],
         appDataEmptyAtLaunch: true,
       }),
-    /document\.extraction_method expected text_recognition/u,
+    /source\.extraction_method expected text_recognition/u,
   );
   assert.throws(
     () =>
       buildOcrPageRecordEvidence({
         runId: 'acceptance-run-1',
-        expectedDocumentId: 'document-1',
+        expectedSourceId: 'source-1',
         expectedProjectId: 'project-1',
-        document: ocrDocumentRecord(),
-        chunks: [{ ...ocrChunkRecord(), document_id: 'stale-document' }],
+        source: ocrSourceRecord(),
+        chunks: [{ ...ocrChunkRecord(), source_id: 'stale-source' }],
         expectedPageNumbers: [1],
         appDataEmptyAtLaunch: true,
       }),
-    /different document/u,
+    /different source/u,
   );
 });
 
-function ocrDocumentRecord(): Record<string, unknown> {
+function ocrSourceRecord(): Record<string, unknown> {
   return {
-    id: 'document-1',
+    id: 'source-1',
     project_id: 'project-1',
     sha256: 'a'.repeat(64),
     page_count: 46,
@@ -162,7 +162,7 @@ function ocrDocumentRecord(): Record<string, unknown> {
 function ocrChunkRecord(): Record<string, unknown> {
   return {
     id: 'chunk-1',
-    document_id: 'document-1',
+    source_id: 'source-1',
     page_number: 1,
     chunk_index: 0,
     source_revision: 1,

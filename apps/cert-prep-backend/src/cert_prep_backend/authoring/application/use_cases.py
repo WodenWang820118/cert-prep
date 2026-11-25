@@ -25,7 +25,7 @@ __all__ = [
     "generate_imported_questions",
     "edit_question",
     "find_question",
-    "generate_document_questions",
+    "generate_source_questions",
     "list_questions",
     "list_generation_jobs",
     "questions_for",
@@ -41,11 +41,11 @@ def list_questions(questions: QuestionRepository, project_id: str) -> list[Quest
 
 
 def source_questions(
-    questions: QuestionRepository, project_id: str, *, document_id: str | None
+    questions: QuestionRepository, project_id: str, *, source_id: str | None
 ) -> list[Question]:
-    """Questions of a project, by id, or of one document in source order."""
+    """Questions of a project, by id, or of one source in source order."""
 
-    return questions.for_source(project_id, document_id=document_id)
+    return questions.for_source(project_id, source_id=source_id)
 
 
 def find_question(
@@ -76,85 +76,85 @@ def edit_question(
     return questions.edit(project_id, question_id, edit)
 
 
-def generate_document_questions(
+def generate_source_questions(
     questions: QuestionRepository,
     sources: QuestionSources,
     writing: QuestionWriting,
     model: object,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     limit: int,
     strategy: QuestionGenerationStrategy,
 ) -> list[Question]:
-    """Write questions from every chunk of a document now, and record how many it has in all."""
+    """Write questions from every chunk of a source now, and record how many it has in all."""
 
-    chunks = sources.chunks_of(project_id, document_id)
+    chunks = sources.chunks_of(project_id, source_id)
     if not chunks:
         raise ValidationError("Document has no extracted text chunks.")
     suggestions = writing.suggestions(model, chunks, limit, strategy)
-    added = questions.add_generated(project_id, document_id, suggestions)
+    added = questions.add_generated(project_id, source_id, suggestions)
     sources.record_question_count(
-        project_id, document_id, questions.count_for_source(project_id, document_id)
+        project_id, source_id, questions.count_for_source(project_id, source_id)
     )
     return added
 
 
 def list_generation_jobs(
-    jobs: QuestionGenerationJobRepository, project_id: str, document_id: str
+    jobs: QuestionGenerationJobRepository, project_id: str, source_id: str
 ) -> list[QuestionGenerationJob]:
-    return jobs.jobs_of(project_id, document_id)
+    return jobs.jobs_of(project_id, source_id)
 
 
 def retry_generation_jobs(
-    work: QuestionGenerationWork, project_id: str, document_id: str
+    work: QuestionGenerationWork, project_id: str, source_id: str
 ) -> list[QuestionGenerationJob]:
-    """Run again the jobs of a document that ended without questions."""
+    """Run again the jobs of a source that ended without questions."""
 
-    return work.retry_jobs(project_id, document_id)
+    return work.retry_jobs(project_id, source_id)
 
 
 def cancel_generation_job(
-    jobs: QuestionGenerationJobRepository, project_id: str, document_id: str, job_id: str
+    jobs: QuestionGenerationJobRepository, project_id: str, source_id: str, job_id: str
 ) -> QuestionGenerationJob:
-    return jobs.cancel(project_id, document_id, job_id)
+    return jobs.cancel(project_id, source_id, job_id)
 
 
 def discard_unfinished_generation_jobs(
-    jobs: QuestionGenerationJobRepository, project_id: str, document_id: str
+    jobs: QuestionGenerationJobRepository, project_id: str, source_id: str
 ) -> None:
-    """Drop the document's jobs that have not ended, because its source text is being redone.
+    """Drop the source's jobs that have not ended, because its source text is being redone.
 
-    Source Library calls this when a run of the document stops or is retried. Ended jobs stay
-    as the document's question generation history.
+    Source Library calls this when a run of the source stops or is retried. Ended jobs stay
+    as the source's question generation history.
     """
 
-    jobs.discard_unfinished(project_id, document_id)
+    jobs.discard_unfinished(project_id, source_id)
 
 
 def start_manual_generation(
     work: QuestionGenerationWork,
     project_id: str,
-    document_id: str,
+    source_id: str,
     *,
     limit: int,
     strategy: QuestionGenerationStrategy,
 ) -> ManualQuestionGeneration:
-    """Generate questions for a whole document in the background; one operation at a time."""
+    """Generate questions for a whole source in the background; one operation at a time."""
 
-    return work.start_manual_operation(project_id, document_id, limit, strategy)
+    return work.start_manual_operation(project_id, source_id, limit, strategy)
 
 
 def view_manual_generation(
-    work: QuestionGenerationWork, project_id: str, document_id: str, operation_id: str
+    work: QuestionGenerationWork, project_id: str, source_id: str, operation_id: str
 ) -> ManualQuestionGeneration:
-    return work.manual_operation(project_id, document_id, operation_id)
+    return work.manual_operation(project_id, source_id, operation_id)
 
 
 def cancel_manual_generation(
-    work: QuestionGenerationWork, project_id: str, document_id: str, operation_id: str
+    work: QuestionGenerationWork, project_id: str, source_id: str, operation_id: str
 ) -> ManualQuestionGeneration:
-    return work.cancel_manual_operation(project_id, document_id, operation_id)
+    return work.cancel_manual_operation(project_id, source_id, operation_id)
 
 
 def generate_imported_questions(
@@ -165,22 +165,22 @@ def generate_imported_questions(
     model: object,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     schedules_question_jobs: bool,
     writes_questions: bool,
     limit: int,
 ) -> None:
-    """Start the questions of a document whose import produced chunks.
+    """Start the questions of a source whose import produced chunks.
 
     The scheduler queues a job per chunk. When the settings write questions at import instead, and
     only then, up to `limit` questions are written now; an unavailable model writes none, and the
-    document records how many questions it has in all.
+    source records how many questions it has in all.
     """
 
-    work.enqueue_document(project_id, document_id)
+    work.enqueue_source(project_id, source_id)
     if schedules_question_jobs or not writes_questions:
         return
-    chunks = sources.chunks_of(project_id, document_id)
+    chunks = sources.chunks_of(project_id, source_id)
     try:
         suggestions = [
             as_editable_question(suggestion)
@@ -189,7 +189,7 @@ def generate_imported_questions(
     except LanguageModelUnavailable:
         suggestions = []
     if suggestions:
-        questions.add_generated(project_id, document_id, suggestions)
+        questions.add_generated(project_id, source_id, suggestions)
     sources.record_import_question_count(
-        project_id, document_id, questions.count_for_source(project_id, document_id)
+        project_id, source_id, questions.count_for_source(project_id, source_id)
     )

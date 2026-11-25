@@ -4,7 +4,7 @@ A failed run stores one of these, chosen by the source kind and Capture's failur
 runtime's own error text and requirement detail are logged, never stored or shown.
 """
 
-from cert_prep_contracts.documents import SourceKind
+from cert_prep_contracts.sources import SourceKind
 
 
 PDF_OCR_UNAVAILABLE_MESSAGE = (

@@ -8,7 +8,7 @@ from pathlib import PurePath
 from typing import Literal
 from uuid import UUID
 
-from cert_prep_contracts.documents import SourceKind
+from cert_prep_contracts.sources import SourceKind
 
 from cert_prep_backend.capture_integration.application.errors import (
     CaptureAudioRejected,
@@ -37,7 +37,7 @@ from cert_prep_backend.capture_integration.application.ocr_summary import (
 )
 from cert_prep_backend.capture_integration.application.ports import (
     CaptureBackgroundWork,
-    CaptureDocuments,
+    CaptureSources,
     CaptureEventSignal,
     CaptureFileStore,
     CaptureOperations,
@@ -71,7 +71,7 @@ from cert_prep_backend.platform.errors import (
 )
 from cert_prep_backend.projects.application.ports import ProjectRepository
 from cert_prep_backend.projects.application.use_cases import require_project
-from cert_prep_backend.source_library.domain.document import SourceDocument
+from cert_prep_backend.source_library.domain.source import Source
 
 __all__ = [
     "abandon_capture_upload",
@@ -162,7 +162,7 @@ def claim_capture_upload(
 
 def start_capture_review(
     sessions: CaptureReviewStore,
-    documents: CaptureDocuments,
+    sources: CaptureSources,
     operations: CaptureOperations,
     files: CaptureFileStore,
     workflow: CaptureReviewWorkflow,
@@ -195,7 +195,7 @@ def start_capture_review(
             content=content,
             canonical_suffix=prepared.canonical_suffix,
         )
-        document = documents.attach_document(
+        source = sources.attach_source(
             project_id,
             operation_id,
             filename=filename or f"{digest}{prepared.canonical_suffix}",
@@ -207,14 +207,14 @@ def start_capture_review(
         )
         session = sessions.create(
             project_id=project_id,
-            document_id=document.id,
+            source_id=source.id,
             operation_id=operation_id,
         )
         session_id = session.id
 
-        def run(document_id: str = document.id, review_session_id: str = session.id) -> None:
+        def run(source_id: str = source.id, review_session_id: str = session.id) -> None:
             extract_capture_for_review(
-                documents,
+                sources,
                 operations,
                 files,
                 sessions,
@@ -222,7 +222,7 @@ def start_capture_review(
                 work,
                 events,
                 project_id=project_id,
-                document_id=document_id,
+                source_id=source_id,
                 operation_id=operation_id,
                 session_id=review_session_id,
             )
@@ -250,7 +250,7 @@ def start_capture_review(
         raise
     return StartedCaptureReview(
         session=session,
-        document=document,
+        source=source,
         content_length=len(content),
         canonical_suffix=prepared.canonical_suffix,
     )
@@ -291,7 +291,7 @@ def abandon_capture_upload(
 
 
 def extract_capture_for_review(
-    documents: CaptureDocuments,
+    sources: CaptureSources,
     operations: CaptureOperations,
     files: CaptureFileStore,
     sessions: CaptureReviewStore,
@@ -300,25 +300,25 @@ def extract_capture_for_review(
     events: CaptureReviewEvents,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     operation_id: str,
     session_id: str,
 ) -> None:
-    """Run queued extraction. The document is loaded before runtime errors are translated."""
+    """Run queued extraction. The source is loaded before runtime errors are translated."""
 
-    document = documents.document(project_id, document_id)
-    source_file = documents.source_file(project_id, document_id)
+    source = sources.source(project_id, source_id)
+    source_file = sources.source_file(project_id, source_id)
     suffix = PurePath(source_file.storage_path).suffix
-    source_kind = document.source_kind
+    source_kind = source.source_kind
     try:
         workflow.begin_review(
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             operation_id=operation_id,
             session_id=session_id,
-            file_name=document.filename,
+            file_name=source.filename,
             content=files.read_bytes(source_file.storage_path),
-            media_type=_media_type(document.filename, suffix),
+            media_type=_media_type(source.filename, suffix),
             source_kind=source_kind,
             should_cancel=lambda: (
                 work.is_closed() or not _operation_is_running(operations, project_id, operation_id)
@@ -401,7 +401,7 @@ def _finish_canceled_capture(
 
 def commit_capture_review(
     sessions: CaptureReviewStore,
-    documents: CaptureDocuments,
+    sources: CaptureSources,
     operations: CaptureOperations,
     workflow: CaptureReviewWorkflow,
     work: CaptureBackgroundWork,
@@ -425,18 +425,18 @@ def commit_capture_review(
             raise CaptureReviewConflict(_COMMIT_MISMATCH)
         return QueuedCaptureCommit(
             replay_completed=True,
-            document=None,
+            source=None,
             last_event_sequence=session.last_event_sequence,
         )
     if not session.is_active:
         raise CaptureReviewConflict(_REVIEW_NOT_PENDING)
-    document = documents.document(project_id, session.document_id)
-    if workflow.candidate_source_sha256(candidate) != document.sha256:
+    source = sources.source(project_id, session.source_id)
+    if workflow.candidate_source_sha256(candidate) != source.sha256:
         raise ValidationError(_CANDIDATE_MISMATCH)
     try:
         claimed, acquired = workflow.claim_commit(
             project_id=project_id,
-            document_id=session.document_id,
+            source_id=session.source_id,
             operation_id=session.operation_id,
             session_id=session_id,
             candidate=candidate,
@@ -445,11 +445,11 @@ def commit_capture_review(
     except (BackendError, RuntimeError) as error:
         raise CaptureReviewConflict(str(error)) from error
     if acquired:
-        document_id = session.document_id
+        source_id = session.source_id
         operation_id = session.operation_id
 
         def run(
-            queued_document_id: str = document_id,
+            queued_source_id: str = source_id,
             queued_operation_id: str = operation_id,
             queued_session_id: str = session_id,
         ) -> None:
@@ -461,7 +461,7 @@ def commit_capture_review(
                 events,
                 questions,
                 project_id=project_id,
-                document_id=queued_document_id,
+                source_id=queued_source_id,
                 operation_id=queued_operation_id,
                 session_id=queued_session_id,
                 candidate=candidate,
@@ -492,7 +492,7 @@ def commit_capture_review(
             raise CaptureCommitNotQueued(_COMMIT_NOT_QUEUED) from error
     return QueuedCaptureCommit(
         replay_completed=False,
-        document=document,
+        source=source,
         last_event_sequence=claimed.last_event_sequence,
     )
 
@@ -506,7 +506,7 @@ def publish_reviewed_capture(
     questions: CaptureQuestionGeneration,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
     operation_id: str,
     session_id: str,
     candidate: object,
@@ -514,9 +514,9 @@ def publish_reviewed_capture(
     """Publish a claimed review. A cancel is finished again, then listeners are woken."""
 
     try:
-        document = workflow.commit_review(
+        source = workflow.commit_review(
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             operation_id=operation_id,
             session_id=session_id,
             candidate=candidate,
@@ -525,8 +525,8 @@ def publish_reviewed_capture(
                 or not _operation_is_running(operations, project_id, operation_id)
             ),
         )
-        if document.chunks_count > 0:
-            questions.enqueue_document(project_id, document_id)
+        if source.chunks_count > 0:
+            questions.enqueue_source(project_id, source_id)
     except CaptureExtractionCanceled:
         _finish_canceled_capture(
             sessions,
@@ -563,7 +563,7 @@ def report_structuring_failure(
     if not session.is_active:
         return ReportedStructuringFailure(
             replay=True,
-            document_id=session.document_id,
+            source_id=session.source_id,
             runtime_operation=None,
         )
     runtime_id = session.runtime_capture_id
@@ -587,7 +587,7 @@ def report_structuring_failure(
         raise CaptureGatewayRejection(_STRUCTURING_GATEWAY) from error
     return ReportedStructuringFailure(
         replay=False,
-        document_id=session.document_id,
+        source_id=session.source_id,
         runtime_operation=notice.runtime_operation,
     )
 
@@ -652,7 +652,7 @@ def recover_capture_reviews(maintenance: CaptureReviewMaintenance) -> tuple[str,
 
 def view_capture(
     sessions: CaptureReviewStore,
-    documents: CaptureDocuments,
+    sources: CaptureSources,
     operations: CaptureOperations,
     runtime: CaptureRuntime,
     *,
@@ -662,14 +662,14 @@ def view_capture(
     """Choose the runtime operation to show, or the stored session when it stays hidden."""
 
     session = sessions.get(project_id=project_id, session_id=session_id)
-    document = documents.document(project_id, session.document_id)
+    source = sources.source(project_id, session.source_id)
     if session.status == CaptureReviewStatus.CONFIRMING:
-        # Runtime commit can become terminal before the durable document and
+        # Runtime commit can become terminal before the durable source and
         # review session have been published atomically. The host operation is
         # still structuring throughout that window.
-        return _stored_capture_view(session, document)
+        return _stored_capture_view(session, source)
     if not session.runtime_capture_id:
-        return _stored_capture_view(session, document)
+        return _stored_capture_view(session, source)
     try:
         operation = runtime.read_operation(session.runtime_capture_id)
         session = sessions.observe(
@@ -680,11 +680,11 @@ def view_capture(
     except Exception:
         if session.is_active:
             raise CaptureGatewayRejection(_STATUS_UNAVAILABLE) from None
-        return _stored_capture_view(session, document)
+        return _stored_capture_view(session, source)
     if session.is_active and runtime.status_equals(
         operation, "completed", "failed", "cancelled"
     ):
-        return _stored_capture_view(session, document)
+        return _stored_capture_view(session, source)
     expected = _EXPECTED_TERMINAL.get(session.status)
     if expected is None or runtime.status_is(operation, expected):
         report_extracting = runtime.status_is(
@@ -692,11 +692,11 @@ def view_capture(
         ) and not capture_review_ready(operations, session)
         return ViewedCapture(
             session=session,
-            document=document,
+            source=source,
             runtime_operation=operation,
             report_extracting=report_extracting,
         )
-    return _stored_capture_view(session, document)
+    return _stored_capture_view(session, source)
 
 
 def view_partial_capture(
@@ -833,32 +833,32 @@ def view_ocr_summary(
 
 def load_completed_capture(
     sessions: CaptureReviewStore,
-    documents: CaptureDocuments,
+    sources: CaptureSources,
     files: CaptureFileStore,
     *,
     project_id: str,
     session_id: str,
 ) -> StoredCapture:
-    """Load a completed review's document and chunks, and stat its source once."""
+    """Load a completed review's source and chunks, and stat its file once."""
 
     session = sessions.get(project_id=project_id, session_id=session_id)
     if session.status != CaptureReviewStatus.COMPLETED:
         raise CaptureReviewConflict(_REVIEW_NOT_COMPLETE)
-    document = documents.document(project_id, session.document_id)
-    chunks = documents.chunks_of(project_id, session.document_id)
+    source = sources.source(project_id, session.source_id)
+    chunks = sources.chunks_of(project_id, session.source_id)
     try:
         content_length, media_type = capture_source_display(
-            documents,
+            sources,
             files,
             project_id=project_id,
-            document_id=document.id,
+            source_id=source.id,
         )
     except NotFoundError as error:
-        # A document without its source row was never a 404 here; it stays a server error.
+        # A source without its source row was never a 404 here; it stays a server error.
         raise CaptureSourceMissing(str(error)) from error
     return StoredCapture(
         session=session,
-        document=document,
+        source=source,
         chunks=chunks,
         content_length=content_length,
         media_type=media_type,
@@ -897,26 +897,26 @@ def release_capture_result(runtime: CaptureRuntime, *, runtime_capture_id: str) 
 
 
 def capture_source_display(
-    documents: CaptureDocuments,
+    sources: CaptureSources,
     files: CaptureFileStore,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
 ) -> tuple[int, str]:
     """The source size and media type, with each helper's own fallback.
 
-    Media type is resolved first, matching the stored document projection. A missing
+    Media type is resolved first, matching the stored source projection. A missing
     source raises from the size lookup after the media lookup has already fallen back.
     """
 
     media_type = _capture_source_media_type(
-        documents, project_id=project_id, document_id=document_id
+        sources, project_id=project_id, source_id=source_id
     )
     content_length = _capture_source_bytes(
-        documents,
+        sources,
         files,
         project_id=project_id,
-        document_id=document_id,
+        source_id=source_id,
     )
     return content_length, media_type
 
@@ -962,9 +962,9 @@ def hold_capture_stream(
 
 
 def capture_source_kind(
-    documents: CaptureDocuments, *, project_id: str, document_id: str
+    sources: CaptureSources, *, project_id: str, source_id: str
 ) -> SourceKind:
-    return documents.document(project_id, document_id).source_kind
+    return sources.source(project_id, source_id).source_kind
 
 
 def _stream_still_holding(
@@ -982,11 +982,11 @@ def _stream_still_holding(
 
 
 def _stored_capture_view(
-    session: CaptureReviewSession, document: SourceDocument
+    session: CaptureReviewSession, source: Source
 ) -> ViewedCapture:
     return ViewedCapture(
         session=session,
-        document=document,
+        source=source,
         runtime_operation=None,
         report_extracting=False,
     )
@@ -1102,24 +1102,24 @@ def _runtime_status_value(operation: object) -> str:
 
 
 def _capture_source_bytes(
-    documents: CaptureDocuments,
+    sources: CaptureSources,
     files: CaptureFileStore,
     *,
     project_id: str,
-    document_id: str,
+    source_id: str,
 ) -> int:
     try:
-        source_file = documents.source_file(project_id, document_id)
+        source_file = sources.source_file(project_id, source_id)
         return files.byte_size(source_file.storage_path)
     except (OSError, KeyError):
         return 1
 
 
 def _capture_source_media_type(
-    documents: CaptureDocuments, *, project_id: str, document_id: str
+    sources: CaptureSources, *, project_id: str, source_id: str
 ) -> str:
     try:
-        source_file = documents.source_file(project_id, document_id)
+        source_file = sources.source_file(project_id, source_id)
         return _media_type(source_file.filename, PurePath(source_file.storage_path).suffix)
     except (OSError, KeyError, NotFoundError):
         return "application/octet-stream"

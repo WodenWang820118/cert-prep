@@ -166,9 +166,9 @@ def test_completed_continuation_beyond_parser_limit_is_not_reasoned_again():
     provider = RecordingHybridProvider(incomplete=True)
     pages = [
         _page(1, parsed=True),
-        SourceChunk(id="page-2", page_number=2, chunk_index=1, document_id="document",
+        SourceChunk(id="page-2", page_number=2, chunk_index=1, source_id="document",
                     text="8 Which shape fits?\n1 alpha\n2 beta"),
-        SourceChunk(id="page-3", page_number=3, chunk_index=2, document_id="document",
+        SourceChunk(id="page-3", page_number=3, chunk_index=2, source_id="document",
                     text="3 gamma\n4 delta"),
     ]
     assert [item.chunk_id for item in extract_jlpt_question_blocks(pages, 10)] == [

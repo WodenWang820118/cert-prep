@@ -19,7 +19,7 @@ from cert_prep_backend.api.errors import not_found_error
 from cert_prep_backend.capture_integration.application import use_cases as capture_reviews
 from cert_prep_backend.capture_integration.application.errors import CaptureEventStreamFailed
 from cert_prep_backend.capture_integration.application.ports import (
-    CaptureDocuments,
+    CaptureSources,
     CaptureOperations,
     CaptureReviewStore,
     CaptureRuntime,
@@ -30,7 +30,7 @@ from cert_prep_backend.capture_integration.domain.review_session import (
     CaptureReviewStatus,
 )
 from cert_prep_backend.platform.errors import NotFoundError
-from cert_prep_backend.source_library.domain.document import SourceDocument
+from cert_prep_backend.source_library.domain.source import Source
 
 _REGISTRY_LOCK = Lock()
 
@@ -86,13 +86,13 @@ def host_event_stream(
     *,
     runtime: CaptureRuntime,
     sessions: CaptureReviewStore,
-    documents: CaptureDocuments,
+    sources: CaptureSources,
     operations: CaptureOperations,
     signal: CaptureEventSignal,
     project_id: str,
     capture_id: str,
     session: CaptureReviewSession,
-    document: SourceDocument,
+    source: Source,
     last_event_id: int | None,
 ) -> Iterator[str]:
     runtime_id = session.runtime_capture_id
@@ -144,12 +144,12 @@ def host_event_stream(
                     terminal = _terminal_host_event(
                         capture_id,
                         session,
-                        document,
+                        source,
                         operations=operations,
                         source_kind=_event_source_kind(
-                            documents,
+                            sources,
                             project_id=project_id,
-                            document_id=document.id,
+                            source_id=source.id,
                         ),
                     )
                     if _cursor_before(last_event_id, terminal.sequence):
@@ -177,12 +177,12 @@ def host_event_stream(
                         terminal = _terminal_host_event(
                             capture_id,
                             session,
-                            document,
+                            source,
                             operations=operations,
                             source_kind=_event_source_kind(
-                                documents,
+                                sources,
                                 project_id=project_id,
-                                document_id=document.id,
+                                source_id=source.id,
                             ),
                         )
                         if _cursor_before(last_event_id, terminal.sequence):
@@ -211,10 +211,10 @@ def host_event_stream(
         event = _terminal_host_event(
             capture_id,
             session,
-            document,
+            source,
             operations=operations,
             source_kind=_event_source_kind(
-                documents, project_id=project_id, document_id=document.id
+                sources, project_id=project_id, source_id=source.id
             ),
         )
         if _cursor_before(last_event_id, event.sequence):
@@ -222,10 +222,10 @@ def host_event_stream(
 
 
 def _event_source_kind(
-    documents: CaptureDocuments, *, project_id: str, document_id: str
+    sources: CaptureSources, *, project_id: str, source_id: str
 ) -> CaptureSourceKind:
     kind = capture_reviews.capture_source_kind(
-        documents, project_id=project_id, document_id=document_id
+        sources, project_id=project_id, source_id=source_id
     )
     return to_capture_source_kind(kind)
 
@@ -233,7 +233,7 @@ def _event_source_kind(
 def _terminal_host_event(
     capture_id: str,
     session: CaptureReviewSession,
-    document: SourceDocument,
+    source: Source,
     *,
     operations: CaptureOperations,
     source_kind: CaptureSourceKind,
@@ -259,7 +259,7 @@ def _terminal_host_event(
         stage=event_type.value,
         progress=1,
         error=failure,
-        created_at=document.updated_at,
+        created_at=source.updated_at,
     )
 
 

@@ -9,7 +9,7 @@ import av
 from PIL import Image, UnidentifiedImageError
 import pypdfium2 as pdfium
 
-from cert_prep_contracts.documents import SourceKind
+from cert_prep_contracts.sources import SourceKind
 from cert_prep_contracts.transcription import MAX_AUDIO_DURATION_MS
 from cert_prep_backend.platform.errors import InvalidSourceError
 

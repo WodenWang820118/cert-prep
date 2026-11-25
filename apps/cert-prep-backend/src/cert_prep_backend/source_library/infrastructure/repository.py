@@ -2,17 +2,17 @@ from __future__ import annotations
 
 from sqlite3 import Connection
 
-from cert_prep_contracts.documents import SourceKind
+from cert_prep_contracts.sources import SourceKind
 
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.platform.errors import NotFoundError
 from cert_prep_backend.source_library.application.ports import StudyProjects
-from cert_prep_backend.source_library.domain.document import (
-    DocumentChunk,
-    SourceDocument,
+from cert_prep_backend.source_library.domain.source import (
+    SourceChunk,
+    Source,
     SourceFile,
 )
-from cert_prep_backend.source_library.domain.operation import DocumentOperation
+from cert_prep_backend.source_library.domain.operation import SourceOperation
 from cert_prep_backend.source_library.infrastructure import operations
 from cert_prep_backend.source_library.infrastructure.chunks import (
     get_chunk,
@@ -21,57 +21,57 @@ from cert_prep_backend.source_library.infrastructure.chunks import (
     update_chunk_text,
     update_chunk_translation,
 )
-from cert_prep_backend.source_library.infrastructure.documents import (
-    get_document,
+from cert_prep_backend.source_library.infrastructure.sources import (
+    get_source,
     get_source_file,
-    list_documents,
+    list_sources,
     set_question_count,
     update_question_count,
 )
 from cert_prep_backend.source_library.infrastructure.progress import (
-    recover_processing_documents,
+    recover_processing_sources,
 )
 from cert_prep_backend.source_library.infrastructure.records import (
-    document_from_row,
-    document_query,
-    ensure_document_exists,
+    source_from_row,
+    source_query,
+    ensure_source_exists,
     ensure_project_exists,
 )
 
 
-class SqliteDocumentRepository:
-    """Source documents and their chunks."""
+class SqliteSourceRepository:
+    """Persist sources and their chunks."""
 
     def __init__(
         self, db: Database, *, projects: StudyProjects, connection: Connection | None = None
     ) -> None:
-        # A caller's connection joins that transaction for `document` and `record_question_count`.
-        # Question Authoring passes the connection that commits its questions, so the document's
+        # A caller's connection joins that transaction for `source` and `record_question_count`.
+        # Question Authoring passes the connection that commits its questions, so the source's
         # question count and status is written with them.
         self._db = db
         self._projects = projects
         self._connection = connection
 
-    def documents_of(self, project_id: str) -> list[SourceDocument]:
+    def sources_of(self, project_id: str) -> list[Source]:
         ensure_project_exists(self._projects, project_id)
-        return list_documents(self._db, project_id)
+        return list_sources(self._db, project_id)
 
-    def document(self, project_id: str, document_id: str) -> SourceDocument:
+    def source(self, project_id: str, source_id: str) -> Source:
         if self._connection is None:
-            return get_document(self._db, project_id, document_id)
-        row = document_query(self._connection, project_id, document_id)
+            return get_source(self._db, project_id, source_id)
+        row = source_query(self._connection, project_id, source_id)
         if row is None:
             raise NotFoundError("Document not found.")
-        return document_from_row(row)
+        return source_from_row(row)
 
     def record_question_count(
-        self, project_id: str, document_id: str, *, status: str, question_count: int
+        self, project_id: str, source_id: str, *, status: str, question_count: int
     ) -> None:
         if self._connection is not None:
             set_question_count(
                 self._connection,
                 project_id=project_id,
-                document_id=document_id,
+                source_id=source_id,
                 status=status,
                 question_count=question_count,
             )
@@ -79,29 +79,29 @@ class SqliteDocumentRepository:
         update_question_count(
             self._db,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             status=status,
             question_count=question_count,
         )
 
-    def source_file(self, project_id: str, document_id: str) -> SourceFile:
-        return get_source_file(self._db, project_id, document_id)
+    def source_file(self, project_id: str, source_id: str) -> SourceFile:
+        return get_source_file(self._db, project_id, source_id)
 
-    def chunks_of(self, project_id: str, document_id: str) -> list[DocumentChunk]:
-        return list_chunks(self._db, project_id, document_id)
+    def chunks_of(self, project_id: str, source_id: str) -> list[SourceChunk]:
+        return list_chunks(self._db, project_id, source_id)
 
-    def chunk(self, project_id: str, document_id: str, chunk_id: str) -> DocumentChunk:
-        return get_chunk(self._db, project_id, document_id, chunk_id)
+    def chunk(self, project_id: str, source_id: str, chunk_id: str) -> SourceChunk:
+        return get_chunk(self._db, project_id, source_id, chunk_id)
 
     def edit_chunk_text(
-        self, project_id: str, document_id: str, chunk_id: str, text: str
-    ) -> DocumentChunk:
-        return update_chunk_text(self._db, project_id, document_id, chunk_id, text)
+        self, project_id: str, source_id: str, chunk_id: str, text: str
+    ) -> SourceChunk:
+        return update_chunk_text(self._db, project_id, source_id, chunk_id, text)
 
     def recover_processing(self) -> int:
-        return recover_processing_documents(self._db)
+        return recover_processing_sources(self._db)
 
-    def attach_document(
+    def attach_source(
         self,
         project_id: str,
         operation_id: str,
@@ -113,9 +113,9 @@ class SqliteDocumentRepository:
         page_count: int,
         source_kind: SourceKind,
         duration_ms: int | None = None,
-    ) -> SourceDocument:
+    ) -> Source:
         ensure_project_exists(self._projects, project_id)
-        return operations.create_and_attach_document(
+        return operations.create_and_attach_source(
             self._db,
             project_id=project_id,
             operation_id=operation_id,
@@ -129,9 +129,9 @@ class SqliteDocumentRepository:
         )
 
 
-class SqliteDocumentOperationRepository:
-    """Document operations. Each transition is one transaction that stores what the
-    DocumentOperation decided, guarded by the state it decided from."""
+class SqliteSourceOperationRepository:
+    """Source operations. Each transition is one transaction that stores what the
+    SourceOperation decided, guarded by the state it decided from."""
 
     def __init__(
         self,
@@ -142,19 +142,19 @@ class SqliteDocumentOperationRepository:
     ) -> None:
         self._db = db
         self._projects = projects
-        # Stopping or retrying a run discards the document's unfinished question jobs on the
+        # Stopping or retrying a run discards the source's unfinished question jobs on the
         # run's connection, so they go in the same transaction.
         self._question_jobs = question_jobs
 
-    def operation(self, project_id: str, operation_id: str) -> DocumentOperation:
+    def operation(self, project_id: str, operation_id: str) -> SourceOperation:
         return operations.get_operation(self._db, project_id=project_id, operation_id=operation_id)
 
-    def active_operation_of(self, project_id: str, document_id: str) -> DocumentOperation | None:
-        return operations.get_active_operation_for_document(
-            self._db, project_id=project_id, document_id=document_id
+    def active_operation_of(self, project_id: str, source_id: str) -> SourceOperation | None:
+        return operations.get_active_operation_for_source(
+            self._db, project_id=project_id, source_id=source_id
         )
 
-    def claim(self, project_id: str, operation_id: str) -> tuple[DocumentOperation, bool]:
+    def claim(self, project_id: str, operation_id: str) -> tuple[SourceOperation, bool]:
         ensure_project_exists(self._projects, project_id)
         claim = operations.claim_operation(
             self._db, project_id=project_id, operation_id=operation_id
@@ -165,13 +165,13 @@ class SqliteDocumentOperationRepository:
         return self.claim(project_id, operation_id)[1]
 
     def start_retry(
-        self, project_id: str, document_id: str, operation_id: str
-    ) -> DocumentOperation:
+        self, project_id: str, source_id: str, operation_id: str
+    ) -> SourceOperation:
         ensure_project_exists(self._projects, project_id)
         return operations.start_retry_operation(
             self._db,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             question_jobs=self._question_jobs,
             operation_id=operation_id,
         )
@@ -182,20 +182,20 @@ class SqliteDocumentOperationRepository:
         operation_id: str,
         *,
         error: str,
-        document_status: str | None = None,
+        source_status: str | None = None,
         extraction_method: str | None = None,
-    ) -> DocumentOperation:
+    ) -> SourceOperation:
         return operations.finish_failed(
             self._db,
             project_id=project_id,
             operation_id=operation_id,
             error=error,
             question_jobs=self._question_jobs,
-            document_status=document_status,
+            source_status=source_status,
             extraction_method=extraction_method,
         )
 
-    def cancel(self, project_id: str, operation_id: str) -> DocumentOperation:
+    def cancel(self, project_id: str, operation_id: str) -> SourceOperation:
         ensure_project_exists(self._projects, project_id)
         return operations.cancel_operation(
             self._db, project_id=project_id, operation_id=operation_id
@@ -203,7 +203,7 @@ class SqliteDocumentOperationRepository:
 
     def acknowledge_cancellation(
         self, project_id: str, operation_id: str
-    ) -> DocumentOperation:
+    ) -> SourceOperation:
         return operations.acknowledge_cancellation(
             self._db,
             project_id=project_id,
@@ -211,10 +211,10 @@ class SqliteDocumentOperationRepository:
             question_jobs=self._question_jobs,
         )
 
-    def cancel_processing_of(self, project_id: str, document_id: str) -> DocumentOperation:
+    def cancel_processing_of(self, project_id: str, source_id: str) -> SourceOperation:
         ensure_project_exists(self._projects, project_id)
-        return operations.cancel_document_processing(
-            self._db, project_id=project_id, document_id=document_id
+        return operations.cancel_source_processing(
+            self._db, project_id=project_id, source_id=source_id
         )
 
     def recover_interrupted(self) -> int:
@@ -222,16 +222,16 @@ class SqliteDocumentOperationRepository:
 
 
 __all__ = [
-    "SqliteDocumentOperationRepository",
-    "SqliteDocumentRepository",
-    "ensure_document_exists",
+    "SqliteSourceOperationRepository",
+    "SqliteSourceRepository",
+    "ensure_source_exists",
     "get_chunk",
-    "get_document",
+    "get_source",
     "get_source_file",
     "get_source_chunks",
     "list_chunks",
-    "list_documents",
-    "recover_processing_documents",
+    "list_sources",
+    "recover_processing_sources",
     "update_question_count",
     "update_chunk_translation",
 ]

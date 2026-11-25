@@ -40,7 +40,7 @@
           <div>
             <h3>Weak areas by source</h3>
             <p>
-              Current and cleared mistakes grouped by source document and page.
+              Current and cleared mistakes grouped by source and page.
             </p>
           </div>
         </header>
@@ -49,7 +49,7 @@
           @for (area of weakAreas(); track area.key) {
             <section class="weak-area-row">
               <div class="weak-area-source">
-                <span>{{ area.documentLabel }}</span>
+                <span>{{ area.sourceLabel }}</span>
                 <strong>{{ area.pageLabel }}</strong>
               </div>
               <div class="weak-area-counts">
@@ -101,7 +101,7 @@
             <section class="repeated-row">
               <div>
                 <p class="repeated-meta">
-                  {{ miss.documentLabel }} - {{ miss.pageLabel }} -
+                  {{ miss.sourceLabel }} - {{ miss.pageLabel }} -
                   {{ miss.missCount }} misses - {{ miss.lastWrongLabel }}
                 </p>
                 <h4>{{ miss.question }}</h4>

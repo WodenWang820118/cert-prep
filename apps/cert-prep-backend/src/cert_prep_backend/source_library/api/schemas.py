@@ -4,14 +4,14 @@ from dataclasses import asdict
 
 from pydantic import BaseModel
 
-from cert_prep_contracts.documents import SourceKind
+from cert_prep_contracts.sources import SourceKind
 
-from cert_prep_backend.source_library.domain.document import DocumentChunk, DocumentStatus
+from cert_prep_backend.source_library.domain.source import SourceChunk, SourceStatus
 from cert_prep_backend.source_library.domain.exam_content import ContentProfileValue
 from cert_prep_backend.source_library.domain.statuses import ExtractionMethodValue
 
 
-class DocumentRead(BaseModel):
+class SourceRead(BaseModel):
     id: str
     project_id: str
     filename: str
@@ -19,7 +19,7 @@ class DocumentRead(BaseModel):
     language_hint: str
     page_count: int
     has_text: bool
-    status: DocumentStatus
+    status: SourceStatus
     extraction_method: ExtractionMethodValue
     ocr_device: str | None
     extraction_warnings: str | None
@@ -41,13 +41,13 @@ class DocumentRead(BaseModel):
     transcription_warning: str | None = None
 
 
-class DocumentList(BaseModel):
-    items: list[DocumentRead]
+class SourceList(BaseModel):
+    items: list[SourceRead]
 
 
 class ChunkRead(BaseModel):
     id: str
-    document_id: str
+    source_id: str
     page_number: int
     chunk_index: int
     text: str
@@ -68,7 +68,7 @@ class ChunkRead(BaseModel):
     translation_stale: bool = False
 
     @classmethod
-    def from_chunk(cls, chunk: DocumentChunk) -> ChunkRead:
+    def from_chunk(cls, chunk: SourceChunk) -> ChunkRead:
         return cls(**asdict(chunk), translation_stale=chunk.translation_stale)
 
 

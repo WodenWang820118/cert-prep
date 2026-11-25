@@ -6,26 +6,26 @@ import {
 import { basename, isAbsolute, resolve } from 'node:path';
 
 import {
-  loadDocumentCancellationOptions,
-  type DocumentCancellationRunnerOptions,
+  loadSourceCancellationOptions,
+  type SourceCancellationRunnerOptions,
 } from './args.mts';
 
 const DEFAULT_OLLAMA_PORT = 11_434;
 
 export interface RemainingResilienceOptions
-  extends DocumentCancellationRunnerOptions {
+  extends SourceCancellationRunnerOptions {
   readonly ollamaExePath: string;
   readonly ollamaHost: string;
   readonly ollamaModelsRoot: string;
 }
 
-export type DocumentCancellationOptionsLoader = (
+export type SourceCancellationOptionsLoader = (
   environment?: Readonly<NodeJS.ProcessEnv>,
   workspaceRoot?: string,
-) => Promise<DocumentCancellationRunnerOptions>;
+) => Promise<SourceCancellationRunnerOptions>;
 
 /**
- * Extends the exact-candidate document options with an explicitly isolated
+ * Extends the exact-candidate source options with an explicitly isolated
  * Ollama endpoint and model store. The model store is deliberately not created
  * here: the runner creates its diagnostics parent, then the isolation helper
  * atomically creates the fresh model directory immediately before startup.
@@ -33,8 +33,8 @@ export type DocumentCancellationOptionsLoader = (
 export async function loadRemainingResilienceOptions(
   environment: Readonly<NodeJS.ProcessEnv> = process.env,
   workspaceRoot?: string,
-  baseLoader: DocumentCancellationOptionsLoader =
-    loadDocumentCancellationOptions,
+  baseLoader: SourceCancellationOptionsLoader =
+    loadSourceCancellationOptions,
 ): Promise<RemainingResilienceOptions> {
   const baseOptions = await baseLoader(environment, workspaceRoot);
   const ollamaExePath = requiredCanonicalOllamaExecutable(environment);

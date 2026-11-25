@@ -1333,6 +1333,417 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
         END;
         """,
     ),
+    (
+        34,
+        # Sources, not documents: the aggregate holds recordings too. Its three tables are
+        # created under their new names and filled from the old ones; every table that refers
+        # to a source is rebuilt under a temporary name so that its column says source_id and
+        # its foreign keys point at the new tables, then takes its own name again. The triggers
+        # go first, because SQLite re-parses them on each rename and they name the old tables;
+        # they come back with the same names and error texts. Indexes are created again with
+        # their definitions (uniqueness and partial predicates) under names that say source.
+        # source_kind loses its old default 'document': every writer names the kind, and no
+        # default is true for every source. A whole-source practice session stores full_source.
+        """
+        DROP TRIGGER trg_questions_audio_locator_insert;
+        DROP TRIGGER trg_question_generation_jobs_validate_chunk_insert;
+        DROP TRIGGER trg_question_generation_jobs_validate_chunk_update;
+        DROP TRIGGER trg_question_generation_jobs_immutable_attribution;
+
+        CREATE TABLE sources (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            filename TEXT NOT NULL,
+            sha256 TEXT NOT NULL,
+            storage_path TEXT NOT NULL,
+            page_count INTEGER NOT NULL,
+            has_text INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            extraction_method TEXT NOT NULL DEFAULT 'none',
+            question_count INTEGER NOT NULL DEFAULT 0,
+            ocr_device TEXT,
+            processed_page_count INTEGER NOT NULL DEFAULT 0,
+            language_hint TEXT NOT NULL DEFAULT 'auto',
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            content_profile TEXT NOT NULL DEFAULT 'unknown',
+            classification_detail TEXT NOT NULL DEFAULT '',
+            source_kind TEXT NOT NULL,
+            duration_ms INTEGER,
+            transcription_status TEXT NOT NULL DEFAULT 'not_applicable',
+            translation_status TEXT NOT NULL DEFAULT 'not_applicable',
+            configured_transcription_model TEXT,
+            effective_transcription_model TEXT,
+            transcription_device TEXT,
+            transcription_warning TEXT,
+            extraction_warnings TEXT,
+            failure_message TEXT,
+            extraction_provenance TEXT
+        );
+        INSERT INTO sources (
+            id, project_id, filename, sha256, storage_path, page_count,
+            has_text, status, created_at, extraction_method, question_count, ocr_device,
+            processed_page_count, language_hint, updated_at, content_profile,
+            classification_detail, source_kind, duration_ms, transcription_status,
+            translation_status, configured_transcription_model, effective_transcription_model,
+            transcription_device, transcription_warning, extraction_warnings, failure_message,
+            extraction_provenance
+        )
+        SELECT
+            id, project_id, filename, sha256, storage_path, page_count,
+            has_text, status, created_at, extraction_method, question_count, ocr_device,
+            processed_page_count, language_hint, updated_at, content_profile,
+            classification_detail, source_kind, duration_ms, transcription_status,
+            translation_status, configured_transcription_model, effective_transcription_model,
+            transcription_device, transcription_warning, extraction_warnings, failure_message,
+            extraction_provenance
+        FROM documents;
+
+        CREATE TABLE source_chunks (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            page_number INTEGER NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            source_excerpt TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            extraction_method TEXT NOT NULL DEFAULT 'none',
+            raw_text TEXT NOT NULL DEFAULT '',
+            line_start INTEGER,
+            line_end INTEGER,
+            line_count INTEGER NOT NULL DEFAULT 0,
+            content_profile TEXT NOT NULL DEFAULT 'unknown',
+            locator_kind TEXT NOT NULL DEFAULT 'page',
+            start_ms INTEGER,
+            end_ms INTEGER,
+            source_revision INTEGER NOT NULL DEFAULT 1,
+            translated_text TEXT,
+            translation_source_revision INTEGER
+        );
+        INSERT INTO source_chunks (
+            id, project_id, source_id, page_number, chunk_index, text,
+            source_excerpt, created_at, extraction_method, raw_text, line_start, line_end,
+            line_count, content_profile, locator_kind, start_ms, end_ms, source_revision,
+            translated_text, translation_source_revision
+        )
+        SELECT
+            id, project_id, document_id, page_number, chunk_index, text,
+            source_excerpt, created_at, extraction_method, raw_text, line_start, line_end,
+            line_count, content_profile, locator_kind, start_ms, end_ms, source_revision,
+            translated_text, translation_source_revision
+        FROM document_chunks;
+
+        CREATE TABLE source_operations (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            source_id TEXT REFERENCES sources(id) ON DELETE CASCADE,
+            status TEXT NOT NULL,
+            phase TEXT NOT NULL,
+            cancellable INTEGER NOT NULL,
+            error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        INSERT INTO source_operations (
+            id, project_id, source_id, status, phase, cancellable, error, created_at, updated_at
+        )
+        SELECT id, project_id, document_id, status, phase, cancellable, error, created_at,
+            updated_at
+        FROM document_operations;
+
+        CREATE TABLE capture_review_sessions_new (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            operation_id TEXT NOT NULL REFERENCES source_operations(id) ON DELETE CASCADE,
+            runtime_capture_id TEXT,
+            status TEXT NOT NULL,
+            review_revision INTEGER NOT NULL DEFAULT 0,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            confirm_request_id TEXT,
+            confirm_review_digest TEXT,
+            last_event_sequence INTEGER NOT NULL DEFAULT 0 CHECK(last_event_sequence >= 0),
+            runtime_ingestion_id TEXT,
+            UNIQUE(project_id, source_id),
+            UNIQUE(operation_id)
+        );
+        INSERT INTO capture_review_sessions_new (
+            id, project_id, source_id, operation_id, runtime_capture_id, status,
+            review_revision, expires_at, created_at, updated_at, confirm_request_id,
+            confirm_review_digest, last_event_sequence, runtime_ingestion_id
+        )
+        SELECT
+            id, project_id, document_id, operation_id, runtime_capture_id, status,
+            review_revision, expires_at, created_at, updated_at, confirm_request_id,
+            confirm_review_digest, last_event_sequence, runtime_ingestion_id
+        FROM capture_review_sessions;
+        DROP TABLE capture_review_sessions;
+        ALTER TABLE capture_review_sessions_new RENAME TO capture_review_sessions;
+
+        CREATE TABLE questions_new (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            source_id TEXT REFERENCES sources(id) ON DELETE SET NULL,
+            chunk_id TEXT REFERENCES source_chunks(id) ON DELETE SET NULL,
+            question TEXT NOT NULL,
+            choices_json TEXT NOT NULL,
+            answer TEXT,
+            answer_key_source TEXT NOT NULL DEFAULT 'manual',
+            rationale TEXT,
+            citation_page INTEGER,
+            citation_locator_kind TEXT NOT NULL DEFAULT 'page',
+            citation_start_ms INTEGER,
+            citation_end_ms INTEGER,
+            source_excerpt TEXT,
+            confidence REAL,
+            source_order INTEGER,
+            source_question_number TEXT,
+            item_kind TEXT NOT NULL DEFAULT 'unknown',
+            group_key TEXT,
+            group_prompt TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        INSERT INTO questions_new (
+            id, project_id, source_id, chunk_id,
+            question, choices_json, answer, answer_key_source,
+            rationale, citation_page, citation_locator_kind, citation_start_ms,
+            citation_end_ms, source_excerpt, confidence, source_order,
+            source_question_number, item_kind, group_key, group_prompt,
+            created_at, updated_at
+        )
+        SELECT
+            id, project_id, document_id, chunk_id,
+            question, choices_json, answer, answer_key_source,
+            rationale, citation_page, citation_locator_kind, citation_start_ms,
+            citation_end_ms, source_excerpt, confidence, source_order,
+            source_question_number, item_kind, group_key, group_prompt,
+            created_at, updated_at
+        FROM questions;
+        DROP TABLE questions;
+        ALTER TABLE questions_new RENAME TO questions;
+
+        CREATE TABLE question_generation_jobs_new (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            chunk_id TEXT REFERENCES source_chunks(id) ON DELETE SET NULL,
+            source_chunk_id TEXT NOT NULL,
+            page_number INTEGER NOT NULL,
+            strategy TEXT NOT NULL,
+            status TEXT NOT NULL,
+            phase TEXT NOT NULL DEFAULT 'queued',
+            cancellable INTEGER NOT NULL DEFAULT 1,
+            provider TEXT NOT NULL DEFAULT '',
+            model TEXT NOT NULL DEFAULT '',
+            effective_provider TEXT,
+            effective_model TEXT,
+            fallback_reason TEXT,
+            generated_count INTEGER NOT NULL DEFAULT 0,
+            retry_count INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            CHECK(chunk_id IS NULL OR chunk_id = source_chunk_id),
+            UNIQUE(source_id, chunk_id, strategy)
+        );
+        INSERT INTO question_generation_jobs_new (
+            id, project_id, source_id, chunk_id,
+            source_chunk_id, page_number, strategy, status,
+            phase, cancellable, provider, model,
+            effective_provider, effective_model, fallback_reason, generated_count,
+            retry_count, last_error, created_at, updated_at
+        )
+        SELECT
+            id, project_id, document_id, chunk_id,
+            source_chunk_id, page_number, strategy, status,
+            phase, cancellable, provider, model,
+            effective_provider, effective_model, fallback_reason, generated_count,
+            retry_count, last_error, created_at, updated_at
+        FROM question_generation_jobs;
+        DROP TABLE question_generation_jobs;
+        ALTER TABLE question_generation_jobs_new RENAME TO question_generation_jobs;
+
+        CREATE TABLE manual_question_generations_new (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            limit_count INTEGER NOT NULL,
+            strategy TEXT NOT NULL,
+            status TEXT NOT NULL,
+            phase TEXT NOT NULL,
+            cancellable INTEGER NOT NULL,
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            effective_provider TEXT,
+            effective_model TEXT,
+            fallback_reason TEXT,
+            generated_count INTEGER NOT NULL DEFAULT 0,
+            unavailable_blocks_json TEXT NOT NULL DEFAULT '[]',
+            error TEXT,
+            commit_started_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        INSERT INTO manual_question_generations_new (
+            id, project_id, source_id, limit_count,
+            strategy, status, phase, cancellable,
+            provider, model, effective_provider, effective_model,
+            fallback_reason, generated_count, unavailable_blocks_json, error,
+            commit_started_at, created_at, updated_at
+        )
+        SELECT
+            id, project_id, document_id, limit_count,
+            strategy, status, phase, cancellable,
+            provider, model, effective_provider, effective_model,
+            fallback_reason, generated_count, unavailable_blocks_json, error,
+            commit_started_at, created_at, updated_at
+        FROM manual_question_generations;
+        DROP TABLE manual_question_generations;
+        ALTER TABLE manual_question_generations_new RENAME TO manual_question_generations;
+
+        CREATE TABLE practice_sessions_new (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            question_ids_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            completed_at TEXT,
+            mode TEXT NOT NULL DEFAULT 'random_draw',
+            source_id TEXT REFERENCES sources(id) ON DELETE SET NULL,
+            requested_question_count INTEGER NOT NULL DEFAULT 10,
+            random_seed INTEGER,
+            abandoned_at TEXT
+        );
+        INSERT INTO practice_sessions_new (
+            id, project_id, question_ids_json, status, created_at, completed_at,
+            mode, source_id, requested_question_count, random_seed, abandoned_at
+        )
+        SELECT
+            id, project_id, question_ids_json, status, created_at, completed_at,
+            CASE mode WHEN 'full_document' THEN 'full_source' ELSE mode END,
+            source_document_id, requested_question_count, random_seed, abandoned_at
+        FROM practice_sessions;
+        DROP TABLE practice_sessions;
+        ALTER TABLE practice_sessions_new RENAME TO practice_sessions;
+
+        CREATE TABLE practice_session_questions_new (
+            session_id TEXT NOT NULL REFERENCES practice_sessions(id) ON DELETE CASCADE,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            question_id TEXT NOT NULL,
+            question_order INTEGER NOT NULL,
+            question TEXT NOT NULL,
+            choices_json TEXT NOT NULL,
+            correct_answer TEXT,
+            rationale TEXT,
+            citation_page INTEGER,
+            source_excerpt TEXT,
+            created_at TEXT NOT NULL,
+            source_id TEXT,
+            PRIMARY KEY (session_id, question_id)
+        );
+        INSERT INTO practice_session_questions_new (
+            session_id, project_id, question_id, question_order, question, choices_json,
+            correct_answer, rationale, citation_page, source_excerpt, created_at, source_id
+        )
+        SELECT
+            session_id, project_id, question_id, question_order, question, choices_json,
+            correct_answer, rationale, citation_page, source_excerpt, created_at, document_id
+        FROM practice_session_questions;
+        DROP TABLE practice_session_questions;
+        ALTER TABLE practice_session_questions_new RENAME TO practice_session_questions;
+
+        DROP TABLE document_operations;
+        DROP TABLE document_chunks;
+        DROP TABLE documents;
+
+        CREATE INDEX idx_sources_project ON sources(project_id);
+        CREATE INDEX idx_chunks_source ON source_chunks(source_id, page_number);
+        CREATE INDEX idx_source_operations_project
+            ON source_operations(project_id, created_at);
+        CREATE INDEX idx_source_operations_source
+            ON source_operations(project_id, source_id, updated_at);
+        CREATE UNIQUE INDEX idx_source_operations_one_active_source
+            ON source_operations(project_id, source_id)
+            WHERE source_id IS NOT NULL
+                AND status IN ('queued', 'running', 'cancel_requested');
+        CREATE INDEX idx_capture_review_sessions_expiry
+            ON capture_review_sessions(status, expires_at);
+        CREATE INDEX idx_capture_review_sessions_runtime
+            ON capture_review_sessions(project_id, runtime_capture_id);
+        CREATE INDEX idx_questions_project_created
+            ON questions(project_id, created_at);
+        CREATE INDEX idx_question_generation_jobs_source
+            ON question_generation_jobs(project_id, source_id, created_at);
+        CREATE INDEX idx_question_generation_jobs_status
+            ON question_generation_jobs(status, updated_at);
+        CREATE INDEX idx_manual_question_generations_source
+            ON manual_question_generations(project_id, source_id, created_at);
+        CREATE UNIQUE INDEX idx_manual_question_generations_one_active
+            ON manual_question_generations(project_id, source_id)
+            WHERE status IN ('queued', 'running', 'cancel_requested');
+        CREATE UNIQUE INDEX idx_practice_sessions_one_active_per_project
+            ON practice_sessions(project_id)
+            WHERE status = 'active';
+        CREATE INDEX idx_practice_session_questions_project
+            ON practice_session_questions(project_id, session_id, question_order);
+
+        CREATE TRIGGER trg_questions_audio_locator_insert
+        AFTER INSERT ON questions
+        WHEN NEW.chunk_id IS NOT NULL
+        BEGIN
+            UPDATE questions
+            SET citation_locator_kind = COALESCE(
+                    (SELECT locator_kind FROM source_chunks WHERE id = NEW.chunk_id), 'page'),
+                citation_start_ms = (
+                    SELECT start_ms FROM source_chunks WHERE id = NEW.chunk_id),
+                citation_end_ms = (
+                    SELECT end_ms FROM source_chunks WHERE id = NEW.chunk_id),
+                citation_page = CASE
+                    WHEN (SELECT locator_kind FROM source_chunks WHERE id = NEW.chunk_id) = 'time'
+                    THEN NULL ELSE citation_page END
+            WHERE id = NEW.id;
+        END;
+        CREATE TRIGGER trg_question_generation_jobs_validate_chunk_insert
+        BEFORE INSERT ON question_generation_jobs
+        WHEN NEW.chunk_id IS NULL
+            OR NOT EXISTS (
+                SELECT 1
+                FROM source_chunks
+                WHERE id = NEW.chunk_id
+                    AND project_id = NEW.project_id
+                    AND source_id = NEW.source_id
+            )
+        BEGIN
+            SELECT RAISE(ABORT, 'question job chunk must belong to its document');
+        END;
+        CREATE TRIGGER trg_question_generation_jobs_validate_chunk_update
+        BEFORE UPDATE OF chunk_id ON question_generation_jobs
+        WHEN NEW.chunk_id IS NOT NULL
+            AND NOT EXISTS (
+                SELECT 1
+                FROM source_chunks
+                WHERE id = NEW.chunk_id
+                    AND project_id = NEW.project_id
+                    AND source_id = NEW.source_id
+            )
+        BEGIN
+            SELECT RAISE(ABORT, 'question job chunk must belong to its document');
+        END;
+        CREATE TRIGGER trg_question_generation_jobs_immutable_attribution
+        BEFORE UPDATE OF project_id, source_id, source_chunk_id
+            ON question_generation_jobs
+        WHEN NEW.project_id IS NOT OLD.project_id
+            OR NEW.source_id IS NOT OLD.source_id
+            OR NEW.source_chunk_id IS NOT OLD.source_chunk_id
+        BEGIN
+            SELECT RAISE(ABORT, 'question job attribution is immutable');
+        END;
+        """,
+    ),
 )
 
 
@@ -1367,7 +1778,7 @@ def _legacy_page_source_kind(filename: str, storage_path: str, uploads_root: Pat
 # Migrations that rebuild a parent table (create, copy, drop, rename) run with foreign keys off,
 # so dropping the old table cascades into nothing, and statement by statement in one
 # transaction, so the version recheck and the rebuild commit together.
-_TABLE_REBUILD_MIGRATIONS: Final[frozenset[int]] = frozenset({30, 33})
+_TABLE_REBUILD_MIGRATIONS: Final[frozenset[int]] = frozenset({30, 33, 34})
 
 
 class Database:

@@ -492,29 +492,29 @@ export async function restartAndVerifyPersistence(
       30_000,
       'persisted Capture Workbench runtime',
     );
-    await waitForPersistedCaptureDocument(run);
+    await waitForPersistedCaptureSource(run);
     run.metrics.observations.push(
-      'Restart persistence verified through the durable Capture Workbench document and chunks API.',
+      'Restart persistence verified through the durable Capture Workbench source and chunks API.',
     );
     await screenshot(run, 'restart-persistence-capture');
   }
   run.metrics.restart.verified = projectPersisted && reviewPersisted;
 }
 
-async function waitForPersistedCaptureDocument(
+async function waitForPersistedCaptureSource(
   run: SmokeRunState,
 ): Promise<void> {
   const projectApi = run.projectApi;
-  const document = run.uploadedDocument;
-  if (!projectApi || !document) {
+  const source = run.uploadedSource;
+  if (!projectApi || !source) {
     throw new Error(
-      'Capture Workbench persistence verification requires the original project and document API references.',
+      'Capture Workbench persistence verification requires the original project and source API references.',
     );
   }
 
-  const endpoint = `${projectApi.apiBaseUrl}/projects/${encodeURIComponent(projectApi.projectId)}/documents/${encodeURIComponent(document.documentId)}`;
+  const endpoint = `${projectApi.apiBaseUrl}/projects/${encodeURIComponent(projectApi.projectId)}/sources/${encodeURIComponent(source.sourceId)}`;
   const deadline = Date.now() + 30_000;
-  let lastDetail = 'document persistence response was not ready';
+  let lastDetail = 'source persistence response was not ready';
   while (Date.now() < deadline) {
     const response = await fetch(endpoint, {
       headers: { Authorization: projectApi.authorization },
@@ -536,7 +536,7 @@ async function waitForPersistedCaptureDocument(
     await delay(500);
   }
   throw new Error(
-    `Timed out waiting for persisted Capture Workbench document: ${lastDetail}`,
+    `Timed out waiting for persisted Capture Workbench source: ${lastDetail}`,
   );
 }
 
@@ -590,7 +590,7 @@ export async function forceCrashAndReconnect(
   run.app = null;
   run.appExit = null;
   run.projectApi = null;
-  run.uploadedDocument = null;
+  run.uploadedSource = null;
 
   let residue: ProcessRecord[] = [];
   let capturedOwnedResidue: ProcessRecord[] = [];

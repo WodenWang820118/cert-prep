@@ -7,9 +7,9 @@ from cert_prep_backend.authoring.domain.models import (
     QuestionGenerationStrategy,
     QuestionSuggestion,
     SourceChunk,
-    source_chunk_from_document_chunk,
+    to_source_chunk,
 )
-from cert_prep_backend.source_library.domain.document import DocumentChunk
+from cert_prep_backend.source_library.domain.source import SourceChunk as StoredSourceChunk
 from cert_prep_backend.authoring.domain.deterministic_parser import (
     MAX_PROMPT_SOURCE_CHARS,
     extract_jlpt_question_blocks,
@@ -25,9 +25,9 @@ from reasoning_test_support import question_suggestion_from_item
 
 
 def test_audio_question_source_uses_edited_text_while_pdf_keeps_raw_text() -> None:
-    chunk = DocumentChunk(
+    chunk = StoredSourceChunk(
         id="chunk",
-        document_id="document",
+        source_id="document",
         page_number=0,
         chunk_index=0,
         text="編集後の日本語",
@@ -42,9 +42,9 @@ def test_audio_question_source_uses_edited_text_while_pdf_keeps_raw_text() -> No
         locator_kind="time",
     )
 
-    assert source_chunk_from_document_chunk(chunk).raw_or_text() == "編集後の日本語"
+    assert to_source_chunk(chunk).raw_or_text() == "編集後の日本語"
     page_chunk = replace(chunk, locator_kind="page")
-    assert source_chunk_from_document_chunk(page_chunk).raw_or_text() == "Whisper の最初の日本語"
+    assert to_source_chunk(page_chunk).raw_or_text() == "Whisper の最初の日本語"
 
 
 def test_question_parser_rejects_cover_and_instruction_text_as_questions() -> None:

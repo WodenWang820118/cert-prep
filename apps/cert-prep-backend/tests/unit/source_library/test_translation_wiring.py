@@ -36,9 +36,9 @@ def test_bootstrap_supplies_fresh_translator_for_each_operation(monkeypatch, bat
 
 @pytest.mark.parametrize('language_hint', ['en', 'ja'])
 def test_chunk_translation_uses_its_recording_language_hint(monkeypatch, language_hint):
-    document = Mock(language_hint=language_hint)
+    source = Mock(language_hint=language_hint)
     chunk = Mock(text='Transcript', source_revision=2)
-    monkeypatch.setattr(audio.documents, 'get_document', Mock(return_value=document))
+    monkeypatch.setattr(audio.sources, 'get_source', Mock(return_value=source))
     monkeypatch.setattr(audio.chunks, 'get_chunk', Mock(return_value=chunk))
     save_translation = Mock()
     monkeypatch.setattr(audio.chunks, 'compare_and_set_chunk_translation', save_translation)
@@ -52,9 +52,9 @@ def test_chunk_translation_uses_its_recording_language_hint(monkeypatch, languag
         db,
         translator=translator,
         project_id='project',
-        document_id='document',
+        source_id='document',
         chunk_id='chunk',
-        reconcile_document_status=False,
+        reconcile_source_status=False,
     )
 
     assert result is chunk
@@ -62,7 +62,7 @@ def test_chunk_translation_uses_its_recording_language_hint(monkeypatch, languag
     save_translation.assert_called_once_with(
         connection,
         project_id='project',
-        document_id='document',
+        source_id='document',
         chunk_id='chunk',
         translated_text='Translation',
         expected_source_revision=2,

@@ -1,9 +1,9 @@
-@if (model().document; as document) {
+@if (model().source; as source) {
   @if (model().chunks.length > 0) {
     <section class="workbench-preview" aria-labelledby="source-evidence-heading">
       <div class="workbench-preview-header">
         <h3 id="source-evidence-heading">Source evidence</h3>
-        @if (document.source_kind === 'recording') {
+        @if (source.source_kind === 'recording') {
           <button
             class="workbench-secondary-button"
             type="button"
@@ -16,7 +16,7 @@
         }
       </div>
 
-      @if (document.source_kind === 'recording') {
+      @if (source.source_kind === 'recording') {
         <div class="rounded-md border border-slate-200 bg-slate-50 p-3">
           @if (model().audio.loading) {
             <p class="m-0 text-sm font-semibold text-muted-foreground">Loading recording...</p>

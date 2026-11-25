@@ -437,7 +437,7 @@ function productionFixture(): {
     port: 9222,
     processBaseline: { all: [], nodePids: new Set<number>() },
     projectApi: null,
-    uploadedDocument: null,
+    uploadedSource: null,
     questionObservationStartedAt: null,
     questionObservationActive: false,
     questionGenerationApiPollErrorCaptured: false,

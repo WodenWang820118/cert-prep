@@ -39,7 +39,7 @@ export class PracticePanelComponent implements OnInit {
   protected readonly practice = inject(PracticeStore);
   protected readonly displayChoice = displayChoice;
   private readonly inputErrorSync = effect(() => {
-    if (this.questionsStore.questionsError() !== undefined || this.sourceImport.documentsError() !== undefined) {
+    if (this.questionsStore.questionsError() !== undefined || this.sourceImport.sourcesError() !== undefined) {
       this.operations.fail(
         'Practice data could not be loaded. Try refreshing the project.',
       );
@@ -47,19 +47,19 @@ export class PracticePanelComponent implements OnInit {
   });
 
   protected readonly modeTitle = computed(() =>
-    this.sessionMode() === 'full_document' ? 'Whole source' : 'Random draw',
+    this.sessionMode() === 'full_source' ? 'Whole source' : 'Random draw',
   );
 
   protected readonly modeSummary = computed(() => {
-    if (this.sessionMode() === 'full_document') {
-      return `${this.practice.selectedDocumentQuestionCount()} questions in selected document`;
+    if (this.sessionMode() === 'full_source') {
+      return `${this.practice.selectedSourceQuestionCount()} questions in selected source`;
     }
 
     return `${this.practice.questionCount()} questions available`;
   });
 
   protected readonly startButtonLabel = computed(() =>
-    this.sessionMode() === 'full_document'
+    this.sessionMode() === 'full_source'
       ? 'Start whole source'
       : 'Start random draw',
   );
@@ -72,8 +72,8 @@ export class PracticePanelComponent implements OnInit {
         : session.question_ids.length;
     }
 
-    return this.sessionMode() === 'full_document'
-      ? this.practice.selectedDocumentQuestionCount()
+    return this.sessionMode() === 'full_source'
+      ? this.practice.selectedSourceQuestionCount()
       : this.practice.effectiveRandomQuestionCount();
   });
 
@@ -191,10 +191,10 @@ export class PracticePanelComponent implements OnInit {
 
     this.questionsStore.load(project.id);
     if (
-      this.sessionMode() === 'full_document' &&
-      this.sourceImport.documents().length === 0
+      this.sessionMode() === 'full_source' &&
+      this.sourceImport.sources().length === 0
     ) {
-      this.sourceImport.loadLatestDocument(project.id);
+      this.sourceImport.loadLatestSource(project.id);
     }
   }
 }

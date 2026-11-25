@@ -1,4 +1,4 @@
-import type { ChunkRead, DocumentRead } from '../../core/domain';
+import type { ChunkRead, SourceRead } from '../../core/domain';
 import type {
   LanguageHint,
   SourceUploadItem,
@@ -11,7 +11,7 @@ export type SourceImportAction =
   | { readonly type: 'upload' }
   | { readonly type: 'cancel-upload'; readonly itemId: string }
   | { readonly type: 'retry-upload'; readonly itemId: string }
-  | { readonly type: 'select-document'; readonly documentId: string }
+  | { readonly type: 'select-source'; readonly sourceId: string }
   | { readonly type: 'cancel-processing' }
   | { readonly type: 'retry-processing' }
   | { readonly type: 'retry-progress' }
@@ -36,10 +36,10 @@ export interface SourceUploadQueueViewModel {
   readonly operationError: string | null;
 }
 
-export interface SourceDocumentStatusViewModel {
-  readonly documents: readonly DocumentRead[];
-  readonly activeDocumentId: string | null;
-  readonly document: DocumentRead | null;
+export interface SourceStatusViewModel {
+  readonly sources: readonly SourceRead[];
+  readonly activeSourceId: string | null;
+  readonly source: SourceRead | null;
   readonly streamError: string | null;
   readonly cancelBusy: boolean;
   readonly retryBusy: boolean;
@@ -52,7 +52,7 @@ export interface SourceAudioPreviewViewModel {
 }
 
 export interface SourceEvidenceViewModel {
-  readonly document: DocumentRead | null;
+  readonly source: SourceRead | null;
   readonly chunks: readonly ChunkRead[];
   readonly hiddenChunkCount: number;
   readonly audio: SourceAudioPreviewViewModel;

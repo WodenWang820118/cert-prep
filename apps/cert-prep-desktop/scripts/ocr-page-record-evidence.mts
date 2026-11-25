@@ -6,8 +6,8 @@ export const OCR_EXTRACTION_METHOD = 'text_recognition' as const;
 export const OCR_FORBIDDEN_EXTRACTION_METHODS = ['text_layer'] as const;
 export const OCR_IDENTITY_CANONICALIZATION = 'sorted-json-v1' as const;
 
-export interface OcrDocumentRecordIdentity {
-  readonly documentIdSha256: string;
+export interface OcrSourceRecordIdentity {
+  readonly sourceIdSha256: string;
   readonly projectIdSha256: string;
   readonly sourceSha256: string;
   readonly pageCount: number;
@@ -21,7 +21,7 @@ export interface OcrDocumentRecordIdentity {
 
 export interface OcrPageRecordIdentity {
   readonly projectionSource: typeof OCR_PROJECTION_SOURCE;
-  readonly documentIdSha256: string;
+  readonly sourceIdSha256: string;
   readonly recordIdSha256: string;
   readonly pageNumber: number;
   readonly chunkIndex: number;
@@ -43,29 +43,29 @@ export interface OcrPageRecordEvidence {
   readonly forbiddenExtractionMethods: typeof OCR_FORBIDDEN_EXTRACTION_METHODS;
   readonly freshness: {
     readonly appDataEmptyAtLaunch: boolean;
-    readonly uploadResponseMatchedDocument: true;
-    readonly uploadDocumentIdSha256: string;
+    readonly uploadResponseMatchedSource: true;
+    readonly uploadSourceIdSha256: string;
     readonly uploadProjectIdSha256: string;
   };
   readonly expectedPageNumbers: readonly number[];
-  readonly document: OcrDocumentRecordIdentity;
-  readonly documentRecordSha256: string;
+  readonly source: OcrSourceRecordIdentity;
+  readonly sourceRecordSha256: string;
   readonly records: readonly OcrPageRecordIdentity[];
   readonly pageRecordsSha256: string;
 }
 
 export interface BuildOcrPageRecordEvidenceInput {
   readonly runId: string;
-  readonly expectedDocumentId: string;
+  readonly expectedSourceId: string;
   readonly expectedProjectId: string;
-  readonly document: Record<string, unknown>;
+  readonly source: Record<string, unknown>;
   readonly chunks: readonly Record<string, unknown>[];
   readonly expectedPageNumbers: readonly number[];
   readonly appDataEmptyAtLaunch: boolean;
 }
 
 /**
- * Build a privacy-safe identity ledger from the public document/chunks API.
+ * Build a privacy-safe identity ledger from the public source/chunks API.
  * IDs are one-way hashed, while page and extraction metadata remain available
  * for independent re-hashing and fail-closed acceptance checks.
  */
@@ -73,69 +73,69 @@ export function buildOcrPageRecordEvidence(
   input: BuildOcrPageRecordEvidenceInput,
 ): OcrPageRecordEvidence {
   const runId = requireNonEmptyString(input.runId, 'runId');
-  const expectedDocumentId = requireNonEmptyString(
-    input.expectedDocumentId,
-    'expectedDocumentId',
+  const expectedSourceId = requireNonEmptyString(
+    input.expectedSourceId,
+    'expectedSourceId',
   );
   const expectedProjectId = requireNonEmptyString(
     input.expectedProjectId,
     'expectedProjectId',
   );
-  const documentId = requireNonEmptyString(input.document.id, 'document.id');
+  const sourceId = requireNonEmptyString(input.source.id, 'source.id');
   const projectId = requireNonEmptyString(
-    input.document.project_id,
-    'document.project_id',
+    input.source.project_id,
+    'source.project_id',
   );
-  if (documentId !== expectedDocumentId || projectId !== expectedProjectId) {
+  if (sourceId !== expectedSourceId || projectId !== expectedProjectId) {
     throw new Error(
-      'OCR page-record evidence document did not match the upload response identity.',
+      'OCR page-record evidence source did not match the upload response identity.',
     );
   }
 
-  const sourceSha256 = requireSha256(input.document.sha256, 'document.sha256');
+  const sourceSha256 = requireSha256(input.source.sha256, 'source.sha256');
   const pageCount = requirePositiveInteger(
-    input.document.page_count,
-    'document.page_count',
+    input.source.page_count,
+    'source.page_count',
   );
   const processedPageCount = requirePositiveInteger(
-    input.document.processed_page_count,
-    'document.processed_page_count',
+    input.source.processed_page_count,
+    'source.processed_page_count',
   );
   const chunksCount = requireNonNegativeInteger(
-    input.document.chunks_count,
-    'document.chunks_count',
+    input.source.chunks_count,
+    'source.chunks_count',
   );
-  if (input.document.has_text !== true) {
-    throw new Error('OCR page-record evidence document.has_text must be true.');
+  if (input.source.has_text !== true) {
+    throw new Error('OCR page-record evidence source.has_text must be true.');
   }
   const status = requireNonEmptyString(
-    input.document.status,
-    'document.status',
+    input.source.status,
+    'source.status',
   );
   if (status !== 'ready') {
     throw new Error(
-      `OCR page-record evidence document.status expected ready but received ${status}.`,
+      `OCR page-record evidence source.status expected ready but received ${status}.`,
     );
   }
-  if (input.document.extraction_method !== OCR_EXTRACTION_METHOD) {
+  if (input.source.extraction_method !== OCR_EXTRACTION_METHOD) {
     throw new Error(
-      `OCR page-record evidence document.extraction_method expected ${OCR_EXTRACTION_METHOD} but received ${String(input.document.extraction_method)}.`,
+      `OCR page-record evidence source.extraction_method expected ${OCR_EXTRACTION_METHOD} but received ${String(input.source.extraction_method)}.`,
     );
   }
-  const sourceKind = input.document.source_kind;
+  const sourceKind = input.source.source_kind;
   if (sourceKind !== 'pdf' && sourceKind !== 'image') {
     throw new Error(
-      `OCR page-record evidence document.source_kind expected pdf or image but received ${String(sourceKind)}.`,
+      `OCR page-record evidence source.source_kind expected pdf or image but received ${String(sourceKind)}.`,
     );
   }
 
   const expectedPageNumbers = normalizedExpectedPageNumbers(
     input.expectedPageNumbers,
   );
-  const documentIdSha256 = sha256Text(documentId);
+  const sourceIdSha256 = sha256Text(sourceId);
   const projectIdSha256 = sha256Text(projectId);
-  const documentRecord: OcrDocumentRecordIdentity = {
-    documentIdSha256,
+  const sourceRecord: OcrSourceRecordIdentity = {
+    sourceIdSha256,
     projectIdSha256,
     sourceSha256,
     pageCount,
@@ -153,7 +153,7 @@ export function buildOcrPageRecordEvidence(
     );
   }
   const records = input.chunks
-    .map((chunk, index) => pageRecordFromChunk(chunk, index, documentId))
+    .map((chunk, index) => pageRecordFromChunk(chunk, index, sourceId))
     .sort(comparePageRecords);
   const actualPageNumbers = uniquePageNumbers(records);
   if (!sameNumberList(actualPageNumbers, expectedPageNumbers)) {
@@ -174,8 +174,8 @@ export function buildOcrPageRecordEvidence(
 
   const freshness = {
     appDataEmptyAtLaunch: input.appDataEmptyAtLaunch,
-    uploadResponseMatchedDocument: true as const,
-    uploadDocumentIdSha256: documentIdSha256,
+    uploadResponseMatchedSource: true as const,
+    uploadSourceIdSha256: sourceIdSha256,
     uploadProjectIdSha256: projectIdSha256,
   };
   return {
@@ -188,8 +188,8 @@ export function buildOcrPageRecordEvidence(
     forbiddenExtractionMethods: OCR_FORBIDDEN_EXTRACTION_METHODS,
     freshness,
     expectedPageNumbers,
-    document: documentRecord,
-    documentRecordSha256: sha256CanonicalJson(documentRecord),
+    source: sourceRecord,
+    sourceRecordSha256: sha256CanonicalJson(sourceRecord),
     records,
     pageRecordsSha256: sha256CanonicalJson(records),
   };
@@ -219,15 +219,15 @@ export function canonicalJson(value: unknown): string {
 function pageRecordFromChunk(
   chunk: Record<string, unknown>,
   index: number,
-  expectedDocumentId: string,
+  expectedSourceId: string,
 ): OcrPageRecordIdentity {
-  const documentId = requireNonEmptyString(
-    chunk.document_id,
-    `chunks[${index}].document_id`,
+  const sourceId = requireNonEmptyString(
+    chunk.source_id,
+    `chunks[${index}].source_id`,
   );
-  if (documentId !== expectedDocumentId) {
+  if (sourceId !== expectedSourceId) {
     throw new Error(
-      `OCR page-record evidence chunks[${index}] belonged to a different document.`,
+      `OCR page-record evidence chunks[${index}] belonged to a different source.`,
     );
   }
   const recordId = requireNonEmptyString(chunk.id, `chunks[${index}].id`);
@@ -263,7 +263,7 @@ function pageRecordFromChunk(
   }
   const identity = {
     projectionSource: OCR_PROJECTION_SOURCE,
-    documentIdSha256: sha256Text(documentId),
+    sourceIdSha256: sha256Text(sourceId),
     recordIdSha256: sha256Text(recordId),
     pageNumber,
     chunkIndex,

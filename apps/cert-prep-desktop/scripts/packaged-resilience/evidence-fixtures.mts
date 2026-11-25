@@ -122,7 +122,7 @@ function validProof(
   commitStartedAt: string,
 ): Record<string, unknown> {
   const projectId = 'project-1';
-  const documentId = 'document-1';
+  const sourceId = 'source-1';
   const operationId = 'operation-1';
   const cancel = operation(
     operationId,
@@ -130,7 +130,7 @@ function validProof(
     'canceling',
     false,
     projectId,
-    documentId,
+    sourceId,
   );
   const terminal = operation(
     operationId,
@@ -138,22 +138,22 @@ function validProof(
     'canceled',
     false,
     projectId,
-    documentId,
+    sourceId,
   );
   if (check === 'upload') {
     return {
       projectId,
       operationId,
-      cancelResponse: { ...cancel, document_id: null },
-      terminalResponse: { ...terminal, document_id: null },
-      documentCreated: false,
+      cancelResponse: { ...cancel, source_id: null },
+      terminalResponse: { ...terminal, source_id: null },
+      sourceCreated: false,
       uploadResponseObserved: false,
     };
   }
   if (check === 'ocr') {
     return {
       projectId,
-      documentId,
+      sourceId,
       initialOperationId: operationId,
       retryOperationId: 'operation-2',
       cancelResponse: cancel,
@@ -164,7 +164,7 @@ function validProof(
         'ocr',
         true,
         projectId,
-        documentId,
+        sourceId,
       ),
       retryTerminalResponse: operation(
         'operation-2',
@@ -172,14 +172,14 @@ function validProof(
         'completed',
         false,
         projectId,
-        documentId,
+        sourceId,
       ),
-      readyDocumentResponse: {
-        id: documentId,
+      readySourceResponse: {
+        id: sourceId,
         project_id: projectId,
         status: 'ready',
       },
-      sameDocumentRetry: true,
+      sameSourceRetry: true,
       latePublishSuppressed: true,
       latePublishObservationWindowMs: 2_000,
     };
@@ -189,7 +189,7 @@ function validProof(
       ...cancellationProof(
         {
           projectId,
-          documentId,
+          sourceId,
           provider: 'ollama',
           model: 'qwen3.5:4b',
         },
@@ -201,7 +201,7 @@ function validProof(
       manualQuestionGenerationTerminalResponse: {
         id: 'operation-commit',
         project_id: projectId,
-        document_id: documentId,
+        source_id: sourceId,
         limit: 2,
         strategy: 'hybrid_reasoning',
         status: 'succeeded',
@@ -323,7 +323,7 @@ function validProof(
   if (check === 'partialDataRemoved') {
     return {
       projectId,
-      documentId,
+      sourceId,
       operationId,
       beforeCancel: { chunksCount: 2, nonZeroDerivedMetricCount: 1, questionCount: 0 },
       afterCanceled: {
@@ -351,7 +351,7 @@ function validProof(
 function cancellationProof(
   scope: {
     readonly projectId?: string;
-    readonly documentId?: string;
+    readonly sourceId?: string;
     readonly kind?: string;
     readonly provider: string;
     readonly model: string;
@@ -363,14 +363,14 @@ function cancellationProof(
 ): Record<string, unknown> {
   const responseScope = {
     ...(scope.projectId ? { project_id: scope.projectId } : {}),
-    ...(scope.documentId ? { document_id: scope.documentId } : {}),
+    ...(scope.sourceId ? { source_id: scope.sourceId } : {}),
     ...(scope.kind ? { kind: scope.kind } : {}),
     provider: scope.provider,
     model: scope.model,
   };
   return {
     ...(scope.projectId ? { projectId: scope.projectId } : {}),
-    ...(scope.documentId ? { documentId: scope.documentId } : {}),
+    ...(scope.sourceId ? { sourceId: scope.sourceId } : {}),
     ...(scope.kind ? { kind: scope.kind } : {}),
     provider: scope.provider,
     model: scope.model,
@@ -402,7 +402,7 @@ function operation(
   phase: string,
   cancellable: boolean,
   projectId?: string,
-  documentId?: string,
+  sourceId?: string,
 ): Record<string, unknown> {
   return {
     id,
@@ -410,6 +410,6 @@ function operation(
     phase,
     cancellable,
     ...(projectId ? { project_id: projectId } : {}),
-    ...(documentId ? { document_id: documentId } : {}),
+    ...(sourceId ? { source_id: sourceId } : {}),
   };
 }

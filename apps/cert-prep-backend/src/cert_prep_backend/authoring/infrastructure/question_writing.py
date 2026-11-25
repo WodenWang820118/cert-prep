@@ -78,7 +78,7 @@ def write_questions_for_strategy(
     *,
     reading_lexicon: ReadingLexicon | None = None,
 ) -> list[QuestionSuggestion]:
-    """Generate immediately playable question suggestions for a document."""
+    """Generate immediately playable question suggestions for a source."""
 
     return write_questions_with_annotations_for_strategy(
         provider,
@@ -166,7 +166,7 @@ def write_questions_with_annotations_for_strategy(
                     break
                 if chunk.id in parsed_chunk_ids:
                     continue
-                # The document parser may have stopped at the limit. Check this
+                # The source parser may have stopped at the limit. Check this
                 # page with its continuation before treating it as unparsed.
                 if any(
                     candidate.chunk_id == chunk.id

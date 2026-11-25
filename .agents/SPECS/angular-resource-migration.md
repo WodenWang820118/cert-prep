@@ -30,14 +30,14 @@ for commands and compatibility.
 - Relative resource requests use the runtime backend configuration and bearer
   token without putting credentials in URLs.
 - Signal key changes cancel obsolete requests and cannot write stale results to
-  the current project or document.
+  the current project or source.
 - Independent health requests preserve partial success.
 - Successful mutations may update writable resource values and then reload for
   server reconciliation.
 
 ## Acceptance Criteria
 
-- Project, health, document, question, active-session, and wrong-answer reads use
+- Project, health, source, question, active-session, and wrong-answer reads use
   `httpResource` rather than Promise aggregation in their query path.
 - Generated route encoding and existing Promise client behavior remain intact.
 - Auth, config failure, abort, loading, reload, partial failure, and stale

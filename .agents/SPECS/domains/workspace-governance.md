@@ -66,7 +66,7 @@ Typical slices:
 
 - Baseline plan plus low-risk hygiene for backend, frontend, and workspace.
 - Frontend component directory or template extraction with build/test coverage.
-- Backend document-processing extraction with focused async document tests.
+- Backend source-processing extraction with focused async source tests.
 - Desktop runtime environment map and duplicate-target cleanup with cargo and
   package-script tests.
 - E2E support fixture/page-object extraction before expanding journeys.

@@ -13,7 +13,7 @@ export interface SessionRestartScenarioOptions {
   readonly transport: JsonTransport;
   readonly page: Page;
   readonly projectId: string;
-  readonly documentId: string;
+  readonly sourceId: string;
   readonly timeoutMs: number;
   readonly restart: (label: string) => Promise<RestartedPackagedContext>;
 }
@@ -22,7 +22,7 @@ export async function runSessionRestartScenario({
   transport: initialTransport,
   page: initialPage,
   projectId,
-  documentId,
+  sourceId,
   timeoutMs,
   restart,
 }: SessionRestartScenarioOptions): Promise<Record<string, unknown>> {
@@ -32,20 +32,20 @@ export async function runSessionRestartScenario({
   await pollJson(
     transport,
     questionsPath,
-    (body) => usableQuestions(body, projectId, documentId).length >= 2,
+    (body) => usableQuestions(body, projectId, sourceId).length >= 2,
     { timeoutMs, label: 'session restart questions' },
   );
   const sessionsPath = `/projects/${encoded(projectId)}/practice-sessions`;
   const created = exactSession(
     requireJsonObject(
       await transport.request('POST', sessionsPath, {
-        data: { mode: 'full_document', document_id: documentId },
+        data: { mode: 'full_source', source_id: sourceId },
       }),
       [201],
       'session restart create',
     ),
     projectId,
-    documentId,
+    sourceId,
   );
   const sessionId = created.id;
   const sessionPath = `${sessionsPath}/${encoded(sessionId)}`;
@@ -82,7 +82,7 @@ export async function runSessionRestartScenario({
       'active sessions after first restart',
     ),
     projectId,
-    documentId,
+    sourceId,
   );
   if (
     activeAfterFirstRestart.length !== 1 ||
@@ -112,7 +112,7 @@ export async function runSessionRestartScenario({
       'explicit Resume response',
     ),
     projectId,
-    documentId,
+    sourceId,
     sessionId,
   );
   if (resumed.status !== 'active' || resumed.attempts.length !== 1) {
@@ -142,7 +142,7 @@ export async function runSessionRestartScenario({
       'completed practice session',
     ),
     projectId,
-    documentId,
+    sourceId,
     sessionId,
   );
   assertCompletedSession(completed, 'Practice session');
@@ -157,7 +157,7 @@ export async function runSessionRestartScenario({
       'active sessions after second restart',
     ),
     projectId,
-    documentId,
+    sourceId,
   );
   const completedAfterSecondRestart = exactSession(
     requireJsonObject(
@@ -166,7 +166,7 @@ export async function runSessionRestartScenario({
       'completed session after second restart',
     ),
     projectId,
-    documentId,
+    sourceId,
     sessionId,
   );
   assertCompletedSession(completedAfterSecondRestart, 'Restarted practice session');
@@ -230,7 +230,7 @@ async function openRandomDraw(page: Page): Promise<void> {
 function exactSession(
   body: Record<string, unknown>,
   projectId: string,
-  documentId: string,
+  sourceId: string,
   sessionId?: string,
 ): ValidatedSession {
   if (
@@ -239,13 +239,13 @@ function exactSession(
   ) {
     throw new Error('Practice session response scope did not match.');
   }
-  if (body.mode !== 'full_document' || body.document_id !== documentId) {
-    throw new Error('Practice session document scope did not match.');
+  if (body.mode !== 'full_source' || body.source_id !== sourceId) {
+    throw new Error('Practice session source scope did not match.');
   }
   const id = stringField(body.id, 'session id');
   const status = stringField(body.status, 'session status');
   const questionIds = sessionQuestionIds(body);
-  const questions = sessionQuestions(body, documentId);
+  const questions = sessionQuestions(body, sourceId);
   if (
     questionIds.length !== questions.length ||
     questionIds.some((questionId, index) => questionId !== questions[index]?.id)
@@ -258,7 +258,7 @@ function exactSession(
 
 function sessionQuestions(
   session: Record<string, unknown>,
-  documentId: string,
+  sourceId: string,
 ): SessionQuestion[] {
   if (!Array.isArray(session.questions) || session.questions.length === 0) {
     throw new Error('Practice session questions were missing.');
@@ -270,7 +270,7 @@ function sessionQuestions(
     }
     const question = raw as Record<string, unknown>;
     const id = stringField(question.id, 'session question id');
-    if (question.document_id !== documentId || seen.has(id)) {
+    if (question.source_id !== sourceId || seen.has(id)) {
       throw new Error('Practice session question scope did not match.');
     }
     seen.add(id);
@@ -325,7 +325,7 @@ function sessionAttempts(
 function activeSessionIds(
   body: Record<string, unknown>,
   projectId: string,
-  documentId: string,
+  sourceId: string,
 ): string[] {
   if (!Array.isArray(body.items)) {
     throw new Error('Active practice session list was invalid.');
@@ -338,8 +338,8 @@ function activeSessionIds(
     if (
       item.project_id !== projectId ||
       item.status !== 'active' ||
-      item.mode !== 'full_document' ||
-      item.document_id !== documentId
+      item.mode !== 'full_source' ||
+      item.source_id !== sourceId
     ) {
       throw new Error('Active session response was not bound to the project.');
     }
@@ -366,7 +366,7 @@ function assertAttemptScope(
 function usableQuestions(
   body: Record<string, unknown>,
   projectId: string,
-  documentId: string,
+  sourceId: string,
 ): unknown[] {
   if (!Array.isArray(body.items)) {
     throw new Error('Question response was invalid.');
@@ -384,7 +384,7 @@ function usableQuestions(
     (raw) =>
       typeof raw === 'object' &&
       raw !== null &&
-      (raw as Record<string, unknown>).document_id === documentId &&
+      (raw as Record<string, unknown>).source_id === sourceId &&
       typeof (raw as Record<string, unknown>).answer === 'string' &&
       ((raw as Record<string, unknown>).answer as string).trim().length > 0,
   );

@@ -23,7 +23,7 @@ def _wrong_answer() -> WrongAnswer:
         rationale="読みは「よか」。",
         citation_page=2,
         source_excerpt="余暇",
-        document_id="document-1",
+        source_id="document-1",
         created_at="2026-06-11T00:00:00Z",
     )
 

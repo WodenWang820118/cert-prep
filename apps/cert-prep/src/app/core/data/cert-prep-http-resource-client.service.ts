@@ -9,7 +9,7 @@ import {
 import type {
   ChunkRead,
   CertPrepHttpRequest,
-  DocumentRead,
+  SourceRead,
   HealthResponse,
   LLMHealthRead,
   LLMProviderSelectionRead,
@@ -81,48 +81,48 @@ export class CertPrepHttpResourceClient {
     );
   }
 
-  documents(projectId: CertPrepResourceKey): CertPrepHttpResource<DocumentRead[]> {
+  sources(projectId: CertPrepResourceKey): CertPrepHttpResource<SourceRead[]> {
     return this.collectionResource(
       () => {
         const id = projectId();
         return id === undefined || id === null
           ? undefined
-          : this.requests.listDocuments(id);
+          : this.requests.listSources(id);
       },
-      'documents',
+      'sources',
     );
   }
 
-  document(
+  source(
     projectId: CertPrepResourceKey,
-    documentId: CertPrepResourceKey,
-  ): CertPrepHttpResource<DocumentRead | null> {
+    sourceId: CertPrepResourceKey,
+  ): CertPrepHttpResource<SourceRead | null> {
     return this.requestResource(
       () => {
         const project = projectId();
-        const document = documentId();
-        return project === undefined || project === null || document === undefined || document === null
+        const source = sourceId();
+        return project === undefined || project === null || source === undefined || source === null
           ? undefined
-          : this.requests.getDocument(project, document);
+          : this.requests.getSource(project, source);
       },
       null,
-      'document',
+      'source',
     );
   }
 
-  documentChunks(
+  sourceChunks(
     projectId: CertPrepResourceKey,
-    documentId: CertPrepResourceKey,
+    sourceId: CertPrepResourceKey,
   ): CertPrepHttpResource<ChunkRead[]> {
     return this.collectionResource(
       () => {
         const project = projectId();
-        const document = documentId();
-        return project === undefined || project === null || document === undefined || document === null
+        const source = sourceId();
+        return project === undefined || project === null || source === undefined || source === null
           ? undefined
-          : this.requests.listDocumentChunks(project, document);
+          : this.requests.listSourceChunks(project, source);
       },
-      'document-chunks',
+      'source-chunks',
     );
   }
 

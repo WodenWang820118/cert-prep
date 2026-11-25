@@ -42,10 +42,10 @@ export class QuestionsPanelComponent {
       const generatedCount = operation && 'generatedCount' in operation
         ? operation.generatedCount
         : operation?.generated_count;
-      const document = this.sourceImport.activeDocument();
+      const source = this.sourceImport.activeSource();
       const jobSummary = this.questionsStore.questionJobSummary();
       const hasQuestions =
-        this.questionsStore.activeDocumentPlayableQuestions().length > 0;
+        this.questionsStore.activeSourcePlayableQuestions().length > 0;
       const isPreparing =
         this.questionsStore.isManualQuestionGenerationActive() || jobSummary.active > 0;
       const hasGenerationError =
@@ -72,8 +72,8 @@ export class QuestionsPanelComponent {
         hasReviewEvidence: reviewEvidence.length > 0,
         zeroQuestionsGenerated:
           operation?.status === 'succeeded' &&
-          operation.document_id === document?.id &&
-          operation.project_id === document?.project_id &&
+          operation.source_id === source?.id &&
+          operation.project_id === source?.project_id &&
           generatedCount === 0,
       });
 
@@ -100,7 +100,7 @@ export class QuestionsPanelComponent {
   protected readonly questionCards = computed<
     readonly QuestionEditorViewModel[]
   >(() =>
-    this.questionsStore.activeDocumentPlayableQuestions().map((question) => {
+    this.questionsStore.activeSourcePlayableQuestions().map((question) => {
         const isEditing = this.questionsStore.isEditing(question);
         return {
           id: question.id,
@@ -120,7 +120,7 @@ export class QuestionsPanelComponent {
   );
 
   protected readonly hasPlayableQuestions = computed(
-    () => this.questionsStore.activeDocumentPlayableQuestions().length > 0,
+    () => this.questionsStore.activeSourcePlayableQuestions().length > 0,
   );
 
   protected readonly saveResult = computed(() =>
@@ -151,7 +151,7 @@ export class QuestionsPanelComponent {
     action: QuestionEditorAction,
   ): void {
     const question = this.questionsStore
-      .activeDocumentQuestions()
+      .activeSourceQuestions()
       .find((candidate) => candidate.id === card.id);
     if (question === undefined) {
       return;

@@ -6,7 +6,7 @@ import { App } from './app.component';
 import { appRoutes } from './app-routes.constants';
 import { CERT_PREP_API } from '../data';
 import {
-  appDocument,
+  appSource,
   appProject,
   buttonByText,
   editableAppQuestion,
@@ -99,7 +99,9 @@ describe('App', () => {
         TestBed.tick();
         return vi.waitFor(() => {
           fixture.detectChanges();
-          expect(compiled.textContent).toContain('Source document');
+          expect(
+            compiled.querySelector('#practice-setup-title')?.textContent?.trim(),
+          ).toBe('Source');
           expect(compiled.textContent).toContain('security.pdf');
           expect(compiled.textContent).toContain('Start whole source');
           expect(compiled.textContent).not.toContain('Source files');
@@ -344,9 +346,9 @@ function createApiClient() {
     startLlmInstallation: vi.fn(),
     getLlmInstallation: vi.fn(),
     listProjects: vi.fn().mockReturnValue(of({ items: [appProject] })),
-    listDocuments: vi.fn().mockReturnValue(of({ items: [appDocument] })),
-    getDocument: vi.fn().mockReturnValue(of(appDocument)),
-    listDocumentChunks: vi.fn().mockReturnValue(of({ items: [] })),
+    listSources: vi.fn().mockReturnValue(of({ items: [appSource] })),
+    getSource: vi.fn().mockReturnValue(of(appSource)),
+    listSourceChunks: vi.fn().mockReturnValue(of({ items: [] })),
     listQuestions: vi
       .fn()
       .mockReturnValue(of({ items: [editableAppQuestion] })),

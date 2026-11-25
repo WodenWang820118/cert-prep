@@ -23,7 +23,7 @@ import {
 } from './evidence-contract.mts';
 import { requireStrictDescendant } from './evidence-paths.mts';
 
-const DOCUMENT_CHECKS = [
+const SOURCE_CHECKS = [
   'upload',
   'ocr',
   'cancelVsCompleteRace',
@@ -71,7 +71,7 @@ export interface LocalResilienceEvidenceVerification {
     readonly installerSha256: string;
     readonly installedExeSha256: string;
   };
-  readonly documentOutputRoot: string;
+  readonly sourceOutputRoot: string;
   readonly remainingOutputRoot: string;
   readonly cancellation: Readonly<
     Record<ResilienceCheck, VerifiedLocalEvidenceArtifact>
@@ -108,9 +108,9 @@ export async function verifyLocalResilienceEvidence(
     'tmp',
     'cert-prep-desktop',
   );
-  const documentOutputRoot = requiredEvidenceRoot(
+  const sourceOutputRoot = requiredEvidenceRoot(
     environment,
-    'CERT_PREP_RESILIENCE_DOCUMENT_OUTPUT_ROOT',
+    'CERT_PREP_RESILIENCE_SOURCE_OUTPUT_ROOT',
     evidenceParent,
   );
   const remainingOutputRoot = requiredEvidenceRoot(
@@ -118,9 +118,9 @@ export async function verifyLocalResilienceEvidence(
     'CERT_PREP_RESILIENCE_REMAINING_OUTPUT_ROOT',
     evidenceParent,
   );
-  if (samePath(documentOutputRoot, remainingOutputRoot)) {
+  if (samePath(sourceOutputRoot, remainingOutputRoot)) {
     throw new Error(
-      'Document and remaining resilience evidence roots must be distinct.',
+      'Source and remaining resilience evidence roots must be distinct.',
     );
   }
 
@@ -128,10 +128,10 @@ export async function verifyLocalResilienceEvidence(
     candidate: binding.candidate,
     acceptanceRunId: binding.acceptanceRunId,
   };
-  const documentArtifacts = verifyCancellationTree(
-    documentOutputRoot,
-    'document',
-    DOCUMENT_CHECKS,
+  const sourceArtifacts = verifyCancellationTree(
+    sourceOutputRoot,
+    'source',
+    SOURCE_CHECKS,
     binding,
     context,
   );
@@ -171,10 +171,10 @@ export async function verifyLocalResilienceEvidence(
       installerSha256: binding.installation.installerSha256,
       installedExeSha256: binding.installation.installedExeSha256,
     },
-    documentOutputRoot,
+    sourceOutputRoot,
     remainingOutputRoot,
     cancellation: {
-      ...documentArtifacts,
+      ...sourceArtifacts,
       ...remainingArtifacts,
     },
     sessionRestart,
@@ -183,7 +183,7 @@ export async function verifyLocalResilienceEvidence(
 
 function verifyCancellationTree<const Check extends ResilienceCheck>(
   root: string,
-  lane: 'document' | 'remaining',
+  lane: 'source' | 'remaining',
   checks: readonly Check[],
   binding: InstalledCandidateRunnerBinding,
   context: {
@@ -191,11 +191,11 @@ function verifyCancellationTree<const Check extends ResilienceCheck>(
     readonly acceptanceRunId: string;
   },
 ): Readonly<Record<Check, VerifiedLocalEvidenceArtifact>> {
-  if (lane === 'document') {
+  if (lane === 'source') {
     assertExactEntries(
       root,
       ['cancellation'],
-      'Document resilience evidence root',
+      'Source resilience evidence root',
     );
   }
   const cancellationRoot = canonicalDirectory(
@@ -392,7 +392,7 @@ function bindingIdentity(binding: InstalledCandidateRunnerBinding): unknown {
 }
 
 function assertExactCheckPartition(): void {
-  const partition = [...DOCUMENT_CHECKS, ...REMAINING_CHECKS].sort();
+  const partition = [...SOURCE_CHECKS, ...REMAINING_CHECKS].sort();
   const expected = [...RESILIENCE_CHECKS].sort();
   if (
     partition.length !== expected.length ||

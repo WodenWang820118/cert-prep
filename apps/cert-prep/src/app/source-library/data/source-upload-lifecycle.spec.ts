@@ -1,10 +1,10 @@
 import { TestBed } from '@angular/core/testing';
 import { defer, of, Subject } from 'rxjs';
 import type {
-  DocumentOperationRead,
-  DocumentRead,
+  SourceOperationRead,
+  SourceRead,
 } from '../../core/domain';
-import type { DocumentOperationEvent } from '../../core/domain';
+import type { SourceOperationEvent } from '../../core/domain';
 import type {
   SourceUploadItem,
   SourceUploadLifecycleHooks,
@@ -35,9 +35,9 @@ describe('SourceUploadLifecycle', () => {
 
   it('does not starve cancellation behind a long-lived recovery stream', () => {
     let item = uploadItem();
-    const uploadSubject = new Subject<DocumentRead>();
-    const progressSubject = new Subject<DocumentOperationEvent>();
-    const cancelSubject = new Subject<DocumentOperationRead>();
+    const uploadSubject = new Subject<SourceRead>();
+    const progressSubject = new Subject<SourceOperationEvent>();
+    const cancelSubject = new Subject<SourceOperationRead>();
     let progressSubscribed = false;
     let cancelSubscribed = false;
     const cancelOperation = vi.fn(() =>
@@ -56,7 +56,7 @@ describe('SourceUploadLifecycle', () => {
       },
       accept: () => undefined,
       upload: () => uploadSubject.asObservable(),
-      getDocument: () => of(documentRead()),
+      getSource: () => of(sourceRead()),
       getOperation: () => of(operationRead({ status: 'queued', phase: 'uploading' })),
       streamOperation: () =>
         defer(() => {
@@ -93,7 +93,7 @@ function uploadItem(): SourceUploadItem {
     id: 'item-1',
     file: {} as File,
     status: 'queued',
-    document: null,
+    source: null,
     error: null,
   };
 }
@@ -104,19 +104,19 @@ function hooks(current: () => boolean): SourceUploadLifecycleHooks {
     current,
     patch: () => true,
     accept: () => undefined,
-    upload: () => of(documentRead()),
-    getDocument: () => of(documentRead()),
+    upload: () => of(sourceRead()),
+    getSource: () => of(sourceRead()),
     getOperation: () => of(operationRead()),
     cancelOperation: () => of(operationRead()),
-    streamOperation: () => of({ operation: operationRead(), document: null }),
+    streamOperation: () => of({ operation: operationRead(), source: null }),
     newOperationId: () => 'operation-1',
     errorMessage: () => 'error',
   };
 }
 
-function documentRead(): DocumentRead {
+function sourceRead(): SourceRead {
   return {
-    id: 'document-1',
+    id: 'source-1',
     project_id: 'project-1',
     filename: 'guide.pdf',
     source_kind: 'pdf',
@@ -127,16 +127,16 @@ function documentRead(): DocumentRead {
     chunks_count: 1,
     created_at: '2026-07-23T00:00:00Z',
     updated_at: '2026-07-23T00:00:01Z',
-  } as DocumentRead;
+  } as SourceRead;
 }
 
 function operationRead(
-  overrides: Partial<DocumentOperationRead> = {},
-): DocumentOperationRead {
+  overrides: Partial<SourceOperationRead> = {},
+): SourceOperationRead {
   return {
     id: 'operation-1',
     project_id: 'project-1',
-    document_id: null,
+    source_id: null,
     status: 'queued',
     phase: 'uploading',
     cancellable: true,

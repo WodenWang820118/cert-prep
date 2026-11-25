@@ -7,7 +7,7 @@
 負責：
 
 - 檢查與安裝本機端必要的執行環境元件（例如 Ollama 執行環境、Ollama 語言模型）。
-- 維護執行環境安裝與模型下載工作（`LLMInstallationJob`）的完整生命週期（排隊、啟動、進度更新、取消、等待使用者、重啟收回）。
+- 維護語言模型安裝工作（`LLMInstallationJob`：安裝 Ollama 與下載模型）的完整生命週期（排隊、啟動、進度更新、取消、等待使用者、重啟收回）。
 - 管理安裝工作聚合的記憶體快取與 SQLite 持久化儲存。
 - 提供安裝需求與工作狀態的查詢、取消與 SSE（Server-Sent Events）事件串流。
 
@@ -22,17 +22,17 @@
 
 | 中文                 | 程式名稱                           | 意思                                                       |
 | -------------------- | ---------------------------------- | ---------------------------------------------------------- |
-| 執行環境安裝         | `LLMInstallationJob`           | 安裝或檢查 Ollama 執行環境與語言模型等本機元件的背景工作   |
-| 執行環境安裝目標     | `LLMInstallationTarget`        | 安裝工作的需求種類、供應者名稱與模型                       |
-| 執行環境安裝階段     | `LLMInstallationPhase`         | 安裝工作的技術階段，例如排隊、執行中、提交中等             |
-| 執行環境安裝進度     | `LLMInstallationProgress`      | 安裝工作的進度更新：說明、完成度、總量、階段與是否可取消   |
-| 執行環境安裝快照     | `LLMInstallationSnapshot`      | 執行環境安裝工作對外的序列化檢視                           |
-| 執行環境安裝已取消   | `LLMInstallationCanceledError` | 安裝工作已取消而拒絕狀態轉換的錯誤                         |
-| 執行環境需求種類     | `LLMRequirementKind`           | 可安裝的本機相依類別，例如 Ollama 執行環境或模型           |
-| 執行環境安裝狀態     | `LLMInstallationStatus`        | 執行環境安裝工作的生命週期狀態                             |
-| 執行環境需求快照     | `LLMRequirementSnapshot`       | 本機執行環境需求可用性快照                                 |
-| 執行環境安裝進度訊息 | `LLMInstallProgress`           | 具體安裝器回報的進度訊息                                   |
-| 執行環境裝配         | `LLMInstallation`              | 聚合儲存庫、安裝器目錄與背景工作的裝配容器                 |
+| 語言模型安裝         | `LLMInstallationJob`           | 安裝或檢查 Ollama 執行環境與語言模型等本機元件的背景工作   |
+| 語言模型安裝目標     | `LLMInstallationTarget`        | 安裝工作的需求種類、供應者名稱與模型                       |
+| 語言模型安裝階段     | `LLMInstallationPhase`         | 安裝工作的技術階段，例如排隊、執行中、提交中等             |
+| 語言模型安裝進度     | `LLMInstallationProgress`      | 安裝工作的進度更新：說明、完成度、總量、階段與是否可取消   |
+| 語言模型安裝快照     | `LLMInstallationSnapshot`      | 語言模型安裝工作對外的序列化檢視                           |
+| 語言模型安裝已取消   | `LLMInstallationCanceledError` | 安裝工作已取消而拒絕狀態轉換的錯誤                         |
+| 語言模型需求種類     | `LLMRequirementKind`           | 可安裝的本機相依類別，例如 Ollama 執行環境或模型           |
+| 語言模型安裝狀態     | `LLMInstallationStatus`        | 語言模型安裝工作的生命週期狀態                             |
+| 語言模型需求快照     | `LLMRequirementSnapshot`       | 本機語言模型需求的可用性快照                               |
+| 語言模型安裝進度訊息 | `LLMInstallProgress`           | 具體安裝器回報的進度訊息                                   |
+| 語言模型佈建裝配     | `LLMInstallation`              | 聚合儲存庫、安裝器目錄與背景工作的裝配容器                 |
 | 安裝工作儲存庫埠     | `LLMInstallationJobs`          | 管理安裝工作聚合的記憶體快取與 SQLite 持久化介面           |
 | 安裝器目錄埠         | `LLMInstallers`                | 設定的安裝通道目錄介面，依需求種類排序與選定模型           |
 | 背景工作埠           | `LLMInstallationWork`          | 工作執行緒持有、排程與取消信號介面                         |
@@ -160,14 +160,14 @@ stateDiagram-v2
 
 | 用例             | 程式名稱                        | 說明                                                     |
 | ---------------- | ------------------------------- | -------------------------------------------------------- |
-| 列出執行環境需求 | `list_llm_requirements`     | 依序評估所有已設定的安裝需求                             |
-| 開始執行環境安裝 | `start_llm_installation`    | 檢查需求、驗證可安裝性、重用進行中工作或排入新工作       |
+| 列出語言模型需求 | `list_llm_requirements`     | 依序評估所有已設定的安裝需求                             |
+| 開始語言模型安裝 | `start_llm_installation`    | 檢查需求、驗證可安裝性、重用進行中工作或排入新工作       |
 | 下載選定的模型   | `download_selected_model`       | 依選定的模型種類進入安裝流程                             |
-| 查看執行環境安裝 | `view_llm_installation`     | 讀取工作狀態，若為等待使用者狀態則嘗試重新探測需求       |
-| 取消執行環境安裝 | `cancel_llm_installation`   | 要求取消進行中的工作，並呼叫安裝器的取消回呼             |
-| 執行執行環境安裝 | `perform_llm_installation`  | 背景工作執行安裝、記錄進度並以聚合更新終態               |
-| 收回執行環境安裝 | `recover_llm_installations` | 應用程式啟動時原子收回資料庫中的中斷工作                 |
-| 停止執行環境安裝 | `stop_llm_installations`    | 應用程式關閉時請求取消所有進行中工作並等候工作執行緒結束 |
+| 查看語言模型安裝 | `view_llm_installation`     | 讀取工作狀態，若為等待使用者狀態則嘗試重新探測需求       |
+| 取消語言模型安裝 | `cancel_llm_installation`   | 要求取消進行中的工作，並呼叫安裝器的取消回呼             |
+| 執行語言模型安裝 | `perform_llm_installation`  | 背景工作執行安裝、記錄進度並以聚合更新終態               |
+| 收回語言模型安裝 | `recover_llm_installations` | 應用程式啟動時原子收回資料庫中的中斷工作                 |
+| 停止語言模型安裝 | `stop_llm_installations`    | 應用程式關閉時請求取消所有進行中工作並等候工作執行緒結束 |
 
 ## 主要流程
 
@@ -231,7 +231,7 @@ sequenceDiagram
 
 - **AI 供應（AI Providers）**：透過 `LLMModelInstaller` 銜接 `ModelDownloadProvider` 與 `ModelOnboardingProvider`；`/llm/machine-inventory` 委派給 AI 供應的 `inspect_machine`。AI 供應不依賴語言模型佈建。
 - **擷取整合（Capture Integration）**：Capture SDK 的安裝與設定屬於擷取整合（`capture-runtime` 路由），語言模型佈建不處理 Capture SDK 的安裝。
-- **桌面端（Tauri）**：打包好的 Python 與 Capture Runtime 本機安裝屬於 Tauri 桌面端，在 Rust 中使用不同的 DTO 與種類處理，不與後端的執行環境安裝混淆。
+- **桌面端（Tauri）**：打包好的 Python 與 Capture Runtime 本機安裝屬於 Tauri 桌面端，在 Rust 中使用不同的 DTO 與種類處理，不與後端的語言模型安裝混淆。
 - **教材來源、題目編寫、練習與複習**：語言模型佈建不直接依賴這些上下文。
 
 ## 規則與資料來源

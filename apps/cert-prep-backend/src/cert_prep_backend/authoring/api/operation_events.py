@@ -40,18 +40,18 @@ LastEventIdHeader = Annotated[str | None, Header(alias="Last-Event-ID")]
 
 
 @router.get(
-    "/projects/{project_id}/documents/{document_id}/question-jobs/events",
+    "/projects/{project_id}/sources/{source_id}/question-jobs/events",
     responses=SSE_RESPONSES,
 )
 def question_jobs_events(
     project_id: str,
-    document_id: str,
+    source_id: str,
     last_event_id: LastEventIdHeader = None,
     jobs: QuestionGenerationJobRepository = Depends(get_question_generation_job_repository),
     notifier: DatabaseChangeNotifier = Depends(get_database_change_notifier),
 ):
     def snapshot() -> dict[str, list[QuestionGenerationJob]]:
-        return {"items": authoring.list_generation_jobs(jobs, project_id, document_id)}
+        return {"items": authoring.list_generation_jobs(jobs, project_id, source_id)}
 
     try:
         snapshot()
@@ -69,19 +69,19 @@ def question_jobs_events(
 
 
 @router.get(
-    "/projects/{project_id}/documents/{document_id}/question-generations/{operation_id}/events",
+    "/projects/{project_id}/sources/{source_id}/question-generations/{operation_id}/events",
     responses=SSE_RESPONSES,
 )
 def question_generation_events(
     project_id: str,
-    document_id: str,
+    source_id: str,
     operation_id: OperationIdPath,
     last_event_id: LastEventIdHeader = None,
     work: QuestionGenerationWork = Depends(get_question_generation_work),
     notifier: DatabaseChangeNotifier = Depends(get_database_change_notifier),
 ):
     def snapshot() -> ManualQuestionGeneration:
-        return authoring.view_manual_generation(work, project_id, document_id, operation_id)
+        return authoring.view_manual_generation(work, project_id, source_id, operation_id)
 
     try:
         snapshot()

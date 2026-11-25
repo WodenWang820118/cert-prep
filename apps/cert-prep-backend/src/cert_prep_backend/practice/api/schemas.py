@@ -7,7 +7,7 @@ from cert_prep_backend.practice.domain.session import PracticeSessionMode, Pract
 
 class PracticeSessionCreate(BaseModel):
     mode: PracticeSessionMode = PracticeSessionMode.RANDOM_DRAW
-    document_id: str | None = None
+    source_id: str | None = None
     question_count: int | None = Field(default=None, ge=1, le=100)
     random_seed: int | None = None
     wrong_attempt_ids: list[str] | None = None
@@ -21,7 +21,7 @@ class PracticeSessionQuestionRead(BaseModel):
     rationale: str | None
     citation_page: int | None
     source_excerpt: str | None
-    document_id: str | None
+    source_id: str | None
     answer_key_source: str | None
 
 
@@ -39,7 +39,7 @@ class PracticeSessionSummaryRead(BaseModel):
     id: str
     project_id: str
     mode: PracticeSessionMode
-    document_id: str | None
+    source_id: str | None
     status: PracticeSessionStatus
     created_at: str
 
@@ -54,7 +54,7 @@ class PracticeSessionRead(BaseModel):
     question_ids: list[str]
     questions: list[PracticeSessionQuestionRead]
     mode: PracticeSessionMode
-    document_id: str | None
+    source_id: str | None
     question_count: int
     random_seed: int | None
     status: PracticeSessionStatus
@@ -79,7 +79,7 @@ class WrongAnswerRead(BaseModel):
     rationale: str | None
     citation_page: int | None
     source_excerpt: str | None
-    document_id: str | None
+    source_id: str | None
     created_at: str
     answer_key_source: str | None
 
@@ -91,7 +91,7 @@ class WrongAnswerList(BaseModel):
 class WrongAnswerRepeatedMissRead(BaseModel):
     question_id: str
     question: str
-    document_id: str | None
+    source_id: str | None
     citation_page: int | None
     source_excerpt: str | None
     miss_count: int
@@ -99,7 +99,7 @@ class WrongAnswerRepeatedMissRead(BaseModel):
 
 
 class WrongAnswerClusterRead(BaseModel):
-    document_id: str | None
+    source_id: str | None
     citation_page: int | None
     current_wrong_count: int
     cleared_count: int

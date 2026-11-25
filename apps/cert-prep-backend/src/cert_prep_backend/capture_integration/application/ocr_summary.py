@@ -192,11 +192,11 @@ def validate_ocr_projection_provenance(
     *,
     expected_engine: str,
 ) -> None:
-    """Validate the projection provenance before durable document publication.
+    """Validate the projection provenance before durable source publication.
 
     The coordinator normally calls ``build_ocr_summary`` before persistence.
     The public publication seam also accepts a projection directly, so it
-    reuses the same provenance mapper here rather than trusting a document's
+    reuses the same provenance mapper here rather than trusting a source's
     engine string to authenticate projection evidence.
     """
 

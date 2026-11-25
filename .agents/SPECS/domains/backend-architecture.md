@@ -64,24 +64,24 @@ and practice.
   attempts.
 - `PracticeSessionRead` includes `questions`, a session snapshot DTO with
   question text, choices, answer, rationale, citation page, source excerpt, and
-  nullable `document_id`. `question_ids` remains for compatibility.
-- `WrongAnswerRead` includes nullable `document_id`, and the project-scoped
+  nullable `source_id`. `question_ids` remains for compatibility.
+- `WrongAnswerRead` includes nullable `source_id`, and the project-scoped
   wrong-answer summary endpoint is
   `GET /projects/{project_id}/wrong-answers/summary`.
 - Mixed PDF/static-image upload remains a client-side batch workflow over the
-  existing single-document boundary. Backend v1 keeps
-  `POST /projects/{project_id}/documents` as the only upload endpoint; its
+  existing single-source boundary. Backend v1 keeps
+  `POST /projects/{project_id}/sources` as the only upload endpoint; its
   multipart field, operation header, status codes, response DTOs, and error
   envelope remain unchanged. PNG, JPEG/JPG, and static WebP are additive
-  accepted inputs, with no database migration, `DocumentRead.media_type`, or
+  accepted inputs, with no database migration, `SourceRead.media_type`, or
   image-specific endpoint/service. Chunks, generated questions, practice
-  selection, attempts, and wrong-answer review stay scoped by `document_id`.
+  selection, attempts, and wrong-answer review stay scoped by `source_id`.
 - `source_preparation.py` owns trusted content detection and normalized input
   validation; extraction belongs to Capture Runtime. Source storage/repository helpers use source-file terminology, retain
   original bytes and SHA-256, choose private suffixes from detected content,
   and revalidate stored content on Retry. Legacy `.pdf` paths remain readable.
 - Rolling back this additive input support does not require database or chunk
-  cleanup, but an older backend cannot retry image documents created by the
+  cleanup, but an older backend cannot retry image sources created by the
   newer version.
 
 ## Refactor Policy
@@ -123,7 +123,7 @@ Guardrails:
 
 - Backend schema changes require generated client updates and frontend tests.
 - Page-level render/OCR failures should stay explicit; do not collapse a
-  partial page failure into a misleading zero-chunk document.
+  partial page failure into a misleading zero-chunk source.
 - Source excerpts must remain grounded in normalized raw chunk text.
 - UTF-8 handling remains important for PDF names, OCR text, SQLite evidence,
   Markdown reports, subprocess stderr, and PowerShell JSON reads.

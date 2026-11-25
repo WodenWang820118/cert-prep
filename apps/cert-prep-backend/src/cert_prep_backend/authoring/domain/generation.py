@@ -1,7 +1,7 @@
 """The Question Generation aggregate: background work that turns source chunks into questions.
 
-A question generation job generates questions for one source chunk after a document is imported; a
-manual generation generates questions for a whole document when the learner asks. Both can be
+A question generation job generates questions for one source chunk after a source is imported; a
+manual generation generates questions for a whole source when the learner asks. Both can be
 canceled until they start committing, and a cancellation that was requested wins over any
 other ending.
 
@@ -94,7 +94,7 @@ class QuestionGenerationJob:
 
     id: str
     project_id: str
-    document_id: str
+    source_id: str
     chunk_id: str
     page_number: int
     strategy: str
@@ -207,11 +207,11 @@ class QuestionGenerationJob:
 
 @dataclass(frozen=True, slots=True)
 class ManualQuestionGeneration:
-    """Generating questions for a whole document when the learner asks; one at a time."""
+    """Generating questions for a whole source when the learner asks; one at a time."""
 
     id: str
     project_id: str
-    document_id: str
+    source_id: str
     limit: int
     strategy: str
     status: ManualQuestionGenerationStatus
@@ -235,7 +235,7 @@ class ManualQuestionGeneration:
         *,
         operation_id: str,
         project_id: str,
-        document_id: str,
+        source_id: str,
         limit: int,
         strategy: str,
         provider: str,
@@ -247,7 +247,7 @@ class ManualQuestionGeneration:
         return cls(
             id=operation_id,
             project_id=project_id,
-            document_id=document_id,
+            source_id=source_id,
             limit=limit,
             strategy=strategy,
             status=_Operation.QUEUED,
@@ -373,6 +373,6 @@ def _stopped_phase(status: QuestionGenerationJobStatus) -> str:
 
 
 def all_jobs_ended(jobs: Sequence[QuestionGenerationJob]) -> bool:
-    """A document's generation has ended once it has jobs and every one of them has ended."""
+    """A source's generation has ended once it has jobs and every one of them has ended."""
 
     return bool(jobs) and all(job.is_terminal for job in jobs)

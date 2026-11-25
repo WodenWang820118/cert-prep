@@ -37,7 +37,7 @@ export interface EvidenceObservation {
   readonly at: string;
   readonly event: string;
   readonly projectId?: string;
-  readonly documentId?: string | null;
+  readonly sourceId?: string | null;
   readonly operationId?: string;
   readonly sessionId?: string;
   readonly status?: string;
@@ -81,7 +81,7 @@ export interface ManualQuestionGenerationTerminalExpectation {
   readonly operationId: string;
   readonly commitStartedAt: string;
   readonly projectId: string;
-  readonly documentId: string;
+  readonly sourceId: string;
 }
 
 interface OperationSnapshot {
@@ -90,7 +90,7 @@ interface OperationSnapshot {
   readonly phase: string;
   readonly cancellable: boolean;
   readonly projectId?: string;
-  readonly documentId?: string | null;
+  readonly sourceId?: string | null;
   readonly kind?: string;
   readonly provider?: string;
   readonly model?: string;
@@ -416,28 +416,28 @@ function validateUploadProof(proof: Record<string, unknown>): void {
   const cancel = operationSnapshot(proof.cancelResponse, 'upload', {
     projectId,
     operationId,
-    documentId: null,
+    sourceId: null,
     statuses: ['cancel_requested', 'canceled'],
   });
   const terminal = operationSnapshot(proof.terminalResponse, 'upload', {
     projectId,
     operationId,
-    documentId: null,
+    sourceId: null,
     statuses: ['canceled'],
   });
   if (
     cancel.cancellable !== false ||
     terminal.cancellable !== false ||
-    proof.documentCreated !== false ||
+    proof.sourceCreated !== false ||
     proof.uploadResponseObserved !== false
   ) {
-    fail('upload', 'pre-document-ID cancellation was not proved');
+    fail('upload', 'pre-source-ID cancellation was not proved');
   }
 }
 
 function validateOcrProof(proof: Record<string, unknown>): void {
   const projectId = scopedId(proof.projectId, 'ocr', 'projectId');
-  const documentId = scopedId(proof.documentId, 'ocr', 'documentId');
+  const sourceId = scopedId(proof.sourceId, 'ocr', 'sourceId');
   const initialOperationId = operationIdField(
     proof.initialOperationId,
     'ocr',
@@ -453,39 +453,39 @@ function validateOcrProof(proof: Record<string, unknown>): void {
   }
   const cancel = operationSnapshot(proof.cancelResponse, 'ocr', {
     projectId,
-    documentId,
+    sourceId,
     operationId: initialOperationId,
     statuses: ['cancel_requested', 'canceled'],
   });
   const terminal = operationSnapshot(proof.canceledResponse, 'ocr', {
     projectId,
-    documentId,
+    sourceId,
     operationId: initialOperationId,
     statuses: ['canceled'],
   });
   operationSnapshot(proof.retryResponse, 'ocr', {
     projectId,
-    documentId,
+    sourceId,
     operationId: retryOperationId,
     statuses: ['queued', 'running', 'succeeded'],
   });
   operationSnapshot(proof.retryTerminalResponse, 'ocr', {
     projectId,
-    documentId,
+    sourceId,
     operationId: retryOperationId,
     statuses: ['succeeded'],
   });
-  const readyDocument = record(
-    proof.readyDocumentResponse,
-    'ocr ready document',
+  const readySource = record(
+    proof.readySourceResponse,
+    'ocr ready source',
   );
   if (
     cancel.cancellable !== false ||
     terminal.cancellable !== false ||
-    readyDocument.project_id !== projectId ||
-    readyDocument.id !== documentId ||
-    readyDocument.status !== 'ready' ||
-    proof.sameDocumentRetry !== true ||
+    readySource.project_id !== projectId ||
+    readySource.id !== sourceId ||
+    readySource.status !== 'ready' ||
+    proof.sameSourceRetry !== true ||
     proof.latePublishSuppressed !== true ||
     positiveInteger(proof.latePublishObservationWindowMs) < 1_000
   ) {
@@ -502,9 +502,9 @@ function validateScopedCancellationProof(
     check === 'question'
       ? scopedId(proof.projectId, check, 'projectId')
       : undefined;
-  const documentId =
+  const sourceId =
     check === 'question'
-      ? scopedId(proof.documentId, check, 'documentId')
+      ? scopedId(proof.sourceId, check, 'sourceId')
       : undefined;
   const kind =
     check === 'runtime'
@@ -527,7 +527,7 @@ function validateScopedCancellationProof(
       : check === 'question' || check === 'model'
         ? exactString(proof.model, OLLAMA_MODEL, check, 'model')
         : undefined;
-  const expectedScope = { projectId, documentId, kind, provider, model };
+  const expectedScope = { projectId, sourceId, kind, provider, model };
   const operationId = operationIdField(proof.operationId, check, 'operationId');
   const cancel = operationSnapshot(proof.cancelResponse, check, {
     ...expectedScope,
@@ -596,7 +596,7 @@ function validateScopedCancellationProof(
       operationId: commitOperationId,
       commitStartedAt: commitStartedAtText,
       projectId: projectId as string,
-      documentId: documentId as string,
+      sourceId: sourceId as string,
     });
   }
   validateScenarioTransition(proof, check);
@@ -611,7 +611,7 @@ export function assertManualQuestionGenerationTerminalEvidence(
     operationId: expected.operationId,
     statuses: ['succeeded'],
     projectId: expected.projectId,
-    documentId: expected.documentId,
+    sourceId: expected.sourceId,
     provider: OLLAMA_PROVIDER,
     model: OLLAMA_MODEL,
   });
@@ -882,7 +882,7 @@ function validateCrashRecoveryProof(proof: Record<string, unknown>): void {
 
 function validatePartialDataProof(proof: Record<string, unknown>): void {
   scopedId(proof.projectId, 'partialDataRemoved', 'projectId');
-  scopedId(proof.documentId, 'partialDataRemoved', 'documentId');
+  scopedId(proof.sourceId, 'partialDataRemoved', 'sourceId');
   operationIdField(proof.operationId, 'partialDataRemoved', 'operationId');
   const before = record(proof.beforeCancel, 'partialDataRemoved beforeCancel');
   const after = record(proof.afterCanceled, 'partialDataRemoved afterCanceled');
@@ -965,7 +965,7 @@ function operationSnapshot(
     readonly operationId: string;
     readonly statuses: readonly string[];
     readonly projectId?: string;
-    readonly documentId?: string | null;
+    readonly sourceId?: string | null;
     readonly kind?: string;
     readonly provider?: string;
     readonly model?: string;
@@ -986,14 +986,14 @@ function operationSnapshot(
           ),
         }
       : {}),
-    ...(value.document_id === null
-      ? { documentId: null }
-      : value.document_id !== undefined
+    ...(value.source_id === null
+      ? { sourceId: null }
+      : value.source_id !== undefined
         ? {
-            documentId: nonEmptyString(
-              value.document_id,
+            sourceId: nonEmptyString(
+              value.source_id,
               check,
-              'response.document_id',
+              'response.source_id',
             ),
           }
         : {}),
@@ -1023,8 +1023,8 @@ function operationSnapshot(
     !expected.statuses.includes(snapshot.status) ||
     (expected.projectId !== undefined &&
       snapshot.projectId !== expected.projectId) ||
-    (expected.documentId !== undefined &&
-      snapshot.documentId !== expected.documentId) ||
+    (expected.sourceId !== undefined &&
+      snapshot.sourceId !== expected.sourceId) ||
     (expected.kind !== undefined && snapshot.kind !== expected.kind) ||
     (expected.provider !== undefined &&
       snapshot.provider !== expected.provider) ||

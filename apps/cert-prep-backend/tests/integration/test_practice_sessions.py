@@ -7,14 +7,14 @@ from practice_test_support import (
     _create_manual_question,
     _create_project,
     _generate_playable_question,
-    _upload_document,
+    _upload_source,
 )
 
 
 def test_practice_session_attempts_and_wrong_answer_review(client: TestClient, auth_headers) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    question = _generate_playable_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    question = _generate_playable_question(client, auth_headers, project_id, source_id)
 
     session_response = client.post(
         f"/projects/{project_id}/practice-sessions",
@@ -26,7 +26,7 @@ def test_practice_session_attempts_and_wrong_answer_review(client: TestClient, a
     assert session["project_id"] == project_id
     assert session["question_ids"] == [question["id"]]
     assert session["mode"] == "random_draw"
-    assert session["document_id"] is None
+    assert session["source_id"] is None
     assert session["question_count"] == 5
     assert isinstance(session["random_seed"], int)
     assert session["questions"] == [
@@ -38,7 +38,7 @@ def test_practice_session_attempts_and_wrong_answer_review(client: TestClient, a
             "rationale": question["rationale"],
             "citation_page": question["citation_page"],
             "source_excerpt": question["source_excerpt"],
-            "document_id": document_id,
+            "source_id": source_id,
             "answer_key_source": "ai_inferred",
         }
     ]
@@ -58,7 +58,7 @@ def test_practice_session_attempts_and_wrong_answer_review(client: TestClient, a
     assert item["selected_answer"] == "Ignore the cited source"
     assert item["correct_answer"] == "Apply the cited concept"
     assert item["citation_page"] == 1
-    assert item["document_id"] == document_id
+    assert item["source_id"] == source_id
     assert item["answer_key_source"] == "ai_inferred"
 
     corrected = client.post(
@@ -79,8 +79,8 @@ def test_review_retry_session_uses_current_wrong_answer_snapshots(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    question = _create_manual_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    question = _create_manual_question(client, auth_headers, project_id, source_id)
     session = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
@@ -114,7 +114,7 @@ def test_review_retry_session_uses_current_wrong_answer_snapshots(
             "rationale": "The document says permissions should remain scoped.",
             "citation_page": 1,
             "source_excerpt": "Least privilege keeps cloud permissions scoped.",
-            "document_id": document_id,
+            "source_id": source_id,
             "answer_key_source": "manual",
         }
     ]
@@ -138,8 +138,8 @@ def test_review_retry_session_uses_current_wrong_answer_snapshots(
 
 def test_review_retry_rejects_cleared_wrong_attempt(client: TestClient, auth_headers) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    question = _create_manual_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    question = _create_manual_question(client, auth_headers, project_id, source_id)
     session = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
@@ -178,13 +178,13 @@ def test_review_retry_session_uses_selected_current_wrong_answers(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    first_question = _create_manual_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    first_question = _create_manual_question(client, auth_headers, project_id, source_id)
     second_question = _create_manual_question(
         client,
         auth_headers,
         project_id,
-        document_id,
+        source_id,
         question="Which permissions should be rotated?",
         choices=["Temporary credentials", "Global administrator"],
         answer="Temporary credentials",
@@ -193,7 +193,7 @@ def test_review_retry_session_uses_selected_current_wrong_answers(
     session = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
-        json={"mode": "full_document", "document_id": document_id},
+        json={"mode": "full_source", "source_id": source_id},
     ).json()
     first_wrong = client.post(
         f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
@@ -243,10 +243,10 @@ def test_review_retry_session_uses_selected_current_wrong_answers(
     assert targeted.status_code == 201
     targeted_session = targeted.json()
     assert targeted_session["mode"] == "review_retry"
-    assert targeted_session["document_id"] is None
+    assert targeted_session["source_id"] is None
     assert targeted_session["question_count"] == 1
     assert targeted_session["question_ids"] == [second_question["id"]]
-    assert targeted_session["questions"][0]["document_id"] == document_id
+    assert targeted_session["questions"][0]["source_id"] == source_id
     assert targeted_session["questions"][0]["answer"] == "Temporary credentials"
 
     cleared = client.post(
@@ -266,12 +266,12 @@ def test_review_retry_session_uses_selected_current_wrong_answers(
     assert invalid_retry.status_code == 422
     assert first_wrong["id"] != second_wrong["id"]
 
-def test_session_question_document_id_falls_back_for_old_snapshots(
+def test_session_question_source_id_falls_back_for_old_snapshots(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    question = _create_manual_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    question = _create_manual_question(client, auth_headers, project_id, source_id)
     session = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
@@ -282,7 +282,7 @@ def test_session_question_document_id_falls_back_for_old_snapshots(
         connection.execute(
             """
             UPDATE practice_session_questions
-            SET document_id = NULL
+            SET source_id = NULL
             WHERE session_id = ? AND question_id = ?
             """,
             (session["id"], question["id"]),
@@ -294,18 +294,18 @@ def test_session_question_document_id_falls_back_for_old_snapshots(
     )
 
     assert response.status_code == 200
-    assert response.json()["questions"][0]["document_id"] == document_id
+    assert response.json()["questions"][0]["source_id"] == source_id
 
-def test_full_document_session_uses_source_order_for_document_questions(
+def test_full_source_session_uses_source_order_for_source_questions(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
+    source_id = _upload_source(client, auth_headers, project_id)
     second = _create_manual_question(
         client,
         auth_headers,
         project_id,
-        document_id,
+        source_id,
         question="Second source item?",
         source_order=20,
     )
@@ -313,7 +313,7 @@ def test_full_document_session_uses_source_order_for_document_questions(
         client,
         auth_headers,
         project_id,
-        document_id,
+        source_id,
         question="First source item?",
         source_order=10,
     )
@@ -321,13 +321,13 @@ def test_full_document_session_uses_source_order_for_document_questions(
     response = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
-        json={"mode": "full_document", "document_id": document_id},
+        json={"mode": "full_source", "source_id": source_id},
     )
 
     assert response.status_code == 201
     session = response.json()
-    assert session["mode"] == "full_document"
-    assert session["document_id"] == document_id
+    assert session["mode"] == "full_source"
+    assert session["source_id"] == source_id
     assert session["question_count"] == 2
     assert session["random_seed"] is None
     assert session["question_ids"] == [first["id"], second["id"]]
@@ -336,13 +336,13 @@ def test_random_draw_session_uses_fixed_seed_deterministically(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
+    source_id = _upload_source(client, auth_headers, project_id)
     questions = [
         _create_manual_question(
             client,
             auth_headers,
             project_id,
-            document_id,
+            source_id,
             question=f"Seeded item {index}?",
             source_order=index,
         )
@@ -381,13 +381,13 @@ def test_random_draw_session_excludes_incomplete_questions(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    complete = _create_manual_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    complete = _create_manual_question(client, auth_headers, project_id, source_id)
     incomplete = _create_manual_question(
         client,
         auth_headers,
         project_id,
-        document_id,
+        source_id,
         question="   ",
     )
 
@@ -406,12 +406,12 @@ def test_whole_source_session_excludes_incomplete_questions(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
+    source_id = _upload_source(client, auth_headers, project_id)
     first = _create_manual_question(
         client,
         auth_headers,
         project_id,
-        document_id,
+        source_id,
         question="First source item?",
         source_order=10,
     )
@@ -419,7 +419,7 @@ def test_whole_source_session_excludes_incomplete_questions(
         client,
         auth_headers,
         project_id,
-        document_id,
+        source_id,
         question="Incomplete source item?",
         rationale=" ",
         source_order=20,
@@ -428,7 +428,7 @@ def test_whole_source_session_excludes_incomplete_questions(
         client,
         auth_headers,
         project_id,
-        document_id,
+        source_id,
         question="Second source item?",
         source_order=30,
     )
@@ -436,12 +436,12 @@ def test_whole_source_session_excludes_incomplete_questions(
     response = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
-        json={"mode": "full_document", "document_id": document_id},
+        json={"mode": "full_source", "source_id": source_id},
     )
 
     assert response.status_code == 201
     session = response.json()
-    assert session["mode"] == "full_document"
+    assert session["mode"] == "full_source"
     assert session["question_count"] == 2
     assert session["question_ids"] == [first["id"], second["id"]]
     assert incomplete["id"] not in session["question_ids"]
@@ -451,8 +451,8 @@ def test_active_session_can_be_discovered_abandoned_and_replaced(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    question = _create_manual_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    question = _create_manual_question(client, auth_headers, project_id, source_id)
 
     created = client.post(
         f"/projects/{project_id}/practice-sessions",
@@ -478,7 +478,7 @@ def test_active_session_can_be_discovered_abandoned_and_replaced(
                 "id": session["id"],
                 "project_id": project_id,
                 "mode": "random_draw",
-                "document_id": None,
+                "source_id": None,
                 "status": "active",
                 "created_at": session["created_at"],
             }
@@ -541,13 +541,13 @@ def test_session_completion_uses_distinct_coverage_and_preserves_attempt_history
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    first = _create_manual_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    first = _create_manual_question(client, auth_headers, project_id, source_id)
     second = _create_manual_question(
         client,
         auth_headers,
         project_id,
-        document_id,
+        source_id,
         question="Which credential should be preferred?",
         choices=["Temporary credential", "Permanent administrator"],
         answer="Temporary credential",
@@ -555,7 +555,7 @@ def test_session_completion_uses_distinct_coverage_and_preserves_attempt_history
     session = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
-        json={"mode": "full_document", "document_id": document_id},
+        json={"mode": "full_source", "source_id": source_id},
     ).json()
 
     first_attempt = client.post(
@@ -629,8 +629,8 @@ def test_concurrent_session_creation_keeps_exactly_one_active_session(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    document_id = _upload_document(client, auth_headers, project_id)
-    _create_manual_question(client, auth_headers, project_id, document_id)
+    source_id = _upload_source(client, auth_headers, project_id)
+    _create_manual_question(client, auth_headers, project_id, source_id)
     start = Barrier(2)
 
     def create_session() -> tuple[int, dict]:

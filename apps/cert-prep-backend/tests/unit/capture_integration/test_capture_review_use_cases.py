@@ -14,7 +14,7 @@ from capture_runtime_client import (
     CaptureEventType,
 )
 
-from cert_prep_contracts.documents import SourceKind
+from cert_prep_contracts.sources import SourceKind
 
 from cert_prep_backend.capture_integration.application import use_cases
 from cert_prep_backend.capture_integration.application.errors import (
@@ -60,15 +60,15 @@ from cert_prep_backend.capture_integration.infrastructure.runtime_gateway import
 from cert_prep_backend.platform.errors import (
     CaptureRequirementUnavailable,
     BackendError,
-    DocumentOperationConflictError,
+    SourceOperationConflictError,
     NotFoundError,
     ValidationError,
 )
-from cert_prep_backend.source_library.domain.document import SourceDocument, SourceFile
-from cert_prep_backend.source_library.domain.operation import DocumentOperation
+from cert_prep_backend.source_library.domain.source import Source, SourceFile
+from cert_prep_backend.source_library.domain.operation import SourceOperation
 from cert_prep_backend.source_library.domain.statuses import (
-    DocumentOperationPhase,
-    DocumentOperationStatus,
+    SourceOperationPhase,
+    SourceOperationStatus,
 )
 
 PROJECT = "project"
@@ -97,10 +97,10 @@ class Prepared:
         self.page_count = page_count
 
 
-def source_document(
+def make_source(
     filename: str = "scan.png", *, chunks_count: int = 0, source_kind: SourceKind = "image"
-) -> SourceDocument:
-    return SourceDocument(
+) -> Source:
+    return Source(
         id="document",
         project_id=PROJECT,
         filename=filename,
@@ -128,7 +128,7 @@ def review_session() -> CaptureReviewSession:
     return CaptureReviewSession(
         id="session",
         project_id=PROJECT,
-        document_id="document",
+        source_id="document",
         operation_id=OPERATION,
         runtime_capture_id=None,
         status=CaptureReviewStatus.PENDING,
@@ -142,13 +142,13 @@ def review_session() -> CaptureReviewSession:
     )
 
 
-def running_operation(status: DocumentOperationStatus) -> DocumentOperation:
-    return DocumentOperation(
+def running_operation(status: SourceOperationStatus) -> SourceOperation:
+    return SourceOperation(
         OPERATION,
         PROJECT,
         "document",
         status,
-        DocumentOperationPhase.PROCESSING,
+        SourceOperationPhase.PROCESSING,
         True,
         None,
         "t",
@@ -168,42 +168,42 @@ class FakeProjects:
         return object()
 
 
-class FakeDocuments:
+class FakeSources:
     def __init__(self, trace: list[tuple], source: SourceFile) -> None:
         self.trace = trace
-        self.source = source
-        self.document_filename = "scan.png"
+        self.stored_file = source
+        self.source_filename = "scan.png"
         self.source_kind: SourceKind = "image"
-        self.document_error: BaseException | None = None
         self.source_error: BaseException | None = None
-        self.source_outcomes: list[object] = []
+        self.file_error: BaseException | None = None
+        self.file_outcomes: list[object] = []
         self.chunks: list[object] = []
         self.chunks_error: BaseException | None = None
 
-    def document(self, project_id: str, document_id: str) -> SourceDocument:
-        self.trace.append(("document", project_id, document_id))
-        if self.document_error is not None:
-            raise self.document_error
-        return source_document(self.document_filename, source_kind=self.source_kind)
+    def source(self, project_id: str, source_id: str) -> Source:
+        self.trace.append(("source", project_id, source_id))
+        if self.source_error is not None:
+            raise self.source_error
+        return make_source(self.source_filename, source_kind=self.source_kind)
 
-    def source_file(self, project_id: str, document_id: str) -> SourceFile:
-        self.trace.append(("source_file", project_id, document_id))
-        if self.source_outcomes:
-            outcome = self.source_outcomes.pop(0)
+    def source_file(self, project_id: str, source_id: str) -> SourceFile:
+        self.trace.append(("source_file", project_id, source_id))
+        if self.file_outcomes:
+            outcome = self.file_outcomes.pop(0)
             if isinstance(outcome, BaseException):
                 raise outcome
             return outcome
-        if self.source_error is not None:
-            raise self.source_error
-        return self.source
+        if self.file_error is not None:
+            raise self.file_error
+        return self.stored_file
 
-    def chunks_of(self, project_id: str, document_id: str) -> list[object]:
-        self.trace.append(("chunks_of", project_id, document_id))
+    def chunks_of(self, project_id: str, source_id: str) -> list[object]:
+        self.trace.append(("chunks_of", project_id, source_id))
         if self.chunks_error is not None:
             raise self.chunks_error
         return self.chunks
 
-    def attach_document(
+    def attach_source(
         self,
         project_id: str,
         operation_id: str,
@@ -214,7 +214,7 @@ class FakeDocuments:
         storage_path: str,
         page_count: int,
         source_kind: SourceKind,
-    ) -> SourceDocument:
+    ) -> Source:
         self.trace.append(
             (
                 "attach",
@@ -228,20 +228,20 @@ class FakeDocuments:
             )
         )
         self.source_kind = source_kind
-        return source_document(filename, source_kind=source_kind)
+        return make_source(filename, source_kind=source_kind)
 
 
 class FakeOperations:
     def __init__(self, trace: list[tuple], *, acquired: bool = True) -> None:
         self.trace = trace
         self.acquired = acquired
-        self.status = DocumentOperationStatus.RUNNING
+        self.status = SourceOperationStatus.RUNNING
         self.claim_error: BaseException | None = None
         self.fail_error: BaseException | None = None
         self.cancel_error: BaseException | None = None
         self.acknowledge_error: BaseException | None = None
         self.operation_error: BaseException | None = None
-        self.phase = DocumentOperationPhase.PROCESSING
+        self.phase = SourceOperationPhase.PROCESSING
 
     def claim_upload(self, project_id: str, operation_id: str) -> bool:
         self.trace.append(("claim_upload", project_id, operation_id))
@@ -249,29 +249,29 @@ class FakeOperations:
             raise self.claim_error
         return self.acquired
 
-    def fail(self, project_id: str, operation_id: str, *, error: str) -> DocumentOperation:
+    def fail(self, project_id: str, operation_id: str, *, error: str) -> SourceOperation:
         self.trace.append(("fail", project_id, operation_id, error))
         if self.fail_error is not None:
             raise self.fail_error
-        return running_operation(DocumentOperationStatus.FAILED)
+        return running_operation(SourceOperationStatus.FAILED)
 
-    def cancel(self, project_id: str, operation_id: str) -> DocumentOperation:
+    def cancel(self, project_id: str, operation_id: str) -> SourceOperation:
         self.trace.append(("cancel", project_id, operation_id))
         if self.cancel_error is not None:
             raise self.cancel_error
-        return running_operation(DocumentOperationStatus.CANCELED)
+        return running_operation(SourceOperationStatus.CANCELED)
 
-    def acknowledge_cancellation(self, project_id: str, operation_id: str) -> DocumentOperation:
+    def acknowledge_cancellation(self, project_id: str, operation_id: str) -> SourceOperation:
         self.trace.append(("acknowledge", project_id, operation_id))
         if self.acknowledge_error is not None:
             raise self.acknowledge_error
-        return running_operation(DocumentOperationStatus.CANCELED)
+        return running_operation(SourceOperationStatus.CANCELED)
 
-    def operation(self, project_id: str, operation_id: str) -> DocumentOperation:
+    def operation(self, project_id: str, operation_id: str) -> SourceOperation:
         self.trace.append(("operation", project_id, operation_id))
         if self.operation_error is not None:
             raise self.operation_error
-        return DocumentOperation(
+        return SourceOperation(
             OPERATION,
             PROJECT,
             "document",
@@ -351,9 +351,9 @@ class FakeSessions:
         return current
 
     def create(
-        self, *, project_id: str, document_id: str, operation_id: str
+        self, *, project_id: str, source_id: str, operation_id: str
     ) -> CaptureReviewSession:
-        self.trace.append(("create", project_id, document_id, operation_id))
+        self.trace.append(("create", project_id, source_id, operation_id))
         return self.session
 
     def finish(
@@ -396,7 +396,7 @@ class FakeWorkflow:
         self.claimed_session: CaptureReviewSession | None = None
         self.claim_error: BaseException | None = None
         self.commit_error: BaseException | None = None
-        self.published = source_document()
+        self.published = make_source()
 
     def begin_review(self, **kwargs) -> None:
         self.should_cancel = kwargs["should_cancel"]
@@ -405,7 +405,7 @@ class FakeWorkflow:
             (
                 "begin",
                 kwargs["project_id"],
-                kwargs["document_id"],
+                kwargs["source_id"],
                 kwargs["operation_id"],
                 kwargs["session_id"],
                 kwargs["file_name"],
@@ -429,7 +429,7 @@ class FakeWorkflow:
         self,
         *,
         project_id: str,
-        document_id: str,
+        source_id: str,
         operation_id: str,
         session_id: str,
         candidate: object,
@@ -439,7 +439,7 @@ class FakeWorkflow:
             (
                 "claim_commit",
                 project_id,
-                document_id,
+                source_id,
                 operation_id,
                 session_id,
                 candidate,
@@ -455,15 +455,15 @@ class FakeWorkflow:
         self,
         *,
         project_id: str,
-        document_id: str,
+        source_id: str,
         operation_id: str,
         session_id: str,
         candidate: object,
         should_cancel,
-    ) -> SourceDocument:
+    ) -> Source:
         self.should_cancel = should_cancel
         self.trace.append(
-            ("commit_review", project_id, document_id, operation_id, session_id, candidate)
+            ("commit_review", project_id, source_id, operation_id, session_id, candidate)
         )
         if self.commit_error is not None:
             raise self.commit_error
@@ -479,8 +479,8 @@ class FakeQuestions:
         self.trace = trace
         self.error: BaseException | None = None
 
-    def enqueue_document(self, project_id: str, document_id: str) -> None:
-        self.trace.append(("enqueue", project_id, document_id))
+    def enqueue_source(self, project_id: str, source_id: str) -> None:
+        self.trace.append(("enqueue", project_id, source_id))
         if self.error is not None:
             raise self.error
 
@@ -680,7 +680,7 @@ class World:
         self.prepared = Prepared("image", ".png", 4)
         self.source = SourceFile("scan.png", DIGEST, "uploads/scan.png")
         self.projects = FakeProjects(self.trace)
-        self.documents = FakeDocuments(self.trace, self.source)
+        self.sources = FakeSources(self.trace, self.source)
         self.operations = FakeOperations(self.trace)
         self.files = FakeFiles(self.trace, self.prepared)
         self.sessions = FakeSessions(self.trace, review_session())
@@ -705,7 +705,7 @@ def claim(world: World):
 def start(world: World, *, filename: str | None = "scan.png", content: bytes = CONTENT):
     return use_cases.start_capture_review(
         world.sessions,
-        world.documents,
+        world.sources,
         world.operations,
         world.files,
         world.workflow,
@@ -722,7 +722,7 @@ def start(world: World, *, filename: str | None = "scan.png", content: bytes = C
 
 def extract(world: World) -> None:
     use_cases.extract_capture_for_review(
-        world.documents,
+        world.sources,
         world.operations,
         world.files,
         world.sessions,
@@ -730,7 +730,7 @@ def extract(world: World) -> None:
         world.work,
         world.events,
         project_id=PROJECT,
-        document_id="document",
+        source_id="document",
         operation_id=OPERATION,
         session_id="session",
     )
@@ -801,11 +801,11 @@ def test_a_missing_project_is_not_found_before_the_claim() -> None:
 
 def test_a_cross_project_operation_conflict_propagates() -> None:
     world = World()
-    world.operations.claim_error = DocumentOperationConflictError(
+    world.operations.claim_error = SourceOperationConflictError(
         "Document operation id is already in use."
     )
 
-    with pytest.raises(DocumentOperationConflictError, match="already in use"):
+    with pytest.raises(SourceOperationConflictError, match="already in use"):
         claim(world)
 
     assert world.trace == [("project", PROJECT), ("claim_upload", PROJECT, OPERATION)]
@@ -848,7 +848,7 @@ def test_an_accepted_upload_stores_attaches_and_submits_in_order() -> None:
     assert ("is_closed", False) not in world.trace
     assert started.content_length == len(CONTENT)
     assert started.canonical_suffix == ".png"
-    assert started.document.filename == "scan.png"
+    assert started.source.filename == "scan.png"
     assert started.session.id == "session"
 
 
@@ -858,7 +858,7 @@ def test_a_missing_filename_falls_back_to_the_digest_and_suffix() -> None:
     started = start(world, filename=None)
 
     assert world.trace == accepted_prefix(None, f"{DIGEST}.png")
-    assert started.document.filename == f"{DIGEST}.png"
+    assert started.source.filename == f"{DIGEST}.png"
     assert started.content_length == len(CONTENT)
     assert started.canonical_suffix == ".png"
 
@@ -918,29 +918,29 @@ def test_abandon_without_a_session_does_not_finish_one() -> None:
     assert world.trace == [("fail", PROJECT, OPERATION, CREATION_FAILED)]
 
 
-def test_a_document_load_stays_outside_extraction_failure_handling() -> None:
+def test_a_source_load_stays_outside_extraction_failure_handling() -> None:
     world = World()
-    world.documents.document_error = CaptureExtractionFailed("requirement_unavailable", 9)
+    world.sources.source_error = CaptureExtractionFailed("requirement_unavailable", 9)
 
     with pytest.raises(CaptureExtractionFailed) as caught:
         extract(world)
 
     assert caught.value.code == "requirement_unavailable"
     assert caught.value.terminal_sequence == 9
-    assert world.trace == [("document", PROJECT, "document")]
+    assert world.trace == [("source", PROJECT, "document")]
 
 
 def test_pdf_requirement_failure_uses_the_pdf_message_and_no_sequence() -> None:
     world = World()
     world.source = SourceFile("notes.bin", DIGEST, "uploads/notes.PDF")
-    world.documents.source = world.source
-    world.documents.source_kind = "pdf"
+    world.sources.stored_file = world.source
+    world.sources.source_kind = "pdf"
     world.workflow.error = CaptureRequirementUnavailable("runtime detail")
 
     extract(world)
 
     assert world.trace == [
-        ("document", PROJECT, "document"),
+        ("source", PROJECT, "document"),
         ("source_file", PROJECT, "document"),
         ("read_bytes", "uploads/notes.PDF"),
         (
@@ -987,9 +987,9 @@ def test_image_requirement_failure_stores_cert_text_not_the_runtime_message() ->
 def test_a_pdf_requirement_job_keeps_the_pdf_message_and_the_sequence() -> None:
     world = World()
     world.source = SourceFile("notes.pdf", DIGEST, "uploads/blob")
-    world.documents.source = world.source
-    world.documents.document_filename = "notes.pdf"
-    world.documents.source_kind = "pdf"
+    world.sources.stored_file = world.source
+    world.sources.source_filename = "notes.pdf"
+    world.sources.source_kind = "pdf"
     world.workflow.error = CaptureExtractionFailed("requirement_unavailable", 8)
 
     extract(world)
@@ -1015,7 +1015,7 @@ def test_a_pdf_requirement_job_keeps_the_pdf_message_and_the_sequence() -> None:
 def test_any_other_job_code_stores_the_text_recognition_failure_and_the_sequence() -> None:
     world = World()
     world.source = SourceFile("notes.pdf", DIGEST, "uploads/notes.pdf")
-    world.documents.source = world.source
+    world.sources.stored_file = world.source
     world.workflow.error = CaptureExtractionFailed("capture_failed", 3)
 
     extract(world)
@@ -1062,7 +1062,7 @@ def test_a_stored_file_read_is_inside_the_failure_path() -> None:
     extract(world)
 
     assert [item[0] for item in world.trace] == [
-        "document",
+        "source",
         "source_file",
         "read_bytes",
         "fail",
@@ -1080,7 +1080,7 @@ def test_a_canceled_extraction_acknowledges_then_cancels_the_session() -> None:
     extract(world)
 
     assert [item[0] for item in world.trace] == [
-        "document",
+        "source",
         "source_file",
         "read_bytes",
         "begin",
@@ -1117,7 +1117,7 @@ def test_should_cancel_when_the_pool_is_closed_or_the_operation_is_not_running()
     assert cancel() is False
     assert ("operation", PROJECT, OPERATION) in world.trace
 
-    world.operations.status = DocumentOperationStatus.QUEUED
+    world.operations.status = SourceOperationStatus.QUEUED
     assert cancel() is True
 
     world.operations.operation_error = RuntimeError("missing")
@@ -1131,7 +1131,7 @@ def test_submitted_work_runs_extraction_and_queued_cancel() -> None:
     world.trace.clear()
     assert world.work.run is not None
     world.work.run()
-    assert world.trace[0] == ("document", PROJECT, started.document.id)
+    assert world.trace[0] == ("source", PROJECT, started.source.id)
     assert world.trace[-1] == ("publish_review_ready", PROJECT, started.session.id)
 
     world.trace.clear()
@@ -1298,7 +1298,7 @@ def completed_session(
 def commit(world: World, *, candidate: object = CANDIDATE, client_request_id: str = REQUEST):
     return use_cases.commit_capture_review(
         world.sessions,
-        world.documents,
+        world.sources,
         world.operations,
         world.workflow,
         world.work,
@@ -1320,7 +1320,7 @@ def publish(world: World, *, candidate: object = CANDIDATE) -> None:
         world.events,
         world.questions,
         project_id=PROJECT,
-        document_id="document",
+        source_id="document",
         operation_id=OPERATION,
         session_id="session",
         candidate=candidate,
@@ -1366,7 +1366,7 @@ def test_a_matching_completed_commit_replays_without_a_claim() -> None:
     assert queued.replay_completed is True
     assert ("digest", CANDIDATE) in world.trace
     assert "claim_commit" not in [item[0] for item in world.trace]
-    assert "document" not in [item[0] for item in world.trace]
+    assert "source" not in [item[0] for item in world.trace]
 
 
 def test_a_falsy_stored_request_id_replays_without_a_digest_or_a_claim() -> None:
@@ -1409,18 +1409,18 @@ def test_an_inactive_review_cannot_be_committed() -> None:
     assert world.trace == [("get", PROJECT, "session")]
 
 
-def test_a_missing_session_or_document_is_not_found_before_the_claim() -> None:
+def test_a_missing_session_or_source_is_not_found_before_the_claim() -> None:
     missing_session = World()
     missing_session.sessions.get_error = NotFoundError("Capture review session not found.")
     with pytest.raises(NotFoundError, match="Capture review session not found."):
         commit(missing_session)
     assert missing_session.trace == [("get", PROJECT, "session")]
 
-    missing_document = World()
-    missing_document.documents.document_error = NotFoundError("Document not found.")
+    missing_source = World()
+    missing_source.sources.source_error = NotFoundError("Document not found.")
     with pytest.raises(NotFoundError, match="Document not found."):
-        commit(missing_document)
-    assert "claim_commit" not in [item[0] for item in missing_document.trace]
+        commit(missing_source)
+    assert "claim_commit" not in [item[0] for item in missing_source.trace]
 
 
 def test_a_candidate_hash_mismatch_is_a_validation_error_and_does_not_claim() -> None:
@@ -1462,7 +1462,7 @@ def test_a_repeated_claim_does_not_submit_and_returns_the_claim_sequence() -> No
 
     assert queued.replay_completed is False
     assert queued.last_event_sequence == 9
-    assert queued.document is not None
+    assert queued.source is not None
     assert "submit" not in [item[0] for item in world.trace]
 
 
@@ -1476,7 +1476,7 @@ def test_an_acquired_commit_submits_publication_and_queued_cancel() -> None:
     assert queued.last_event_sequence == 11
     assert [item[0] for item in world.trace] == [
         "get",
-        "document",
+        "source",
         "candidate_sha",
         "claim_commit",
         "submit",
@@ -1535,7 +1535,7 @@ def test_commit_publication_enqueues_questions_only_when_chunks_exist() -> None:
     assert ("publish_terminal", PROJECT, "session", CaptureReviewStatus.COMPLETED) in empty.trace
 
     source_question = World()
-    source_question.workflow.published = source_document(chunks_count=2)
+    source_question.workflow.published = make_source(chunks_count=2)
     publish(source_question)
     assert ("enqueue", PROJECT, "document") in source_question.trace
     assert source_question.trace[-2:] == [
@@ -1587,7 +1587,7 @@ def test_a_commit_reload_error_in_finally_is_swallowed() -> None:
 
 def test_a_question_enqueue_error_still_reaches_finally() -> None:
     world = World()
-    world.workflow.published = source_document(chunks_count=1)
+    world.workflow.published = make_source(chunks_count=1)
     world.questions.error = RuntimeError("questions down")
 
     with pytest.raises(RuntimeError, match="questions down"):
@@ -1612,7 +1612,7 @@ def test_commit_publication_cancels_when_the_pool_is_closed_or_the_operation_sto
     assert "operation" not in [item[0] for item in world.trace]
 
     world.work.closed = False
-    world.operations.status = DocumentOperationStatus.QUEUED
+    world.operations.status = SourceOperationStatus.QUEUED
     assert cancel_check() is True
     assert ("operation", PROJECT, OPERATION) in world.trace
 
@@ -1645,7 +1645,7 @@ def test_a_structuring_failure_stores_the_runtime_sequence() -> None:
     reported = report(world, client_request_id="client")
 
     assert reported.replay is False
-    assert reported.document_id == "document"
+    assert reported.source_id == "document"
     assert reported.runtime_operation == "runtime-operation"
     assert world.trace == [
         ("get", PROJECT, "session"),
@@ -2006,7 +2006,7 @@ def with_runtime(
 def view(world: World):
     return use_cases.view_capture(
         world.sessions,
-        world.documents,
+        world.sources,
         world.operations,
         world.runtime,
         project_id=PROJECT,
@@ -2056,7 +2056,7 @@ def test_a_confirming_capture_does_not_call_the_runtime() -> None:
     assert viewed.runtime_operation is None
     assert viewed.report_extracting is False
     assert viewed.session.status == CaptureReviewStatus.CONFIRMING
-    assert calls(world) == ["get", "document"]
+    assert calls(world) == ["get", "source"]
 
 
 def test_a_capture_without_a_runtime_id_returns_the_session() -> None:
@@ -2066,16 +2066,16 @@ def test_a_capture_without_a_runtime_id_returns_the_session() -> None:
 
     assert viewed.runtime_operation is None
     assert viewed.report_extracting is False
-    assert viewed.document.id == "document"
-    assert calls(world) == ["get", "document"]
+    assert viewed.source.id == "document"
+    assert calls(world) == ["get", "source"]
 
     empty = World()
     with_runtime(empty, runtime_id="")
     assert view(empty).runtime_operation is None
-    assert calls(empty) == ["get", "document"]
+    assert calls(empty) == ["get", "source"]
 
 
-def test_view_capture_propagates_a_missing_session_or_document() -> None:
+def test_view_capture_propagates_a_missing_session_or_source() -> None:
     missing_session = World()
     missing_session.sessions.get_error = NotFoundError("Capture review session not found.")
 
@@ -2084,13 +2084,13 @@ def test_view_capture_propagates_a_missing_session_or_document() -> None:
 
     assert missing_session.trace == [("get", PROJECT, "session")]
 
-    missing_document = World()
-    missing_document.documents.document_error = NotFoundError("Document not found.")
+    missing_source = World()
+    missing_source.sources.source_error = NotFoundError("Document not found.")
 
     with pytest.raises(NotFoundError, match="Document not found."):
-        view(missing_document)
+        view(missing_source)
 
-    assert calls(missing_document) == ["get", "document"]
+    assert calls(missing_source) == ["get", "source"]
 
 
 @pytest.mark.parametrize(
@@ -2160,12 +2160,12 @@ def test_a_pending_capture_returns_other_statuses_without_reporting_extracting(
 @pytest.mark.parametrize(
     ("phase", "extracting"),
     [
-        (DocumentOperationPhase.AWAITING_REVIEW, False),
-        (DocumentOperationPhase.PROCESSING, True),
+        (SourceOperationPhase.AWAITING_REVIEW, False),
+        (SourceOperationPhase.PROCESSING, True),
     ],
 )
 def test_pending_awaiting_structuring_reports_extracting_until_review(
-    phase: DocumentOperationPhase,
+    phase: SourceOperationPhase,
     extracting: bool,
 ) -> None:
     world = World()
@@ -2421,7 +2421,7 @@ def test_structure_cancels_when_the_operation_is_not_running() -> None:
     cancel = world.runtime.should_cancel
     assert cancel is not None
     assert cancel() is False
-    world.operations.status = DocumentOperationStatus.QUEUED
+    world.operations.status = SourceOperationStatus.QUEUED
     assert cancel() is True
     world.operations.operation_error = RuntimeError("missing")
     assert cancel() is True
@@ -2527,7 +2527,7 @@ def view_ocr(world: World):
 def load_completed(world: World):
     return use_cases.load_completed_capture(
         world.sessions,
-        world.documents,
+        world.sources,
         world.files,
         project_id=PROJECT,
         session_id="session",
@@ -2546,10 +2546,10 @@ def read_result(world: World):
 
 def source_display(world: World):
     return use_cases.capture_source_display(
-        world.documents,
+        world.sources,
         world.files,
         project_id=PROJECT,
-        document_id="document",
+        source_id="document",
     )
 
 
@@ -2829,7 +2829,7 @@ def test_a_completed_capture_loads_chunks_then_display_before_fetch_and_observe(
     world = World()
     with_runtime(world, status=CaptureReviewStatus.COMPLETED)
     chunk = object()
-    world.documents.chunks = [chunk]
+    world.sources.chunks = [chunk]
     world.files.size = 18
     operation = _RuntimeOperation(CaptureStatus.COMPLETED, 9)
     world.runtime.result = _RuntimeResult(operation, "raw-body")
@@ -2845,7 +2845,7 @@ def test_a_completed_capture_loads_chunks_then_display_before_fetch_and_observe(
     assert viewed.raw == "raw-body"
     assert world.trace == [
         ("get", PROJECT, "session"),
-        ("document", PROJECT, "document"),
+        ("source", PROJECT, "document"),
         ("chunks_of", PROJECT, "document"),
         ("source_file", PROJECT, "document"),
         ("source_file", PROJECT, "document"),
@@ -2858,7 +2858,7 @@ def test_a_completed_capture_loads_chunks_then_display_before_fetch_and_observe(
 def test_a_completed_capture_without_its_source_row_is_not_a_missing_capture() -> None:
     world = World()
     with_runtime(world, status=CaptureReviewStatus.COMPLETED)
-    world.documents.source_error = NotFoundError("Source file not found.")
+    world.sources.file_error = NotFoundError("Source file not found.")
 
     with pytest.raises(CaptureSourceMissing, match="Source file not found."):
         load_completed(world)
@@ -2927,7 +2927,7 @@ def test_a_stored_result_without_runtime_evidence_stats_again() -> None:
     world = World()
     with_runtime(world, status=CaptureReviewStatus.COMPLETED, runtime_id=None)
     chunk = object()
-    world.documents.chunks = [chunk]
+    world.sources.chunks = [chunk]
     world.files.size = 18
 
     stored = load_completed(world)
@@ -2951,7 +2951,7 @@ def test_a_file_stat_failure_keeps_the_filename_media_type(error: Exception) -> 
 
 def test_a_missing_source_on_the_byte_lookup_propagates() -> None:
     world = World()
-    world.documents.source_outcomes = [
+    world.sources.file_outcomes = [
         world.source,
         NotFoundError("Document not found."),
     ]
@@ -2965,7 +2965,7 @@ def test_a_missing_source_on_the_byte_lookup_propagates() -> None:
 def test_a_missing_source_on_the_media_lookup_falls_back() -> None:
     world = World()
     world.files.size = 20
-    world.documents.source_outcomes = [
+    world.sources.file_outcomes = [
         NotFoundError("Document not found."),
         world.source,
     ]
@@ -3075,7 +3075,7 @@ def test_a_review_hold_waits_one_second_only_while_review_is_not_ready() -> None
     world = World()
     signal = FakeSignal(world.trace)
     with_runtime(world)
-    world.operations.phase = DocumentOperationPhase.PROCESSING
+    world.operations.phase = SourceOperationPhase.PROCESSING
 
     held = stream_hold(world, signal, "review", 1)
 
@@ -3092,7 +3092,7 @@ def test_a_review_hold_waits_one_second_only_while_review_is_not_ready() -> None
     ready = World()
     ready_signal = FakeSignal(ready.trace)
     with_runtime(ready)
-    ready.operations.phase = DocumentOperationPhase.AWAITING_REVIEW
+    ready.operations.phase = SourceOperationPhase.AWAITING_REVIEW
     opened = stream_hold(ready, ready_signal, "review", 1)
     assert opened.waiting is False
     assert ready.trace == [
@@ -3143,29 +3143,29 @@ def test_noting_an_event_observes_before_the_hold() -> None:
     assert ("wait", 0, 1) in world.trace
 
 
-def test_capture_source_kind_reads_the_document_kind() -> None:
+def test_capture_source_kind_reads_the_source_kind() -> None:
     world = World()
-    world.documents.source = SourceFile("scan.png", DIGEST, "uploads/page.png")
-    world.documents.source_kind = "pdf"
+    world.sources.stored_file = SourceFile("scan.png", DIGEST, "uploads/page.png")
+    world.sources.source_kind = "pdf"
 
     assert (
         use_cases.capture_source_kind(
-            world.documents, project_id=PROJECT, document_id="document"
+            world.sources, project_id=PROJECT, source_id="document"
         )
         == "pdf"
     )
 
-    world.documents.source = SourceFile("notes.pdf", DIGEST, "uploads/notes.pdf")
-    world.documents.source_kind = "image"
+    world.sources.stored_file = SourceFile("notes.pdf", DIGEST, "uploads/notes.pdf")
+    world.sources.source_kind = "image"
     assert (
         use_cases.capture_source_kind(
-            world.documents, project_id=PROJECT, document_id="document"
+            world.sources, project_id=PROJECT, source_id="document"
         )
         == "image"
     )
 
-    world.documents.document_error = NotFoundError("Document not found.")
+    world.sources.source_error = NotFoundError("Document not found.")
     with pytest.raises(NotFoundError, match="Document not found."):
         use_cases.capture_source_kind(
-            world.documents, project_id=PROJECT, document_id="document"
+            world.sources, project_id=PROJECT, source_id="document"
         )
