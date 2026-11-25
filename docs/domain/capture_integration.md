@@ -207,6 +207,7 @@ sequenceDiagram
 
 - 資料表：`capture_review_sessions`。migration 25 建立表，26 加上 `confirm_request_id` 與 `confirm_review_digest`，28 加上 `last_event_sequence`，31 加上 `runtime_ingestion_id`（同一個 migration 也加入教材的 `extraction_provenance`；兩欄在舊資料列都是 NULL）。都在 `platform/database.py`。
 - HTTP：`/projects/{project_id}/capture-reviews` 與 `/capture-runtime`。事件是工作台下的 `GET /{capture_id}/events`，`text/event-stream`。
+- 工作台的路由由 `api/router.py` 的同一個 router 依原本的順序登記：上傳在 `review_uploads.py`；狀態、取消、刪除與宿主作業的投影在 `review_lifecycle.py`；OCR 摘要、partial 與 raw 在 `review_extraction.py`；事件串流的入口在 `review_events.py`（串流本身在 `capture_event_stream.py`）；structure、commit 與 failure 在 `review_structuring.py`；結果在 `review_results.py`。共用的回應模型在 `schemas.py`，共用的 provider 與 runtime 檢查在 `dependencies.py`。`/capture-runtime` 在 `runtime_router.py`。
 - OpenAPI 標籤是 `capture-reviews`。宿主的 `captureId` 是擷取檢閱的 id；`ingestionId` 在 runtime 回報攝取 id 時就是它，否則是擷取檢閱的 id，從不是教材 id（教材 id 是 `sourceId`）。
 - `capture_runtime_unavailable` 只表示 Capture Runtime 沒有設定或連不上；`capture_requirement_unavailable` 表示 runtime 在執行，但來源需要的擷取引擎沒有安裝。擷取檢閱失敗時的代碼是 `capture_review_failed`，帶已儲存的教材作業階段與失敗訊息；沒有儲存的原因時才用固定句子。
 - 擷取結果附上 Cert 自己的 `extractionProvenance`：`recorded` 是擷取寫成教材時存下的引擎、模型、裝置與 runtime 版本（`sources.extraction_provenance`）；`reconstructed` 是 migration 31 之前的教材，引擎由擷取方式推回，模型與 runtime 版本為空，不編造版本。Capture 的 `CaptureEngine.model` 不接受空值，所以這些舊教材在工作台的 `extractionEngine.model` 是 `unknown`。

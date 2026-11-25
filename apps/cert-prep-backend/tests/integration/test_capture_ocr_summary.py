@@ -411,6 +411,56 @@ def test_route_authentication_runs_before_durable_or_runtime_reads(
     assert runtime.calls == []
 
 
+def test_ocr_summary_checks_durable_state_before_missing_client(tmp_path: Path) -> None:
+    app = create_app(
+        Settings(data_dir=tmp_path, api_token=TOKEN, llm_provider="fake"),
+        llm_provider=ForbiddenProvider(),
+        capture_runtime_client=None,
+        source_processing_async_jobs=False,
+        llm_installation_async_jobs=False,
+        background_question_jobs=False,
+    )
+    assert app.state.capture_runtime_client is None
+    project_id = _create_project(app)
+    bound = _create_capture_session(app, project_id=project_id)
+    unbound = _create_capture_session(app, project_id=project_id, runtime_capture_id=None)
+    closed = _create_capture_session(
+        app, project_id=project_id, session_status=CaptureReviewStatus.COMPLETED
+    )
+    client = TestClient(app)
+    try:
+        missing = client.get(_url(project_id, "absent"), headers=AUTH_HEADERS)
+        gone = client.get(_url(project_id, closed), headers=AUTH_HEADERS)
+        not_ready = client.get(_url(project_id, unbound), headers=AUTH_HEADERS)
+        unavailable = client.get(_url(project_id, bound), headers=AUTH_HEADERS)
+        status_route = client.get(
+            f"/projects/{project_id}/capture-reviews/{bound}", headers=AUTH_HEADERS
+        )
+    finally:
+        client.close()
+
+    assert missing.status_code == 404
+    assert missing.json() == {"code": "not_found", "message": "Capture not found."}
+    assert gone.status_code == 410
+    assert gone.json() == {"code": "capture_closed", "message": "Capture review is closed."}
+    assert not_ready.status_code == 409
+    assert not_ready.json() == {
+        "code": "ocr_summary_not_ready",
+        "message": "OCR summary is not ready.",
+    }
+    # Only a runtime read needs the client, and its 503 is the OCR summary's own message.
+    assert unavailable.status_code == 503
+    assert unavailable.json() == {
+        "code": "capture_runtime_unavailable",
+        "message": "Capture Runtime is unavailable.",
+    }
+    assert status_route.status_code == 503
+    assert status_route.json() == {
+        "code": "capture_runtime_unavailable",
+        "message": "Capture Runtime is not configured for this process.",
+    }
+
+
 class RecordingOcrRuntime:
     def __init__(
         self,
