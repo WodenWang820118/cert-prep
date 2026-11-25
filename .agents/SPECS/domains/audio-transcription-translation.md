@@ -10,8 +10,8 @@ Japanese audio). Cert Prep owns the authenticated proxy, persistence and the
 Traditional Chinese translation. Audio is not accepted by the capture review
 session; it is imported through the documents upload.
 
-Japanese source text remains canonical. Each persisted audio chunk keeps its
-time locator and raw Japanese transcript in `document_chunks.raw_text`; the
+The source text remains canonical. Each persisted audio chunk keeps its
+time locator and raw source-language transcript in `document_chunks.raw_text`; the
 reviewed or translated value is stored in `document_chunks.text` and the
 translation fields.
 
@@ -22,7 +22,7 @@ translation fields.
   Cert Prep does not download models or retry through a local speech provider.
 - Cancel, retry, timeout and runtime failure remain explicit and preserve the
   canonical source when it is safe to retry.
-- Translation failure does not discard a successful Japanese capture.
+- Translation failure does not discard a successful transcription.
 - Audio stays in the shared document/chunk and practice pipeline with its time
   locator and source/translation revision semantics.
 
@@ -30,7 +30,7 @@ translation fields.
 
 Backend coordinator tests cover audio routing, raw provenance, cancellation,
 retry, timeout, unavailable runtime and translation mapping. A real run must use
-the published Capture Runtime and check Japanese source retention and the
+the published Capture Runtime and check source-language transcript retention and the
 Traditional Chinese translation separately. The installed-app transcription
 journey, through the Build page's source-library import, is still pending
 ([TODO](../../TODOS/capture-workbench-cert-prep-pdf.md)).

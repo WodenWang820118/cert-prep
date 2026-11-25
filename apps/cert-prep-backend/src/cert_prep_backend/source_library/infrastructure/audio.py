@@ -10,7 +10,7 @@ from cert_prep_backend.platform.errors import (
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.source_library.application.ports import TraditionalChineseTranslator
 from cert_prep_backend.source_library.domain.document import DocumentChunk
-from cert_prep_backend.source_library.infrastructure import chunks
+from cert_prep_backend.source_library.infrastructure import chunks, documents
 
 
 class DocumentChunkTranslator:
@@ -59,7 +59,10 @@ def translate_chunk(
     _raise_if_translation_canceled(should_cancel)
     chunk = chunks.get_chunk(db, project_id, document_id, chunk_id)
     expected_source_revision = chunk.source_revision
-    translated = translator.translate(chunk.text)
+    document = documents.get_document(db, project_id, document_id)
+    translated = translator.translate(
+        chunk.text, source_language=document.language_hint
+    )
     _raise_if_translation_canceled(should_cancel)
     if not translated:
         raise ValueError('Translation provider returned empty text.')

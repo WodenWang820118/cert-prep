@@ -98,7 +98,7 @@
   app-source-import-panel,
   app-draft-review-panel,
   app-practice-panel,
-  app-wrong-answer-review {
+  app-wrong-answer-retry {
     display: contents;
   }
 
@@ -333,18 +333,18 @@
     background: var(--workbench-canvas);
   }
 
-  .workbench-page {
+  .app-page {
     display: grid;
     gap: 1.5rem;
     max-width: 74.375rem;
     margin: 0 auto;
   }
 
-  .workbench-page-header {
+  .app-page-header {
     padding-bottom: 0.5rem;
   }
 
-  .workbench-page-header h2 {
+  .app-page-header h2 {
     margin: 0;
     color: var(--workbench-text);
     font-size: 1.75rem;
@@ -357,7 +357,7 @@
     margin-bottom: 0.25rem;
   }
 
-  .build-workbench-grid {
+  .build-grid {
     display: grid;
     grid-template-columns: minmax(22rem, 1fr) minmax(24rem, 1fr);
     align-items: start;
@@ -894,7 +894,7 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .build-workbench-grid {
+    .build-grid {
       grid-template-columns: 1fr;
     }
   }
@@ -967,13 +967,13 @@
       padding-block: 0.75rem;
     }
 
-    .workbench-page-header {
+    .app-page-header {
       align-items: start;
       flex-direction: column;
       gap: 0.5rem;
     }
 
-    .workbench-page-header h2 {
+    .app-page-header h2 {
       font-size: 1.5rem;
       line-height: 1.875rem;
     }

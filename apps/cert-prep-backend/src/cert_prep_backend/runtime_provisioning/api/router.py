@@ -15,7 +15,7 @@ from cert_prep_backend.api.errors import (
     api_error,
     not_found_error,
 )
-from cert_prep_backend.platform.errors import OperationNotCancellableError, ProviderUnavailableError
+from cert_prep_backend.platform.errors import InstallerUnavailable, OperationNotCancellableError
 from cert_prep_contracts.runtime import RuntimeRequirementKind
 
 
@@ -56,7 +56,7 @@ def start_runtime_installation(
 ):
     try:
         return runtime_installations.start_runtime_installation(manager, kind)
-    except ProviderUnavailableError as exc:
+    except InstallerUnavailable as exc:
         raise api_error(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             code="provider_unavailable",

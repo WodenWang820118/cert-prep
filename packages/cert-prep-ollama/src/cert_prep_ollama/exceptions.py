@@ -7,7 +7,7 @@ class OllamaError(Exception):
     """Base exception for Ollama infrastructure errors."""
 
 
-class ProviderUnavailableError(OllamaError):
+class OllamaInstallationUnavailable(OllamaError):
     """Raised when an Ollama provider or its prerequisites are not available."""
 
     def __init__(self, message: str, *, code: str = "provider_unavailable") -> None:

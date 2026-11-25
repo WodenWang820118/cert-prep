@@ -15,13 +15,6 @@ class CaptureExtractionCanceled(Exception):
     """Extraction stopped because the operation was canceled."""
 
 
-class CaptureRequirementUnavailable(Exception):
-    """A source dependency was not ready, so no runtime operation was admitted."""
-
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
-
-
 class CaptureExtractionFailed(Exception):
     """Extraction failed. A runtime job supplies its code and terminal sequence."""
 

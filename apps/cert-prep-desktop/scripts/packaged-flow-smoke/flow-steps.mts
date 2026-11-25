@@ -18,7 +18,7 @@ import {
 import {
   answerForVisiblePracticeQuestion,
   captureDocumentOcrEvidence,
-  captureFullExamSessionCreate,
+  captureWholeSourceSessionCreate,
   captureLlmHealth,
   EXPECTED_BASELINE_CHUNKS,
   EXPECTED_BASELINE_PAGES,
@@ -295,17 +295,17 @@ export async function verifyStreamingPracticeReady(
   run: SmokeRunState,
 ): Promise<void> {
   const parseStart = run.streamingDraftParseStartedAt ?? Date.now();
-  await clickButtonPattern(run, /^\s*Full Exam\s*$/);
+  await clickButtonPattern(run, /^\s*Whole source\s*$/);
   await waitText(
     run,
-    /Start full exam|Full Exam/i,
+    /Start whole source|Whole source/i,
     10_000,
-    'streamed full exam mode',
+    'streamed whole source mode',
   );
 
   const startButton = activePage(run)
     .locator('button')
-    .filter({ hasText: /^\s*Start full exam\s*$/ })
+    .filter({ hasText: /^\s*Start whole source\s*$/ })
     .first();
   await startButton.waitFor({ state: 'visible', timeout: 30_000 });
   const deadline = Date.now() + 60_000;
@@ -314,11 +314,11 @@ export async function verifyStreamingPracticeReady(
       run.metrics.ui_timings_ms.practice_ready_visible_ms =
         Date.now() - parseStart;
       await screenshot(run, 'streaming-practice-ready');
-      const [fullExamQuestionCount] = await Promise.all([
-        captureFullExamSessionCreate(run),
+      const [wholeSourceQuestionCount] = await Promise.all([
+        captureWholeSourceSessionCreate(run),
         startButton.click({ timeout: 30_000 }),
       ]);
-      run.metrics.full_exam_question_count = fullExamQuestionCount;
+      run.metrics.whole_source_question_count = wholeSourceQuestionCount;
       await waitText(
         run,
         /Submit answer|Choices/,
@@ -340,27 +340,27 @@ export async function verifyStreamingPracticeReady(
   );
 }
 
-export async function runFullExamWrongAnswer(
+export async function runWholeSourceWrongAnswer(
   run: SmokeRunState,
 ): Promise<void> {
-  await clickButtonPattern(run, /^\s*Full Exam\s*$/);
-  await waitText(run, /Start full exam|Full Exam/i, 10_000, 'full exam mode');
-  await screenshot(run, 'full-exam-ready');
-  await clickButtonText(run, 'Start full exam');
+  await clickButtonPattern(run, /^\s*Whole source\s*$/);
+  await waitText(run, /Start whole source|Whole source/i, 10_000, 'whole source mode');
+  await screenshot(run, 'whole-source-ready');
+  await clickButtonText(run, 'Start whole source');
   await waitText(
     run,
     /Submit answer|Choices/,
     30_000,
-    'full exam question visible',
+    'whole source question visible',
   );
   const article = activePage(run).locator('app-practice-panel article').first();
   await article.waitFor({ state: 'visible', timeout: 30_000 });
-  log(run, 'full exam practice article connected');
+  log(run, 'whole source practice article connected');
   const isFakeProvider = run.options.llmProvider === 'fake';
   const questionText = isFakeProvider
     ? ''
     : await article.locator('p.practice-question-text').first().innerText();
-  log(run, 'full exam visible answer selection started');
+  log(run, 'whole source visible answer selection started');
   // The real acceptance package deliberately uses the deterministic fake
   // provider. Its answer is part of that provider's contract, so avoid a
   // second API round-trip here and keep the wrong-answer assertion focused on
@@ -378,12 +378,12 @@ export async function runFullExamWrongAnswer(
     : await wrongChoice.getAttribute('for');
   if (!wrongChoiceId)
     throw new Error(
-      'Full exam wrong-answer flow could not identify the selected choice.',
+      'Whole source wrong-answer flow could not identify the selected choice.',
     );
   run.metrics.wrong_answer = wrongChoiceId;
-  log(run, `full exam wrong choice selected: ${wrongChoiceId}`);
+  log(run, `whole source wrong choice selected: ${wrongChoiceId}`);
   await wrongChoice.click({ timeout: 30_000, force: true });
-  log(run, 'full exam wrong choice clicked');
+  log(run, 'whole source wrong choice clicked');
   await clickButtonText(run, 'Submit answer');
   await waitText(
     run,
@@ -393,36 +393,36 @@ export async function runFullExamWrongAnswer(
   );
   await screenshot(run, 'practice-wrong-answer');
 
-  await clickButtonPattern(run, /^\s*Wrong Answers\s*$/);
+  await clickButtonPattern(run, /^\s*Wrong-answer retry\s*$/);
   await waitText(
     run,
-    /Wrong Answers|1 recorded|Selected:/i,
+    /Wrong-answer retry|1 recorded|Selected:/i,
     30_000,
     'wrong-answer review populated',
   );
   await screenshot(run, 'wrong-answer-panel-populated');
 }
 
-export async function runRandomQuizCorrectClear(
+export async function runRandomDrawCorrectClear(
   run: SmokeRunState,
 ): Promise<void> {
-  await clickButtonPattern(run, /^\s*Random Quiz\s*$/);
+  await clickButtonPattern(run, /^\s*Random draw\s*$/);
   await waitText(
     run,
-    /Start random quiz|Random Quiz/i,
+    /Start random draw|Random draw/i,
     10_000,
-    'random quiz mode',
+    'random draw mode',
   );
   await activePage(run)
     .locator('input[name="sessionQuestionCount"]')
     .fill('100');
-  await screenshot(run, 'random-quiz-ready');
-  await clickButtonText(run, 'Start random quiz');
+  await screenshot(run, 'random-draw-ready');
+  await clickButtonText(run, 'Start random draw');
   await waitText(
     run,
     /Submit answer|Choices/,
     30_000,
-    'random quiz question visible',
+    'random draw question visible',
   );
 
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -454,9 +454,9 @@ export async function runRandomQuizCorrectClear(
     }
   }
 
-  await screenshot(run, 'random-quiz-correct-answer');
+  await screenshot(run, 'random-draw-correct-answer');
 
-  await clickButtonPattern(run, /^\s*Wrong Answers\s*$/);
+  await clickButtonPattern(run, /^\s*Wrong-answer retry\s*$/);
   await waitText(
     run,
     /0 recorded|Wrong answers will appear here/i,
@@ -478,7 +478,7 @@ async function findChoiceThatIsNotAnswer(
     if (normalizeChoiceText(visibleText) !== normalizedAnswer) return choice;
   }
   throw new Error(
-    'Full exam question did not expose a choice different from the generated correct answer.',
+    'Whole source question did not expose a choice different from the generated correct answer.',
   );
 }
 
@@ -540,7 +540,7 @@ export async function verifyMarkdownExport(run: SmokeRunState): Promise<void> {
   await screenshot(run, 'capture-workbench-result');
 
   const exportControl = page
-    .locator('button.capture-trial-download-button:visible')
+    .locator('button.capture-download-button:visible')
     .first();
   await exportControl.waitFor({ state: 'visible', timeout: 120_000 });
 

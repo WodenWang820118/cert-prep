@@ -13,7 +13,7 @@ import { test } from 'node:test';
 import {
   CAPTURE_RUNTIME_VERSION,
   CAPTURE_SIDECAR_LAUNCHER_VERSION,
-  CAPTURE_RUNTIME_MODEL,
+  CAPTURE_RUNTIME_RELEASE,
 } from './capture-runtime-version.mts';
 import { CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS } from './capture-runtime-consumer-source.mts';
 import {
@@ -59,7 +59,7 @@ test('the facade and aliases share the adoption source', () => {
   );
   assert.equal(CAPTURE_SIDECAR_LAUNCHER_VERSION, CAPTURE_RUNTIME_VERSION);
   assert.equal(
-    CAPTURE_RUNTIME_MODEL,
+    CAPTURE_RUNTIME_RELEASE,
     `capture-runtime@${CAPTURE_RUNTIME_VERSION}`,
   );
   assert.throws(

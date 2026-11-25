@@ -91,7 +91,7 @@ export async function runSessionRestartScenario({
     throw new Error('First restart did not expose the exact active session.');
   }
 
-  await openRandomQuiz(page);
+  await openRandomDraw(page);
   const resumeResponsePromise = page.waitForResponse(
     (response) =>
       response.request().method().toUpperCase() === 'GET' &&
@@ -217,10 +217,10 @@ interface ValidatedSession {
   readonly attempts: readonly SessionAttempt[];
 }
 
-async function openRandomQuiz(page: Page): Promise<void> {
+async function openRandomDraw(page: Page): Promise<void> {
   const navigation = page
-    .getByRole('button', { name: /^\s*Random Quiz\s*$/ })
-    .or(page.getByRole('link', { name: /^\s*Random Quiz\s*$/ }))
+    .getByRole('button', { name: /^\s*Random draw\s*$/ })
+    .or(page.getByRole('link', { name: /^\s*Random draw\s*$/ }))
     .first();
   if (await navigation.isVisible().catch(() => false)) {
     await navigation.click();

@@ -1,6 +1,6 @@
 from cert_prep_backend.authoring.domain.models import DraftSuggestion, SourceChunk
 from cert_prep_backend.ai_providers.domain.provider import ProviderHealth
-from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import LanguageModelUnavailable
 from cert_prep_contracts.llm import GenerationAttribution
 
 
@@ -146,7 +146,7 @@ class InvalidJsonReasoningExamProvider(MockExamProvider):
         num_ctx: int,
         num_predict: int,
     ) -> list[DraftSuggestion]:
-        raise ProviderUnavailableError("Ollama returned invalid JSON.")
+        raise LanguageModelUnavailable("Ollama returned invalid JSON.")
 
     def generate_drafts(
         self, chunks: list[SourceChunk] | tuple[SourceChunk, ...], limit: int
@@ -163,7 +163,7 @@ class TimeoutReasoningExamProvider(InvalidJsonReasoningExamProvider):
         num_ctx: int,
         num_predict: int,
     ) -> list[DraftSuggestion]:
-        raise ProviderUnavailableError("Provider transient generation error: timed out")
+        raise LanguageModelUnavailable("Provider transient generation error: timed out")
 
 
 class ReleaseRecordingProvider(MockExamProvider):

@@ -31,7 +31,7 @@ def test_operation_of_a_capture_in_review_reads_as_awaiting_review(tmp_path: Pat
     ) as client:
         project_id = _create_project(client, headers)
         created = client.post(
-            f"/projects/{project_id}/capture-workbench/captures",
+            f"/projects/{project_id}/capture-reviews",
             headers={**headers, "X-Cert-Prep-Operation-Id": "review-operation"},
             files={"file": ("review.pdf", minimal_pdf("Review me."), "application/pdf")},
         )

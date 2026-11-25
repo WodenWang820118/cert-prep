@@ -1,2 +1,2 @@
-export * from './capture-workbench-trial.contracts';
-export * from './capture-workbench-trial.constants';
+export * from './capture-workbench.contracts';
+export * from './capture-workbench.constants';

@@ -1,1 +1,1 @@
-export { CaptureWorkbenchTrialPage } from './capture-workbench-trial/capture-workbench-trial.page';
+export { CaptureWorkbenchPage } from './capture-workbench/capture-workbench.page';

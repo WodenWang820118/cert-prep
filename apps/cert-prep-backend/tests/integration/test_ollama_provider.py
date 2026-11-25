@@ -8,7 +8,7 @@ import time
 import pytest
 
 from cert_prep_backend.bootstrap.app import create_app
-from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import LanguageModelUnavailable
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.ai_providers.infrastructure import machine_inventory as machine_inventory_module
 from cert_prep_backend.ai_providers.infrastructure import ollama_transport
@@ -643,7 +643,7 @@ def test_ollama_reasoning_runtime_failure_does_not_try_another_model() -> None:
         client=fake_client,
     )
 
-    with pytest.raises(ProviderUnavailableError, match="primary model runner crashed"):
+    with pytest.raises(LanguageModelUnavailable, match="primary model runner crashed"):
         OllamaDraftWriter(provider).generate_reasoning_drafts(chunks, limit=2)
 
     assert [call["model"] for call in fake_client.chat_calls] == [
@@ -1083,7 +1083,7 @@ def test_ollama_fast_first_draft_reports_primary_runtime_failure_without_fallbac
         source_excerpt="Question text.",
     )
 
-    with pytest.raises(ProviderUnavailableError, match="model requires more memory"):
+    with pytest.raises(LanguageModelUnavailable, match="model requires more memory"):
         OllamaDraftWriter(provider).generate_fast_first_draft(chunk, candidate)
 
     assert [call["model"] for call in fake_client.chat_calls] == ["qwen3.5:4b"]

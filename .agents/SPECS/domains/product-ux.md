@@ -4,8 +4,9 @@
 
 Cert Prep is a local-first Windows/Tauri certification-prep app. The core user
 journey is: create/select a project, upload a source document, capture and
-review its extracted text, review editable questions, practice through Full Exam
-or Random Quiz, and clear wrong-answer review state through correct attempts.
+review its extracted text, review editable questions, practice through Whole
+source or Random draw, and clear wrong answers through correct attempts in
+Wrong-answer retry.
 
 The production acceptance path is deterministic/manual first. AI reasoning is
 optional enrichment and must not block capture review, manual question creation,
@@ -43,7 +44,7 @@ practice, or review flows after a source has been captured.
 - Runtime status is compact: header chips plus a Manage runtime drawer, not a
   large first-screen checklist.
 - Runtime status can be healthy while practice is still blocked by missing
-  playable questions. Build, Full Exam, and Random Quiz must surface the
+  playable questions. Build, Whole source, and Random draw must surface the
   practice-blocking reason when streamed questions exist but are not selectable.
 - Source import uses `language_hint`; `auto` remains the default, while QA uses
   `ja` for the JLPT production PDF.
@@ -51,12 +52,12 @@ practice, or review flows after a source has been captured.
   `Last-Event-ID`; normal capture progress never polls. Bounded polling remains
   limited to unrelated host-owned readiness and reconciliation workflows.
 - Manual answer/rationale entry is a production fallback, not a debug-only path.
-- Full Exam and Random Quiz consume playable editable questions. Older
+- Whole source and Random draw consume playable editable questions. Older
   approval-gated draft language is superseded.
 - A playable question requires approved status, question text, at least two
   nonempty choices, an answer present in the choices, rationale, and either a
   citation page or source excerpt.
-- Source files, Draft Review, and Full Exam share an explicit active document
+- Source files, Draft Review, and Whole source share an explicit active document
   selection. Draft Review defaults to active-document questions and shows active
   counts against the project total.
 - Source import accepts PDF, PNG, JPEG/JPG, static WebP, MP3, WAV, and M4A files
@@ -97,11 +98,11 @@ practice, or review flows after a source has been captured.
 - Practice sessions persist the selected playable question fields at session
   creation. Attempts and wrong-answer review grade/read from that session-time
   snapshot, with a live-draft fallback only for older sessions.
-- Wrong Answers supports focused retry paths: per-card `Retry` starts a
-  `review_retry` session for that attempt, and `Start review quiz` starts a
+- Wrong-answer retry supports focused retry paths: per-card `Retry` starts a
+  `review_retry` session for that attempt, and `Start wrong-answer retry` starts a
   `review_retry` session for all current wrong answers. Both flows navigate to
   the existing practice runner and use session-time question snapshots.
-- Wrong Answers shows compact weak-area metrics from the backend summary:
+- Wrong-answer summary shows compact weak-area metrics from the backend summary:
   current and cleared counts, last wrong date, repeated misses, and source page
   clusters. The summary remains project-scoped and distinguishes current wrong
   answers from cleared history.
@@ -114,11 +115,12 @@ practice, or review flows after a source has been captured.
 
 ## Workbench Screen Contract
 
-The workbench screens are Build at `/build`, Full Exam at `/full-exam`,
-Random Quiz at `/random-quiz`, Wrong Answers at `/review`, and the Manage
-Runtime modal opened from the app topbar (`/runtime` is the matching unguarded
-route). Random Quiz inherits the Full Exam runner structure and keeps only
-mode-specific random-draw controls.
+The workbench screens are Build at `/build`, Whole source at `/whole-source`,
+Random draw at `/random-draw`, Wrong-answer retry at `/wrong-answer-retry`,
+Wrong-answer summary at `/wrong-answers/summary`, Capture Workbench at
+`/capture`, and the Manage Runtime modal opened from the app topbar (`/runtime`
+is the matching unguarded route). Random draw inherits the Whole source runner
+structure and keeps only mode-specific random-draw controls.
 
 Shared workbench rules:
 
@@ -135,16 +137,16 @@ Page requirements:
 
 - Build: show `Cert Prep`, runtime chips in the page header, the workspace
   banner, and the two-column Source files / Mock Exam Items workbench.
-- Full Exam: show a source-document selector, `Start full exam`, compact
+- Whole source: show a source-document selector, `Start whole source`, compact
   document/question/session metrics, stable choice rows, `Submit answer`, and
   a right-side session details / question navigator rail when useful.
-- Random Quiz: reuse Full Exam runner language and density, with random-draw
+- Random draw: reuse Whole source runner language and density, with random-draw
   question count controls.
 - Manage Runtime: expose Python Backend, LLM Runtime, and Reasoning Model rows
   plus refresh, cancel, and close controls. Capture Workbench owns Capture
   Runtime setup. `/runtime` remains a matching
   unguarded recovery/deep-link route.
-- Review: show recorded count, refresh, question cards, page chips,
+- Wrong-answer retry: show recorded count, refresh, question cards, page chips,
   side-by-side answer panels, rationale/source metadata, and compact footer
   guidance.
 

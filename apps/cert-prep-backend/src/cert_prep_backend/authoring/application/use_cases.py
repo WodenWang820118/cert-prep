@@ -15,7 +15,7 @@ from cert_prep_backend.authoring.domain.draft import DraftEdit, NewQuestionDraft
 from cert_prep_backend.authoring.domain.generation import DraftGenerationJob, ManualDraftOperation
 from cert_prep_backend.authoring.domain.models import DraftGenerationStrategy
 from cert_prep_backend.authoring.domain.normalization import as_editable_question
-from cert_prep_backend.platform.errors import ProviderUnavailableError, ValidationError
+from cert_prep_backend.platform.errors import LanguageModelUnavailable, ValidationError
 
 __all__ = [
     "approved_questions",
@@ -184,7 +184,7 @@ def draft_imported_document(
             as_editable_question(suggestion)
             for suggestion in writing.import_suggestions(model, chunks, limit)
         ]
-    except ProviderUnavailableError:
+    except LanguageModelUnavailable:
         suggestions = []
     added = drafts.add_generated(project_id, document_id, suggestions) if suggestions else []
     sources.record_import_draft_count(project_id, document_id, len(added))

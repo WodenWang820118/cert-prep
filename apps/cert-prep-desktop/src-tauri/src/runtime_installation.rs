@@ -10,7 +10,7 @@ use crate::{
     archives::extract_zip,
     backend::BackendRuntimeInner,
     backend_process::launch_backend_entrypoint,
-    constants::{CAPTURE_RUNTIME_MODEL, PYTHON_RUNTIME_KIND},
+    constants::{CAPTURE_RUNTIME_RELEASE, PYTHON_RUNTIME_KIND},
     manifests::{load_runtime_manifest, verify_artifact, write_installed_manifest},
     runtime_slots::{bundle_identity, PYTHON_BACKEND_SLOT},
 };
@@ -22,7 +22,7 @@ pub struct DesktopRuntimeInstallation {
     pub id: String,
     pub kind: String,
     pub provider: String,
-    pub model: String,
+    pub artifact: String,
     pub status: String,
     pub detail: String,
     pub completed: Option<u64>,
@@ -37,7 +37,7 @@ pub(crate) struct RuntimeJob {
     pub(crate) id: String,
     pub(crate) kind: String,
     pub(crate) provider: String,
-    pub(crate) model: String,
+    pub(crate) artifact: String,
     pub(crate) status: String,
     pub(crate) detail: String,
     pub(crate) completed: Option<u64>,
@@ -53,7 +53,7 @@ impl RuntimeJob {
             id: uuid::Uuid::new_v4().to_string(),
             kind: PYTHON_RUNTIME_KIND.into(),
             provider: "pyinstaller".into(),
-            model: "cert-prep-backend".into(),
+            artifact: "cert-prep-backend".into(),
             status: "queued".into(),
             detail: "Python backend runtime installation queued.".into(),
             completed: None,
@@ -69,7 +69,7 @@ impl RuntimeJob {
             id: uuid::Uuid::new_v4().to_string(),
             kind: "capture_runtime".into(),
             provider: "bundled-release".into(),
-            model: CAPTURE_RUNTIME_MODEL.into(),
+            artifact: CAPTURE_RUNTIME_RELEASE.into(),
             status: "queued".into(),
             detail: "Capture Runtime installation queued.".into(),
             completed: None,
@@ -224,7 +224,7 @@ pub(crate) fn installation_from_job(job: RuntimeJob) -> DesktopRuntimeInstallati
         id: job.id,
         kind: job.kind,
         provider: job.provider,
-        model: job.model,
+        artifact: job.artifact,
         status: job.status,
         detail: job.detail,
         completed: job.completed,
@@ -241,7 +241,7 @@ pub(crate) fn completed_installation(detail: &str) -> DesktopRuntimeInstallation
         id: uuid::Uuid::new_v4().to_string(),
         kind: PYTHON_RUNTIME_KIND.into(),
         provider: "pyinstaller".into(),
-        model: "cert-prep-backend".into(),
+        artifact: "cert-prep-backend".into(),
         status: "succeeded".into(),
         detail: detail.into(),
         completed: None,
@@ -279,6 +279,14 @@ mod tests {
         sync::{Condvar, Mutex},
     };
     use zip::write::SimpleFileOptions;
+
+    #[test]
+    fn installation_serializes_the_capture_release_as_its_artifact() {
+        let installation = installation_from_job(RuntimeJob::queued_capture_runtime());
+        let payload = serde_json::to_value(installation).expect("serialize installation");
+        assert_eq!(payload["artifact"].as_str(), Some(CAPTURE_RUNTIME_RELEASE));
+        assert!(payload.get("model").is_none());
+    }
 
     #[test]
     fn bundled_runtime_installs_from_manifest_sibling_and_replaces_old_runtime() {

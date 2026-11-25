@@ -135,6 +135,7 @@ class CaptureRunResult:
     last_event_sequence: int
     raw: RawCapture
     document: CaptureDocument
+    runtime_version: str
     ocr_projection: object | None = None
 
 
@@ -343,6 +344,13 @@ class CertPrepCaptureCoordinator:
                 capture_id=capture_id,
                 raw=result.raw,
             )
+        runtime_version = (
+            getattr(ocr_projection, "runtime_version", None)
+            if ocr_projection is not None
+            else self._client.handshake().runtime_version
+        )
+        if not isinstance(runtime_version, str) or not runtime_version:
+            raise CaptureRuntimeProtocolError("Capture Runtime result has no runtime version.")
         # Pull-session submission has already caused the runtime to validate,
         # reconstruct, and complete the base document.  A Cert Prep review may
         # then change only targetText for local persistence; never bypass the
@@ -353,6 +361,7 @@ class CertPrepCaptureCoordinator:
             last_event_sequence=result.operation.last_event_sequence,
             raw=result.raw,
             document=document,
+            runtime_version=runtime_version,
             ocr_projection=ocr_projection,
         )
 

@@ -27,7 +27,7 @@ from cert_prep_contracts.llm import (
     LLMExecutionMode,
     LLMExecutionPolicy,
 )
-from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import LanguageModelUnavailable
 from cert_prep_contracts.llm_profiles import OllamaProfileSelection
 from cert_prep_contracts.runtime import RuntimeRequirementKind
 from cert_prep_ollama.device_status import DeviceStatus
@@ -289,12 +289,12 @@ class OllamaProvider:
         try:
             model_names = self._installed_model_names()
         except Exception as exc:
-            raise ProviderUnavailableError(f"Ollama unavailable: {exc}") from exc
+            raise LanguageModelUnavailable(f"Ollama unavailable: {exc}") from exc
 
         if self.model in model_names:
             return self.model
 
-        raise ProviderUnavailableError(self._health_detail(None))
+        raise LanguageModelUnavailable(self._health_detail(None))
 
     def _with_primary_model(self, operation: Callable[[str], T]) -> T:
         if self._server is not None:
@@ -304,7 +304,7 @@ class OllamaProvider:
                 try:
                     result = operation(model)
                 except Exception as exc:
-                    raise ProviderUnavailableError(
+                    raise LanguageModelUnavailable(
                         f"Ollama unavailable for configured model {model}: {short_error(exc)}"
                     ) from exc
                 self._generation_state.model = model
@@ -315,7 +315,7 @@ class OllamaProvider:
         try:
             result = operation(model)
         except Exception as exc:
-            raise ProviderUnavailableError(
+            raise LanguageModelUnavailable(
                 f"Ollama unavailable for configured model {model}: {short_error(exc)}"
             ) from exc
         self._generation_state.model = model

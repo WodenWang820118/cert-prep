@@ -1,4 +1,4 @@
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
@@ -32,3 +32,38 @@ def test_bootstrap_supplies_fresh_translator_for_each_operation(monkeypatch, bat
     first, second = operation.call_args_list
     assert first.args == second.args == (db,)
     assert first.kwargs['translator'] is not second.kwargs['translator']
+
+
+@pytest.mark.parametrize('language_hint', ['en', 'ja'])
+def test_chunk_translation_uses_its_recording_language_hint(monkeypatch, language_hint):
+    document = Mock(language_hint=language_hint)
+    chunk = Mock(text='Transcript', source_revision=2)
+    monkeypatch.setattr(audio.documents, 'get_document', Mock(return_value=document))
+    monkeypatch.setattr(audio.chunks, 'get_chunk', Mock(return_value=chunk))
+    save_translation = Mock()
+    monkeypatch.setattr(audio.chunks, 'compare_and_set_chunk_translation', save_translation)
+    translator = Mock()
+    translator.translate.return_value = 'Translation'
+    db = Mock()
+    db.connect.return_value = MagicMock()
+    connection = db.connect.return_value.__enter__.return_value
+
+    result = audio.translate_chunk(
+        db,
+        translator=translator,
+        project_id='project',
+        document_id='document',
+        chunk_id='chunk',
+        reconcile_document_status=False,
+    )
+
+    assert result is chunk
+    translator.translate.assert_called_once_with(chunk.text, source_language=language_hint)
+    save_translation.assert_called_once_with(
+        connection,
+        project_id='project',
+        document_id='document',
+        chunk_id='chunk',
+        translated_text='Translation',
+        expected_source_revision=2,
+    )

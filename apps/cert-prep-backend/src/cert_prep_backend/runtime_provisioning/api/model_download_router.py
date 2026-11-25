@@ -8,7 +8,7 @@ from cert_prep_backend.api.errors import (
     api_error,
     not_found_error,
 )
-from cert_prep_backend.platform.errors import OperationNotCancellableError, ProviderUnavailableError
+from cert_prep_backend.platform.errors import InstallerUnavailable, OperationNotCancellableError
 from cert_prep_backend.runtime_provisioning.api.schemas import ModelDownloadRead
 from cert_prep_backend.runtime_provisioning.application import use_cases as runtime_installations
 from cert_prep_backend.runtime_provisioning.application.ports import RuntimeInstallation
@@ -31,7 +31,7 @@ def start_model_download(
 ):
     try:
         return runtime_installations.download_selected_model(manager)
-    except ProviderUnavailableError as exc:
+    except InstallerUnavailable as exc:
         raise api_error(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             code="provider_unavailable",

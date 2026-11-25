@@ -353,10 +353,14 @@ def test_capture_ocr_summary_contract_is_named_discriminated_and_privacy_safe(
     tmp_path,
 ) -> None:
     openapi = create_app(Settings(data_dir=tmp_path, api_token="contract-token")).openapi()
-    path = "/projects/{project_id}/capture-workbench/captures/{capture_id}/ocr-summary"
+    path = "/projects/{project_id}/capture-reviews/{capture_id}/ocr-summary"
     operation = openapi["paths"][path]["get"]
 
-    assert operation["operationId"] == "get_capture_ocr_summary_projects__project_id__capture_workbench_captures__capture_id__ocr_summary_get"
+    assert operation["tags"] == ["capture-reviews"]
+    assert operation["operationId"] == (
+        "get_capture_ocr_summary_projects__project_id__capture_reviews"
+        "__capture_id__ocr_summary_get"
+    )
     assert _response_schema_name(openapi, path, "get", 200) == "CaptureOcrSummaryRead"
     for status_code in (404, 409, 410, 502, 503):
         assert _response_schema_name(openapi, path, "get", status_code) == "ApiErrorRead"

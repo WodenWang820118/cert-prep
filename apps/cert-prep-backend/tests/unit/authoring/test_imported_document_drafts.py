@@ -14,7 +14,7 @@ from cert_prep_backend.authoring.domain.generation import (
     all_jobs_ended,
 )
 from cert_prep_backend.authoring.domain.models import DraftSuggestion, SourceChunk
-from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import LanguageModelUnavailable
 
 CHUNK = SourceChunk(id="chunk", page_number=1, text="text")
 
@@ -99,7 +99,7 @@ def test_drafts_written_at_import_are_playable_and_counted() -> None:
     ]
 
 
-@pytest.mark.parametrize("outcome", [[], ProviderUnavailableError("no model")])
+@pytest.mark.parametrize("outcome", [[], LanguageModelUnavailable("no model")])
 def test_an_import_without_drafts_records_none(outcome) -> None:
     recorder = Recorder(suggestions=outcome)
 

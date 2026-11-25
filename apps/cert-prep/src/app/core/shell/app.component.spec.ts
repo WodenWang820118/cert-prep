@@ -65,11 +65,11 @@ describe('App', () => {
       ),
     ).toEqual([
       ['Build', 'Capture Workbench'],
-      ['Full Exam', 'Random Quiz'],
-      ['Dashboard', 'Wrong Answers'],
+      ['Whole source', 'Random draw'],
+      ['Wrong-answer summary', 'Wrong-answer retry'],
     ]);
     expect(studyNav?.querySelector('a[href="/runtime"]')).toBeNull();
-    expect(linkByText(compiled, 'Wrong Answers')).not.toBeNull();
+    expect(linkByText(compiled, 'Wrong-answer retry')).not.toBeNull();
 
     router.navigateByUrl('/build');
     fixture.detectChanges();
@@ -88,35 +88,35 @@ describe('App', () => {
         expect(compiled.textContent).toContain('Exam Questions');
         expect(
           compiled.querySelector('.workbench-main')?.textContent,
-        ).not.toContain('Wrong Answers');
+        ).not.toContain('Wrong-answer retry');
         expect(
           linkByText(compiled, 'Build')?.getAttribute('aria-current'),
         ).toBe('page');
       })
       .then(() => {
-        router.navigateByUrl('/full-exam');
+        router.navigateByUrl('/whole-source');
         fixture.detectChanges();
         TestBed.tick();
         return vi.waitFor(() => {
           fixture.detectChanges();
           expect(compiled.textContent).toContain('Source document');
           expect(compiled.textContent).toContain('security.pdf');
-          expect(compiled.textContent).toContain('Start full exam');
+          expect(compiled.textContent).toContain('Start whole source');
           expect(compiled.textContent).not.toContain('Source files');
         });
       })
       .then(() => {
-        router.navigateByUrl('/random-quiz');
+        router.navigateByUrl('/random-draw');
         fixture.detectChanges();
         TestBed.tick();
         return vi.waitFor(() => {
           fixture.detectChanges();
           expect(compiled.textContent).toContain('Random draw');
-          expect(compiled.textContent).toContain('Start random quiz');
+          expect(compiled.textContent).toContain('Start random draw');
         });
       })
       .then(() => {
-        router.navigateByUrl('/dashboard');
+        router.navigateByUrl('/wrong-answers/summary');
         fixture.detectChanges();
         TestBed.tick();
         return vi.waitFor(() => {
@@ -124,16 +124,16 @@ describe('App', () => {
           expect(compiled.textContent).toContain('Project weakness analysis');
           expect(
             compiled.querySelector('.workbench-main')?.textContent,
-          ).not.toContain('Wrong Answers');
+          ).not.toContain('Wrong-answer retry');
         });
       })
       .then(() => {
-        router.navigateByUrl('/review');
+        router.navigateByUrl('/wrong-answer-retry');
         fixture.detectChanges();
         TestBed.tick();
         return vi.waitFor(() => {
           fixture.detectChanges();
-          expect(compiled.textContent).toContain('Wrong Answers');
+          expect(compiled.textContent).toContain('Wrong-answer retry');
         });
       });
   });
@@ -230,7 +230,7 @@ describe('App', () => {
     });
   });
 
-  it('renders the capture workbench trial without backend readiness', () => {
+  it('renders the capture workbench without backend readiness', () => {
     const api = createApiClient();
     api.health.mockReturnValue(of({ ...backendHealth(), status: 'offline' }));
     TestBed.resetTestingModule();
@@ -252,13 +252,13 @@ describe('App', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     fixture.detectChanges();
 
-    router.navigateByUrl('/capture-workbench-trial');
+    router.navigateByUrl('/capture');
     fixture.detectChanges();
     TestBed.tick();
     return vi.waitFor(() => {
       fixture.detectChanges();
-      expect(router.url).toBe('/capture-workbench-trial');
-      expect(compiled.textContent).toContain('Capture Workbench trial');
+      expect(router.url).toBe('/capture');
+      expect(compiled.textContent).toContain('Capture Workbench');
       expect(compiled.querySelector('capture-workbench')).not.toBeNull();
       expect(compiled.textContent).not.toContain(
         'Install the Python backend runtime',

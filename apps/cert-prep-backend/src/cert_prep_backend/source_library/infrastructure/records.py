@@ -39,6 +39,7 @@ def document_from_row(row: Row) -> SourceDocument:
         status=SourceDocumentStatus(row["status"]),
         extraction_method=row["extraction_method"],
         ocr_device=row["ocr_device"],
+        extraction_provenance=row["extraction_provenance"],
         extraction_warnings=row["extraction_warnings"],
         failure_message=row["failure_message"],
         processed_page_count=row["processed_page_count"],

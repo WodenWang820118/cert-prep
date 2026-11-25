@@ -299,7 +299,7 @@ describe('DraftReviewPanelComponent', () => {
     expect(text).not.toContain('active-draft');
   });
 
-  it('shows the save result and a clear random-quiz next step', () => {
+  it('shows the save result and a clear random-draw next step', () => {
     const projects = TestBed.inject(ProjectStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const drafts = TestBed.inject(DraftReviewStore);
@@ -321,7 +321,7 @@ describe('DraftReviewPanelComponent', () => {
       '[data-testid="draft-practice-link"]',
     ) as HTMLAnchorElement;
     expect(practiceLink.textContent).toContain('Practice questions');
-    expect(practiceLink.getAttribute('href')).toBe('/random-quiz');
+    expect(practiceLink.getAttribute('href')).toBe('/random-draw');
   });
 });
 

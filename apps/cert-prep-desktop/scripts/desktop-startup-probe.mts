@@ -38,7 +38,7 @@ type ProbeReachedPhase =
   | 'cdp-endpoint-ready'
   | 'cdp-attached'
   | 'viewport-set'
-  | 'capture-trial-loaded';
+  | 'capture-loaded';
 
 export interface DesktopStartupFailureInput {
   readonly phase: StartupProbePhase;
@@ -156,7 +156,7 @@ interface ProbeOptions {
   readonly cdpPort: number;
   readonly coldStarts: number;
   readonly phaseSelection: ProbePhaseSelection;
-  readonly verifyCaptureTrial: boolean;
+  readonly verifyCapturePage: boolean;
 }
 
 type MutableProbeOptions = {
@@ -252,7 +252,7 @@ export function parseDesktopStartupProbeArgs(
     cdpPort: DEFAULT_CDP_PORT,
     coldStarts: 1,
     phaseSelection: 'all',
-    verifyCaptureTrial: false,
+    verifyCapturePage: false,
   };
   let appDataDirExplicit = false;
 
@@ -280,8 +280,8 @@ export function parseDesktopStartupProbeArgs(
       parsed.coldStarts = positiveInteger(Number(nextValue()), argument);
     } else if (argument === '--phase') {
       parsed.phaseSelection = parsePhaseSelection(nextValue());
-    } else if (argument === '--verify-capture-trial') {
-      parsed.verifyCaptureTrial = true;
+    } else if (argument === '--verify-capture-page') {
+      parsed.verifyCapturePage = true;
     } else {
       throw new Error(`Unknown argument: ${argument}`);
     }
@@ -290,8 +290,8 @@ export function parseDesktopStartupProbeArgs(
   if (!appDataDirExplicit) {
     parsed.appDataDir = join(parsed.outDir, 'app-data');
   }
-  if (parsed.verifyCaptureTrial && parsed.phaseSelection !== 'cdp-viewport') {
-    throw new Error('--verify-capture-trial requires --phase cdp-viewport.');
+  if (parsed.verifyCapturePage && parsed.phaseSelection !== 'cdp-viewport') {
+    throw new Error('--verify-capture-page requires --phase cdp-viewport.');
   }
   assertFreshProbeDirectories(parsed);
   return parsed;
@@ -418,20 +418,20 @@ async function runProbePhase({
         (await context.waitForEvent('page', { timeout: 30_000 }));
       reached = 'cdp-attached';
       if (phase === 'cdp-viewport') {
-        const page = options.verifyCaptureTrial
+        const page = options.verifyCapturePage
           ? await waitForApplicationPage(context, initialPage)
           : initialPage;
         await page.setViewportSize({ width: 1440, height: 1000 });
         reached = 'viewport-set';
-        if (options.verifyCaptureTrial) {
-          await page.goto(captureTrialUrl(page.url()), {
+        if (options.verifyCapturePage) {
+          await page.goto(capturePageUrl(page.url()), {
             waitUntil: 'commit',
             timeout: 10_000,
           });
           await page
-            .getByRole('heading', { name: 'Capture Workbench trial' })
+            .getByRole('heading', { name: 'Capture Workbench' })
             .waitFor({ state: 'visible', timeout: 60_000 });
-          reached = 'capture-trial-loaded';
+          reached = 'capture-loaded';
         }
       }
       await delay(750);
@@ -585,14 +585,14 @@ async function waitForApplicationPage(
   throw new Error(`No loaded application page appeared within ${timeoutMs}ms.`);
 }
 
-export function captureTrialUrl(applicationUrl: string): string {
+export function capturePageUrl(applicationUrl: string): string {
   if (!applicationUrl || applicationUrl === 'about:blank') {
-    throw new Error('Capture Trial navigation requires a loaded application URL.');
+    throw new Error('Capture page navigation requires a loaded application URL.');
   }
   try {
-    return new URL('/capture-workbench-trial', applicationUrl).href;
+    return new URL('/capture', applicationUrl).href;
   } catch {
-    throw new Error('Capture Trial navigation requires a loaded application URL.');
+    throw new Error('Capture page navigation requires a loaded application URL.');
   }
 }
 

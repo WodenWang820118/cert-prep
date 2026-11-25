@@ -13,7 +13,7 @@ from cert_prep_backend.authoring.domain.question_admission import (
     admit_extracted_question,
 )
 from cert_prep_backend.authoring.domain.normalization import normalize_answer
-from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import LanguageModelUnavailable
 
 
 EXAM_ITEMS_SCHEMA: dict[str, Any] = {
@@ -60,13 +60,13 @@ def json_payload(content: object) -> dict[str, Any]:
     """Read and validate the JSON object in the text of an Ollama chat reply."""
 
     if not isinstance(content, str):
-        raise ProviderUnavailableError("Ollama returned an unreadable response.")
+        raise LanguageModelUnavailable("Ollama returned an unreadable response.")
     try:
         payload = json.loads(content)
     except json.JSONDecodeError as exc:
-        raise ProviderUnavailableError("Ollama returned invalid JSON.") from exc
+        raise LanguageModelUnavailable("Ollama returned invalid JSON.") from exc
     if not isinstance(payload, dict):
-        raise ProviderUnavailableError("Ollama returned a non-object JSON response.")
+        raise LanguageModelUnavailable("Ollama returned a non-object JSON response.")
     return payload
 
 

@@ -7,8 +7,8 @@
 // 1. JPEG (packaged-image-upload-smoke): upload one scanned image, OCR it, and
 //    check the document becomes ready with chunks and the expected text.
 // 2. PDF (packaged-flow-smoke): consent to the Python runtime install, create a
-//    project, upload the scanned PDF and OCR it, edit a question, take a Full
-//    Exam and a Random Quiz (or the Markdown export), then restart the app and
+//    project, upload the scanned PDF and OCR it, edit a question, do a Whole source session
+//    and a Random draw (or the Markdown export), then restart the app and
 //    verify the project and review state persisted.
 //
 // CERT_PREP_ACCEPTANCE_IMAGE / _PDF name the private fixtures and

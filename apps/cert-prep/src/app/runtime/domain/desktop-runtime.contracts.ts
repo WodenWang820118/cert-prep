@@ -37,7 +37,7 @@ export interface DesktopRuntimeInstallation {
   readonly id: string;
   readonly kind: string;
   readonly provider: string;
-  readonly model: string;
+  readonly artifact: string;
   readonly status: string;
   readonly detail: string;
   readonly completed?: number | null;

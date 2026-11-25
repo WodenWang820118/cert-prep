@@ -95,29 +95,29 @@ export async function createWorkspaceWithUploadedDocument(
   await uploadDocumentAndExpectDraft(page, api, options);
 }
 
-export async function startRandomQuiz(
+export async function startRandomDraw(
   page: Page,
   api: MockCertPrepApi,
   questionCount = api.playableDrafts.length,
 ): Promise<void> {
-  await page.getByRole('link', { name: 'Random Quiz' }).click();
-  await expectRandomQuizAvailableCount(page, api.playableDrafts.length);
+  await page.getByRole('link', { name: 'Random draw' }).click();
+  await expectRandomDrawAvailableCount(page, api.playableDrafts.length);
   await page
     .getByRole('spinbutton', { name: 'Random draw size' })
     .fill(String(questionCount));
-  await page.getByRole('button', { name: 'Start random quiz' }).click();
+  await page.getByRole('button', { name: 'Start random draw' }).click();
   await expectCurrentSessionVisible(page, api);
 }
 
-export async function startFullExam(
+export async function startWholeSource(
   page: Page,
   api: MockCertPrepApi,
-  document = api.fullExamDocument,
+  document = api.wholeSourceDocument,
 ): Promise<void> {
   const questionCount = api.playableDraftsForDocument(document.id).length;
 
-  await page.getByRole('link', { name: 'Full Exam' }).click();
-  await expect(page.getByRole('heading', { name: 'Full Exam' })).toBeVisible();
+  await page.getByRole('link', { name: 'Whole source' }).click();
+  await expect(page.getByRole('heading', { name: 'Whole source' })).toBeVisible();
   const documentSelect = page
     .getByRole('region', { name: 'Source Document' })
     .getByRole('combobox');
@@ -128,7 +128,7 @@ export async function startFullExam(
   await expect(
     page.getByText(`${questionCount} questions in selected document`),
   ).toBeVisible();
-  await page.getByRole('button', { name: 'Start full exam' }).click();
+  await page.getByRole('button', { name: 'Start whole source' }).click();
   await expectCurrentSessionVisible(page, api);
 }
 
@@ -167,8 +167,8 @@ export async function runMultiPdfIsolationScenario(
   for (const document of [alternateDocument, defaultDocument]) {
     const selectedDocumentDrafts = api.playableDraftsForDocument(document.id);
     await selectActiveDocument(page, document);
-    await startFullExam(page, api, document);
-    expectFullExamSessionToUseOnlyDocument(api, document);
+    await startWholeSource(page, api, document);
+    expectWholeSourceSessionToUseOnlyDocument(api, document);
     await completePracticeQuestions(
       page,
       api,
@@ -221,11 +221,11 @@ export async function runMultiPdfBatchUploadScenario(
     await expectAiInferredPlayableDraft(page, draft);
   }
 
-  await startFullExam(page, api, secondDocument);
-  expectFullExamSessionToUseOnlyDocument(api, secondDocument);
+  await startWholeSource(page, api, secondDocument);
+  expectWholeSourceSessionToUseOnlyDocument(api, secondDocument);
 }
 
-export function expectFullExamSessionToUseOnlyDocument(
+export function expectWholeSourceSessionToUseOnlyDocument(
   api: MockCertPrepApi,
   document: DocumentRead,
 ): void {
@@ -281,28 +281,28 @@ async function expectAiInferredPlayableDraft(
   ).toBeVisible();
 }
 
-export async function expectRandomQuizAvailableCount(
+export async function expectRandomDrawAvailableCount(
   page: Page,
   count: number,
 ): Promise<void> {
   await expect(page.getByText(`${count} questions available`)).toBeVisible();
 }
 
-export async function expectFullExamDocumentOptions(
+export async function expectWholeSourceDocumentOptions(
   page: Page,
   api: MockCertPrepApi,
 ): Promise<void> {
-  await page.getByRole('link', { name: 'Full Exam' }).click();
-  await expect(page.getByRole('heading', { name: 'Full Exam' })).toBeVisible();
+  await page.getByRole('link', { name: 'Whole source' }).click();
+  await expect(page.getByRole('heading', { name: 'Whole source' })).toBeVisible();
   const documentSelect = page
     .getByRole('region', { name: 'Source Document' })
     .getByRole('combobox');
   const selectedDocumentQuestionCount = api.playableDraftsForDocument(
-    api.fullExamDocument.id,
+    api.wholeSourceDocument.id,
   ).length;
   await expect(
     documentSelect.locator('option', {
-      hasText: `${api.fullExamDocument.filename} - ${selectedDocumentQuestionCount} questions`,
+      hasText: `${api.wholeSourceDocument.filename} - ${selectedDocumentQuestionCount} questions`,
     }),
   ).toHaveCount(1);
 
@@ -354,7 +354,7 @@ export async function retryWrongAnswerAndClearReview(
     .find((candidate) => candidate.question_id === draft.id);
   expect(wrongAnswer).toBeDefined();
 
-  await openReviewPage(page);
+  await openWrongAnswerRetryPage(page);
   await expect(page.getByText('1 recorded')).toBeVisible();
   await page
     .locator('article.wrong-answer-card')
@@ -363,7 +363,7 @@ export async function retryWrongAnswerAndClearReview(
     .click();
 
   await expect(
-    page.getByRole('heading', { name: 'Random Quiz' }),
+    page.getByRole('heading', { name: 'Random draw', level: 2 }),
   ).toBeVisible();
   await expect
     .poll(() => api.practiceSessionPayload())
@@ -381,7 +381,7 @@ export async function retryWrongAnswerAndClearReview(
   );
   expect(api.wrongAnswers()).toHaveLength(0);
 
-  await openReviewPage(page);
+  await openWrongAnswerRetryPage(page);
   await expect(
     page.getByText(
       'Wrong answers will appear here after a practice attempt needs review.',
@@ -391,7 +391,7 @@ export async function retryWrongAnswerAndClearReview(
   expect(api.wrongAnswerSummary().cleared_count).toBe(1);
 }
 
-export async function startReviewQuizForAllWrongAnswersAndClearReview(
+export async function startRetryForAllWrongAnswersAndClearReview(
   page: Page,
   api: MockCertPrepApi,
 ): Promise<void> {
@@ -402,12 +402,12 @@ export async function startReviewQuizForAllWrongAnswersAndClearReview(
     .map((wrongAnswer) => wrongAnswer.attempt_id);
   expect(wrongAttemptIds).toHaveLength(drafts.length);
 
-  await openReviewPage(page);
+  await openWrongAnswerRetryPage(page);
   await expect(page.getByText(`${drafts.length} recorded`)).toBeVisible();
-  await page.getByRole('button', { name: 'Start review quiz' }).click();
+  await page.getByRole('button', { name: 'Start wrong-answer retry' }).click();
 
   await expect(
-    page.getByRole('heading', { name: 'Random Quiz' }),
+    page.getByRole('heading', { name: 'Random draw', level: 2 }),
   ).toBeVisible();
   await expect
     .poll(() => api.practiceSessionPayload())
@@ -426,16 +426,16 @@ export async function startReviewQuizForAllWrongAnswersAndClearReview(
   expect(api.wrongAnswers()).toHaveLength(0);
 }
 
-export async function expectWrongAnswerDashboard(
+export async function expectWrongAnswerSummary(
   page: Page,
   api: MockCertPrepApi,
 ): Promise<void> {
   const wrongAnswers = api.wrongAnswers();
   expect(wrongAnswers.length).toBeGreaterThan(0);
-  await openDashboardPage(page);
+  await openWrongAnswerSummaryPage(page);
   await expect(page.getByText('Project weakness analysis')).toBeVisible();
   await expect(
-    page.locator('.dashboard-kpis').getByText('Current Wrong', {
+    page.locator('.summary-kpis').getByText('Current Wrong', {
       exact: true,
     }),
   ).toBeVisible();
@@ -448,7 +448,7 @@ export async function expectWrongAnswerDashboard(
   const summary = api.wrongAnswerSummary();
   await expect(
     page
-      .locator('.dashboard-kpis div')
+      .locator('.summary-kpis div')
       .filter({ hasText: 'Current Wrong' })
       .getByText(String(summary.current_wrong_count), { exact: true }),
   ).toBeVisible();
@@ -463,7 +463,7 @@ export async function expectWrongAnswerDashboard(
   }
 }
 
-export async function startDashboardWeakAreaRetry(
+export async function startWrongAnswerSummaryWeakAreaRetry(
   page: Page,
   api: MockCertPrepApi,
   area: {
@@ -486,7 +486,7 @@ export async function startDashboardWeakAreaRetry(
     .filter({ hasText: `Page ${area.citationPage}` })
     .getByRole('button', { name: 'Retry 1 question' })
     .click();
-  await expect(page.getByRole('heading', { name: 'Random Quiz' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Random draw', level: 2 })).toBeVisible();
   await expect
     .poll(() => api.practiceSessionPayload())
     .toMatchObject({
@@ -496,14 +496,14 @@ export async function startDashboardWeakAreaRetry(
     });
 }
 
-export async function expectWrongAnswerReview(
+export async function expectWrongAnswerRetry(
   page: Page,
   api: MockCertPrepApi,
   drafts: readonly CompleteQuestionDraft[],
 ): Promise<void> {
   const wrongAnswers = api.wrongAnswers();
   expect(wrongAnswers).toHaveLength(drafts.length);
-  await openReviewPage(page);
+  await openWrongAnswerRetryPage(page);
   await expect(page.getByText(`${drafts.length} recorded`)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Refresh' })).toBeEnabled();
 
@@ -625,18 +625,18 @@ async function expectWrongAnswerExplanation(
   }
 }
 
-async function openReviewPage(page: Page): Promise<void> {
-  await page.getByRole('link', { name: 'Wrong Answers' }).click();
-  await expect(page).toHaveURL(/\/review$/);
+async function openWrongAnswerRetryPage(page: Page): Promise<void> {
+  await page.getByRole('link', { name: 'Wrong-answer retry' }).click();
+  await expect(page).toHaveURL(/\/wrong-answer-retry$/);
   await expect(
-    page.getByRole('heading', { name: 'Wrong Answers', exact: true }),
+    page.getByRole('heading', { name: 'Wrong-answer retry', exact: true }),
   ).toBeVisible();
 }
 
-async function openDashboardPage(page: Page): Promise<void> {
-  await page.getByRole('link', { name: 'Dashboard' }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
+async function openWrongAnswerSummaryPage(page: Page): Promise<void> {
+  await page.getByRole('link', { name: 'Wrong-answer summary' }).click();
+  await expect(page).toHaveURL(/\/wrong-answers\/summary$/);
   await expect(
-    page.getByRole('heading', { name: 'Dashboard', exact: true }),
+    page.getByRole('heading', { name: 'Wrong-answer summary', exact: true }),
   ).toBeVisible();
 }

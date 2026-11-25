@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from cert_prep_backend.platform.errors import OperationNotCancellableError, ProviderUnavailableError
+from cert_prep_backend.platform.errors import InstallerUnavailable, OperationNotCancellableError
 from cert_prep_backend.runtime_provisioning.application import use_cases as cases
 from cert_prep_backend.runtime_provisioning.application.ports import RuntimeInstallation
 from cert_prep_backend.runtime_provisioning.domain.installation import (
@@ -162,13 +162,13 @@ def test_ready_start_creates_fresh_success_without_validation_signal_or_schedule
     assert runtime.work.pending == [] and list(runtime.work.signals) == ["saved"]
 
 
-@pytest.mark.parametrize("failure", [ProviderUnavailableError("unavailable"), ValueError("invalid")])
+@pytest.mark.parametrize("failure", [InstallerUnavailable("unavailable"), ValueError("invalid")])
 def test_validation_precedes_reuse_and_preserves_translation(runtime, failure):
     queued(runtime)
     runtime.installers.get(Kind.OLLAMA).validation_error = failure
-    with pytest.raises(ProviderUnavailableError, match=str(failure)) as caught:
+    with pytest.raises(InstallerUnavailable, match=str(failure)) as caught:
         cases.start_runtime_installation(runtime, Kind.OLLAMA)
-    if isinstance(failure, ProviderUnavailableError):
+    if isinstance(failure, InstallerUnavailable):
         assert caught.value is failure
     else:
         assert caught.value.__cause__ is failure
@@ -184,7 +184,7 @@ def test_download_resolves_selected_lane_instead_of_assuming_model_kind(runtime)
 
 
 def test_missing_installer_and_jobs_preserve_errors(runtime):
-    with pytest.raises(ProviderUnavailableError, match="No installer is configured for ollama_model."):
+    with pytest.raises(InstallerUnavailable, match="No installer is configured for ollama_model."):
         cases.download_selected_model(runtime)
     for action in (cases.view_runtime_installation, cases.cancel_runtime_installation):
         with pytest.raises(KeyError):

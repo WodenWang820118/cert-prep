@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import pytest
 
-from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import LanguageModelUnavailable
 from cert_prep_backend.authoring.domain.models import (
     DraftGenerationStrategy,
     DraftSuggestion,
@@ -265,7 +265,7 @@ def test_draft_parser_rejects_invalid_json_and_grounding_mismatches() -> None:
         "confidence": 0.82,
     }
 
-    with pytest.raises(ProviderUnavailableError, match="invalid JSON"):
+    with pytest.raises(LanguageModelUnavailable, match="invalid JSON"):
         json_payload("not-json")
     assert (
         draft_suggestion_from_item(

@@ -1,0 +1,189 @@
+<section class="capture-page" aria-labelledby="capture-title">
+  <header class="capture-header">
+    <div>
+      <h2 id="capture-title">Capture Workbench</h2>
+      <p class="capture-description">
+        Saved to project. Cert Prep installs and starts Capture Runtime only after
+        explicit user actions. PDF and image sources are processed by
+        <code>@gx-capture/capture-workbench-ui</code> after OCR is separately
+        consented in Capture Runtime. Recordings are imported on the Build page.
+      </p>
+    </div>
+    <div class="capture-badge" [attr.data-state]="registrationState()">
+      {{ registrationStatusLabel() }}
+    </div>
+  </header>
+
+  <section class="capture-status" role="status" aria-live="polite">
+    <app-icon name="lucideZap" />
+    <span>{{ status() }}</span>
+  </section>
+
+  @if (registrationError(); as error) {
+  <p class="capture-error" role="alert">{{ error }}</p>
+  }
+
+  @if (!desktopRuntime.isCaptureRuntimeReady()) {
+  <section class="capture-runtime-unavailable" aria-live="polite">
+    <h3>Capture Runtime is unavailable</h3>
+    <p>{{ desktopRuntime.captureRuntimeStatus().detail }}</p>
+    @if (desktopRuntime.canInstallCaptureRuntime()) {
+    <button
+      type="button"
+      class="capture-download-button"
+      [disabled]="desktopRuntime.isCaptureRuntimeInstallActive()"
+      (click)="installCaptureRuntime()"
+    >
+      Install Capture Runtime
+    </button>
+    } @else if (desktopRuntime.canStartCaptureRuntime()) {
+    <button
+      type="button"
+      class="capture-download-button"
+      [disabled]="desktopRuntime.isCaptureRuntimeInstallActive()"
+      (click)="startCaptureRuntime()"
+    >
+      Start Capture Runtime
+    </button>
+    }
+  </section>
+  } @else if (
+    ocrPreflight.status() === 'idle' ||
+    ocrPreflight.status() === 'loading'
+  ) {
+  <section class="capture-preflight" role="status" aria-live="polite">
+    <app-icon name="lucideLoaderCircle" [busy]="true" />
+    <span>Checking OCR compute availability before import...</span>
+  </section>
+  } @else if (!ocrPreflight.canImport()) {
+  <section class="capture-runtime-unavailable" role="alert">
+    <h3>OCR preflight is unavailable</h3>
+    <p>{{ ocrPreflight.error() ?? 'Capture Runtime OCR preflight is unavailable.' }}</p>
+    <button
+      type="button"
+      class="capture-download-button"
+      [disabled]="ocrPreflight.isLoading()"
+      (click)="retryOcrPreflight()"
+    >
+      Retry OCR preflight
+    </button>
+  </section>
+  } @else {
+  @if (ocrPreflight.gpuAccelerationMessage(); as message) {
+  <section
+    class="capture-compute-status"
+    data-testid="ocr-compute-status"
+    role="status"
+    aria-live="polite"
+  >
+    <app-icon name="lucideZap" />
+    <span>{{ message }}</span>
+  </section>
+  }
+  @if (ocrPreflight.cpuFallbackNotice(); as notice) {
+  <section
+    class="capture-compute-notice"
+    data-testid="ocr-compute-notice"
+    role="status"
+    aria-live="polite"
+  >
+    <app-icon name="lucideInfo" />
+    <span>{{ notice }}</span>
+  </section>
+  }
+  <capture-workbench #captureWorkbench></capture-workbench>
+  }
+
+  @if (lastCompleted(); as completed) {
+  <section
+    class="capture-result"
+    aria-labelledby="capture-result-title"
+  >
+    <div>
+      <h3 id="capture-result-title">Capture document saved</h3>
+    </div>
+    <dl>
+      <div>
+        <dt>File</dt>
+        <dd>{{ completed.document.source.fileName }}</dd>
+      </div>
+      <div>
+        <dt>Bytes</dt>
+        <dd>{{ completed.document.source.bytes }}</dd>
+      </div>
+      <div>
+        <dt>Schema</dt>
+        <dd>CaptureDocumentV{{ completed.document.schemaVersion }}</dd>
+      </div>
+      <div>
+        <dt>Blocks</dt>
+        <dd>{{ completed.document.blocks.length }}</dd>
+      </div>
+      <div>
+        <dt>Structuring device</dt>
+        <dd data-testid="structuring-device">
+          {{ completed.document.structuringEngine.device ?? 'Unknown' }}
+          @if (completed.document.structuringEngine.deviceName; as deviceName) {
+          <span>({{ deviceName }})</span>
+          }
+        </dd>
+      </div>
+      @if (client.extractionProvenanceForSourceSha256(completed.document.source.sha256); as provenance) {
+      <div>
+        <dt>Extraction provenance</dt>
+        <dd>{{ provenance.status }}</dd>
+      </div>
+      }
+      @if (sourceImport.activeDocument(); as savedDocument) {
+      <div>
+        <dt>Cert Prep status</dt>
+        <dd>{{ savedDocument.status }}</dd>
+      </div>
+      <div>
+        <dt>Document chunks</dt>
+        <dd>{{ savedDocument.chunks_count }}</dd>
+      </div>
+      <div>
+        <dt>Extraction</dt>
+        <dd>{{ savedDocument.extraction_method }}</dd>
+      </div>
+      @if (savedDocument.status === 'ready' && savedDocument.chunks_count > 0) {
+      <div class="capture-download">
+        <dt>Export</dt>
+        <dd>
+          <button
+            type="button"
+            class="capture-download-button"
+            [disabled]="markdownDownloadState() === 'downloading'"
+            (click)="downloadMarkdown()"
+          >
+            @if (markdownDownloadState() === 'downloading') {
+            Preparing Markdown...
+            } @else {
+            Download Markdown
+            }
+          </button>
+        </dd>
+      </div>
+      }
+      } @else {
+      <div>
+        <dt>Cert Prep status</dt>
+        <dd>Waiting for saved document refresh</dd>
+      </div>
+      <div>
+        <dt>Document chunks</dt>
+        <dd>--</dd>
+      </div>
+      <div>
+        <dt>Extraction</dt>
+        <dd>--</dd>
+      </div>
+      }
+    </dl>
+    @if (markdownDownloadError(); as error) {
+    <p class="capture-error" role="alert">{{ error }}</p>
+    }
+  </section>
+  }
+</section>

@@ -47,7 +47,7 @@ export class PracticePanelComponent implements OnInit {
   });
 
   protected readonly modeTitle = computed(() =>
-    this.sessionMode() === 'full_document' ? 'Full Exam' : 'Random Quiz',
+    this.sessionMode() === 'full_document' ? 'Whole source' : 'Random draw',
   );
 
   protected readonly modeSummary = computed(() => {
@@ -60,8 +60,8 @@ export class PracticePanelComponent implements OnInit {
 
   protected readonly startButtonLabel = computed(() =>
     this.sessionMode() === 'full_document'
-      ? 'Start full exam'
-      : 'Start random quiz',
+      ? 'Start whole source'
+      : 'Start random draw',
   );
 
   protected readonly sessionTotal = computed(() => {

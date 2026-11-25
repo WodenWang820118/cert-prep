@@ -6,7 +6,7 @@ import {
   draftJobStatusCounts,
   FIRST_CHUNK_GATE_MS,
   firstChunkGateMetrics,
-  fullExamQuestionCountFromSession,
+  wholeSourceQuestionCountFromSession,
   sanitizeDraftJobSnapshot,
   sanitizeQuestionSnapshot,
   streamingJobCompletionState,
@@ -150,11 +150,11 @@ test('streaming question snapshots count usable questions without storing text',
   assert.doesNotMatch(JSON.stringify(snapshot), /SECRET|hidden-token|Bearer/i);
 });
 
-test('Full Exam evidence returns only the validated selected-document count', () => {
-  const request = validFullExamRequest();
-  const response = validFullExamResponse();
+test('Whole source evidence returns only the validated selected-document count', () => {
+  const request = validWholeSourceRequest();
+  const response = validWholeSourceResponse();
 
-  const count = fullExamQuestionCountFromSession(request, response, {
+  const count = wholeSourceQuestionCountFromSession(request, response, {
     projectId: 'project-1',
     documentId: 'document-1',
   });
@@ -163,145 +163,145 @@ test('Full Exam evidence returns only the validated selected-document count', ()
   assert.doesNotMatch(JSON.stringify({ count }), /SECRET|Bearer|choice/i);
 });
 
-test('Full Exam evidence rejects stale counts, scope drift, and unusable questions', () => {
+test('Whole source evidence rejects stale counts, scope drift, and unusable questions', () => {
   const expected = { projectId: 'project-1', documentId: 'document-1' };
 
-  const empty = validFullExamResponse();
+  const empty = validWholeSourceResponse();
   empty.question_ids = [];
   empty.questions = [];
   assert.equal(
-    fullExamQuestionCountFromSession(validFullExamRequest(), empty, expected),
+    wholeSourceQuestionCountFromSession(validWholeSourceRequest(), empty, expected),
     null,
   );
 
-  const staleCount = validFullExamResponse();
+  const staleCount = validWholeSourceResponse();
   staleCount.question_count = 5;
   assert.equal(
-    fullExamQuestionCountFromSession(
-      validFullExamRequest(),
+    wholeSourceQuestionCountFromSession(
+      validWholeSourceRequest(),
       staleCount,
       expected,
     ),
     null,
   );
 
-  const requestedCountMismatch = validFullExamRequest();
+  const requestedCountMismatch = validWholeSourceRequest();
   requestedCountMismatch.question_count = 5;
   assert.equal(
-    fullExamQuestionCountFromSession(
+    wholeSourceQuestionCountFromSession(
       requestedCountMismatch,
-      validFullExamResponse(),
+      validWholeSourceResponse(),
       expected,
     ),
     null,
   );
 
-  const duplicateIds = validFullExamResponse();
+  const duplicateIds = validWholeSourceResponse();
   duplicateIds.question_ids = ['question-1', 'question-1'];
   assert.equal(
-    fullExamQuestionCountFromSession(
-      validFullExamRequest(),
+    wholeSourceQuestionCountFromSession(
+      validWholeSourceRequest(),
       duplicateIds,
       expected,
     ),
     null,
   );
 
-  const wrongOrder = validFullExamResponse();
+  const wrongOrder = validWholeSourceResponse();
   wrongOrder.question_ids = ['question-2', 'question-1'];
   assert.equal(
-    fullExamQuestionCountFromSession(
-      validFullExamRequest(),
+    wholeSourceQuestionCountFromSession(
+      validWholeSourceRequest(),
       wrongOrder,
       expected,
     ),
     null,
   );
 
-  const wrongDocument = validFullExamResponse();
+  const wrongDocument = validWholeSourceResponse();
   wrongDocument.questions[0] = {
     ...wrongDocument.questions[0],
     document_id: 'document-2',
   };
   assert.equal(
-    fullExamQuestionCountFromSession(
-      validFullExamRequest(),
+    wholeSourceQuestionCountFromSession(
+      validWholeSourceRequest(),
       wrongDocument,
       expected,
     ),
     null,
   );
 
-  const invalidAnswer = validFullExamResponse();
+  const invalidAnswer = validWholeSourceResponse();
   invalidAnswer.questions[0] = {
     ...invalidAnswer.questions[0],
     answer: 'not-an-option',
   };
   assert.equal(
-    fullExamQuestionCountFromSession(
-      validFullExamRequest(),
+    wholeSourceQuestionCountFromSession(
+      validWholeSourceRequest(),
       invalidAnswer,
       expected,
     ),
     null,
   );
 
-  const missingRationale = validFullExamResponse();
+  const missingRationale = validWholeSourceResponse();
   missingRationale.questions[0] = {
     ...missingRationale.questions[0],
     rationale: '   ',
   };
   assert.equal(
-    fullExamQuestionCountFromSession(
-      validFullExamRequest(),
+    wholeSourceQuestionCountFromSession(
+      validWholeSourceRequest(),
       missingRationale,
       expected,
     ),
     null,
   );
 
-  const missingEvidence = validFullExamResponse();
+  const missingEvidence = validWholeSourceResponse();
   missingEvidence.questions[0] = {
     ...missingEvidence.questions[0],
     citation_page: null,
     source_excerpt: '   ',
   };
   assert.equal(
-    fullExamQuestionCountFromSession(
-      validFullExamRequest(),
+    wholeSourceQuestionCountFromSession(
+      validWholeSourceRequest(),
       missingEvidence,
       expected,
     ),
     null,
   );
 
-  const wrongRequestMode = validFullExamRequest();
+  const wrongRequestMode = validWholeSourceRequest();
   wrongRequestMode.mode = 'random_draw';
   assert.equal(
-    fullExamQuestionCountFromSession(
+    wholeSourceQuestionCountFromSession(
       wrongRequestMode,
-      validFullExamResponse(),
+      validWholeSourceResponse(),
       expected,
     ),
     null,
   );
 
-  const wrongResponseDocument = validFullExamResponse();
+  const wrongResponseDocument = validWholeSourceResponse();
   wrongResponseDocument.document_id = 'document-2';
   assert.equal(
-    fullExamQuestionCountFromSession(
-      validFullExamRequest(),
+    wholeSourceQuestionCountFromSession(
+      validWholeSourceRequest(),
       wrongResponseDocument,
       expected,
     ),
     null,
   );
 
-  const wrongProject = validFullExamResponse();
+  const wrongProject = validWholeSourceResponse();
   wrongProject.project_id = 'project-2';
   assert.equal(
-    fullExamQuestionCountFromSession(
-      validFullExamRequest(),
+    wholeSourceQuestionCountFromSession(
+      validWholeSourceRequest(),
       wrongProject,
       expected,
     ),
@@ -403,7 +403,7 @@ test('first chunk gate metrics use strict under-threshold timing', () => {
   });
 });
 
-function validFullExamRequest() {
+function validWholeSourceRequest() {
   return {
     mode: 'full_document',
     document_id: 'document-1',
@@ -411,7 +411,7 @@ function validFullExamRequest() {
   };
 }
 
-function validFullExamResponse() {
+function validWholeSourceResponse() {
   return {
     id: 'session-1',
     project_id: 'project-1',

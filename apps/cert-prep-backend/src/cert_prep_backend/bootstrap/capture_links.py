@@ -65,6 +65,7 @@ class SourceLibraryCapturePublication:
         model: str,
         device: str | None,
         warning: str | None,
+        extraction_provenance: str,
     ) -> SourceDocument:
         return operations.publish_capture_audio_success(
             self._db,
@@ -75,6 +76,7 @@ class SourceLibraryCapturePublication:
             model=model,
             device=device,
             warning=warning,
+            extraction_provenance=extraction_provenance,
         )
 
     def publish_success(
@@ -84,6 +86,7 @@ class SourceLibraryCapturePublication:
         operation_id: str,
         document_id: str,
         extraction: PageExtraction,
+        extraction_provenance: str,
     ) -> SourceDocument:
         return operations.publish_success(
             self._db,
@@ -91,6 +94,7 @@ class SourceLibraryCapturePublication:
             operation_id=operation_id,
             document_id=document_id,
             extraction=extraction,
+            extraction_provenance=extraction_provenance,
         )
 
 

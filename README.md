@@ -10,7 +10,7 @@ The main user journey is:
 2. Import PDF, image, or audio source files.
 3. Review the captured text and source evidence.
 4. Edit and approve multiple-choice question drafts.
-5. Practice with Full Exam or Random Quiz sessions.
+5. Practice with Whole source or Random draw sessions.
 6. Review wrong answers and retry weak areas.
 
 ## Architecture

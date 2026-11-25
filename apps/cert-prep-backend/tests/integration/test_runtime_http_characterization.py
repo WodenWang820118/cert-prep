@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import InstallerUnavailable
 from cert_prep_backend.runtime_provisioning.infrastructure.manager import RuntimeInstallationManager
 from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus as Status,
@@ -40,7 +40,7 @@ class HttpCharacterizationInstaller:
 
     def validate_installable(self):
         if self.error:
-            raise ProviderUnavailableError(self.error)
+            raise InstallerUnavailable(self.error)
 
     def install(self, progress):
         return self.action(progress)

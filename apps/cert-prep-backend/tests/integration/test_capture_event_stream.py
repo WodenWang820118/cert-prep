@@ -222,7 +222,7 @@ def _client(tmp_path: Path, runtime) -> TestClient:
 def _create_capture(client: TestClient, headers: dict[str, str]) -> tuple[str, str]:
     project_id = _create_project(client, headers)
     created = client.post(
-        f"/projects/{project_id}/capture-workbench/captures",
+        f"/projects/{project_id}/capture-reviews",
         headers=headers,
         files={"file": ("c.pdf", minimal_pdf("Cursor."), "application/pdf")},
     )
@@ -238,7 +238,7 @@ def test_invalid_cursor_is_rejected_with_422_body_before_runtime_is_read(
         project_id, capture_id = _create_capture(client, headers)
 
         response = client.get(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/events",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/events",
             headers={**headers, "Last-Event-ID": "-2"},
         )
 
@@ -259,7 +259,7 @@ def test_http_replay_returns_exact_single_frame_with_streaming_headers(
         project_id, capture_id = _create_capture(client, headers)
 
         response = client.get(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/events",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/events",
             headers={**headers, "Last-Event-ID": "4"},
         )
 

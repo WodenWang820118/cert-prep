@@ -80,7 +80,7 @@ export class DesktopRuntimeViewService {
       id: current?.id ?? '',
       kind: 'python_backend',
       provider: 'pyinstaller',
-      model: 'cert-prep-backend',
+      artifact: 'cert-prep-backend',
       status: 'failed',
       detail: message,
       completed: current?.completed ?? null,
@@ -99,7 +99,7 @@ export class DesktopRuntimeViewService {
       id: current?.id ?? '',
       kind: 'capture_runtime',
       provider: 'bundled-release',
-      model: current?.model ?? 'capture-runtime',
+      artifact: current?.artifact ?? 'capture-runtime',
       status: 'failed',
       detail: message,
       completed: current?.completed ?? null,
@@ -110,7 +110,7 @@ export class DesktopRuntimeViewService {
     };
   }
 
-  captureRuntimeModel(status: DesktopRuntimeStatus | null): string {
+  captureRuntimeArtifact(status: DesktopRuntimeStatus | null): string {
     const version = status?.version?.trim();
     return version === undefined || version.length === 0
       ? 'capture-runtime'

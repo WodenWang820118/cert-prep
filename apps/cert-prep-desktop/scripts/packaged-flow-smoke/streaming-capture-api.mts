@@ -12,7 +12,7 @@ import type {
   UploadedDocumentRef,
 } from './types.mts';
 import { activePage } from './runner-context.mts';
-import { fullExamQuestionCountFromSession } from './streaming-evidence.mts';
+import { wholeSourceQuestionCountFromSession } from './streaming-evidence.mts';
 import {
   isProjectDocumentsCollectionResponse,
   projectApiRefMatchesResponse,
@@ -110,13 +110,13 @@ export async function waitForUploadDocumentResponse(
   return uploadedDocumentRefFromResponse(run, response, payload);
 }
 
-export async function captureFullExamSessionCreate(
+export async function captureWholeSourceSessionCreate(
   run: SmokeRunState,
 ): Promise<number> {
   const uploadedDocument = run.uploadedDocument;
   if (!uploadedDocument) {
     throw new Error(
-      'Cannot prove Full Exam scope without the uploaded document.',
+      'Cannot prove Whole source scope without the uploaded document.',
     );
   }
   const expectedUrl = new URL(
@@ -143,7 +143,7 @@ export async function captureFullExamSessionCreate(
   );
   if (response.status() !== 201) {
     throw new Error(
-      `Full Exam session creation returned HTTP ${response.status()}.`,
+      `Whole source session creation returned HTTP ${response.status()}.`,
     );
   }
 
@@ -153,9 +153,9 @@ export async function captureFullExamSessionCreate(
     requestPayload = response.request().postDataJSON();
     responsePayload = await response.json();
   } catch {
-    throw new Error('Full Exam session evidence was not valid JSON.');
+    throw new Error('Whole source session evidence was not valid JSON.');
   }
-  const questionCount = fullExamQuestionCountFromSession(
+  const questionCount = wholeSourceQuestionCountFromSession(
     requestPayload,
     responsePayload,
     {
@@ -165,7 +165,7 @@ export async function captureFullExamSessionCreate(
   );
   if (questionCount === null) {
     throw new Error(
-      'Full Exam session did not prove a non-empty, practice-ready selected-document scope.',
+      'Whole source session did not prove a non-empty, practice-ready selected-document scope.',
     );
   }
   return questionCount;

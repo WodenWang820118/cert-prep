@@ -23,7 +23,6 @@ from cert_prep_backend.capture_integration.application.messages import (
 from cert_prep_backend.capture_integration.application.errors import (
     CaptureExtractionCanceled,
     CaptureExtractionFailed,
-    CaptureRequirementUnavailable,
 )
 from cert_prep_backend.capture_integration.infrastructure.coordinator import (
     CaptureRuntimeCanceledError,
@@ -47,6 +46,7 @@ from cert_prep_backend.source_library.application.ports import (
 )
 from cert_prep_backend.source_library.domain.document import SourceDocument
 from cert_prep_backend.platform.database import Database
+from cert_prep_backend.platform.errors import CaptureRequirementUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +122,7 @@ def begin_review_capture(
             project_id=project_id,
             session_id=session_id,
             runtime_capture_id=operation.capture_id,
+            runtime_ingestion_id=operation.ingestion_id,
         )
         if on_runtime_started is not None:
             on_runtime_started(operation.capture_id)
@@ -189,6 +190,7 @@ def commit_review_capture(
             source_kind=source.source_kind,
             expected_sha256=source.sha256,
             document=capture.document,
+            runtime_version=capture.runtime_version,
             ocr_projection=capture.ocr_projection,
             publication=publication,
         )
@@ -212,18 +214,16 @@ def commit_review_capture(
         if isinstance(error, CaptureRuntimeJobError):
             terminal_sequence = error.last_event_sequence
         try:
+            document_operations.fail(
+                project_id, operation_id, error="Capture review confirmation failed."
+            )
+        finally:
             review_sessions.finish(
                 db,
                 project_id=project_id,
                 session_id=session_id,
                 status=CaptureReviewStatus.FAILED,
                 terminal_sequence=terminal_sequence,
-            )
-        finally:
-            # Source Library's operation repository also discards the document's
-            # unfinished draft jobs, in the transaction that stops the run.
-            document_operations.fail(
-                project_id, operation_id, error="Capture review confirmation failed."
             )
         raise
 

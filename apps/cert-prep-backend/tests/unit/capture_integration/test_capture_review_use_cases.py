@@ -27,7 +27,6 @@ from cert_prep_backend.capture_integration.application.errors import (
     CaptureOcrNotReady,
     CaptureOcrTransport,
     CaptureOcrUnavailable,
-    CaptureRequirementUnavailable,
     CaptureResultMissing,
     CaptureResultProtocolError,
     CaptureResultUnavailable,
@@ -57,6 +56,7 @@ from cert_prep_backend.capture_integration.infrastructure.runtime_gateway import
     CoordinatorCaptureRuntime,
 )
 from cert_prep_backend.platform.errors import (
+    CaptureRequirementUnavailable,
     BackendError,
     DocumentOperationConflictError,
     NotFoundError,
@@ -945,8 +945,8 @@ def test_pdf_requirement_failure_uses_the_pdf_message_and_no_sequence() -> None:
             "application/pdf",
             "pdf",
         ),
-        ("finish", PROJECT, "session", CaptureReviewStatus.FAILED, None),
         ("fail", PROJECT, OPERATION, PDF_OCR_UNAVAILABLE_MESSAGE),
+        ("finish", PROJECT, "session", CaptureReviewStatus.FAILED, None),
         ("publish_terminal", PROJECT, "session", CaptureReviewStatus.FAILED),
     ]
 
@@ -969,8 +969,8 @@ def test_image_requirement_failure_stores_cert_text_not_the_runtime_message() ->
         "image",
     )
     assert world.trace[-3:] == [
-        ("finish", PROJECT, "session", CaptureReviewStatus.FAILED, None),
         ("fail", PROJECT, OPERATION, TEXT_RECOGNITION_UNAVAILABLE_MESSAGE),
+        ("finish", PROJECT, "session", CaptureReviewStatus.FAILED, None),
         ("publish_terminal", PROJECT, "session", CaptureReviewStatus.FAILED),
     ]
 
@@ -996,8 +996,8 @@ def test_a_pdf_requirement_job_keeps_the_pdf_message_and_the_sequence() -> None:
         "pdf",
     ) in world.trace
     assert world.trace[-3:] == [
-        ("finish", PROJECT, "session", CaptureReviewStatus.FAILED, 8),
         ("fail", PROJECT, OPERATION, PDF_OCR_UNAVAILABLE_MESSAGE),
+        ("finish", PROJECT, "session", CaptureReviewStatus.FAILED, 8),
         ("publish_terminal", PROJECT, "session", CaptureReviewStatus.FAILED),
     ]
 
@@ -1011,8 +1011,8 @@ def test_any_other_job_code_stores_the_text_recognition_failure_and_the_sequence
     extract(world)
 
     assert world.trace[-3:] == [
-        ("finish", PROJECT, "session", CaptureReviewStatus.FAILED, 3),
         ("fail", PROJECT, OPERATION, TEXT_RECOGNITION_FAILED_MESSAGE),
+        ("finish", PROJECT, "session", CaptureReviewStatus.FAILED, 3),
         ("publish_terminal", PROJECT, "session", CaptureReviewStatus.FAILED),
     ]
 
@@ -1026,8 +1026,8 @@ def test_a_failure_without_a_capture_code_keeps_the_generic_message() -> None:
     extract(world)
 
     assert world.trace[-3:] == [
-        ("finish", PROJECT, "session", CaptureReviewStatus.FAILED, None),
         ("fail", PROJECT, OPERATION, EXTRACTION_FAILED),
+        ("finish", PROJECT, "session", CaptureReviewStatus.FAILED, None),
         ("publish_terminal", PROJECT, "session", CaptureReviewStatus.FAILED),
     ]
 
@@ -1039,8 +1039,8 @@ def test_a_generic_extraction_failure_has_no_terminal_sequence() -> None:
     extract(world)
 
     assert world.trace[-3:] == [
-        ("finish", PROJECT, "session", CaptureReviewStatus.FAILED, None),
         ("fail", PROJECT, OPERATION, EXTRACTION_FAILED),
+        ("finish", PROJECT, "session", CaptureReviewStatus.FAILED, None),
         ("publish_terminal", PROJECT, "session", CaptureReviewStatus.FAILED),
     ]
 
@@ -1055,8 +1055,8 @@ def test_a_stored_file_read_is_inside_the_failure_path() -> None:
         "document",
         "source_file",
         "read_bytes",
-        "finish",
         "fail",
+        "finish",
         "publish_terminal",
     ]
     assert ("fail", PROJECT, OPERATION, EXTRACTION_FAILED) in world.trace

@@ -13,7 +13,7 @@ from cert_prep_backend.authoring.infrastructure.draft_writing import (
     generate_drafts_with_annotations_for_strategy,
 )
 from cert_prep_backend.authoring.infrastructure.streaming import _generate_streaming_fast_first_drafts
-from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import LanguageModelUnavailable
 
 
 def _page(number: int, *, parsed: bool = False) -> SourceChunk:
@@ -118,14 +118,14 @@ def test_all_unparsed_pages_keep_the_existing_batched_reasoning_call():
 
 
 def test_non_fatal_reasoning_failure_keeps_fast_first_and_other_pages():
-    provider = RecordingHybridProvider(error=ProviderUnavailableError("invalid JSON"))
+    provider = RecordingHybridProvider(error=LanguageModelUnavailable("invalid JSON"))
     result = _generate(provider, [_page(1, parsed=True), _page(2), _page(3)])
     assert [item.chunk_id for item in result.suggestions] == ["page-1", "page-3"]
     assert provider.reasoning_calls == [(["page-2"], 9), (["page-3"], 9)]
 
 
 def test_a_repeat_limit_abort_skips_only_that_page():
-    provider = RecordingHybridProvider(error=ProviderUnavailableError(
+    provider = RecordingHybridProvider(error=LanguageModelUnavailable(
         "Ollama unavailable for configured model lfm3:1.7b: "
         "prediction aborted, token repeat limit reached (status code: 500)"
     ))
@@ -135,7 +135,7 @@ def test_a_repeat_limit_abort_skips_only_that_page():
 
 
 @pytest.mark.parametrize("error", [
-    ProviderUnavailableError("model missing"),
+    LanguageModelUnavailable("model missing"),
     DraftJobCanceledError("Draft generation was canceled."),
 ])
 def test_fatal_reasoning_errors_and_cancellation_propagate(error):

@@ -75,10 +75,10 @@
           <label class="practice-select-field">
             <app-icon name="lucideFile" />
             <select
-              [ngModel]="practice.fullExamDocumentSelectValue()"
+              [ngModel]="practice.wholeSourceDocumentSelectValue()"
               (ngModelChange)="practice.setSelectedDocumentId($event)"
             >
-              @for (document of practice.fullExamDocuments(); track document.id) {
+              @for (document of practice.wholeSourceDocuments(); track document.id) {
                 <option [value]="document.id">
                   {{ document.filename }} -
                   {{ practice.questionCountForDocument(document.id) }} questions
@@ -118,7 +118,7 @@
         <dd>
           {{
             sessionMode() === 'full_document'
-              ? practice.fullExamDocuments().length
+              ? practice.wholeSourceDocuments().length
               : practice.questionCount()
           }}
         </dd>

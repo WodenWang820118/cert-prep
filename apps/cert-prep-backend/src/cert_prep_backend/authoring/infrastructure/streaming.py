@@ -9,7 +9,7 @@ from cert_prep_backend.authoring.application.ports import (
     StudyProjects,
 )
 
-from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import LanguageModelUnavailable
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.authoring.infrastructure import draft_jobs
 from cert_prep_backend.authoring.infrastructure import manual_operations
@@ -294,7 +294,7 @@ class StreamingDraftGenerationManager:
             )
         except DraftJobCanceledError:
             draft_jobs.mark_canceled(db, job_id)
-        except ProviderUnavailableError as exc:
+        except LanguageModelUnavailable as exc:
             draft_jobs.mark_skipped_provider_unavailable(db, job_id, detail=str(exc))
         except Exception as exc:
             draft_jobs.mark_failed(db, job_id, detail=f"request_failed: {exc}")
@@ -465,7 +465,7 @@ def _generate_streaming_fast_first_drafts(
                     source_chunk,
                     deterministic[0],
                 )
-            except ProviderUnavailableError as exc:
+            except LanguageModelUnavailable as exc:
                 if not is_non_fatal_generation_error(exc):
                     raise
                 suggestion = None
@@ -487,7 +487,7 @@ def _generate_streaming_fast_first_drafts(
                     num_ctx=STREAMING_FAST_FIRST_NUM_CTX,
                     num_predict=STREAMING_FAST_FIRST_NUM_PREDICT,
                 )
-            except ProviderUnavailableError as exc:
+            except LanguageModelUnavailable as exc:
                 if not is_non_fatal_generation_error(exc):
                     raise
                 return []

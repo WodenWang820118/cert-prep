@@ -26,7 +26,7 @@ export class PracticeSessionPayloadService {
 
   createPayload(args: {
     readonly mode: PracticeSessionMode;
-    readonly fullExamDocumentId: string | null;
+    readonly wholeSourceDocumentId: string | null;
     readonly selectedDocumentQuestionCount: number;
     readonly sessionQuestionCount: number;
     readonly questionCount: number;
@@ -34,7 +34,7 @@ export class PracticeSessionPayloadService {
     if (args.mode === 'full_document') {
       return {
         mode: args.mode,
-        document_id: args.fullExamDocumentId ?? undefined,
+        document_id: args.wholeSourceDocumentId ?? undefined,
         question_count: Math.max(1, args.selectedDocumentQuestionCount),
       };
     }

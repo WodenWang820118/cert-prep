@@ -70,6 +70,7 @@ def set_runtime_capture_id(
     project_id: str,
     session_id: str,
     runtime_capture_id: str,
+    runtime_ingestion_id: str | None = None,
 ) -> CaptureReviewSession:
     with db.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
@@ -80,15 +81,18 @@ def set_runtime_capture_id(
         if row is None:
             raise CaptureReviewTransitionError("Capture review session is no longer pending.")
         current = _session(row)
-        session = current.with_runtime_capture(runtime_capture_id, now=utc_now())
+        session = current.with_runtime_capture(
+            runtime_capture_id, now=utc_now(), runtime_ingestion_id=runtime_ingestion_id
+        )
         updated = connection.execute(
             """
             UPDATE capture_review_sessions
-            SET runtime_capture_id = ?, updated_at = ?
+            SET runtime_capture_id = ?, runtime_ingestion_id = ?, updated_at = ?
             WHERE project_id = ? AND id = ? AND status = ?
             """,
             (
                 session.runtime_capture_id,
+                session.runtime_ingestion_id,
                 session.updated_at,
                 project_id,
                 session_id,
@@ -303,6 +307,7 @@ def _session(row: Row | None) -> CaptureReviewSession:
         document_id=row["document_id"],
         operation_id=row["operation_id"],
         runtime_capture_id=row["runtime_capture_id"],
+        runtime_ingestion_id=row["runtime_ingestion_id"],
         status=CaptureReviewStatus(row["status"]),
         review_revision=row["review_revision"],
         expires_at=row["expires_at"],

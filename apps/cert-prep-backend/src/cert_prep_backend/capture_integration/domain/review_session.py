@@ -96,6 +96,7 @@ class CaptureReviewSession:
     confirm_request_id: str | None
     confirm_review_digest: str | None
     last_event_sequence: int
+    runtime_ingestion_id: str | None = None
 
     @property
     def is_active(self) -> bool:
@@ -109,12 +110,19 @@ class CaptureReviewSession:
 
         return self.status in TERMINAL_CAPTURE_REVIEW_STATUSES
 
-    def with_runtime_capture(self, runtime_capture_id: str, *, now: str) -> CaptureReviewSession:
+    def with_runtime_capture(
+        self, runtime_capture_id: str, *, now: str, runtime_ingestion_id: str | None = None
+    ) -> CaptureReviewSession:
         """Record the runtime capture. Only a pending session can take one."""
 
         if self.status != CaptureReviewStatus.PENDING:
             raise CaptureReviewTransitionError("Capture review session is no longer pending.")
-        return replace(self, runtime_capture_id=runtime_capture_id, updated_at=now)
+        return replace(
+            self,
+            runtime_capture_id=runtime_capture_id,
+            runtime_ingestion_id=runtime_ingestion_id,
+            updated_at=now,
+        )
 
     def claim_confirmation(
         self,

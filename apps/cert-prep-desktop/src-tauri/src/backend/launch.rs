@@ -8,7 +8,7 @@ use crate::{
     backend_process::launch_backend_entrypoint,
     capture_manifest::load_capture_runtime_manifest,
     capture_runtime::{install_bundled_capture_runtime, CaptureRuntimeState},
-    constants::CAPTURE_RUNTIME_MODEL,
+    constants::CAPTURE_RUNTIME_RELEASE,
     manifests::load_runtime_manifest,
     runtime_installation::{
         completed_installation, failed_installation, install_python_runtime, installation_from_job,
@@ -307,7 +307,7 @@ fn completed_capture_installation(detail: &str) -> DesktopRuntimeInstallation {
         id: uuid::Uuid::new_v4().to_string(),
         kind: "capture_runtime".into(),
         provider: "bundled-release".into(),
-        model: CAPTURE_RUNTIME_MODEL.into(),
+        artifact: CAPTURE_RUNTIME_RELEASE.into(),
         status: "succeeded".into(),
         detail: detail.into(),
         completed: None,

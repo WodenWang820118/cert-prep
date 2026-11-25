@@ -26,6 +26,7 @@ from conftest import (
 )
 from cert_prep_backend.bootstrap.app import create_app
 from cert_prep_backend.platform.config import Settings
+from cert_prep_backend.platform.database import Database
 from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeError,
     CaptureRuntimeProtocolError,
@@ -217,6 +218,7 @@ def test_public_capture_publication_rejects_noncanonical_write_provenance(
         assert isinstance(document, CaptureDocument)
         with pytest.raises(ValueError, match="OCR-only"):
             publish_capture_document(
+                runtime_version=CAPTURE_RUNTIME_VERSION,
                 project_id=str(fixture["project_id"]),
                 document_id=str(fixture["document_id"]),
                 operation_id=str(fixture["operation_id"]),
@@ -248,6 +250,7 @@ def test_public_capture_publication_maps_exact_producer_engine_to_durable_method
         projection = fixture["projection"]
         assert isinstance(document, CaptureDocument)
         result = publish_capture_document(
+            runtime_version=CAPTURE_RUNTIME_VERSION,
             project_id=str(fixture["project_id"]),
             document_id=str(fixture["document_id"]),
             operation_id=str(fixture["operation_id"]),
@@ -288,6 +291,7 @@ def test_public_capture_publication_rejects_projection_engine_mismatch(
 
         with pytest.raises(ValueError, match="provenance"):
             publish_capture_document(
+                runtime_version=CAPTURE_RUNTIME_VERSION,
                 project_id=str(fixture["project_id"]),
                 document_id=str(fixture["document_id"]),
                 operation_id=str(fixture["operation_id"]),
@@ -322,6 +326,7 @@ def test_public_capture_publication_rejects_page_provenance_mismatch_without_wri
 
         with pytest.raises(ValueError, match="provenance"):
             publish_capture_document(
+                runtime_version=CAPTURE_RUNTIME_VERSION,
                 project_id=str(fixture["project_id"]),
                 document_id=str(fixture["document_id"]),
                 operation_id=str(fixture["operation_id"]),
@@ -357,6 +362,7 @@ def test_public_capture_publication_rejects_unresolved_page_without_writes(
 
         with pytest.raises(ValueError, match="provenance"):
             publish_capture_document(
+                runtime_version=CAPTURE_RUNTIME_VERSION,
                 project_id=str(fixture["project_id"]),
                 document_id=str(fixture["document_id"]),
                 operation_id=str(fixture["operation_id"]),
@@ -390,6 +396,7 @@ def test_public_capture_publication_uses_projection_validation_for_embedded_mode
         document.extraction_engine.model = "embedded-text-model"
 
         result = publish_capture_document(
+            runtime_version=CAPTURE_RUNTIME_VERSION,
             project_id=str(fixture["project_id"]),
             document_id=str(fixture["document_id"]),
             operation_id=str(fixture["operation_id"]),
@@ -1008,6 +1015,20 @@ class CommitRaceEventCaptureRuntime(DeterministicCaptureRuntime):
         self.terminal_event_offered = Event()
         self.event_cursors: list[str | int | None] = []
 
+    def start_capture(self, upload: CaptureUpload, **kwargs) -> CaptureOperation:
+        operation = super().start_capture(upload, **kwargs)
+        assert self.raw is not None
+        # Fields whose wire names differ from their Python names, so the stored provenance
+        # must keep Capture's camelCase form to be read back unchanged.
+        engine = self.raw.extraction_engine.model_dump(mode="json", by_alias=True)
+        engine.update(
+            {"deviceName": "Integrated GPU", "elapsedMs": 1200, "stageMs": {"recognize": 900}}
+        )
+        self.raw = RawCapture.model_validate(
+            {**self.raw.model_dump(mode="json", by_alias=True), "extractionEngine": engine}
+        )
+        return operation
+
     def _operation(self, *, status: str) -> CaptureOperation:
         operation = super()._operation(status=status)
         return CaptureOperation.model_validate(
@@ -1148,7 +1169,7 @@ def test_review_image_preserves_canonical_jpeg_source_identity(tmp_path: Path) -
         source = minimal_image("JPEG")
 
         created = client.post(
-            f"/projects/{project_id}/capture-workbench/captures",
+            f"/projects/{project_id}/capture-reviews",
             headers=headers,
             files={"file": ("capture.pdf", source, "image/jpeg")},
         )
@@ -1161,7 +1182,7 @@ def test_review_image_preserves_canonical_jpeg_source_identity(tmp_path: Path) -
             status_value="awaiting_structuring",
         )
         partial = client.get(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/partial",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/partial",
             headers=headers,
         )
 
@@ -1253,7 +1274,7 @@ def test_review_result_fails_closed_when_runtime_replay_violates_contract(
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
         project_id = _create_project(client, headers)
         created = client.post(
-            f"/projects/{project_id}/capture-workbench/captures",
+            f"/projects/{project_id}/capture-reviews",
             headers=headers,
             files={"file": ("review.pdf", minimal_pdf("Review result."), "application/pdf")},
         )
@@ -1266,7 +1287,7 @@ def test_review_result_fails_closed_when_runtime_replay_violates_contract(
             status_value="awaiting_structuring",
         )
         structured = client.post(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/structure",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/structure",
             headers=headers,
             json={
                 "clientRequestId": "invalid-result-structure",
@@ -1274,7 +1295,7 @@ def test_review_result_fails_closed_when_runtime_replay_violates_contract(
             },
         )
         committed = client.post(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/structure/commit",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/structure/commit",
             headers=headers,
             json={
                 "clientRequestId": "invalid-result-commit",
@@ -1291,7 +1312,7 @@ def test_review_result_fails_closed_when_runtime_replay_violates_contract(
         )
 
         result = client.get(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/result",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/result",
             headers=headers,
         )
 
@@ -1370,7 +1391,7 @@ def test_core_only_ocr_and_audio_sources_fail_before_sidecar_dispatch(
 
         assert response.status_code == 503
         assert response.json() == {
-            "code": "capture_runtime_unavailable",
+            "code": "capture_requirement_unavailable",
             "message": expected_message,
         }
         operation = client.get(
@@ -1559,7 +1580,7 @@ def _start_review_capture_until_failed(app, operation_id: str) -> tuple[str, int
         auth = {"Authorization": f"Bearer {AUTH_TOKEN}"}
         project_id = _create_project(client, auth)
         response = client.post(
-            f"/projects/{project_id}/capture-workbench/captures",
+            f"/projects/{project_id}/capture-reviews",
             headers={**auth, "X-Cert-Prep-Operation-Id": operation_id},
             files={"file": ("scanned.pdf", minimal_pdf("Scanned source."), "application/pdf")},
         )
@@ -1568,17 +1589,20 @@ def _start_review_capture_until_failed(app, operation_id: str) -> tuple[str, int
         for _ in range(200):
             with app.state.database.connect() as connection:
                 row = connection.execute(
-                    """SELECT operation.status, operation.error, session.last_event_sequence
+                    """SELECT operation.status, operation.error, session.last_event_sequence,
+                              session.status
                        FROM document_operations AS operation
                        JOIN capture_review_sessions AS session
                            ON session.operation_id = operation.id
                        WHERE operation.id = ?""",
                     (operation_id,),
                 ).fetchone()
-            if row is not None and row[0] == "failed":
+            # The operation fails first (its error is the stored cause the review's
+            # terminal event reports), then the review session records its terminal.
+            if row is not None and row[0] == "failed" and row[3] == "failed":
                 break
             time.sleep(0.01)
-    assert row is not None and row[0] == "failed"
+    assert row is not None and row[0] == "failed" and row[3] == "failed"
     return str(row[1]), int(row[2])
 
 
@@ -1711,20 +1735,20 @@ def test_pending_host_snapshot_does_not_expose_runtime_terminal_state(
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
         project_id = _create_project(client, headers)
         created = client.post(
-            f"/projects/{project_id}/capture-workbench/captures",
+            f"/projects/{project_id}/capture-reviews",
             headers=headers,
             files={"file": ("pending-race.pdf", minimal_pdf("Pending race."), "application/pdf")},
         )
-        document_id = created.json()["documentId"]
+        assert created.json()["documentId"] != created.json()["captureId"]
         assert runtime.listener_waiting.wait(timeout=2)
         try:
             snapshot = client.get(
-                f"/projects/{project_id}/capture-workbench/captures/{created.json()['captureId']}",
+                f"/projects/{project_id}/capture-reviews/{created.json()['captureId']}",
                 headers=headers,
             )
             assert snapshot.status_code == 200
             assert snapshot.json()["status"] == "waiting_input"
-            assert snapshot.json()["ingestionId"] == document_id
+            assert snapshot.json()["ingestionId"] == "ingestion-pipeline-1"
         finally:
             runtime.release_terminal_event.set()
 
@@ -1735,7 +1759,19 @@ def test_pending_host_snapshot_does_not_expose_runtime_terminal_state(
             headers=headers,
             status_value="failed",
         )
-        assert failed.json()["ingestionId"] == document_id
+        assert failed.json()["ingestionId"] == "ingestion-pipeline-1"
+        error = failed.json()["error"]
+        assert error["code"] == "capture_review_failed"
+        assert error["stage"] == "failed"
+        assert error["message"] == TEXT_RECOGNITION_FAILED_MESSAGE
+        events = client.get(
+            f"/projects/{project_id}/capture-reviews/{created.json()['captureId']}/events",
+            headers={**headers, "Last-Event-ID": "0"},
+        )
+        terminal = json.loads(
+            next(line[6:] for line in events.text.splitlines() if line.startswith("data: "))
+        )
+        assert terminal["error"] == error
 
 
 def test_review_capture_pauses_before_persistence_and_applies_confirmed_overlay(
@@ -1773,7 +1809,7 @@ def test_review_capture_pauses_before_persistence_and_applies_confirmed_overlay(
         source = minimal_pdf("Review before save.")
 
         created = client.post(
-            f"/projects/{project_id}/capture-workbench/captures",
+            f"/projects/{project_id}/capture-reviews",
             headers=headers,
             files={"file": ("review.pdf", source, "application/pdf")},
         )
@@ -1802,14 +1838,14 @@ def test_review_capture_pauses_before_persistence_and_applies_confirmed_overlay(
         assert pending.json()["captureId"] == capture_id
         assert pending.json()["status"] == "awaiting_structuring"
         partial = client.get(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/partial",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/partial",
             headers=headers,
         )
         assert partial.status_code == 200
         assert partial.json()["captureId"] == capture_id
         assert partial.json()["segments"][0]["text"] == "Sidecar extracted source text"
         raw = client.get(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/raw",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/raw",
             headers=headers,
         )
         assert raw.status_code == 200
@@ -1817,14 +1853,14 @@ def test_review_capture_pauses_before_persistence_and_applies_confirmed_overlay(
         assert raw.json()["segments"][0]["text"] == "Sidecar extracted source text"
         assert (
             client.get(
-                f"/projects/{project_id}/capture-workbench/captures/{capture_id}/result",
+                f"/projects/{project_id}/capture-reviews/{capture_id}/result",
                 headers=headers,
             ).status_code
             == 409
         )
 
         invalid_review = client.post(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/structure",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/structure",
             headers=headers,
             json={
                 "clientRequestId": "review-confirm-invalid",
@@ -1837,7 +1873,7 @@ def test_review_capture_pauses_before_persistence_and_applies_confirmed_overlay(
         assert invalid_review.status_code == 422
 
         structured = client.post(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/structure",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/structure",
             headers=headers,
             json={
                 "clientRequestId": "review-confirm-1",
@@ -1853,7 +1889,7 @@ def test_review_capture_pauses_before_persistence_and_applies_confirmed_overlay(
         assert candidate["blocks"][0]["targetText"] == "Corrected OCR text"
 
         committed = client.post(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/structure/commit",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/structure/commit",
             headers=headers,
             json={
                 "clientRequestId": "review-confirm-1",
@@ -1866,7 +1902,7 @@ def test_review_capture_pauses_before_persistence_and_applies_confirmed_overlay(
         assert publish_started.wait(timeout=2)
         try:
             committing = client.get(
-                f"/projects/{project_id}/capture-workbench/captures/{capture_id}",
+                f"/projects/{project_id}/capture-reviews/{capture_id}",
                 headers=headers,
             )
             assert committing.status_code == 200
@@ -1882,7 +1918,7 @@ def test_review_capture_pauses_before_persistence_and_applies_confirmed_overlay(
             status_value="completed",
         )
         result = client.get(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/result",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/result",
             headers=headers,
         )
         assert result.status_code == 200
@@ -1898,7 +1934,7 @@ def test_review_capture_pauses_before_persistence_and_applies_confirmed_overlay(
         assert saved.json()["items"][0]["text"] == "Corrected OCR text"
 
         cancel_completed = client.post(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/cancel",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/cancel",
             headers=headers,
         )
         assert cancel_completed.status_code == 200
@@ -1941,13 +1977,14 @@ def test_host_events_wait_for_durable_commit_before_emitting_terminal(
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
         project_id = _create_project(client, headers)
         created = client.post(
-            f"/projects/{project_id}/capture-workbench/captures",
+            f"/projects/{project_id}/capture-reviews",
             headers=headers,
             files={"file": ("race.pdf", minimal_pdf("Commit race."), "application/pdf")},
         )
         capture_id = created.json()["captureId"]
         document_id = created.json()["documentId"]
-        assert created.json()["ingestionId"] == document_id
+        assert capture_id != document_id
+        assert created.json()["ingestionId"] == capture_id
         pending = _wait_for_capture_status(
             client,
             project_id=project_id,
@@ -1955,9 +1992,9 @@ def test_host_events_wait_for_durable_commit_before_emitting_terminal(
             headers=headers,
             status_value="awaiting_structuring",
         )
-        assert pending.json()["ingestionId"] == document_id
+        assert pending.json()["ingestionId"] == "ingestion-pipeline-1"
         structured = client.post(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/structure",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/structure",
             headers=headers,
             json={
                 "clientRequestId": "race-structure",
@@ -1966,7 +2003,7 @@ def test_host_events_wait_for_durable_commit_before_emitting_terminal(
         )
         assert structured.status_code == 200, structured.text
         committed = client.post(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/structure/commit",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/structure/commit",
             headers=headers,
             json={
                 "clientRequestId": "race-commit",
@@ -1974,10 +2011,11 @@ def test_host_events_wait_for_durable_commit_before_emitting_terminal(
             },
         )
         assert committed.status_code == 202, committed.text
+        assert committed.json()["ingestionId"] == "ingestion-pipeline-1"
         assert publish_started.wait(timeout=2)
 
         events_url = (
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/events"
+            f"/projects/{project_id}/capture-reviews/{capture_id}/events"
         )
 
         def read_events():
@@ -1996,7 +2034,7 @@ def test_host_events_wait_for_durable_commit_before_emitting_terminal(
                 during_commit = None
                 while time.monotonic() < deadline:
                     candidate_snapshot = client.get(
-                        f"/projects/{project_id}/capture-workbench/captures/{capture_id}",
+                        f"/projects/{project_id}/capture-reviews/{capture_id}",
                         headers=headers,
                     )
                     assert candidate_snapshot.json()["status"] == "structuring"
@@ -2005,7 +2043,7 @@ def test_host_events_wait_for_durable_commit_before_emitting_terminal(
                         break
                     time.sleep(0.01)
                 assert during_commit is not None
-                assert during_commit.json()["ingestionId"] == document_id
+                assert during_commit.json()["ingestionId"] == "ingestion-pipeline-1"
                 assert not response_finished.wait(timeout=1.2)
             finally:
                 allow_publish.set()
@@ -2016,18 +2054,51 @@ def test_host_events_wait_for_durable_commit_before_emitting_terminal(
         assert response.text.count("event: completed") == 1
         assert "id: 2\nevent: completed" in response.text
         completed = client.get(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}",
+            f"/projects/{project_id}/capture-reviews/{capture_id}",
             headers=headers,
         )
         assert completed.json()["status"] == "completed"
         assert completed.json()["lastEventSequence"] == 2
-        assert completed.json()["ingestionId"] == document_id
+        assert completed.json()["ingestionId"] == "ingestion-pipeline-1"
         result = client.get(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/result",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/result",
             headers=headers,
         )
         assert result.status_code == 200
-        assert result.json()["operation"]["ingestionId"] == document_id
+        assert result.json()["operation"]["ingestionId"] == "ingestion-pipeline-1"
+        assert result.json()["extractionProvenance"] == {
+            "status": "recorded",
+            "engine": "text-recognition",
+            "model": "capture-ocr-v1",
+            "device": "igpu",
+            "runtimeVersion": CAPTURE_RUNTIME_VERSION,
+        }
+        recorded_engine = result.json()["result"]["extractionEngine"]
+        assert recorded_engine["deviceName"] == "Integrated GPU"
+        assert recorded_engine["elapsedMs"] == 1200
+        assert recorded_engine["stageMs"] == {"recognize": 900}
+        with Database(settings).connect() as connection:
+            stored = connection.execute(
+                "SELECT extraction_provenance FROM documents WHERE id = ?", (document_id,)
+            ).fetchone()[0]
+        assert json.loads(stored)["engine"] == recorded_engine
+
+        with Database(settings).connect() as connection:
+            connection.execute(
+                "UPDATE documents SET extraction_provenance = NULL WHERE id = ?",
+                (document_id,),
+            )
+        historical = client.get(
+            f"/projects/{project_id}/capture-reviews/{capture_id}/result",
+            headers=headers,
+        )
+        assert historical.status_code == 200
+        provenance = historical.json()["extractionProvenance"]
+        assert provenance["status"] == "reconstructed"
+        assert provenance["engine"] == "text-recognition"
+        assert provenance["model"] is None
+        assert provenance["runtimeVersion"] is None
+        assert historical.json()["result"]["extractionEngine"]["model"] == "unknown"
 
     assert runtime.event_cursors == [1]
 
@@ -2068,12 +2139,12 @@ def test_capture_awaits_structuring_only_once_its_review_can_be_confirmed(
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
         project_id = _create_project(client, headers)
         created = client.post(
-            f"/projects/{project_id}/capture-workbench/captures",
+            f"/projects/{project_id}/capture-reviews",
             headers=headers,
             files={"file": ("review.pdf", minimal_pdf("Review gate."), "application/pdf")},
         )
         capture_id = created.json()["captureId"]
-        capture_url = f"/projects/{project_id}/capture-workbench/captures/{capture_id}"
+        capture_url = f"/projects/{project_id}/capture-reviews/{capture_id}"
 
         def read_events():
             response = client.get(
@@ -2145,7 +2216,7 @@ def test_review_capture_events_proxy_replays_with_host_identity_without_cancel(
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
         project_id = _create_project(client, headers)
         created = client.post(
-            f"/projects/{project_id}/capture-workbench/captures",
+            f"/projects/{project_id}/capture-reviews",
             headers=headers,
             files={
                 "file": (
@@ -2159,7 +2230,7 @@ def test_review_capture_events_proxy_replays_with_host_identity_without_cancel(
 
         with client.stream(
             "GET",
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/events",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/events",
             headers={**headers, "Last-Event-ID": "1"},
         ) as response:
             body = response.read().decode()
@@ -2191,7 +2262,7 @@ def test_review_capture_events_reject_invalid_cursor_before_streaming(
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
         project_id = _create_project(client, headers)
         created = client.post(
-            f"/projects/{project_id}/capture-workbench/captures",
+            f"/projects/{project_id}/capture-reviews",
             headers=headers,
             files={"file": ("cursor.pdf", minimal_pdf("Validate cursor."), "application/pdf")},
         )
@@ -2199,7 +2270,7 @@ def test_review_capture_events_reject_invalid_cursor_before_streaming(
 
         for invalid_cursor in ("not-a-number", "1.0", "+1", "-2"):
             response = client.get(
-                f"/projects/{project_id}/capture-workbench/captures/{capture_id}/events",
+                f"/projects/{project_id}/capture-reviews/{capture_id}/events",
                 headers={**headers, "Last-Event-ID": invalid_cursor},
             )
             assert response.status_code == 422
@@ -2225,14 +2296,14 @@ def test_review_capture_events_treat_empty_cursor_as_initial_subscription(
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
         project_id = _create_project(client, headers)
         created = client.post(
-            f"/projects/{project_id}/capture-workbench/captures",
+            f"/projects/{project_id}/capture-reviews",
             headers=headers,
             files={"file": ("cursor.pdf", minimal_pdf("Empty cursor."), "application/pdf")},
         )
         capture_id = created.json()["captureId"]
 
         response = client.get(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/events",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/events",
             headers={**headers, "Last-Event-ID": ""},
         )
 
@@ -2259,7 +2330,7 @@ def test_terminal_event_replays_monotonically_after_result_deletes_runtime(
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
         project_id = _create_project(client, headers)
         created = client.post(
-            f"/projects/{project_id}/capture-workbench/captures",
+            f"/projects/{project_id}/capture-reviews",
             headers=headers,
             files={"file": ("terminal.pdf", minimal_pdf("Replay terminal."), "application/pdf")},
         )
@@ -2274,13 +2345,13 @@ def test_terminal_event_replays_monotonically_after_result_deletes_runtime(
 
         with client.stream(
             "GET",
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/events",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/events",
             headers={**headers, "Last-Event-ID": "4"},
         ) as response:
             assert response.read().decode().startswith("id: 5\nevent: checkpoint")
 
         structured = client.post(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/structure",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/structure",
             headers=headers,
             json={
                 "clientRequestId": "terminal-structure",
@@ -2289,7 +2360,7 @@ def test_terminal_event_replays_monotonically_after_result_deletes_runtime(
         )
         assert structured.status_code == 200
         committed = client.post(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/structure/commit",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/structure/commit",
             headers=headers,
             json={
                 "clientRequestId": "terminal-commit",
@@ -2305,7 +2376,7 @@ def test_terminal_event_replays_monotonically_after_result_deletes_runtime(
             status_value="completed",
         )
         result = client.get(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/result",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/result",
             headers=headers,
         )
         assert result.status_code == 200
@@ -2313,7 +2384,7 @@ def test_terminal_event_replays_monotonically_after_result_deletes_runtime(
         assert runtime.deleted == ["capture-pipeline-1"]
 
         durable_replay = client.get(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/result",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/result",
             headers=headers,
         )
         assert durable_replay.status_code == 200
@@ -2321,7 +2392,7 @@ def test_terminal_event_replays_monotonically_after_result_deletes_runtime(
         assert durable_replay.json()["result"]["blocks"][0]["targetText"]
 
         snapshot = client.get(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}",
+            f"/projects/{project_id}/capture-reviews/{capture_id}",
             headers=headers,
         )
         assert snapshot.status_code == 200
@@ -2329,7 +2400,7 @@ def test_terminal_event_replays_monotonically_after_result_deletes_runtime(
 
         with client.stream(
             "GET",
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/events",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/events",
             headers={**headers, "Last-Event-ID": "5"},
         ) as response:
             terminal = response.read().decode()
@@ -2337,7 +2408,7 @@ def test_terminal_event_replays_monotonically_after_result_deletes_runtime(
 
         with client.stream(
             "GET",
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/events",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/events",
             headers={**headers, "Last-Event-ID": "6"},
         ) as response:
             assert response.read() == b""
@@ -2367,7 +2438,7 @@ def test_pdf_capture_requirement_unavailable_reports_ocr_required_failure(
         }
         project_id = _create_project(client, {"Authorization": f"Bearer {AUTH_TOKEN}"})
         response = client.post(
-            f"/projects/{project_id}/capture-workbench/captures",
+            f"/projects/{project_id}/capture-reviews",
             headers=headers,
             files={"file": ("scanned.pdf", minimal_pdf("Scanned source."), "application/pdf")},
         )
@@ -2415,7 +2486,7 @@ def test_expired_review_is_canceled_and_terminal_cancel_is_idempotent(tmp_path: 
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
         project_id = _create_project(client, headers)
         created = client.post(
-            f"/projects/{project_id}/capture-workbench/captures",
+            f"/projects/{project_id}/capture-reviews",
             headers=headers,
             files={"file": ("expired.pdf", minimal_pdf("Expire this review."), "application/pdf")},
         )
@@ -2436,14 +2507,14 @@ def test_expired_review_is_canceled_and_terminal_cancel_is_idempotent(tmp_path: 
             )
 
         expired = client.get(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}",
+            f"/projects/{project_id}/capture-reviews/{capture_id}",
             headers=headers,
         )
         assert expired.status_code == 200
         assert expired.json()["status"] == "cancelled"
 
         cancel_again = client.post(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/cancel",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/cancel",
             headers=headers,
         )
         assert cancel_again.status_code == 200
@@ -2467,7 +2538,7 @@ def test_confirmation_request_is_atomic_idempotent_and_rejects_divergent_replay(
         project_id = _create_project(client, headers)
         source = minimal_pdf("Confirm exactly once.")
         created = client.post(
-            f"/projects/{project_id}/capture-workbench/captures",
+            f"/projects/{project_id}/capture-reviews",
             headers=headers,
             files={"file": ("confirm-once.pdf", source, "application/pdf")},
         )
@@ -2485,14 +2556,14 @@ def test_confirmation_request_is_atomic_idempotent_and_rejects_divergent_replay(
             "edits": [{"segmentId": "page-1", "reviewedText": "Confirmed once"}],
         }
         structured = client.post(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/structure",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/structure",
             headers=headers,
             json={"clientRequestId": "confirm-once", "review": review},
         )
         assert structured.status_code == 200
         candidate = structured.json()
         first = client.post(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/structure/commit",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/structure/commit",
             headers=headers,
             json={"clientRequestId": "confirm-once", "candidate": candidate},
         )
@@ -2500,7 +2571,7 @@ def test_confirmation_request_is_atomic_idempotent_and_rejects_divergent_replay(
         assert runtime.commit_started.wait(timeout=2)
 
         replay = client.post(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/structure/commit",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/structure/commit",
             headers=headers,
             json={"clientRequestId": "confirm-once", "candidate": candidate},
         )
@@ -2511,7 +2582,7 @@ def test_confirmation_request_is_atomic_idempotent_and_rejects_divergent_replay(
         divergent_candidate["blocks"][0]["targetText"] = "Changed replay"
         divergent_candidate["targetText"] = "Changed replay"
         divergent = client.post(
-            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/structure/commit",
+            f"/projects/{project_id}/capture-reviews/{capture_id}/structure/commit",
             headers=headers,
             json={
                 "clientRequestId": "confirm-once",
@@ -2554,7 +2625,7 @@ def test_failed_capture_upload_finishes_claimed_operation(tmp_path: Path) -> Non
         }
         project_id = _create_project(client, {"Authorization": f"Bearer {AUTH_TOKEN}"})
         response = client.post(
-            f"/projects/{project_id}/capture-workbench/captures",
+            f"/projects/{project_id}/capture-reviews",
             headers=headers,
             files={"file": ("too-large.pdf", b"x" * 64, "application/pdf")},
         )
@@ -2585,7 +2656,7 @@ def test_same_operation_id_cannot_start_two_capture_uploads(tmp_path: Path) -> N
 
         def upload() -> int:
             response = client.post(
-                f"/projects/{project_id}/capture-workbench/captures",
+                f"/projects/{project_id}/capture-reviews",
                 headers={
                     **auth_headers,
                     "X-Cert-Prep-Operation-Id": "same-operation",
@@ -2609,7 +2680,7 @@ def _wait_for_capture_status(
     headers: dict[str, str],
     status_value: str,
 ) -> object:
-    endpoint = f"/projects/{project_id}/capture-workbench/captures/{capture_id}"
+    endpoint = f"/projects/{project_id}/capture-reviews/{capture_id}"
     for _ in range(100):
         response = client.get(endpoint, headers=headers)
         if response.status_code == 200 and response.json()["status"] == status_value:

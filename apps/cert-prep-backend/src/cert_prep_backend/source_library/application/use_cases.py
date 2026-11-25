@@ -15,13 +15,14 @@ from functools import partial
 from pathlib import Path
 
 from cert_prep_backend.platform.errors import (
+    CaptureRequirementUnavailable,
+    CaptureRuntimeUnavailable,
     DocumentOperationConflictError,
     DocumentOperationStateError,
     DocumentProcessingCanceledError,
     InvalidSourceError,
     NotFoundError,
     OperationNotCancellableError,
-    ProviderUnavailableError,
 )
 from cert_prep_backend.projects.application.ports import ProjectRepository
 from cert_prep_backend.projects.application.use_cases import require_project
@@ -429,7 +430,7 @@ async def import_document(
         if claimed:
             operations.fail(project_id, operation_id, error=_SOURCE_REJECTED)
         raise
-    except ProviderUnavailableError as exc:
+    except CaptureRequirementUnavailable as exc:
         if claimed:
             operations.fail(project_id, operation_id, error=str(exc))
         raise
@@ -631,8 +632,18 @@ def _process_document(
         except (DocumentOperationStateError, OperationNotCancellableError):
             operations.fail(project_id, operation_id, error=_CANCEL_CLEANUP_FAILED)
         return documents.document(project_id, document_id)
-    except ProviderUnavailableError as exc:
+    except CaptureRequirementUnavailable as exc:
         operations.fail(project_id, operation_id, error=str(exc))
+        raise
+    except CaptureRuntimeUnavailable:
+        # An expected outage, not a defect: no traceback. The operation keeps the generic
+        # Cert-owned text it stored for this case before the error had its own type; the API
+        # reports capture_runtime_unavailable.
+        logger.warning(
+            "Capture Runtime is unavailable for document processing",
+            extra={"project_id": project_id, "document_id": document_id},
+        )
+        operations.fail(project_id, operation_id, error=_PROCESSING_FAILED)
         raise
     except SourceTextNotDetected as exc:
         return operations.fail(

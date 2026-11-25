@@ -18,7 +18,6 @@ from cert_prep_backend.capture_integration.application.errors import (
     CaptureOcrMissing,
     CaptureOcrNotReady,
     CaptureOcrUnavailable,
-    CaptureRequirementUnavailable,
     CaptureResultMissing,
     CaptureReviewConflict,
     CaptureReviewInputRejected,
@@ -62,7 +61,12 @@ from cert_prep_backend.capture_integration.domain.review_session import (
     CaptureReviewSession,
     CaptureReviewStatus,
 )
-from cert_prep_backend.platform.errors import BackendError, NotFoundError, ValidationError
+from cert_prep_backend.platform.errors import (
+    BackendError,
+    CaptureRequirementUnavailable,
+    NotFoundError,
+    ValidationError,
+)
 from cert_prep_backend.projects.application.ports import ProjectRepository
 from cert_prep_backend.projects.application.use_cases import require_project
 from cert_prep_backend.source_library.domain.document import SourceDocument
@@ -1021,13 +1025,13 @@ def _fail_capture_begin(
     error: str,
     terminal_sequence: int | None = None,
 ) -> None:
+    operations.fail(project_id, operation_id, error=error)
     sessions.finish(
         project_id=project_id,
         session_id=session_id,
         status=CaptureReviewStatus.FAILED,
         terminal_sequence=terminal_sequence,
     )
-    operations.fail(project_id, operation_id, error=error)
     events.publish_terminal(project_id, session_id, CaptureReviewStatus.FAILED)
 
 

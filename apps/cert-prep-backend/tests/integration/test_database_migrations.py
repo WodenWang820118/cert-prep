@@ -58,6 +58,8 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
         )
         capture_review_columns = _columns(connection, "capture_review_sessions")
 
+    assert document_columns["extraction_provenance"] is None
+    assert capture_review_columns["runtime_ingestion_id"] is None
     assert document_columns["content_profile"] == "'unknown'"
     assert "classification_detail" in document_columns
     assert {"extraction_warnings", "failure_message"} <= set(document_columns)
@@ -1218,6 +1220,13 @@ def test_migration_30_rewrites_extraction_vocabulary_and_preserves_sources(
     no_text = "No reviewable text was found in this source."
     unreadable = "Text recognition could not read this source."
     untranscribed = "Speech recognition could not transcribe this recording."
+    # This test is about migration 30 alone: later migrations would add their own columns
+    # and schema_migrations rows to the comparison below.
+    monkeypatch.setattr(
+        database_module,
+        "MIGRATIONS",
+        tuple(migration for migration in MIGRATIONS if migration[0] <= 30),
+    )
     first = snapshot(Database(settings))
     assert first[0] == [
         ("assets", "extraction_failed", "none", None, None, ASSETS_TEXT, "digest", "document"),
@@ -1383,6 +1392,12 @@ def test_a_table_rebuild_names_the_foreign_keys_it_broke() -> None:
         connection.close()
 
 
+def _schema(connection: sqlite3.Connection) -> list[tuple[Any, ...]]:
+    return sorted(
+        tuple(row) for row in connection.execute("SELECT type, name, sql FROM sqlite_master")
+    )
+
+
 def _row_counts(connection: sqlite3.Connection) -> dict[str, int]:
     tables = [
         str(row[0])
@@ -1419,3 +1434,84 @@ def _extraction_schema_outline(connection: sqlite3.Connection) -> dict[str, Any]
             )
         ),
     }
+
+
+def test_migration_31_preserves_existing_source_without_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = Settings(data_dir=tmp_path, api_token="test-token")
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            database_module,
+            "MIGRATIONS",
+            tuple(migration for migration in MIGRATIONS if migration[0] <= 30),
+        )
+        with Database(settings).connect() as connection:
+            assert "extraction_provenance" not in _columns(connection, "documents")
+            assert "runtime_ingestion_id" not in _columns(
+                connection, "capture_review_sessions"
+            )
+            connection.execute(
+                """INSERT INTO projects(id, name, description, created_at, updated_at)
+                   VALUES ('p', 'Project', '', '2026-01-01', '2026-01-01')"""
+            )
+            connection.execute(
+                """INSERT INTO documents(
+                       id, project_id, filename, sha256, storage_path, page_count,
+                       has_text, status, created_at, extraction_method
+                   ) VALUES (
+                       'd', 'p', 'source.pdf', 'digest', 'path', 1, 1,
+                       'ready', '2026-01-01', 'text_recognition'
+                   )"""
+            )
+            connection.execute(
+                """INSERT INTO document_operations(
+                       id, project_id, document_id, status, phase, cancellable,
+                       created_at, updated_at
+                   ) VALUES (
+                       'o', 'p', 'd', 'succeeded', 'completed', 0,
+                       '2026-01-01', '2026-01-01'
+                   )"""
+            )
+            connection.execute(
+                """INSERT INTO capture_review_sessions(
+                       id, project_id, document_id, operation_id, runtime_capture_id,
+                       status, review_revision, expires_at, created_at, updated_at
+                   ) VALUES (
+                       'r', 'p', 'd', 'o', 'runtime-capture', 'completed', 2,
+                       '2026-01-02', '2026-01-01', '2026-01-01'
+                   )"""
+            )
+
+    with Database(settings).connect() as connection:
+        row = connection.execute(
+            "SELECT filename, extraction_provenance FROM documents WHERE id = 'd'"
+        ).fetchone()
+        assert tuple(row) == ("source.pdf", None)
+        review = connection.execute(
+            """SELECT runtime_capture_id, status, review_revision, runtime_ingestion_id
+               FROM capture_review_sessions WHERE id = 'r'"""
+        ).fetchone()
+        assert tuple(review) == ("runtime-capture", "completed", 2, None)
+        applied = connection.execute(
+            "SELECT applied_at FROM schema_migrations WHERE version = 31"
+        ).fetchone()
+        assert applied is not None
+        schema = _schema(connection)
+
+        connection.execute(
+            "UPDATE schema_migrations SET applied_at = 'kept' WHERE version = 31"
+        )
+
+    # A second open is a no-op: migration 31 does not run again and the schema is unchanged.
+    with Database(settings).connect() as connection:
+        assert connection.execute(
+            "SELECT applied_at FROM schema_migrations WHERE version = 31"
+        ).fetchone()[0] == "kept"
+        assert _schema(connection) == schema
+
+    # A fresh database gets both columns from the migrations alone.
+    fresh = Settings(data_dir=tmp_path / "fresh", api_token="test-token")
+    with Database(fresh).connect() as connection:
+        assert "extraction_provenance" in _columns(connection, "documents")
+        assert "runtime_ingestion_id" in _columns(connection, "capture_review_sessions")

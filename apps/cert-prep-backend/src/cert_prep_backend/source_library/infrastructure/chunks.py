@@ -144,7 +144,7 @@ def compare_and_set_chunk_translation(
     translated_text: str,
     expected_source_revision: int,
 ) -> bool:
-    """Persist a translation only while its Japanese source revision is current."""
+    """Persist a translation only while its source revision is current."""
 
     result = connection.execute(
         """

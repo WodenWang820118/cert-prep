@@ -661,7 +661,7 @@ def _runtime_error(
 
 def _url(project_id: str, capture_id: str) -> str:
     return (
-        f"/projects/{project_id}/capture-workbench/captures/"
+        f"/projects/{project_id}/capture-reviews/"
         f"{capture_id}/ocr-summary"
     )
 

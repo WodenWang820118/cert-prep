@@ -56,7 +56,7 @@ describe('SourceEvidencePreviewComponent', () => {
     fixture.componentInstance.action.subscribe((action) => actions.push(action));
     const root = fixture.nativeElement as HTMLElement;
     const textarea = root.querySelector('textarea') as HTMLTextAreaElement;
-    textarea.value = 'Edited Japanese transcript';
+    textarea.value = 'Edited transcript';
     (buttonByText(root, 'Save transcript')).click();
     buttonByText(root, 'Translate').click();
     buttonByText(root, 'Translate unfinished segments').click();
@@ -66,7 +66,7 @@ describe('SourceEvidencePreviewComponent', () => {
       {
         type: 'update-transcript',
         chunkId: 'chunk-1',
-        text: 'Edited Japanese transcript',
+        text: 'Edited transcript',
       },
       { type: 'translate-transcript', chunkId: 'chunk-1' },
       { type: 'translate-stale-transcript' },

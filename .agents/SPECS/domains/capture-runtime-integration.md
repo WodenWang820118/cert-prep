@@ -96,13 +96,13 @@ host never retries on CPU.
 
 ## Capture Workbench page
 
-`/capture-workbench-trial` hosts the published Web Component with
+`/capture` hosts the published Web Component with
 `enabledSources: ['pdf', 'image']`, `structuringMode: 'host'`,
 `hostStructuringOwner: 'component'`, `hostManagedHandshake: true` and
 `showRuntimeSetup: false`. Capture review accepts PDF and image only, so the
 page offers no recordings; recordings are imported in the source library (the
 Build page). Its `CertPrepCaptureClient` calls the authenticated
-backend at `/projects/{project_id}/capture-workbench/captures`; the browser never
+backend at `/projects/{project_id}/capture-reviews`; the browser never
 calls Capture Runtime. The client and structuring provider are cold RxJS
 Observables: unsubscribing closes only that backend SSE listener and never
 cancels the runtime capture; cancel is a separate authenticated action.
@@ -117,7 +117,7 @@ on completion, cancellation, expiry and restart recovery.
 
 ## Authenticated OCR summary
 
-`GET /projects/{project_id}/capture-workbench/captures/{capture_id}/ocr-summary`
+`GET /projects/{project_id}/capture-reviews/{capture_id}/ocr-summary`
 reads the durable review session, the matching runtime operation and its typed
 OCR projection, validates capture/source/schema identity, maps an allowlisted
 summary and reloads the session before returning. It never reads raw capture
@@ -141,15 +141,16 @@ data, structures, commits, calls a provider or writes durable state.
 The host proxy shows a terminal snapshot only after the durable review session
 is terminal. A runtime terminal seen while the session is active advances the
 durable event cursor and is held behind comment heartbeats and bounded session
-reloads. Host `captureId` and `ingestionId` stay the review session id and
-durable document id. The in-process event registry is only a wake-up signal;
+reloads. Host `captureId` is the review session id. `ingestionId` is the runtime
+ingestion id when the runtime reports one, otherwise the review session id; it is
+never the document id, which is `documentId`. The in-process event registry is only a wake-up signal;
 every wait reloads the session from the database.
 
 ## Persistence boundary
 
 After confirmation the host maps the validated `CaptureDocument` into the
 document/chunk model. `document_chunks.raw_text` keeps the original OCR text or
-Japanese transcript; `document_chunks.text` keeps the reviewed or Traditional
+source-language transcript; `document_chunks.text` keeps the reviewed or Traditional
 Chinese text. Review overrides are validated against immutable runtime raw
 segments and applied in the local mapping layer. Capture Runtime never writes
 Cert SQLite.

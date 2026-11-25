@@ -16,8 +16,8 @@ test('acceptance screenshot privacy contract covers source, OCR, and generated c
     '.practice-question-card',
     '[data-testid="capture-result"]',
     'capture-workbench',
-    '.capture-trial-status',
-    '.capture-trial-result',
+    '.capture-status',
+    '.capture-result',
   ]) {
     assert.equal(
       (ACCEPTANCE_PRIVATE_SCREENSHOT_SELECTORS as readonly string[]).includes(selector),

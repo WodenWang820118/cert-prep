@@ -365,6 +365,75 @@ def test_audio_recovery_preserves_incremental_transcript_and_sets_specific_state
     assert chunks_count == 1
 
 
+@pytest.mark.parametrize("stop", ["cancel", "fail"])
+@pytest.mark.parametrize(
+    ("transcription_status", "keeps_provenance"),
+    [("succeeded", True), ("pending", False)],
+)
+def test_stopped_audio_keeps_extraction_provenance_only_with_its_completed_transcript(
+    tmp_path: Path,
+    stop: str,
+    transcription_status: str,
+    keeps_provenance: bool,
+) -> None:
+    db = _database(tmp_path)
+    _insert_project(db, "project")
+    _attach_audio(db, operation_id="audio-upload", document_id="audio-document")
+    provenance = (
+        '{"engine": {"engine": "speech-recognition", "model": "fixture-model",'
+        ' "digest": "sha256:' + "b" * 64 + '"}, "runtime_version": "0.0.0-fixture"}'
+    )
+    with db.connect() as connection:
+        connection.execute(
+            """
+            UPDATE documents
+            SET has_text = 1, extraction_method = 'transcription',
+                processed_page_count = 1, content_profile = 'study_material',
+                transcription_status = ?, translation_status = 'pending',
+                extraction_provenance = ?
+            WHERE id = 'audio-document'
+            """,
+            (transcription_status, provenance),
+        )
+        connection.execute(
+            """
+            INSERT INTO document_chunks(
+                id, project_id, document_id, page_number, chunk_index,
+                text, raw_text, source_excerpt, extraction_method,
+                content_profile, created_at, locator_kind, start_ms, end_ms,
+                source_revision
+            )
+            VALUES (
+                'audio-chunk', 'project', 'audio-document', 0, 0,
+                'Transcript so far', 'Transcript so far', 'Transcript so far',
+                'transcription', 'study_material', '2026-07-19', 'time',
+                0, 1000, 1
+            )
+            """
+        )
+    jobs = bind_document_draft_jobs(db)
+    if stop == "cancel":
+        operations.cancel_operation(db, project_id="project", operation_id="audio-upload")
+        stopped = operations.acknowledge_cancellation(
+            db, draft_jobs=jobs, project_id="project", operation_id="audio-upload"
+        )
+        assert stopped.status == "canceled"
+    else:
+        stopped = operations.finish_failed(
+            db,
+            draft_jobs=jobs,
+            project_id="project",
+            operation_id="audio-upload",
+            error="Transcription stopped.",
+        )
+        assert stopped.status == "failed"
+
+    document = _document_row(db, "audio-document")
+    # The time chunks stay either way; only a completed transcript keeps its provenance.
+    assert document["extraction_method"] == "transcription"
+    assert document["extraction_provenance"] == (provenance if keeps_provenance else None)
+
+
 def test_publication_is_atomic_and_terminal_finalizers_are_read_only(
     tmp_path: Path,
 ) -> None:
