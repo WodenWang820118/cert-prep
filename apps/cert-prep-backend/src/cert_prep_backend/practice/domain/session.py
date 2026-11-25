@@ -32,19 +32,14 @@ class PracticeSessionMode(str, Enum):
     REVIEW_RETRY = "review_retry"
 
 
-class QuestionDraftStatus(str, Enum):
-    APPROVED = "approved"
-
-
 @dataclass(frozen=True, slots=True)
 class PracticeQuestion:
-    """A question as practice sees it: an approved draft or a session's snapshot of one."""
+    """A question as practice sees it: a stored question or a session's snapshot of one."""
 
     id: str
     choices: tuple[str, ...]
     correct_answer: str | None
     question: str = ""
-    status: QuestionDraftStatus = QuestionDraftStatus.APPROVED
     rationale: str | None = None
     citation_page: int | None = None
     source_excerpt: str | None = None
@@ -53,7 +48,6 @@ class PracticeQuestion:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "choices", tuple(self.choices))
-        object.__setattr__(self, "status", QuestionDraftStatus(self.status))
 
     def has_choice(self, selected_answer: str) -> bool:
         return selected_answer in self.choices
@@ -62,11 +56,9 @@ class PracticeQuestion:
         return answer_matches_key(selected_answer, self.correct_answer)
 
     def is_playable(self) -> bool:
-        """Approved, with a question, two real choices, the answer among them, a rationale
+        """A question, two real choices, the answer among them, a rationale
         and a citation page or source excerpt to point back to."""
 
-        if self.status is not QuestionDraftStatus.APPROVED:
-            return False
         if not self.question.strip():
             return False
         nonempty_choices = [choice.strip() for choice in self.choices if choice.strip()]

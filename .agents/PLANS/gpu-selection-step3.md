@@ -292,7 +292,7 @@ Checked against the code while implementing. These are the decisions the code no
 - The switch runs on the coordinator's own thread when the last admission is released (success or failure), not from `after_model_load`. `ensure_running` only applies a pending choice by starting a server that is not running. Neither uses the 30 s deadline. The pending flag is cleared only once a server for the stored choice is ready, and never for a choice stored after that server read it.
 - `PUT` on a machine that owns no running server answers from the snapshot (`active`); the switch thread then probes once, and an answering API is marked external (`external_server`). Before round 3 the `PUT` itself probed.
 - `GET` uses the cached inventory. `PUT` refreshes once only when the requested key is not in the cached list. The cache cannot tell a degraded refresh (a probe timed out) from a good one: the snapshot only carries free-text `warnings`, which also report RAM and disk problems. So a refresh from `PUT` can still replace a good cache with a degraded one; left as a note.
-- `DevicePreferenceUpdate` ignores extra fields, like the other request models of this API (`ProjectCreate`, `PracticeSessionCreate`, `QuestionDraftCreate`). Only the Capture host models forbid extras.
+- `DevicePreferenceUpdate` ignores extra fields, like the other request models of this API (`ProjectCreate`, `PracticeSessionCreate`, `QuestionCreate`). Only the Capture host models forbid extras.
 - Saving an adapter copies the current name and PCI ids from the matched choice. `auto` and `cpu` store those fields as null.
 - `PUT` of `cpu` on non-Windows is stored and reported `not_applicable`. It is not rejected, and it does not overlay `execution_mode`.
 

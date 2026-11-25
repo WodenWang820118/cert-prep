@@ -2,6 +2,10 @@
 
 FastAPI sidecar for the local cert prep desktop app.
 
+See [Question Authoring](../../docs/domain/authoring.md) for the question
+routes, generation job events, and upload settings. Background question jobs
+run after extraction; only their status updates are streamed.
+
 Useful commands:
 
 ```bash

@@ -759,13 +759,13 @@ def test_capture_adapter_reuses_existing_ollama_client_and_model() -> None:
 
 
 def test_capture_adapter_has_no_hidden_provider_fallback() -> None:
-    class DraftOnlyProvider:
+    class QuestionOnlyProvider:
         provider = "fake"
         model = "fake-model"
 
     raw = RawCapture.model_validate(_raw_payload())
     adapter = CertPrepCaptureStructuringAdapter(
-        DraftOnlyProvider(), PullSessionRuntime(raw), clock=lambda: NOW
+        QuestionOnlyProvider(), PullSessionRuntime(raw), clock=lambda: NOW
     )
 
     with pytest.raises(LanguageModelUnavailable, match="cannot produce structured JSON"):

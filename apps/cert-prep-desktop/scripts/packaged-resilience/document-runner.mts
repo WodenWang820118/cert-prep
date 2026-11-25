@@ -258,12 +258,12 @@ function createRunState(
     llmProvider: 'auto',
     acceptanceIsolation: true,
     candidateDistributionProfile: options.candidateDistributionProfile,
-    waitForStreamingComplete: false,
-    streamingCompleteTimeoutMs: options.timeoutMs,
+    waitForQuestionJobs: false,
+    questionJobsCompleteTimeoutMs: options.timeoutMs,
     skipGpuSampling: true,
     productionSummary: false,
     allowCaptureChunkVariance: true,
-    verifyStreamingPracticeReady: false,
+    verifyGeneratedQuestionsPracticeReady: false,
   };
   const metrics: SmokeMetrics = {
     status: 'running',
@@ -281,13 +281,13 @@ function createRunState(
     ),
     first_chunk_gate_ms: 15_000,
     first_chunk_under_gate: false,
-    wait_for_streaming_complete: false,
-    practice_ready_from_streamed_questions: false,
+    wait_for_question_jobs: false,
+    practice_ready_from_generated_questions: false,
     app_data_dir: relative(
       options.workspaceRoot,
       smokeOptions.appDataDir ?? '',
     ),
-    streaming_questions: {
+    question_generation: {
       job_snapshots: [],
       question_snapshots: [],
       status_counts: {},

@@ -95,7 +95,7 @@ test('real Cert Prep packaged PDF and JPEG acceptance journeys pass', async () =
           if (name === 'mid-parse-ui-still-usable') {
             await expect(page.locator('main')).toBeVisible();
             await expect(page.getByText('Step 01: Source files')).toBeVisible();
-            await expect(page.getByText('Step 02: Exam Questions')).toBeVisible();
+            await expect(page.getByRole('heading', { name: 'Questions', exact: true })).toBeVisible();
             return;
           }
           // Source and generated-content checkpoints remain masked run
@@ -114,7 +114,6 @@ test('real Cert Prep packaged PDF and JPEG acceptance journeys pass', async () =
               page.locator('[data-testid="document-elapsed-time"]'),
               page.locator('[data-testid="document-progress-metrics"]'),
               page.locator('[data-testid="document-progress-bar"]'),
-              page.locator('[data-testid="draft-question-id"]'),
               // Practice sessions display a dynamic session ID in the
               // session-details rail.
               page.locator('aside.practice-session-rail dd').first(),

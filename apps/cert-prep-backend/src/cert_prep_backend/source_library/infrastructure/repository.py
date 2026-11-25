@@ -25,8 +25,8 @@ from cert_prep_backend.source_library.infrastructure.documents import (
     get_document,
     get_source_file,
     list_documents,
-    set_exam_state,
-    update_exam_state,
+    set_question_count,
+    update_question_count,
 )
 from cert_prep_backend.source_library.infrastructure.progress import (
     recover_processing_documents,
@@ -45,9 +45,9 @@ class SqliteDocumentRepository:
     def __init__(
         self, db: Database, *, projects: StudyProjects, connection: Connection | None = None
     ) -> None:
-        # A caller's connection joins that transaction for `document` and `record_exam_state`.
-        # Question Authoring passes the connection that commits its drafts, so the document's
-        # exam state is written with them.
+        # A caller's connection joins that transaction for `document` and `record_question_count`.
+        # Question Authoring passes the connection that commits its questions, so the document's
+        # question count and status is written with them.
         self._db = db
         self._projects = projects
         self._connection = connection
@@ -64,24 +64,24 @@ class SqliteDocumentRepository:
             raise NotFoundError("Document not found.")
         return document_from_row(row)
 
-    def record_exam_state(
-        self, project_id: str, document_id: str, *, status: str, exam_item_count: int
+    def record_question_count(
+        self, project_id: str, document_id: str, *, status: str, question_count: int
     ) -> None:
         if self._connection is not None:
-            set_exam_state(
+            set_question_count(
                 self._connection,
                 project_id=project_id,
                 document_id=document_id,
                 status=status,
-                exam_item_count=exam_item_count,
+                question_count=question_count,
             )
             return
-        update_exam_state(
+        update_question_count(
             self._db,
             project_id=project_id,
             document_id=document_id,
             status=status,
-            exam_item_count=exam_item_count,
+            question_count=question_count,
         )
 
     def source_file(self, project_id: str, document_id: str) -> SourceFile:
@@ -138,13 +138,13 @@ class SqliteDocumentOperationRepository:
         db: Database,
         *,
         projects: StudyProjects,
-        draft_jobs: operations.BindDraftJobs,
+        question_jobs: operations.BindQuestionJobs,
     ) -> None:
         self._db = db
         self._projects = projects
-        # Stopping or retrying a run discards the document's unfinished draft jobs on the
+        # Stopping or retrying a run discards the document's unfinished question jobs on the
         # run's connection, so they go in the same transaction.
-        self._draft_jobs = draft_jobs
+        self._question_jobs = question_jobs
 
     def operation(self, project_id: str, operation_id: str) -> DocumentOperation:
         return operations.get_operation(self._db, project_id=project_id, operation_id=operation_id)
@@ -172,7 +172,7 @@ class SqliteDocumentOperationRepository:
             self._db,
             project_id=project_id,
             document_id=document_id,
-            draft_jobs=self._draft_jobs,
+            question_jobs=self._question_jobs,
             operation_id=operation_id,
         )
 
@@ -190,7 +190,7 @@ class SqliteDocumentOperationRepository:
             project_id=project_id,
             operation_id=operation_id,
             error=error,
-            draft_jobs=self._draft_jobs,
+            question_jobs=self._question_jobs,
             document_status=document_status,
             extraction_method=extraction_method,
         )
@@ -208,7 +208,7 @@ class SqliteDocumentOperationRepository:
             self._db,
             project_id=project_id,
             operation_id=operation_id,
-            draft_jobs=self._draft_jobs,
+            question_jobs=self._question_jobs,
         )
 
     def cancel_processing_of(self, project_id: str, document_id: str) -> DocumentOperation:
@@ -218,7 +218,7 @@ class SqliteDocumentOperationRepository:
         )
 
     def recover_interrupted(self) -> int:
-        return operations.recover_operations(self._db, draft_jobs=self._draft_jobs)
+        return operations.recover_operations(self._db, question_jobs=self._question_jobs)
 
 
 __all__ = [
@@ -232,6 +232,6 @@ __all__ = [
     "list_chunks",
     "list_documents",
     "recover_processing_documents",
-    "update_exam_state",
+    "update_question_count",
     "update_chunk_translation",
 ]

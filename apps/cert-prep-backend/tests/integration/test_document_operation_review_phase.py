@@ -26,7 +26,7 @@ def test_operation_of_a_capture_in_review_reads_as_awaiting_review(tmp_path: Pat
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=DeterministicCaptureRuntime(),
             document_processing_async_jobs=False,
-            streaming_draft_generation_async_jobs=False,
+            background_question_jobs=False,
         )
     ) as client:
         project_id = _create_project(client, headers)

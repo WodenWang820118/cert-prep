@@ -1,182 +1,184 @@
-"""Use cases of Question Authoring, named after what the learner does with question drafts."""
+"""Use cases of Question Authoring, named after what the learner does with questions."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 
 from cert_prep_backend.authoring.application.ports import (
-    DraftGenerationJobRepository,
-    DraftGenerationWork,
-    DraftSources,
-    DraftWriting,
-    QuestionDraftRepository,
+    QuestionGenerationJobRepository,
+    QuestionGenerationWork,
+    QuestionSources,
+    QuestionWriting,
+    QuestionRepository,
 )
-from cert_prep_backend.authoring.domain.draft import DraftEdit, NewQuestionDraft, QuestionDraft
-from cert_prep_backend.authoring.domain.generation import DraftGenerationJob, ManualDraftOperation
-from cert_prep_backend.authoring.domain.models import DraftGenerationStrategy
+from cert_prep_backend.authoring.domain.question import QuestionEdit, NewQuestion, Question
+from cert_prep_backend.authoring.domain.generation import QuestionGenerationJob, ManualQuestionGeneration
+from cert_prep_backend.authoring.domain.models import QuestionGenerationStrategy
 from cert_prep_backend.authoring.domain.normalization import as_editable_question
 from cert_prep_backend.platform.errors import LanguageModelUnavailable, ValidationError
 
 __all__ = [
-    "approved_questions",
+    "source_questions",
     "cancel_generation_job",
     "cancel_manual_generation",
     "discard_unfinished_generation_jobs",
-    "draft_imported_document",
-    "edit_draft",
-    "find_question_draft",
-    "generate_document_drafts",
-    "list_drafts",
+    "generate_imported_questions",
+    "edit_question",
+    "find_question",
+    "generate_document_questions",
+    "list_questions",
     "list_generation_jobs",
-    "question_drafts_for",
+    "questions_for",
     "retry_generation_jobs",
     "start_manual_generation",
     "view_manual_generation",
-    "write_draft",
+    "write_question",
 ]
 
 
-def list_drafts(drafts: QuestionDraftRepository, project_id: str) -> list[QuestionDraft]:
-    return drafts.drafts_of(project_id)
+def list_questions(questions: QuestionRepository, project_id: str) -> list[Question]:
+    return questions.questions_of(project_id)
 
 
-def approved_questions(
-    drafts: QuestionDraftRepository, project_id: str, *, document_id: str | None
-) -> list[QuestionDraft]:
-    """Approved drafts of a project, by id, or of one document in source order."""
+def source_questions(
+    questions: QuestionRepository, project_id: str, *, document_id: str | None
+) -> list[Question]:
+    """Questions of a project, by id, or of one document in source order."""
 
-    return drafts.approved(project_id, document_id=document_id)
-
-
-def find_question_draft(
-    drafts: QuestionDraftRepository, project_id: str, draft_id: str
-) -> QuestionDraft | None:
-    """The project's current draft of one question, or None when it is gone."""
-
-    return drafts.find(project_id, draft_id)
+    return questions.for_source(project_id, document_id=document_id)
 
 
-def question_drafts_for(
-    drafts: QuestionDraftRepository, project_id: str, draft_ids: Sequence[str]
-) -> list[QuestionDraft]:
-    """The project's current drafts for these ids; ids with no draft are absent."""
+def find_question(
+    questions: QuestionRepository, project_id: str, question_id: str
+) -> Question | None:
+    """The project's current question, or None when it is gone."""
 
-    return drafts.find_many(project_id, draft_ids)
-
-
-def write_draft(
-    drafts: QuestionDraftRepository, project_id: str, draft: NewQuestionDraft
-) -> QuestionDraft:
-    return drafts.write(project_id, draft)
+    return questions.find(project_id, question_id)
 
 
-def edit_draft(
-    drafts: QuestionDraftRepository, project_id: str, draft_id: str, edit: DraftEdit
-) -> QuestionDraft:
-    return drafts.edit(project_id, draft_id, edit)
+def questions_for(
+    questions: QuestionRepository, project_id: str, question_ids: Sequence[str]
+) -> list[Question]:
+    """The project's current questions for these ids; ids with no question are absent."""
+
+    return questions.find_many(project_id, question_ids)
 
 
-def generate_document_drafts(
-    drafts: QuestionDraftRepository,
-    sources: DraftSources,
-    writing: DraftWriting,
+def write_question(
+    questions: QuestionRepository, project_id: str, authored_question: NewQuestion
+) -> Question:
+    return questions.write(project_id, authored_question)
+
+
+def edit_question(
+    questions: QuestionRepository, project_id: str, question_id: str, edit: QuestionEdit
+) -> Question:
+    return questions.edit(project_id, question_id, edit)
+
+
+def generate_document_questions(
+    questions: QuestionRepository,
+    sources: QuestionSources,
+    writing: QuestionWriting,
     model: object,
     *,
     project_id: str,
     document_id: str,
     limit: int,
-    strategy: DraftGenerationStrategy,
-) -> list[QuestionDraft]:
-    """Write drafts from every chunk of a document now, and record how many it has."""
+    strategy: QuestionGenerationStrategy,
+) -> list[Question]:
+    """Write questions from every chunk of a document now, and record how many it has in all."""
 
     chunks = sources.chunks_of(project_id, document_id)
     if not chunks:
         raise ValidationError("Document has no extracted text chunks.")
     suggestions = writing.suggestions(model, chunks, limit, strategy)
-    added = drafts.add_generated(project_id, document_id, suggestions)
-    sources.record_draft_count(project_id, document_id, len(added))
+    added = questions.add_generated(project_id, document_id, suggestions)
+    sources.record_question_count(
+        project_id, document_id, questions.count_for_source(project_id, document_id)
+    )
     return added
 
 
 def list_generation_jobs(
-    jobs: DraftGenerationJobRepository, project_id: str, document_id: str
-) -> list[DraftGenerationJob]:
+    jobs: QuestionGenerationJobRepository, project_id: str, document_id: str
+) -> list[QuestionGenerationJob]:
     return jobs.jobs_of(project_id, document_id)
 
 
 def retry_generation_jobs(
-    work: DraftGenerationWork, project_id: str, document_id: str
-) -> list[DraftGenerationJob]:
-    """Run again the jobs of a document that ended without drafts."""
+    work: QuestionGenerationWork, project_id: str, document_id: str
+) -> list[QuestionGenerationJob]:
+    """Run again the jobs of a document that ended without questions."""
 
     return work.retry_jobs(project_id, document_id)
 
 
 def cancel_generation_job(
-    jobs: DraftGenerationJobRepository, project_id: str, document_id: str, job_id: str
-) -> DraftGenerationJob:
+    jobs: QuestionGenerationJobRepository, project_id: str, document_id: str, job_id: str
+) -> QuestionGenerationJob:
     return jobs.cancel(project_id, document_id, job_id)
 
 
 def discard_unfinished_generation_jobs(
-    jobs: DraftGenerationJobRepository, project_id: str, document_id: str
+    jobs: QuestionGenerationJobRepository, project_id: str, document_id: str
 ) -> None:
     """Drop the document's jobs that have not ended, because its source text is being redone.
 
     Source Library calls this when a run of the document stops or is retried. Ended jobs stay
-    as the document's draft history.
+    as the document's question generation history.
     """
 
     jobs.discard_unfinished(project_id, document_id)
 
 
 def start_manual_generation(
-    work: DraftGenerationWork,
+    work: QuestionGenerationWork,
     project_id: str,
     document_id: str,
     *,
     limit: int,
-    strategy: DraftGenerationStrategy,
-) -> ManualDraftOperation:
-    """Generate drafts for a whole document in the background; one operation at a time."""
+    strategy: QuestionGenerationStrategy,
+) -> ManualQuestionGeneration:
+    """Generate questions for a whole document in the background; one operation at a time."""
 
     return work.start_manual_operation(project_id, document_id, limit, strategy)
 
 
 def view_manual_generation(
-    work: DraftGenerationWork, project_id: str, document_id: str, operation_id: str
-) -> ManualDraftOperation:
+    work: QuestionGenerationWork, project_id: str, document_id: str, operation_id: str
+) -> ManualQuestionGeneration:
     return work.manual_operation(project_id, document_id, operation_id)
 
 
 def cancel_manual_generation(
-    work: DraftGenerationWork, project_id: str, document_id: str, operation_id: str
-) -> ManualDraftOperation:
+    work: QuestionGenerationWork, project_id: str, document_id: str, operation_id: str
+) -> ManualQuestionGeneration:
     return work.cancel_manual_operation(project_id, document_id, operation_id)
 
 
-def draft_imported_document(
-    work: DraftGenerationWork,
-    drafts: QuestionDraftRepository,
-    sources: DraftSources,
-    writing: DraftWriting,
+def generate_imported_questions(
+    work: QuestionGenerationWork,
+    questions: QuestionRepository,
+    sources: QuestionSources,
+    writing: QuestionWriting,
     model: object,
     *,
     project_id: str,
     document_id: str,
-    streams_drafts: bool,
-    writes_drafts: bool,
+    schedules_question_jobs: bool,
+    writes_questions: bool,
     limit: int,
 ) -> None:
-    """Start the drafts of a document whose import produced chunks.
+    """Start the questions of a document whose import produced chunks.
 
-    Streaming queues a job per chunk. When the settings write drafts at import instead, and
-    only then, up to `limit` drafts are written now; an unavailable model writes none, and the
-    document records how many it got.
+    The scheduler queues a job per chunk. When the settings write questions at import instead, and
+    only then, up to `limit` questions are written now; an unavailable model writes none, and the
+    document records how many questions it has in all.
     """
 
     work.enqueue_document(project_id, document_id)
-    if streams_drafts or not writes_drafts:
+    if schedules_question_jobs or not writes_questions:
         return
     chunks = sources.chunks_of(project_id, document_id)
     try:
@@ -186,5 +188,8 @@ def draft_imported_document(
         ]
     except LanguageModelUnavailable:
         suggestions = []
-    added = drafts.add_generated(project_id, document_id, suggestions) if suggestions else []
-    sources.record_import_draft_count(project_id, document_id, len(added))
+    if suggestions:
+        questions.add_generated(project_id, document_id, suggestions)
+    sources.record_import_question_count(
+        project_id, document_id, questions.count_for_source(project_id, document_id)
+    )

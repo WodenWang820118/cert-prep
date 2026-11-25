@@ -38,7 +38,7 @@ describe('WrongAnswerSummaryComponent', () => {
     extraction_warnings: null,
     failure_message: null,
     processed_page_count: 10,
-    exam_item_count: 1,
+    question_count: 1,
     content_profile: 'vocabulary_single_questions',
     classification_detail: '{"profile":"vocabulary_single_questions"}',
     chunks_count: 4,
@@ -147,7 +147,7 @@ describe('WrongAnswerSummaryComponent', () => {
   let apiClient: {
     createPracticeSession: ReturnType<typeof vi.fn>;
     getPracticeSession: ReturnType<typeof vi.fn>;
-    listQuestionDrafts: ReturnType<typeof vi.fn>;
+    listQuestions: ReturnType<typeof vi.fn>;
     listWrongAnswers: ReturnType<typeof vi.fn>;
     summarizeWrongAnswers: ReturnType<typeof vi.fn>;
   };
@@ -156,7 +156,7 @@ describe('WrongAnswerSummaryComponent', () => {
     apiClient = {
       createPracticeSession: vi.fn().mockReturnValue(of(reviewSession)),
       getPracticeSession: vi.fn().mockReturnValue(of(reviewSession)),
-      listQuestionDrafts: vi.fn().mockReturnValue(of({ items: [] })),
+      listQuestions: vi.fn().mockReturnValue(of({ items: [] })),
       listWrongAnswers: vi
         .fn()
         .mockReturnValue(of({ items: [wrongAnswer, fallbackDocumentWrongAnswer] })),

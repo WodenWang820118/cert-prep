@@ -28,14 +28,14 @@ export interface SmokeOptions {
   acceptanceIsolation?: boolean;
   captureRuntimeWorkerMirrorUrl?: string;
   candidateDistributionProfile?: CandidateDistributionProfile;
-  streamingDraftPageLimit?: number;
-  streamingDraftWorkers?: number;
-  waitForStreamingComplete: boolean;
-  streamingCompleteTimeoutMs: number;
+  questionJobsChunkLimit?: number;
+  questionJobWorkers?: number;
+  waitForQuestionJobs: boolean;
+  questionJobsCompleteTimeoutMs: number;
   skipGpuSampling: boolean;
   productionSummary: boolean;
   allowCaptureChunkVariance: boolean;
-  verifyStreamingPracticeReady: boolean;
+  verifyGeneratedQuestionsPracticeReady: boolean;
   acceptanceArtifactRoot?: string;
   acceptanceRecordVideo?: boolean;
   acceptanceVisualCheckpoint?: (page: Page, name: string) => Promise<void>;
@@ -76,18 +76,18 @@ export interface SmokeMetrics {
   whole_source_question_count?: number;
   first_chunk_gate_ms: number;
   first_chunk_under_gate: boolean;
-  streaming_draft_page_limit?: number;
-  streaming_draft_workers?: number;
-  wait_for_streaming_complete?: boolean;
+  question_jobs_chunk_limit?: number;
+  question_job_workers?: number;
+  wait_for_question_jobs?: boolean;
   app_data_dir?: string;
   acceptance_isolation_at_launch?: AcceptanceIsolationSnapshot;
   ocr_completion?: OcrCompletionMetrics;
   ocr_page_records?: OcrPageRecordEvidence;
   ocr_truth?: OcrTruthEvaluation;
   ocr_semantic_evidence?: PrivacySafeOcrSemanticEvidence;
-  streaming_baseline?: StreamingBaselineArtifacts;
+  question_generation_baseline?: QuestionGenerationBaselineArtifacts;
   production_summary?: string;
-  practice_ready_from_streamed_questions?: boolean;
+  practice_ready_from_generated_questions?: boolean;
   restart?: {
     attempted: boolean;
     verified?: boolean;
@@ -103,7 +103,7 @@ export interface SmokeMetrics {
     new_node_helpers_closed: PublicProcessRecord[];
     residue_after_close: PublicProcessRecord[];
   };
-  streaming_questions: StreamingQuestionsMetrics;
+  question_generation: QuestionGenerationMetrics;
   resource_sampling?: ResourceSamplingArtifacts;
 }
 
@@ -123,9 +123,9 @@ export interface ResourceSamplingArtifacts {
   windows_dxgi_adapters_json?: string;
 }
 
-export interface StreamingQuestionsMetrics {
-  job_snapshots: StreamingDraftJobSnapshot[];
-  question_snapshots: StreamingQuestionSnapshot[];
+export interface QuestionGenerationMetrics {
+  job_snapshots: QuestionJobSnapshot[];
+  question_snapshots: QuestionSnapshot[];
   status_counts: Record<string, number>;
   first_job_visible_ms?: number;
   first_status_visible_ms?: number;
@@ -143,7 +143,7 @@ export interface OcrCompletionMetrics {
   expected_chunks: number;
 }
 
-export interface StreamingBaselineArtifacts {
+export interface QuestionGenerationBaselineArtifacts {
   status: 'passed' | 'failed';
   json: string;
   markdown: string;
@@ -193,7 +193,7 @@ export interface GenerationReadinessSnapshot {
   blockers: string[];
 }
 
-export interface StreamingDraftJobAttribution {
+export interface QuestionJobAttribution {
   id: string | null;
   status: string | null;
   generated_count: number;
@@ -221,7 +221,7 @@ export interface OwnedProcessEvidence {
   name: string;
 }
 
-export interface StreamingJobCompletionState {
+export interface QuestionJobCompletionState {
   total_count: number;
   active_count: number;
   terminal_count: number;
@@ -232,19 +232,19 @@ export interface StreamingJobCompletionState {
   all_succeeded: boolean;
 }
 
-export interface StreamingDraftJobSnapshot {
+export interface QuestionJobSnapshot {
   elapsed_ms: number;
-  source: 'draft-jobs';
+  source: 'question-jobs';
   item_count: number;
   status_counts: Record<string, number>;
   generated_count: number;
-  jobs: StreamingDraftJobAttribution[];
+  jobs: QuestionJobAttribution[];
   blocker?: string;
 }
 
-export interface StreamingQuestionSnapshot {
+export interface QuestionSnapshot {
   elapsed_ms: number;
-  source: 'question-drafts';
+  source: 'questions';
   item_count: number;
   usable_question_count: number;
 }
@@ -318,9 +318,9 @@ export interface SmokeRunState {
   processBaseline: ProcessSnapshot;
   projectApi: ProjectApiRef | null;
   uploadedDocument: UploadedDocumentRef | null;
-  streamingDraftParseStartedAt: number | null;
-  streamingDraftCaptureOpen: boolean;
-  streamingApiPollErrorCaptured: boolean;
+  questionObservationStartedAt: number | null;
+  questionObservationActive: boolean;
+  questionGenerationApiPollErrorCaptured: boolean;
   acceptanceVideoPaths?: string[];
   acceptanceTracePaths?: string[];
   acceptanceTraceOwned?: boolean;

@@ -31,7 +31,7 @@ __all__ = [
     "ResourceReleasingProvider",
     "LLMInstallationProvider",
     "StartsOnGenerationProvider",
-    "StreamingGenerationOptionsProvider",
+    "BackgroundGenerationOptionsProvider",
     "StructuredJsonGenerationProvider",
     "provider_capability",
 ]
@@ -172,16 +172,16 @@ class ResourceReleasingProvider(Protocol):
     """Provider capability for releasing per-job runtime resources."""
 
     def release_resources(self) -> None:
-        """Release resources after a streaming generation job."""
+        """Release resources after a background generation job."""
         pass
 
 
 @runtime_checkable
-class StreamingGenerationOptionsProvider(Protocol):
-    """Provider-owned streaming keyword arguments for generation calls."""
+class BackgroundGenerationOptionsProvider(Protocol):
+    """Provider-owned background generation keyword arguments for generation calls."""
 
-    def streaming_generation_kwargs(self) -> dict[str, Any]:
-        """Return extra provider-specific kwargs for streaming generation calls."""
+    def background_generation_kwargs(self) -> dict[str, Any]:
+        """Return extra provider-specific kwargs for background generation calls."""
         pass
 
 

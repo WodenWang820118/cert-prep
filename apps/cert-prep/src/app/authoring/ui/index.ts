@@ -1,2 +1,2 @@
-export { DraftGenerationStatusComponent } from './draft-generation-status/draft-generation-status.component';
-export { DraftQuestionEditorCardComponent } from './draft-question-editor-card/draft-question-editor-card.component';
+export { QuestionGenerationStatusComponent } from './question-generation-status/question-generation-status.component';
+export { QuestionEditorCardComponent } from './question-editor-card/question-editor-card.component';

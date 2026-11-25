@@ -46,13 +46,13 @@ test('all nine candidate-bound resilience contracts accept exact scoped proof', 
   }
 });
 
-test('draft evidence accepts exact effective Ollama attribution with null or absent fallback', () => {
-  const evidence = validEvidence('draft');
+test('question evidence accepts exact effective Ollama attribution with null or absent fallback', () => {
+  const evidence = validEvidence('question');
   const proof = evidence.proof as Record<string, unknown>;
-  const terminal = proof.manualDraftTerminalResponse as Record<string, unknown>;
+  const terminal = proof.manualQuestionGenerationTerminalResponse as Record<string, unknown>;
   assert.equal(
-    validateResilienceEvidence(evidence, 'draft', context).check,
-    'draft',
+    validateResilienceEvidence(evidence, 'question', context).check,
+    'question',
   );
 
   const terminalWithoutFallback = { ...terminal };
@@ -63,20 +63,20 @@ test('draft evidence accepts exact effective Ollama attribution with null or abs
         ...evidence,
         proof: {
           ...proof,
-          manualDraftTerminalResponse: terminalWithoutFallback,
+          manualQuestionGenerationTerminalResponse: terminalWithoutFallback,
         },
       },
-      'draft',
+      'question',
       context,
     ).check,
-    'draft',
+    'question',
   );
 });
 
-test('draft evidence rejects configured-only or drifted manual terminal attribution', () => {
-  const evidence = validEvidence('draft');
+test('question evidence rejects configured-only or drifted manual terminal attribution', () => {
+  const evidence = validEvidence('question');
   const proof = evidence.proof as Record<string, unknown>;
-  const terminal = proof.manualDraftTerminalResponse as Record<string, unknown>;
+  const terminal = proof.manualQuestionGenerationTerminalResponse as Record<string, unknown>;
   const mutations: ReadonlyArray<
     readonly [string, (response: Record<string, unknown>) => void]
   > = [
@@ -104,26 +104,26 @@ test('draft evidence rejects configured-only or drifted manual terminal attribut
         validateResilienceEvidence(
           {
             ...evidence,
-            proof: { ...proof, manualDraftTerminalResponse: changed },
+            proof: { ...proof, manualQuestionGenerationTerminalResponse: changed },
           },
-          'draft',
+          'question',
           context,
         ),
-      /Resilience evidence contract failed for draft/,
+      /Resilience evidence contract failed for question/,
       label,
     );
   }
 
   const configuredOnly = { ...proof };
-  delete configuredOnly.manualDraftTerminalResponse;
+  delete configuredOnly.manualQuestionGenerationTerminalResponse;
   assert.throws(
     () =>
       validateResilienceEvidence(
         { ...evidence, proof: configuredOnly },
-        'draft',
+        'question',
         context,
       ),
-    /manualDraftTerminalResponse must be an object/,
+    /manualQuestionGenerationTerminalResponse must be an object/,
   );
 });
 
@@ -360,8 +360,8 @@ test('partial cleanup requires chunks and every derived metric to remain zero', 
   );
 });
 
-test('draft/runtime/model cancellation requires durable exact commit evidence and a real 409', () => {
-  for (const check of ['draft', 'runtime', 'model'] as const) {
+test('question/runtime/model cancellation requires durable exact commit evidence and a real 409', () => {
+  for (const check of ['question', 'runtime', 'model'] as const) {
     const evidence = validEvidence(check);
     const proof = evidence.proof as Record<string, unknown>;
     const nonCancellableResponse = proof.nonCancellableResponse as Record<
@@ -435,8 +435,8 @@ test('draft/runtime/model cancellation requires durable exact commit evidence an
   }
 });
 
-test('draft/runtime/model cancellation requires a stable canceled state and exact transition', () => {
-  for (const check of ['draft', 'runtime', 'model'] as const) {
+test('question/runtime/model cancellation requires a stable canceled state and exact transition', () => {
+  for (const check of ['question', 'runtime', 'model'] as const) {
     const evidence = validEvidence(check);
     const proof = { ...(evidence.proof as Record<string, unknown>) };
     delete proof.canceledState;
@@ -446,13 +446,13 @@ test('draft/runtime/model cancellation requires a stable canceled state and exac
     );
   }
 
-  const draft = validEvidence('draft');
-  const draftProof = draft.proof as Record<string, unknown>;
+  const question = validEvidence('question');
+  const questionProof = question.proof as Record<string, unknown>;
   assert.throws(
     () =>
       validateResilienceEvidence(
-        { ...draft, proof: { ...draftProof, provider: 'fake' } },
-        'draft',
+        { ...question, proof: { ...questionProof, provider: 'fake' } },
+        'question',
         context,
       ),
     /provider must equal ollama/,
@@ -461,20 +461,20 @@ test('draft/runtime/model cancellation requires a stable canceled state and exac
     () =>
       validateResilienceEvidence(
         {
-          ...draft,
+          ...question,
           proof: {
-            ...draftProof,
+            ...questionProof,
             uploadTriggeredJobs: {
               jobCount: 1,
               statuses: ['completed'],
-              usableDraftCount: 0,
+              usableQuestionCount: 0,
             },
           },
         },
-        'draft',
+        'question',
         context,
       ),
-    /draft cancellation and manual publish transition/,
+    /question cancellation and manual publish transition/,
   );
 
   const runtime = validEvidence('runtime');
@@ -851,7 +851,7 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
         latePublishSuppressed: true,
         latePublishObservationWindowMs: 2_000,
       };
-    case 'draft':
+    case 'question':
       return {
         ...scopedCancellation(
           {
@@ -864,7 +864,7 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
           cancelResponse,
           terminalResponse,
         ),
-        manualDraftTerminalResponse: {
+        manualQuestionGenerationTerminalResponse: {
           id: 'operation-commit',
           project_id: projectId,
           document_id: documentId,
@@ -883,16 +883,16 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
         },
         canceledState: {
           observationWindowMs: 2_000,
-          immediate: { usableDraftCount: 0 },
-          afterWindow: { usableDraftCount: 0 },
+          immediate: { usableQuestionCount: 0 },
+          afterWindow: { usableQuestionCount: 0 },
         },
         uploadTriggeredJobs: {
           jobCount: 2,
           statuses: ['skipped_missing_model', 'skipped_missing_model'],
-          usableDraftCount: 0,
+          usableQuestionCount: 0,
         },
-        usableDraftCountBeforeManual: 0,
-        usableDraftCountAfterManual: 2,
+        usableQuestionCountBeforeManual: 0,
+        usableQuestionCountAfterManual: 2,
       };
     case 'runtime': {
       const unavailableRequirement = {
@@ -986,13 +986,13 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
         projectId,
         documentId,
         operationId,
-        beforeCancel: { chunksCount: 2, nonZeroDerivedMetricCount: 3 },
+        beforeCancel: { chunksCount: 2, nonZeroDerivedMetricCount: 1, questionCount: 0 },
         afterCanceled: {
           chunksCount: 0,
           chunksEndpointItems: 0,
           hasText: false,
           processedPageCount: 0,
-          examItemCount: 0,
+          questionCount: 0,
         },
         originalPdfRetryable: true,
         latePublishSuppressed: true,

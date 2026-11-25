@@ -1,7 +1,7 @@
-"""The Draft Generation aggregate: background work that turns source chunks into question drafts.
+"""The Question Generation aggregate: background work that turns source chunks into questions.
 
-A draft generation job writes the drafts of one source chunk after a document is imported; a
-manual draft operation writes drafts for a whole document when the learner asks. Both can be
+A question generation job generates questions for one source chunk after a document is imported; a
+manual generation generates questions for a whole document when the learner asks. Both can be
 canceled until they start committing, and a cancellation that was requested wins over any
 other ending.
 
@@ -20,17 +20,17 @@ __all__ = [
     "JOB_RETRYABLE_STATUSES",
     "JOB_TERMINAL_STATUSES",
     "OPERATION_TERMINAL_STATUSES",
-    "DraftGenerationJob",
-    "DraftGenerationJobStatus",
-    "DraftJobCanceledError",
-    "DraftJobNotCancellableError",
-    "ManualDraftOperation",
-    "ManualDraftOperationStatus",
+    "QuestionGenerationJob",
+    "QuestionGenerationJobStatus",
+    "QuestionJobCanceledError",
+    "QuestionJobNotCancellableError",
+    "ManualQuestionGeneration",
+    "ManualQuestionGenerationStatus",
     "all_jobs_ended",
 ]
 
 
-class DraftGenerationJobStatus(StrEnum):
+class QuestionGenerationJobStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     CANCEL_REQUESTED = "cancel_requested"
@@ -41,7 +41,7 @@ class DraftGenerationJobStatus(StrEnum):
     FAILED = "failed"
 
 
-class ManualDraftOperationStatus(StrEnum):
+class ManualQuestionGenerationStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
     CANCEL_REQUESTED = "cancel_requested"
@@ -52,45 +52,45 @@ class ManualDraftOperationStatus(StrEnum):
 
 JOB_TERMINAL_STATUSES = frozenset(
     {
-        DraftGenerationJobStatus.SUCCEEDED,
-        DraftGenerationJobStatus.SKIPPED_PROVIDER_UNAVAILABLE,
-        DraftGenerationJobStatus.SKIPPED_MISSING_MODEL,
-        DraftGenerationJobStatus.FAILED,
-        DraftGenerationJobStatus.CANCELED,
+        QuestionGenerationJobStatus.SUCCEEDED,
+        QuestionGenerationJobStatus.SKIPPED_PROVIDER_UNAVAILABLE,
+        QuestionGenerationJobStatus.SKIPPED_MISSING_MODEL,
+        QuestionGenerationJobStatus.FAILED,
+        QuestionGenerationJobStatus.CANCELED,
     }
 )
-# A job that ended without drafts runs again once its blocker (model, provider) is gone.
+# A job that ended without questions runs again once its blocker (model, provider) is gone.
 JOB_RETRYABLE_STATUSES = frozenset(
     {
-        DraftGenerationJobStatus.SKIPPED_PROVIDER_UNAVAILABLE,
-        DraftGenerationJobStatus.SKIPPED_MISSING_MODEL,
-        DraftGenerationJobStatus.FAILED,
-        DraftGenerationJobStatus.CANCELED,
+        QuestionGenerationJobStatus.SKIPPED_PROVIDER_UNAVAILABLE,
+        QuestionGenerationJobStatus.SKIPPED_MISSING_MODEL,
+        QuestionGenerationJobStatus.FAILED,
+        QuestionGenerationJobStatus.CANCELED,
     }
 )
 OPERATION_TERMINAL_STATUSES = frozenset(
     {
-        ManualDraftOperationStatus.CANCELED,
-        ManualDraftOperationStatus.SUCCEEDED,
-        ManualDraftOperationStatus.FAILED,
+        ManualQuestionGenerationStatus.CANCELED,
+        ManualQuestionGenerationStatus.SUCCEEDED,
+        ManualQuestionGenerationStatus.FAILED,
     }
 )
 
-_Job = DraftGenerationJobStatus
-_Operation = ManualDraftOperationStatus
+_Job = QuestionGenerationJobStatus
+_Operation = ManualQuestionGenerationStatus
 
 
-class DraftJobCanceledError(RuntimeError):
-    """Raised when cancellation wins before a draft job commit begins."""
+class QuestionJobCanceledError(RuntimeError):
+    """Raised when cancellation wins before a question job commit begins."""
 
 
-class DraftJobNotCancellableError(RuntimeError):
-    """Raised after a draft job has entered its atomic commit phase."""
+class QuestionJobNotCancellableError(RuntimeError):
+    """Raised after a question job has entered its atomic commit phase."""
 
 
 @dataclass(frozen=True, slots=True)
-class DraftGenerationJob:
-    """Generating the drafts of one source chunk, once per chunk and strategy."""
+class QuestionGenerationJob:
+    """Generating the questions of one source chunk, once per chunk and strategy."""
 
     id: str
     project_id: str
@@ -98,7 +98,7 @@ class DraftGenerationJob:
     chunk_id: str
     page_number: int
     strategy: str
-    status: DraftGenerationJobStatus
+    status: QuestionGenerationJobStatus
     provider: str
     model: str
     effective_provider: str | None
@@ -119,7 +119,7 @@ class DraftGenerationJob:
     def should_run(self) -> bool:
         return self.status is _Job.PENDING
 
-    def start(self, now: str) -> DraftGenerationJob:
+    def start(self, now: str) -> QuestionGenerationJob:
         """A pending job starts generating; any other job stays as it is."""
 
         if self.status is not _Job.PENDING:
@@ -134,14 +134,14 @@ class DraftGenerationJob:
             updated_at=now,
         )
 
-    def cancel(self, now: str) -> DraftGenerationJob:
+    def cancel(self, now: str) -> QuestionGenerationJob:
         """A pending job is canceled at once; a running one is asked to stop."""
 
         if self.is_terminal or self.status is _Job.CANCEL_REQUESTED:
             return self
         if not self.cancellable:
-            raise DraftJobNotCancellableError(
-                "Draft generation is committing and can no longer be canceled."
+            raise QuestionJobNotCancellableError(
+                "Question generation is committing and can no longer be canceled."
             )
         if self.status is _Job.PENDING:
             return replace(
@@ -161,33 +161,33 @@ class DraftGenerationJob:
             updated_at=now,
         )
 
-    def begin_commit(self, now: str) -> DraftGenerationJob:
-        """Win the race against cancellation: from here the drafts are committed."""
+    def begin_commit(self, now: str) -> QuestionGenerationJob:
+        """Win the race against cancellation: from here the questions are committed."""
 
         if self.status is _Job.RUNNING and self.cancellable:
             return replace(self, phase="committing", cancellable=False, updated_at=now)
         if self.status in {_Job.CANCEL_REQUESTED, _Job.CANCELED}:
-            raise DraftJobCanceledError("Draft generation was canceled.")
+            raise QuestionJobCanceledError("Question generation was canceled.")
         if self.is_terminal:
             return self
-        raise DraftJobNotCancellableError("Draft generation is not in a cancellable running phase.")
+        raise QuestionJobNotCancellableError("Question generation is not in a cancellable running phase.")
 
-    def acknowledge_cancellation(self, now: str) -> DraftGenerationJob:
+    def acknowledge_cancellation(self, now: str) -> QuestionGenerationJob:
         return self._stop(_Job.CANCELED, last_error=None, now=now)
 
-    def skip_for_missing_model(self, detail: str, now: str) -> DraftGenerationJob:
+    def skip_for_missing_model(self, detail: str, now: str) -> QuestionGenerationJob:
         return self._stop(_Job.SKIPPED_MISSING_MODEL, last_error=detail, now=now)
 
-    def skip_for_unavailable_provider(self, detail: str, now: str) -> DraftGenerationJob:
+    def skip_for_unavailable_provider(self, detail: str, now: str) -> QuestionGenerationJob:
         return self._stop(_Job.SKIPPED_PROVIDER_UNAVAILABLE, last_error=detail, now=now)
 
-    def fail(self, detail: str, now: str) -> DraftGenerationJob:
+    def fail(self, detail: str, now: str) -> QuestionGenerationJob:
         return self._stop(_Job.FAILED, last_error=detail, now=now)
 
     def _stop(
-        self, status: DraftGenerationJobStatus, *, last_error: str | None, now: str
-    ) -> DraftGenerationJob:
-        """End the job without drafts; a requested cancellation wins, and a failure counts."""
+        self, status: QuestionGenerationJobStatus, *, last_error: str | None, now: str
+    ) -> QuestionGenerationJob:
+        """End the job without questions; a requested cancellation wins, and a failure counts."""
 
         if self.is_terminal:
             return self
@@ -206,15 +206,15 @@ class DraftGenerationJob:
 
 
 @dataclass(frozen=True, slots=True)
-class ManualDraftOperation:
-    """Generating drafts for a whole document when the learner asks; one at a time."""
+class ManualQuestionGeneration:
+    """Generating questions for a whole document when the learner asks; one at a time."""
 
     id: str
     project_id: str
     document_id: str
     limit: int
     strategy: str
-    status: ManualDraftOperationStatus
+    status: ManualQuestionGenerationStatus
     phase: str
     cancellable: bool
     provider: str
@@ -241,7 +241,7 @@ class ManualDraftOperation:
         provider: str,
         model: str,
         now: str,
-    ) -> ManualDraftOperation:
+    ) -> ManualQuestionGeneration:
         """A new operation waits in the queue and can still be canceled."""
 
         return cls(
@@ -270,7 +270,7 @@ class ManualDraftOperation:
     def is_terminal(self) -> bool:
         return self.status in OPERATION_TERMINAL_STATUSES
 
-    def start(self, now: str) -> ManualDraftOperation:
+    def start(self, now: str) -> ManualQuestionGeneration:
         """A queued operation starts generating; any other operation stays as it is."""
 
         if self.status is not _Operation.QUEUED:
@@ -285,7 +285,7 @@ class ManualDraftOperation:
             updated_at=now,
         )
 
-    def begin_commit(self, now: str) -> ManualDraftOperation:
+    def begin_commit(self, now: str) -> ManualQuestionGeneration:
         """Win the race against cancellation; committing again keeps its first start time."""
 
         if self.status is _Operation.RUNNING and self.cancellable:
@@ -299,25 +299,25 @@ class ManualDraftOperation:
                 updated_at=now,
             )
         if self.status in {_Operation.CANCEL_REQUESTED, _Operation.CANCELED}:
-            raise DraftJobCanceledError("Manual draft generation was canceled.")
+            raise QuestionJobCanceledError("Manual question generation was canceled.")
         if self.is_terminal or self._is_committing:
             return self
-        raise DraftJobNotCancellableError(
-            "Manual draft generation is not in a cancellable running phase."
+        raise QuestionJobNotCancellableError(
+            "Manual question generation is not in a cancellable running phase."
         )
 
-    def cancel(self, now: str) -> ManualDraftOperation:
+    def cancel(self, now: str) -> ManualQuestionGeneration:
         """A queued operation is canceled at once; a running one is asked to stop."""
 
         if self.status is _Operation.SUCCEEDED and self.commit_started_at is not None:
-            raise DraftJobNotCancellableError(
-                "Manual draft generation committed and can no longer be canceled."
+            raise QuestionJobNotCancellableError(
+                "Manual question generation committed and can no longer be canceled."
             )
         if self.is_terminal or self.status is _Operation.CANCEL_REQUESTED:
             return self
         if not self.cancellable:
-            raise DraftJobNotCancellableError(
-                "Manual draft generation is committing and can no longer be canceled."
+            raise QuestionJobNotCancellableError(
+                "Manual question generation is committing and can no longer be canceled."
             )
         if self.status is _Operation.QUEUED:
             return replace(
@@ -337,10 +337,10 @@ class ManualDraftOperation:
             updated_at=now,
         )
 
-    def acknowledge_cancellation(self, now: str) -> ManualDraftOperation:
+    def acknowledge_cancellation(self, now: str) -> ManualQuestionGeneration:
         return self._finish(_Operation.CANCELED, "canceled", error=None, now=now)
 
-    def fail(self, detail: str, now: str) -> ManualDraftOperation:
+    def fail(self, detail: str, now: str) -> ManualQuestionGeneration:
         return self._finish(_Operation.FAILED, "failed", error=detail, now=now)
 
     @property
@@ -353,8 +353,8 @@ class ManualDraftOperation:
         )
 
     def _finish(
-        self, status: ManualDraftOperationStatus, phase: str, *, error: str | None, now: str
-    ) -> ManualDraftOperation:
+        self, status: ManualQuestionGenerationStatus, phase: str, *, error: str | None, now: str
+    ) -> ManualQuestionGeneration:
         """End the operation; a requested cancellation wins."""
 
         if self.is_terminal:
@@ -364,7 +364,7 @@ class ManualDraftOperation:
         return replace(self, status=status, phase=phase, cancellable=False, error=error, updated_at=now)
 
 
-def _stopped_phase(status: DraftGenerationJobStatus) -> str:
+def _stopped_phase(status: QuestionGenerationJobStatus) -> str:
     if status is _Job.SUCCEEDED:
         return "completed"
     if status is _Job.CANCELED:
@@ -372,7 +372,7 @@ def _stopped_phase(status: DraftGenerationJobStatus) -> str:
     return "failed"
 
 
-def all_jobs_ended(jobs: Sequence[DraftGenerationJob]) -> bool:
+def all_jobs_ended(jobs: Sequence[QuestionGenerationJob]) -> bool:
     """A document's generation has ended once it has jobs and every one of them has ended."""
 
     return bool(jobs) and all(job.is_terminal for job in jobs)

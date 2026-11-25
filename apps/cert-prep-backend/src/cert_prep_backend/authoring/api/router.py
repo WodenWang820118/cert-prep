@@ -9,28 +9,28 @@ from cert_prep_backend.api.errors import (
     validation_error,
 )
 from cert_prep_backend.authoring.api.schemas import (
-    DraftGenerateRequest,
-    DraftGenerationJobList,
-    DraftGenerationJobRead,
-    ManualDraftGenerationOperationRead,
-    QuestionDraftCreate,
-    QuestionDraftList,
-    QuestionDraftRead,
-    QuestionDraftUpdate,
+    QuestionGenerateRequest,
+    QuestionGenerationJobList,
+    QuestionGenerationJobRead,
+    ManualQuestionGenerationRead,
+    QuestionCreate,
+    QuestionList,
+    QuestionRead,
+    QuestionUpdate,
 )
 from cert_prep_backend.authoring.application import use_cases as authoring
 from cert_prep_backend.authoring.application.ports import (
-    DraftGenerationJobRepository,
-    DraftGenerationWork,
-    DraftSources,
-    DraftWriting,
-    QuestionDraftRepository,
+    QuestionGenerationJobRepository,
+    QuestionGenerationWork,
+    QuestionSources,
+    QuestionWriting,
+    QuestionRepository,
 )
-from cert_prep_backend.authoring.domain.draft import DraftEdit, NewQuestionDraft, QuestionDraft
+from cert_prep_backend.authoring.domain.question import QuestionEdit, NewQuestion, Question
 from cert_prep_backend.authoring.domain.generation import (
-    DraftGenerationJob,
-    DraftJobNotCancellableError,
-    ManualDraftOperation,
+    QuestionGenerationJob,
+    QuestionJobNotCancellableError,
+    ManualQuestionGeneration,
 )
 from cert_prep_backend.platform.errors import (
     NotFoundError,
@@ -40,49 +40,49 @@ from cert_prep_backend.platform.errors import (
 
 
 documents_router = APIRouter(
-    prefix="/projects/{project_id}/documents/{document_id}/drafts",
-    tags=["question-drafts"],
+    prefix="/projects/{project_id}/documents/{document_id}/questions",
+    tags=["questions"],
 )
-draft_jobs_router = APIRouter(
-    prefix="/projects/{project_id}/documents/{document_id}/draft-jobs",
-    tags=["question-drafts"],
+question_jobs_router = APIRouter(
+    prefix="/projects/{project_id}/documents/{document_id}/question-jobs",
+    tags=["questions"],
 )
 manual_operations_router = APIRouter(
-    prefix="/projects/{project_id}/documents/{document_id}/draft-operations",
-    tags=["question-drafts"],
+    prefix="/projects/{project_id}/documents/{document_id}/question-generations",
+    tags=["questions"],
 )
-drafts_router = APIRouter(prefix="/projects/{project_id}/question-drafts", tags=["question-drafts"])
+questions_router = APIRouter(prefix="/projects/{project_id}/questions", tags=["questions"])
 
 
-def get_question_draft_repository(request: Request) -> QuestionDraftRepository:
-    return request.app.state.question_draft_repository
+def get_question_repository(request: Request) -> QuestionRepository:
+    return request.app.state.question_repository
 
 
-def get_draft_generation_job_repository(request: Request) -> DraftGenerationJobRepository:
-    return request.app.state.draft_generation_job_repository
+def get_question_generation_job_repository(request: Request) -> QuestionGenerationJobRepository:
+    return request.app.state.question_generation_job_repository
 
 
-def get_draft_generation_work(request: Request) -> DraftGenerationWork:
-    return request.app.state.draft_generation_work
+def get_question_generation_work(request: Request) -> QuestionGenerationWork:
+    return request.app.state.question_generation_work
 
 
-def get_draft_sources(request: Request) -> DraftSources:
-    return request.app.state.draft_sources
+def get_question_sources(request: Request) -> QuestionSources:
+    return request.app.state.question_sources
 
 
-def get_draft_writing(request: Request) -> DraftWriting:
-    return request.app.state.draft_writing
+def get_question_writing(request: Request) -> QuestionWriting:
+    return request.app.state.question_writing
 
 
 def get_llm_provider(request: Request) -> LLMProvider:
     return request.app.state.llm_provider
 
 
-@draft_jobs_router.get("", response_model=DraftGenerationJobList)
-def list_document_draft_jobs(
+@question_jobs_router.get("", response_model=QuestionGenerationJobList)
+def list_document_question_jobs(
     project_id: str,
     document_id: str,
-    jobs: DraftGenerationJobRepository = Depends(get_draft_generation_job_repository),
+    jobs: QuestionGenerationJobRepository = Depends(get_question_generation_job_repository),
 ) -> dict:
     try:
         return {"items": authoring.list_generation_jobs(jobs, project_id, document_id)}
@@ -90,15 +90,15 @@ def list_document_draft_jobs(
         raise not_found_error(str(exc)) from exc
 
 
-@draft_jobs_router.post(
+@question_jobs_router.post(
     "/retry",
-    response_model=DraftGenerationJobList,
+    response_model=QuestionGenerationJobList,
     status_code=status.HTTP_202_ACCEPTED,
 )
-def retry_document_draft_jobs(
+def retry_document_question_jobs(
     project_id: str,
     document_id: str,
-    work: DraftGenerationWork = Depends(get_draft_generation_work),
+    work: QuestionGenerationWork = Depends(get_question_generation_work),
 ) -> dict:
     try:
         return {"items": authoring.retry_generation_jobs(work, project_id, document_id)}
@@ -106,16 +106,16 @@ def retry_document_draft_jobs(
         raise not_found_error(str(exc)) from exc
 
 
-@draft_jobs_router.delete("/{job_id}", response_model=DraftGenerationJobRead)
-def cancel_document_draft_job(
+@question_jobs_router.delete("/{job_id}", response_model=QuestionGenerationJobRead)
+def cancel_document_question_job(
     project_id: str,
     document_id: str,
     job_id: str,
-    jobs: DraftGenerationJobRepository = Depends(get_draft_generation_job_repository),
-) -> DraftGenerationJob:
+    jobs: QuestionGenerationJobRepository = Depends(get_question_generation_job_repository),
+) -> QuestionGenerationJob:
     try:
         return authoring.cancel_generation_job(jobs, project_id, document_id, job_id)
-    except DraftJobNotCancellableError as exc:
+    except QuestionJobNotCancellableError as exc:
         raise api_error(
             status.HTTP_409_CONFLICT,
             "operation_not_cancellable",
@@ -127,15 +127,15 @@ def cancel_document_draft_job(
 
 @manual_operations_router.post(
     "",
-    response_model=ManualDraftGenerationOperationRead,
+    response_model=ManualQuestionGenerationRead,
     status_code=status.HTTP_202_ACCEPTED,
 )
-def start_manual_draft_operation(
+def start_manual_question_generation(
     project_id: str,
     document_id: str,
-    payload: DraftGenerateRequest,
-    work: DraftGenerationWork = Depends(get_draft_generation_work),
-) -> ManualDraftOperation:
+    payload: QuestionGenerateRequest,
+    work: QuestionGenerationWork = Depends(get_question_generation_work),
+) -> ManualQuestionGeneration:
     try:
         return authoring.start_manual_generation(
             work,
@@ -150,14 +150,14 @@ def start_manual_draft_operation(
 
 @manual_operations_router.get(
     "/{operation_id}",
-    response_model=ManualDraftGenerationOperationRead,
+    response_model=ManualQuestionGenerationRead,
 )
-def get_manual_draft_operation(
+def get_manual_question_generation(
     project_id: str,
     document_id: str,
     operation_id: str,
-    work: DraftGenerationWork = Depends(get_draft_generation_work),
-) -> ManualDraftOperation:
+    work: QuestionGenerationWork = Depends(get_question_generation_work),
+) -> ManualQuestionGeneration:
     try:
         return authoring.view_manual_generation(work, project_id, document_id, operation_id)
     except NotFoundError as exc:
@@ -166,17 +166,17 @@ def get_manual_draft_operation(
 
 @manual_operations_router.delete(
     "/{operation_id}",
-    response_model=ManualDraftGenerationOperationRead,
+    response_model=ManualQuestionGenerationRead,
 )
-def cancel_manual_draft_operation(
+def cancel_manual_question_generation(
     project_id: str,
     document_id: str,
     operation_id: str,
-    work: DraftGenerationWork = Depends(get_draft_generation_work),
-) -> ManualDraftOperation:
+    work: QuestionGenerationWork = Depends(get_question_generation_work),
+) -> ManualQuestionGeneration:
     try:
         return authoring.cancel_manual_generation(work, project_id, document_id, operation_id)
-    except DraftJobNotCancellableError as exc:
+    except QuestionJobNotCancellableError as exc:
         raise api_error(
             status.HTTP_409_CONFLICT,
             "operation_not_cancellable",
@@ -186,20 +186,20 @@ def cancel_manual_draft_operation(
         raise not_found_error(str(exc)) from exc
 
 
-@documents_router.post("", response_model=QuestionDraftList, status_code=status.HTTP_201_CREATED)
-def generate_document_drafts(
+@documents_router.post("", response_model=QuestionList, status_code=status.HTTP_201_CREATED)
+def generate_document_questions(
     project_id: str,
     document_id: str,
-    payload: DraftGenerateRequest,
-    drafts: QuestionDraftRepository = Depends(get_question_draft_repository),
-    sources: DraftSources = Depends(get_draft_sources),
-    writing: DraftWriting = Depends(get_draft_writing),
+    payload: QuestionGenerateRequest,
+    questions: QuestionRepository = Depends(get_question_repository),
+    sources: QuestionSources = Depends(get_question_sources),
+    writing: QuestionWriting = Depends(get_question_writing),
     provider: LLMProvider = Depends(get_llm_provider),
 ) -> dict:
     try:
         return {
-            "items": authoring.generate_document_drafts(
-                drafts,
+            "items": authoring.generate_document_questions(
+                questions,
                 sources,
                 writing,
                 provider,
@@ -221,39 +221,39 @@ def generate_document_drafts(
         ) from exc
 
 
-@drafts_router.post("", response_model=QuestionDraftRead, status_code=status.HTTP_201_CREATED)
-def create_question_draft(
+@questions_router.post("", response_model=QuestionRead, status_code=status.HTTP_201_CREATED)
+def create_question(
     project_id: str,
-    payload: QuestionDraftCreate,
-    drafts: QuestionDraftRepository = Depends(get_question_draft_repository),
-) -> QuestionDraft:
+    payload: QuestionCreate,
+    questions: QuestionRepository = Depends(get_question_repository),
+) -> Question:
     try:
-        return authoring.write_draft(drafts, project_id, NewQuestionDraft(**payload.model_dump()))
+        return authoring.write_question(questions, project_id, NewQuestion(**payload.model_dump()))
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
     except ValidationError as exc:
         raise validation_error(str(exc)) from exc
 
 
-@drafts_router.get("", response_model=QuestionDraftList)
-def list_question_drafts(
+@questions_router.get("", response_model=QuestionList)
+def list_questions(
     project_id: str,
-    drafts: QuestionDraftRepository = Depends(get_question_draft_repository),
+    questions: QuestionRepository = Depends(get_question_repository),
 ) -> dict:
     try:
-        return {"items": authoring.list_drafts(drafts, project_id)}
+        return {"items": authoring.list_questions(questions, project_id)}
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
 
-@drafts_router.patch("/{draft_id}", response_model=QuestionDraftRead)
-def update_question_draft(
+@questions_router.patch("/{question_id}", response_model=QuestionRead)
+def update_question(
     project_id: str,
-    draft_id: str,
-    payload: QuestionDraftUpdate,
-    drafts: QuestionDraftRepository = Depends(get_question_draft_repository),
-) -> QuestionDraft:
+    question_id: str,
+    payload: QuestionUpdate,
+    questions: QuestionRepository = Depends(get_question_repository),
+) -> Question:
     try:
-        return authoring.edit_draft(drafts, project_id, draft_id, DraftEdit(**payload.model_dump()))
+        return authoring.edit_question(questions, project_id, question_id, QuestionEdit(**payload.model_dump()))
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc

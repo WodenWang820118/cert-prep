@@ -38,7 +38,7 @@ def _document(**changes: object) -> SourceDocument:
         extraction_warnings=None,
         failure_message=None,
         processed_page_count=1,
-        exam_item_count=0,
+        question_count=0,
         content_profile="unknown",
         classification_detail="",
         chunks_count=1,

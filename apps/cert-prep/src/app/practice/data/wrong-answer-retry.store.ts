@@ -89,7 +89,7 @@ export class WrongAnswerRetryStore {
           correctedAnswerKeyMessage(result.regraded_attempts),
         (signal) =>
           from(
-            this.api.updateQuestionDraft(
+            this.api.updateQuestion(
               project.id,
               questionId,
               // The AI rationale argued for the wrong key, so it is cleared with the correction.

@@ -293,4 +293,4 @@ def test_llm_http_evicted_ids_are_missing_while_database_keeps_history(llm_http)
     assert newest.status_code == 200
     assert newest.json()["kind"] == Kind.OLLAMA
     with app.state.database.connect() as connection:
-        assert connection.execute("SELECT COUNT(*) FROM runtime_installation_jobs").fetchone()[0] == 103
+        assert connection.execute("SELECT COUNT(*) FROM llm_installation_jobs").fetchone()[0] == 103

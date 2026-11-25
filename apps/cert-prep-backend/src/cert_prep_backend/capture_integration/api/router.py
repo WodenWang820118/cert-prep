@@ -75,7 +75,7 @@ from cert_prep_backend.capture_integration.application.ports import (
     CaptureEventSignal,
     CaptureFileStore,
     CaptureOperations,
-    CaptureQuestionDrafting,
+    CaptureQuestionGeneration,
     CaptureReviewEvents,
     CaptureReviewMaintenance,
     CaptureReviewStore,
@@ -231,8 +231,8 @@ def get_capture_event_signal(request: Request) -> CaptureEventSignal:
     return event_registry(request)
 
 
-def get_capture_question_drafting(request: Request) -> CaptureQuestionDrafting:
-    return request.app.state.draft_generation_work
+def get_capture_question_generation(request: Request) -> CaptureQuestionGeneration:
+    return request.app.state.question_generation_work
 
 
 class _OcrRuntime:
@@ -614,7 +614,7 @@ def commit_capture(
     maintenance: CaptureReviewMaintenance = Depends(get_capture_review_maintenance),
     work: CaptureBackgroundWork = Depends(get_capture_background_work),
     events: CaptureReviewEvents = Depends(get_capture_review_events),
-    drafts: CaptureQuestionDrafting = Depends(get_capture_question_drafting),
+    questions: CaptureQuestionGeneration = Depends(get_capture_question_generation),
 ) -> CaptureReviewOperationRead:
     require_capture_coordinator(request)
     capture_reviews.expire_capture_reviews(maintenance)
@@ -626,7 +626,7 @@ def commit_capture(
             workflow,
             work,
             events,
-            drafts,
+            questions,
             project_id=project_id,
             session_id=capture_id,
             candidate=commit_request.candidate,

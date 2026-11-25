@@ -56,7 +56,7 @@ export async function assertPublishedCaptureSurface(page: Page): Promise<void> {
   for (const statement of [
     'PDF and image sources are processed',
     'explicit OCR consent',
-    'Recordings are imported on the Build page.',
+    'Recordings are imported on the Questions page.',
   ]) {
     if (!copy.includes(statement)) {
       throw new Error(`${CAPTURE_RUNTIME_VERSION} host copy omitted: ${statement}`);

@@ -232,7 +232,11 @@ export async function runDocumentCancelRetryScenario({
     ),
     'canceled OCR chunks',
   );
+  const storedQuestionsBeforeCancel = numberField(partialDocument.question_count, 'question_count');
   assertCanceledDocumentIsEmpty(canceledDocument, canceledChunks.length);
+  if (numberField(canceledDocument.question_count, 'question_count') < storedQuestionsBeforeCancel) {
+    throw new Error('Canceled OCR lost stored questions.');
+  }
 
   const lateSamples = await stableJsonSamples(
     transport,
@@ -327,6 +331,7 @@ export async function runDocumentCancelRetryScenario({
       beforeCancel: {
         chunksCount: beforeChunks.length,
         nonZeroDerivedMetricCount: nonZeroDerivedMetricCount(partialDocument),
+        questionCount: storedQuestionsBeforeCancel,
       },
       afterCanceled: canceledDocumentMetrics(canceledDocument, canceledChunks.length),
       originalPdfRetryable: true,
@@ -415,7 +420,6 @@ function requireItems(
 function nonZeroDerivedMetricCount(document: Record<string, unknown>): number {
   const values = [
     document.processed_page_count,
-    document.exam_item_count,
   ];
   const count = values.filter(
     (value) => typeof value === 'number' && Number.isFinite(value) && value > 0,
@@ -434,7 +438,7 @@ function assertCanceledDocumentIsEmpty(
   if (
     metrics.hasText !== false ||
     Object.entries(metrics).some(
-      ([key, value]) => key !== 'hasText' && value !== 0,
+      ([key, value]) => key !== 'hasText' && key !== 'questionCount' && value !== 0,
     )
   ) {
     throw new Error('Canceled OCR retained chunks, text, or derived metrics.');
@@ -453,6 +457,6 @@ function canceledDocumentMetrics(
       document.processed_page_count,
       'processed_page_count',
     ),
-    examItemCount: numberField(document.exam_item_count, 'exam_item_count'),
+    questionCount: numberField(document.question_count, 'question_count'),
   };
 }

@@ -1,7 +1,7 @@
 import { inject, Injectable, signal } from '@angular/core';
 import { defer, from, of } from 'rxjs';
 import { DesktopRuntimeStore } from '../../runtime/data';
-import { DraftReviewStore } from '../../authoring/data';
+import { QuestionsStore } from '../../authoring/data';
 import { HealthStore } from '../../runtime/data';
 import { OperationStore } from '../data';
 import { PracticeStore } from '../../practice/data';
@@ -12,7 +12,7 @@ import { WrongAnswerRetryStore } from '../../practice/data';
 @Injectable({ providedIn: 'root' })
 export class WorkspaceFacade {
   private readonly desktopRuntime = inject(DesktopRuntimeStore);
-  private readonly drafts = inject(DraftReviewStore);
+  private readonly questionsStore = inject(QuestionsStore);
   private readonly health = inject(HealthStore);
   private readonly operations = inject(OperationStore);
   private readonly practice = inject(PracticeStore);
@@ -52,12 +52,12 @@ export class WorkspaceFacade {
   selectProject(projectId: string): void {
     this.projects.select(projectId);
     this.sourceImport.reset();
-    this.drafts.reset();
+    this.questionsStore.reset();
     this.practice.reset();
     this.review.reset();
 
     this.sourceImport.loadLatestDocument(projectId);
-    this.drafts.load(projectId);
+    this.questionsStore.load(projectId);
     this.review.load(projectId);
     this.practice.loadActiveSession(projectId);
     this.operations.status.set('Project loaded');

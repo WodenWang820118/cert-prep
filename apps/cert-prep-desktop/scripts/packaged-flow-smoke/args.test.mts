@@ -10,32 +10,32 @@ test('packaged flow smoke args validate numeric knobs', () => {
     '9555',
     '--llm-provider',
     'ollama',
-    '--streaming-draft-page-limit',
+    '--question-jobs-chunk-limit',
     '1',
-    '--streaming-draft-workers',
+    '--question-job-workers',
     '2',
-    '--wait-for-streaming-complete',
-    '--streaming-complete-timeout-ms',
+    '--wait-for-question-jobs',
+    '--question-jobs-complete-timeout-ms',
     '1234',
-    '--verify-streaming-practice-ready',
+    '--verify-generated-questions-practice-ready',
     '--app-data-dir',
     'tmp/baseline-app-data',
   ]);
 
   assert.equal(parsed.cdpPort, 9555);
   assert.equal(parsed.llmProvider, 'ollama');
-  assert.equal(parsed.streamingDraftPageLimit, 1);
-  assert.equal(parsed.streamingDraftWorkers, 2);
-  assert.equal(parsed.waitForStreamingComplete, true);
-  assert.equal(parsed.streamingCompleteTimeoutMs, 1234);
-  assert.equal(parsed.verifyStreamingPracticeReady, true);
+  assert.equal(parsed.questionJobsChunkLimit, 1);
+  assert.equal(parsed.questionJobWorkers, 2);
+  assert.equal(parsed.waitForQuestionJobs, true);
+  assert.equal(parsed.questionJobsCompleteTimeoutMs, 1234);
+  assert.equal(parsed.verifyGeneratedQuestionsPracticeReady, true);
   assert.match(parsed.appDataDir ?? '', /tmp[\\/]baseline-app-data$/);
   assert.throws(
-    () => parsePackagedFlowSmokeArgs(['--streaming-draft-page-limit', '0']),
+    () => parsePackagedFlowSmokeArgs(['--question-jobs-chunk-limit', '0']),
     /positive integer/,
   );
   assert.throws(
-    () => parsePackagedFlowSmokeArgs(['--streaming-complete-timeout-ms', '0']),
+    () => parsePackagedFlowSmokeArgs(['--question-jobs-complete-timeout-ms', '0']),
     /positive integer/,
   );
   assert.throws(
@@ -44,23 +44,23 @@ test('packaged flow smoke args validate numeric knobs', () => {
   );
 });
 
-test('packaged streaming baseline defaults to isolated output and app data', () => {
+test('packaged question generation baseline defaults to isolated output and app data', () => {
   const parsed = parsePackagedFlowSmokeArgs(
-    ['--wait-for-streaming-complete'],
+    ['--wait-for-question-jobs'],
     'C:\\workspace',
   );
 
-  assert.equal(parsed.waitForStreamingComplete, true);
-  assert.equal(parsed.verifyStreamingPracticeReady, false);
-  assert.equal(parsed.streamingCompleteTimeoutMs, 1_200_000);
+  assert.equal(parsed.waitForQuestionJobs, true);
+  assert.equal(parsed.verifyGeneratedQuestionsPracticeReady, false);
+  assert.equal(parsed.questionJobsCompleteTimeoutMs, 1_200_000);
   assert.match(
     parsed.outDir,
-    /tmp[\\/]cert-prep-desktop[\\/]packaged-streaming-baseline[\\/]/,
+    /tmp[\\/]cert-prep-desktop[\\/]packaged-question-generation-baseline[\\/]/,
   );
   assert.equal(parsed.appDataDir, `${parsed.outDir}\\app-data`);
 });
 
-test('packaged streaming production enables completion wait and production output root', () => {
+test('packaged question generation production enables completion wait and production output root', () => {
   const parsed = parsePackagedFlowSmokeArgs(
     ['--production-summary', '--allow-capture-chunk-variance'],
     'C:\\workspace',
@@ -68,12 +68,12 @@ test('packaged streaming production enables completion wait and production outpu
 
   assert.equal(parsed.productionSummary, true);
   assert.equal(parsed.allowCaptureChunkVariance, true);
-  assert.equal(parsed.waitForStreamingComplete, true);
-  assert.equal(parsed.verifyStreamingPracticeReady, false);
+  assert.equal(parsed.waitForQuestionJobs, true);
+  assert.equal(parsed.verifyGeneratedQuestionsPracticeReady, false);
   assert.equal(parsed.llmProvider, 'auto');
   assert.match(
     parsed.outDir,
-    /tmp[\\/]cert-prep-desktop[\\/]packaged-streaming-production[\\/]/,
+    /tmp[\\/]cert-prep-desktop[\\/]packaged-question-generation-production[\\/]/,
   );
   assert.equal(parsed.appDataDir, `${parsed.outDir}\\app-data`);
 });
@@ -93,17 +93,17 @@ test('packaged flow smoke rejects retired model and video arguments', () => {
   }
 });
 
-test('streaming practice-ready verification implies completion wait', () => {
+test('generated-question practice-ready verification implies completion wait', () => {
   const parsed = parsePackagedFlowSmokeArgs(
-    ['--verify-streaming-practice-ready'],
+    ['--verify-generated-questions-practice-ready'],
     'C:\\workspace',
   );
 
-  assert.equal(parsed.verifyStreamingPracticeReady, true);
-  assert.equal(parsed.waitForStreamingComplete, true);
+  assert.equal(parsed.verifyGeneratedQuestionsPracticeReady, true);
+  assert.equal(parsed.waitForQuestionJobs, true);
   assert.match(
     parsed.outDir,
-    /tmp[\\/]cert-prep-desktop[\\/]packaged-streaming-baseline[\\/]/,
+    /tmp[\\/]cert-prep-desktop[\\/]packaged-question-generation-baseline[\\/]/,
   );
 });
 

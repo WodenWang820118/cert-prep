@@ -193,7 +193,7 @@ export class CaptureWorkbenchPage implements AfterViewInit, OnDestroy {
     );
     this.registrationState.set('ready');
     this.status.set(
-      'Capture Workbench is ready. Capture Runtime can process PDF and image sources after the explicit OCR consent step. Import recordings on the Build page.',
+      'Capture Workbench is ready. Capture Runtime can process PDF and image sources after the explicit OCR consent step. Import recordings on the Questions page.',
     );
   }
 

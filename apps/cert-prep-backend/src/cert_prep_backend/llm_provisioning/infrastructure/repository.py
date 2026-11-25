@@ -122,7 +122,7 @@ class LLMInstallationJobRepository:
                 # in the same transaction and before retention trimming.
                 interrupted = connection.execute(
                     """
-                    SELECT * FROM runtime_installation_jobs
+                    SELECT * FROM llm_installation_jobs
                     WHERE status IN ('queued', 'running', 'cancel_requested')
                     """
                 ).fetchall()
@@ -131,7 +131,7 @@ class LLMInstallationJobRepository:
                     self._write_job(connection, job.recover_after_restart(now=now))
                 rows = connection.execute(
                     """
-                    SELECT * FROM runtime_installation_jobs
+                    SELECT * FROM llm_installation_jobs
                     ORDER BY updated_at DESC, created_at DESC, id DESC
                     LIMIT ?
                     """,
@@ -179,7 +179,7 @@ class LLMInstallationJobRepository:
     def _write_job(connection: sqlite3.Connection, job: LLMInstallationJob) -> None:
         connection.execute(
             """
-            INSERT INTO runtime_installation_jobs(
+            INSERT INTO llm_installation_jobs(
                 id, kind, provider, model, status, phase, cancellable,
                 detail, completed, total, error, created_at, updated_at,
                 commit_started_at

@@ -116,7 +116,7 @@ test('acceptance persistence omits private fixture basenames from manifests and 
       'cert-prep',
       'run-private-fixture',
     );
-    const privateFixtureName = 'private-exam-2026.pdf';
+    const privateFixtureName = 'private-study-material.pdf';
     const sourceHash = 'a'.repeat(64);
     const sourceSuite = {
       pdf: {
@@ -152,8 +152,8 @@ test('acceptance persistence omits private fixture basenames from manifests and 
       join(artifactRoot, 'acceptance-manifest.json'),
       'utf8',
     );
-    assert.doesNotMatch(sourceSuiteText, /private-exam-2026\.pdf/u);
-    assert.doesNotMatch(manifestText, /private-exam-2026\.pdf/u);
+    assert.doesNotMatch(sourceSuiteText, /private-study-material\.pdf/u);
+    assert.doesNotMatch(manifestText, /private-study-material\.pdf/u);
     const manifest = JSON.parse(manifestText) as {
       fixture?: unknown;
       fixtures?: { pdf?: { fixture?: unknown } };

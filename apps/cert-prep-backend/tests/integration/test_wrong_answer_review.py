@@ -165,12 +165,12 @@ def test_wrong_answer_review_uses_latest_attempt_session_snapshot(
     assert completed_old_session.status_code == 201
 
     updated = client.patch(
-        f"/projects/{project_id}/question-drafts/{question['id']}",
+        f"/projects/{project_id}/questions/{question['id']}",
         headers=auth_headers,
         json={
             "choices": ["Rotate keys after launch", "Allow unrestricted access"],
             "answer": "Rotate keys after launch",
-            "rationale": "The live draft was edited after session creation.",
+            "rationale": "The live question was edited after session creation.",
         },
     )
     assert updated.status_code == 200
@@ -206,7 +206,7 @@ def test_wrong_answer_review_uses_latest_attempt_session_snapshot(
     assert items[0]["attempt_id"] == newer_wrong.json()["id"]
     assert items[0]["correct_answer"] == "Use least privilege"
 
-def test_wrong_answers_do_not_join_question_drafts_across_projects(
+def test_wrong_answers_do_not_join_questions_across_projects(
     client: TestClient, auth_headers
 ) -> None:
     owner_project_id = _create_project(client, auth_headers)

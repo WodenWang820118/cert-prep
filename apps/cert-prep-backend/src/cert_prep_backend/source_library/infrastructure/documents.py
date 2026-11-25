@@ -121,23 +121,23 @@ def get_source_file(db: Database, project_id: str, document_id: str) -> SourceFi
     )
 
 
-def update_exam_state(
+def update_question_count(
     db: Database,
     *,
     project_id: str,
     document_id: str,
     status: str,
-    exam_item_count: int,
+    question_count: int,
 ) -> SourceDocument:
-    """Update mock-exam generation state on a source document."""
+    """Update question generation state on a source document."""
 
     with db.connect() as connection:
-        set_exam_state(
+        set_question_count(
             connection,
             project_id=project_id,
             document_id=document_id,
             status=status,
-            exam_item_count=exam_item_count,
+            question_count=question_count,
         )
         row = document_query(connection, project_id, document_id)
     if row is None:
@@ -145,15 +145,15 @@ def update_exam_state(
     return document_from_row(row)
 
 
-def set_exam_state(
+def set_question_count(
     connection: Connection,
     *,
     project_id: str,
     document_id: str,
     status: str,
-    exam_item_count: int,
+    question_count: int,
 ) -> None:
-    """Store the document's status and draft count using the caller's transaction.
+    """Store the document's status and question count using the caller's transaction.
 
     A ready document has no failure message. A document that becomes no_text_detected gets
     Source Library's no-text reason; one that already was keeps the reason it has. Extraction
@@ -162,7 +162,7 @@ def set_exam_state(
     connection.execute(
         """
         UPDATE documents
-        SET status = :status, exam_item_count = :exam_item_count,
+        SET status = :status, question_count = :question_count,
             failure_message = CASE
                 WHEN :status = 'ready' THEN NULL
                 WHEN :status = 'no_text_detected' AND status = 'no_text_detected'
@@ -175,7 +175,7 @@ def set_exam_state(
         """,
         {
             "status": status,
-            "exam_item_count": exam_item_count,
+            "question_count": question_count,
             "no_text_reason": NO_TEXT_DETECTED_MESSAGE,
             "updated_at": utc_now(),
             "project_id": project_id,

@@ -74,13 +74,13 @@ from cert_prep_backend.ai_providers.infrastructure.ollama_server import (
     ollama_server_coordinator_from_settings,
 )
 from cert_prep_backend.ai_providers.infrastructure.provider import lazy_provider_from_settings
-from cert_prep_backend.authoring.infrastructure.draft_writing import ProviderDraftWriting
-from cert_prep_backend.authoring.infrastructure.import_drafting import ImportedDocumentDrafts
-from cert_prep_backend.authoring.infrastructure.sources import SourceLibraryDraftSources
+from cert_prep_backend.authoring.infrastructure.question_writing import ProviderQuestionWriting
+from cert_prep_backend.authoring.infrastructure.import_questions import ImportedDocumentQuestionGeneration
+from cert_prep_backend.authoring.infrastructure.sources import SourceLibraryQuestionSources
 from cert_prep_backend.authoring.infrastructure.sudachi_reading_lexicon import SudachiReadingLexicon
-from cert_prep_backend.authoring.infrastructure.streaming import (
-    StreamingDraftGenerationManager,
-    StreamingDraftGenerationWork,
+from cert_prep_backend.authoring.infrastructure.question_jobs import (
+    QuestionJobScheduler,
+    QuestionJobWork,
 )
 from cert_prep_backend.llm_provisioning.application import use_cases as llm_installations
 from cert_prep_backend.source_library.application import use_cases as source_library
@@ -102,14 +102,14 @@ from cert_prep_backend.llm_provisioning.api import router as llm_provisioning
 from cert_prep_backend.llm_provisioning.api import (
     operation_events as llm_installation_events,
 )
-from cert_prep_backend.authoring.api import router as drafts
-from cert_prep_backend.authoring.api import operation_events as draft_generation_events
+from cert_prep_backend.authoring.api import router as questions
+from cert_prep_backend.authoring.api import operation_events as question_generation_events
 from cert_prep_backend.practice.api import router as practice
 from cert_prep_backend.bootstrap.authoring_links import (
     authoring_documents,
-    bind_document_exam_state,
-    draft_generation_job_repository,
-    question_draft_repository,
+    bind_document_question_count,
+    question_generation_job_repository,
+    question_repository,
 )
 from cert_prep_backend.bootstrap.capture_links import (
     bind_capture_review_commit,
@@ -146,7 +146,7 @@ def create_app(
     llm_installation_manager: LLMInstallation | None = None,
     llm_installation_async_jobs: bool = True,
     document_processing_async_jobs: bool = True,
-    streaming_draft_generation_async_jobs: bool = True,
+    background_question_jobs: bool = True,
     capture_runtime_client: CaptureRuntimeClient | None = None,
 ) -> FastAPI:
     app_settings = settings or Settings()
@@ -170,7 +170,7 @@ def create_app(
                     extra={"operation_ids": close_result.unresolved_operation_ids},
                 )
             llm_installations.stop_llm_installations(app.state.llm_installation_manager)
-            app.state.streaming_draft_generation_manager.close()
+            app.state.question_job_scheduler.close()
             llm_provider_close = getattr(app.state.llm_provider, "close", None)
             if callable(llm_provider_close):
                 llm_provider_close()
@@ -289,31 +289,31 @@ def create_app(
     app.state.document_processing_async_jobs = document_processing_async_jobs
     app.state.llm_installation_async_jobs = llm_installation_async_jobs
     reading_lexicon = SudachiReadingLexicon() if app_settings.reading_solver_enabled else None
-    app.state.draft_sources = SourceLibraryDraftSources(app.state.document_repository)
-    app.state.streaming_draft_generation_manager = StreamingDraftGenerationManager(
+    app.state.question_sources = SourceLibraryQuestionSources(app.state.document_repository)
+    app.state.question_job_scheduler = QuestionJobScheduler(
         settings=app_settings,
         provider=app.state.llm_provider,
-        async_jobs=streaming_draft_generation_async_jobs,
+        async_jobs=background_question_jobs,
         reading_lexicon=reading_lexicon,
-        exam_state=bind_document_exam_state(app.state.database),
-        sources=app.state.draft_sources,
+        question_count=bind_document_question_count(app.state.database),
+        sources=app.state.question_sources,
         projects=authoring_projects(app.state.database),
         documents=authoring_documents(app.state.database),
     )
-    app.state.streaming_draft_generation_manager.recover_jobs(app.state.database)
-    app.state.question_draft_repository = question_draft_repository(app.state.database)
-    app.state.draft_generation_job_repository = draft_generation_job_repository(
+    app.state.question_job_scheduler.recover_jobs(app.state.database)
+    app.state.question_repository = question_repository(app.state.database)
+    app.state.question_generation_job_repository = question_generation_job_repository(
         app.state.database
     )
-    app.state.draft_generation_work = StreamingDraftGenerationWork(
-        app.state.streaming_draft_generation_manager, app.state.database
+    app.state.question_generation_work = QuestionJobWork(
+        app.state.question_job_scheduler, app.state.database
     )
-    app.state.draft_writing = ProviderDraftWriting(reading_lexicon=reading_lexicon)
-    app.state.imported_document_drafting = ImportedDocumentDrafts(
-        work=app.state.draft_generation_work,
-        drafts=app.state.question_draft_repository,
-        sources=app.state.draft_sources,
-        writing=app.state.draft_writing,
+    app.state.question_writing = ProviderQuestionWriting(reading_lexicon=reading_lexicon)
+    app.state.imported_question_generation = ImportedDocumentQuestionGeneration(
+        work=app.state.question_generation_work,
+        questions=app.state.question_repository,
+        sources=app.state.question_sources,
+        writing=app.state.question_writing,
         model=app.state.llm_provider,
         settings=app_settings,
     )
@@ -392,10 +392,10 @@ def create_app(
     app.include_router(projects.router, dependencies=protected_dependencies)
     app.include_router(documents.router, dependencies=protected_dependencies)
     app.include_router(documents.operations_router, dependencies=protected_dependencies)
-    app.include_router(drafts.documents_router, dependencies=protected_dependencies)
-    app.include_router(drafts.draft_jobs_router, dependencies=protected_dependencies)
-    app.include_router(drafts.manual_operations_router, dependencies=protected_dependencies)
-    app.include_router(drafts.drafts_router, dependencies=protected_dependencies)
+    app.include_router(questions.documents_router, dependencies=protected_dependencies)
+    app.include_router(questions.question_jobs_router, dependencies=protected_dependencies)
+    app.include_router(questions.manual_operations_router, dependencies=protected_dependencies)
+    app.include_router(questions.questions_router, dependencies=protected_dependencies)
     app.include_router(practice.router, dependencies=protected_dependencies)
     app.include_router(llm.router, dependencies=protected_dependencies)
     app.include_router(llm_provisioning.router, dependencies=protected_dependencies)
@@ -403,7 +403,7 @@ def create_app(
     app.include_router(capture_workbench.router, dependencies=protected_dependencies)
     # The operation event streams keep their place at the end of the API (D6).
     app.include_router(document_operation_events.router, dependencies=protected_dependencies)
-    app.include_router(draft_generation_events.router, dependencies=protected_dependencies)
+    app.include_router(question_generation_events.router, dependencies=protected_dependencies)
     app.include_router(llm_installation_events.router, dependencies=protected_dependencies)
 
     return app

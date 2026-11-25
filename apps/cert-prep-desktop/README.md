@@ -7,6 +7,14 @@
 Workbench smoke are real packaged application journeys. They must finish with zero
 owned process, listener, and app-data residue.
 
+Packaged-flow smoke can wait for background question jobs with
+`--wait-for-question-jobs`. Set the wait timeout with
+`--question-jobs-complete-timeout-ms`, cap the processed chunks with
+`--question-jobs-chunk-limit`, and set the worker count with
+`--question-job-workers`. The last two flags set
+`CERT_PREP_QUESTION_JOBS_CHUNK_LIMIT` and `CERT_PREP_QUESTION_JOB_WORKERS`
+for the launched app.
+
 
 # Integration desktop tests
 

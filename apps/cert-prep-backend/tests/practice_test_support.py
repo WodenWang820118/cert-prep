@@ -34,14 +34,13 @@ def _generate_playable_question(
     document_id: str,
 ) -> dict:
     response = client.post(
-        f"/projects/{project_id}/documents/{document_id}/drafts",
+        f"/projects/{project_id}/documents/{document_id}/questions",
         headers=auth_headers,
         json={"limit": 1, "strategy": "hybrid_reasoning"},
     )
     assert response.status_code == 201
-    draft = response.json()["items"][0]
-    assert draft["status"] == "approved"
-    return draft
+    authored_question = response.json()["items"][0]
+    return authored_question
 
 def _create_manual_question(
     client: TestClient,
@@ -64,7 +63,7 @@ def _create_manual_question(
     assert chunks_response.status_code == 200
     chunk = chunks_response.json()["items"][0]
     created = client.post(
-        f"/projects/{project_id}/question-drafts",
+        f"/projects/{project_id}/questions",
         headers=auth_headers,
         json={
             "question": question,
@@ -88,7 +87,6 @@ def _create_manual_question(
         },
     )
     assert created.status_code == 201
-    assert created.json()["status"] == "approved"
     return created.json()
 
 class UnavailableExplanationProvider:
@@ -104,5 +102,5 @@ class UnavailableExplanationProvider:
             unavailable_reason="provider_unavailable",
         )
 
-    def generate_drafts(self, chunks, limit):
-        raise AssertionError("explanation fallback must not generate drafts")
+    def write_questions(self, chunks, limit):
+        raise AssertionError("explanation fallback must not generate questions")

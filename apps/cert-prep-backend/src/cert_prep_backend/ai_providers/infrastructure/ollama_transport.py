@@ -38,8 +38,8 @@ if TYPE_CHECKING:
     from cert_prep_ollama.server_coordinator import OllamaServerCoordinator
 
 
-STREAMING_PREWARM_KEEP_ALIVE = DEFAULT_KEEP_ALIVE
-STREAMING_RELEASE_KEEP_ALIVE = 0
+PREWARM_KEEP_ALIVE = DEFAULT_KEEP_ALIVE
+RELEASE_AFTER_JOB_KEEP_ALIVE = 0
 T = TypeVar("T")
 _LOGGER = logging.getLogger(__name__)
 
@@ -78,8 +78,8 @@ class OllamaProvider:
     def starts_on_generation(self) -> bool:
         return False
 
-    def streaming_generation_kwargs(self) -> dict[str, Any]:
-        return {"keep_alive": STREAMING_RELEASE_KEEP_ALIVE}
+    def background_generation_kwargs(self) -> dict[str, Any]:
+        return {"keep_alive": RELEASE_AFTER_JOB_KEEP_ALIVE}
 
     def reset_generation_attribution(self) -> None:
         self._generation_state.model = None
@@ -208,7 +208,7 @@ class OllamaProvider:
         json_schema: Mapping[str, Any],
         num_ctx: int = 8192,
         num_predict: int = 4096,
-        keep_alive: str | float | int | None = STREAMING_PREWARM_KEEP_ALIVE,
+        keep_alive: str | float | int | None = PREWARM_KEEP_ALIVE,
     ) -> str:
         """Return one schema-constrained response from the existing Ollama provider verbatim."""
 
@@ -240,7 +240,7 @@ class OllamaProvider:
         *,
         num_ctx: int,
         num_predict: int,
-        keep_alive: str | float | int | None = STREAMING_PREWARM_KEEP_ALIVE,
+        keep_alive: str | float | int | None = PREWARM_KEEP_ALIVE,
     ) -> object:
         return _reply_content(
             self._client.chat(

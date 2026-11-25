@@ -127,10 +127,10 @@ export class SourceImportStore {
   /**
    * The selected project's latest source document activity: an upload, a
    * document selection (re-selecting the same document included) or a
-   * document becoming active (an upload can finish after the first draft
+   * document becoming active (an upload can finish after the first question
    * query ran). Source Library is upstream of Question Authoring and does not
-   * know about drafts; Authoring's `DraftReviewStore` reloads the project's
-   * drafts on every activity (D19).
+   * know about questions; Authoring's `QuestionsStore` reloads the project's
+   * questions on every activity (D19).
    */
   readonly documentActivity = this.latestDocumentActivity.asReadonly();
   readonly selectedFiles = computed(() =>
@@ -209,7 +209,7 @@ export class SourceImportStore {
       ) &&
       !this.isUploading(),
   );
-  readonly canGenerateDrafts = computed(() => {
+  readonly canGenerateQuestions = computed(() => {
     const document = this.activeDocument();
     return (
       this.projects.selectedProject() !== null &&

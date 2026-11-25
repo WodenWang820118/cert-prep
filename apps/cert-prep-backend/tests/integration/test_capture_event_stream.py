@@ -214,7 +214,7 @@ def _client(tmp_path: Path, runtime) -> TestClient:
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
             document_processing_async_jobs=False,
-            streaming_draft_generation_async_jobs=False,
+            background_question_jobs=False,
         )
     )
 

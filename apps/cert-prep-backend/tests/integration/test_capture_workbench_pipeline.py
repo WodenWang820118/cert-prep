@@ -62,7 +62,7 @@ from capture_runtime_client import (
 from cert_prep_backend.capture_integration.infrastructure.host_models import RuntimeReady
 from cert_prep_backend.capture_integration.api.router import CaptureRuntimeEventRegistry
 from document_test_helpers import _create_project
-from document_test_llm_fakes import MockExamProvider
+from document_test_llm_fakes import FakeQuestionWriter
 
 
 NOW = datetime(2026, 7, 20, 5, 0, tzinfo=UTC)
@@ -210,7 +210,7 @@ def test_public_capture_publication_rejects_noncanonical_write_provenance(
     app = create_app(
         settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
         document_processing_async_jobs=False,
-        streaming_draft_generation_async_jobs=False,
+        background_question_jobs=False,
     )
     with TestClient(app) as client:
         fixture = _attach_public_capture(app, client, tmp_path, engine=engine)
@@ -243,7 +243,7 @@ def test_public_capture_publication_maps_exact_producer_engine_to_durable_method
     app = create_app(
         settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
         document_processing_async_jobs=False,
-        streaming_draft_generation_async_jobs=False,
+        background_question_jobs=False,
     )
     with TestClient(app) as client:
         fixture = _attach_public_capture(app, client, tmp_path)
@@ -278,7 +278,7 @@ def test_public_capture_publication_rejects_projection_engine_mismatch(
     app = create_app(
         settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
         document_processing_async_jobs=False,
-        streaming_draft_generation_async_jobs=False,
+        background_question_jobs=False,
     )
     with TestClient(app) as client:
         fixture = _attach_public_capture(app, client, tmp_path)
@@ -316,7 +316,7 @@ def test_public_capture_publication_rejects_page_provenance_mismatch_without_wri
     app = create_app(
         settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
         document_processing_async_jobs=False,
-        streaming_draft_generation_async_jobs=False,
+        background_question_jobs=False,
     )
     with TestClient(app) as client:
         fixture = _attach_public_capture(app, client, tmp_path)
@@ -351,7 +351,7 @@ def test_public_capture_publication_rejects_unresolved_page_without_writes(
     app = create_app(
         settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
         document_processing_async_jobs=False,
-        streaming_draft_generation_async_jobs=False,
+        background_question_jobs=False,
     )
     with TestClient(app) as client:
         fixture = _attach_public_capture(app, client, tmp_path)
@@ -387,7 +387,7 @@ def test_public_capture_publication_uses_projection_validation_for_embedded_mode
     app = create_app(
         settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
         document_processing_async_jobs=False,
-        streaming_draft_generation_async_jobs=False,
+        background_question_jobs=False,
     )
     with TestClient(app) as client:
         fixture = _attach_public_capture(app, client, tmp_path)
@@ -415,7 +415,7 @@ def test_legacy_text_layer_rows_remain_read_compatible(tmp_path: Path) -> None:
     app = create_app(
         settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
         document_processing_async_jobs=False,
-        streaming_draft_generation_async_jobs=False,
+        background_question_jobs=False,
     )
     with TestClient(app) as client:
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
@@ -525,7 +525,7 @@ def test_runtime_event_registry_wakes_listeners_without_retaining_capture_identi
     )
 
 
-class EchoCaptureProvider(MockExamProvider):
+class EchoCaptureProvider(FakeQuestionWriter):
     provider = "existing-cert-provider"
     model = "cert-model"
 
@@ -1084,7 +1084,7 @@ def test_upload_delegates_to_capture_runtime_and_atomically_maps_existing_chunks
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
             document_processing_async_jobs=False,
-            streaming_draft_generation_async_jobs=False,
+            background_question_jobs=False,
         )
     ) as client:
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
@@ -1127,7 +1127,7 @@ def test_image_upload_uses_the_same_capture_runtime_host_path(tmp_path: Path) ->
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
             document_processing_async_jobs=False,
-            streaming_draft_generation_async_jobs=False,
+            background_question_jobs=False,
         )
     ) as client:
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
@@ -1163,7 +1163,7 @@ def test_review_image_preserves_canonical_jpeg_source_identity(tmp_path: Path) -
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
             document_processing_async_jobs=False,
-            streaming_draft_generation_async_jobs=False,
+            background_question_jobs=False,
         )
     ) as client:
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
@@ -1214,7 +1214,7 @@ def test_audio_upload_uses_capture_time_provenance_without_cert_whisper(
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
             document_processing_async_jobs=False,
-            streaming_draft_generation_async_jobs=False,
+            background_question_jobs=False,
         )
     ) as client:
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
@@ -1270,7 +1270,7 @@ def test_review_result_fails_closed_when_runtime_replay_violates_contract(
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
             document_processing_async_jobs=False,
-            streaming_draft_generation_async_jobs=False,
+            background_question_jobs=False,
         )
     ) as client:
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
@@ -1374,7 +1374,7 @@ def test_core_only_ocr_and_audio_sources_fail_before_sidecar_dispatch(
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
             document_processing_async_jobs=False,
-            streaming_draft_generation_async_jobs=False,
+            background_question_jobs=False,
         )
     ) as client:
         headers = {
@@ -1483,7 +1483,7 @@ def test_a_failed_capture_stores_and_shows_cert_text_and_logs_the_runtime_text(
             settings=settings,
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
-            streaming_draft_generation_async_jobs=False,
+            background_question_jobs=False,
         )
     ) as client:
         auth = {"Authorization": f"Bearer {AUTH_TOKEN}"}
@@ -1618,7 +1618,7 @@ def test_a_review_start_without_a_capture_code_keeps_the_generic_message(
         llm_provider=EchoCaptureProvider(),
         capture_runtime_client=CompletedBeforeStructuringRuntime(error=attached_error),
         document_processing_async_jobs=False,
-        streaming_draft_generation_async_jobs=False,
+        background_question_jobs=False,
     )
 
     error, last_event_sequence = _start_review_capture_until_failed(app, "review-no-code")
@@ -1645,7 +1645,7 @@ def test_a_direct_upload_completed_before_structuring_keeps_the_source_kind_mess
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=CompletedBeforeStructuringRuntime(),
             document_processing_async_jobs=False,
-            streaming_draft_generation_async_jobs=False,
+            background_question_jobs=False,
         ),
         raise_server_exceptions=False,
     ) as client:
@@ -1676,7 +1676,7 @@ def test_a_failed_review_start_stores_cert_text_and_logs_the_runtime_text_once(
         llm_provider=EchoCaptureProvider(),
         capture_runtime_client=FailingCaptureRuntime("ocr_page_failed"),
         document_processing_async_jobs=False,
-        streaming_draft_generation_async_jobs=False,
+        background_question_jobs=False,
     )
 
     error, _sequence = _start_review_capture_until_failed(app, "review-runtime-text")
@@ -1698,7 +1698,7 @@ def test_a_synchronous_upload_without_text_returns_its_document(tmp_path: Path) 
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=FailingCaptureRuntime("no_text_detected"),
             document_processing_async_jobs=False,
-            streaming_draft_generation_async_jobs=False,
+            background_question_jobs=False,
         )
     ) as client:
         auth = {"Authorization": f"Bearer {AUTH_TOKEN}"}
@@ -1731,7 +1731,7 @@ def test_pending_host_snapshot_does_not_expose_runtime_terminal_state(
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
             document_processing_async_jobs=False,
-            streaming_draft_generation_async_jobs=False,
+            background_question_jobs=False,
         )
     ) as client:
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
@@ -1803,7 +1803,7 @@ def test_review_capture_pauses_before_persistence_and_applies_confirmed_overlay(
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
             document_processing_async_jobs=False,
-            streaming_draft_generation_async_jobs=False,
+            background_question_jobs=False,
         )
     ) as client:
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
@@ -1973,7 +1973,7 @@ def test_host_events_wait_for_durable_commit_before_emitting_terminal(
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
             document_processing_async_jobs=False,
-            streaming_draft_generation_async_jobs=False,
+            background_question_jobs=False,
         )
     ) as client:
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
@@ -2135,7 +2135,7 @@ def test_capture_awaits_structuring_only_once_its_review_can_be_confirmed(
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
             document_processing_async_jobs=False,
-            streaming_draft_generation_async_jobs=False,
+            background_question_jobs=False,
         )
     ) as client:
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
@@ -2212,7 +2212,7 @@ def test_review_capture_events_proxy_replays_with_host_identity_without_cancel(
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
             document_processing_async_jobs=False,
-            streaming_draft_generation_async_jobs=False,
+            background_question_jobs=False,
         )
     ) as client:
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
@@ -2258,7 +2258,7 @@ def test_review_capture_events_reject_invalid_cursor_before_streaming(
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
             document_processing_async_jobs=False,
-            streaming_draft_generation_async_jobs=False,
+            background_question_jobs=False,
         )
     ) as client:
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
@@ -2292,7 +2292,7 @@ def test_review_capture_events_treat_empty_cursor_as_initial_subscription(
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
             document_processing_async_jobs=False,
-            streaming_draft_generation_async_jobs=False,
+            background_question_jobs=False,
         )
     ) as client:
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
@@ -2326,7 +2326,7 @@ def test_terminal_event_replays_monotonically_after_result_deletes_runtime(
             llm_provider=EchoCaptureProvider(),
             capture_runtime_client=runtime,
             document_processing_async_jobs=False,
-            streaming_draft_generation_async_jobs=False,
+            background_question_jobs=False,
         )
     ) as client:
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
@@ -2430,7 +2430,7 @@ def test_pdf_capture_requirement_unavailable_reports_ocr_required_failure(
         llm_provider=EchoCaptureProvider(),
         capture_runtime_client=runtime,
         document_processing_async_jobs=False,
-        streaming_draft_generation_async_jobs=False,
+        background_question_jobs=False,
     )
     operation_id = "requirement-unavailable-pdf"
     with TestClient(app) as client:
@@ -2482,7 +2482,7 @@ def test_expired_review_is_canceled_and_terminal_cancel_is_idempotent(tmp_path: 
         llm_provider=EchoCaptureProvider(),
         capture_runtime_client=runtime,
         document_processing_async_jobs=False,
-        streaming_draft_generation_async_jobs=False,
+        background_question_jobs=False,
     )
     with TestClient(app) as client:
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
@@ -2533,7 +2533,7 @@ def test_confirmation_request_is_atomic_idempotent_and_rejects_divergent_replay(
         llm_provider=EchoCaptureProvider(),
         capture_runtime_client=runtime,
         document_processing_async_jobs=True,
-        streaming_draft_generation_async_jobs=False,
+        background_question_jobs=False,
     )
     with TestClient(app) as client:
         headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
@@ -2617,7 +2617,7 @@ def test_failed_capture_upload_finishes_claimed_operation(tmp_path: Path) -> Non
         llm_provider=EchoCaptureProvider(),
         capture_runtime_client=runtime,
         document_processing_async_jobs=False,
-        streaming_draft_generation_async_jobs=False,
+        background_question_jobs=False,
     )
     operation_id = "oversized-capture"
     with TestClient(app) as client:
@@ -2650,7 +2650,7 @@ def test_same_operation_id_cannot_start_two_capture_uploads(tmp_path: Path) -> N
         llm_provider=EchoCaptureProvider(),
         capture_runtime_client=runtime,
         document_processing_async_jobs=False,
-        streaming_draft_generation_async_jobs=False,
+        background_question_jobs=False,
     )
     with TestClient(app) as client:
         auth_headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}

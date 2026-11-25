@@ -2,7 +2,7 @@ import type { Route } from '@angular/router';
 import { BackendRuntimeReadyGuard } from './runtime-ready.guard';
 
 export const appRoutes: Route[] = [
-  { path: '', pathMatch: 'full', redirectTo: 'build' },
+  { path: '', pathMatch: 'full', redirectTo: 'questions' },
   {
     path: 'capture',
     loadComponent: () =>
@@ -10,11 +10,11 @@ export const appRoutes: Route[] = [
     title: 'Capture Workbench - Cert Prep',
   },
   {
-    path: 'build',
+    path: 'questions',
     canActivate: [BackendRuntimeReadyGuard],
     loadComponent: () =>
-      import('./build.page').then((m) => m.BuildPage),
-    title: 'Build - Cert Prep',
+      import('./questions.page').then((m) => m.QuestionsPage),
+    title: 'Questions - Cert Prep',
   },
   {
     path: 'whole-source',
@@ -60,5 +60,5 @@ export const appRoutes: Route[] = [
       ),
     title: 'Wrong-answer retry - Cert Prep',
   },
-  { path: '**', redirectTo: 'build' },
+  { path: '**', redirectTo: 'questions' },
 ];

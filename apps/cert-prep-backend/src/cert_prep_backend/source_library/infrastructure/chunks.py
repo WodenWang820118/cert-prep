@@ -30,7 +30,7 @@ def list_chunks(db: Database, project_id: str, document_id: str) -> list[Documen
 
 
 def get_source_chunks(db: Database, project_id: str, document_id: str) -> list[DocumentChunk]:
-    """Return chunks in the shape consumed by mock-exam draft generation."""
+    """Return chunks in the shape consumed by question generation."""
 
     return list_chunks(db, project_id, document_id)
 

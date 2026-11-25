@@ -45,7 +45,7 @@ def test_project_scoped_records_are_invisible_to_other_projects(
         client.get(f"/projects/{other_project_id}/documents", headers=auth_headers)
     ) == []
     assert _items(
-        client.get(f"/projects/{other_project_id}/question-drafts", headers=auth_headers)
+        client.get(f"/projects/{other_project_id}/questions", headers=auth_headers)
     ) == []
     assert _items(
         client.get(f"/projects/{other_project_id}/wrong-answers", headers=auth_headers)
@@ -73,7 +73,7 @@ def test_project_scoped_records_are_invisible_to_other_projects(
     )
     _assert_not_found(
         client.post(
-            f"/projects/{other_project_id}/documents/{owner_document_id}/drafts",
+            f"/projects/{other_project_id}/documents/{owner_document_id}/questions",
             headers=auth_headers,
             json={"limit": 1},
         ),
@@ -81,7 +81,7 @@ def test_project_scoped_records_are_invisible_to_other_projects(
     )
     _assert_not_found(
         client.post(
-            f"/projects/{other_project_id}/question-drafts",
+            f"/projects/{other_project_id}/questions",
             headers=auth_headers,
             json=_question_payload(owner_document_id, owner_chunk),
         ),
@@ -89,11 +89,11 @@ def test_project_scoped_records_are_invisible_to_other_projects(
     )
     _assert_not_found(
         client.patch(
-            f"/projects/{other_project_id}/question-drafts/{owner_question['id']}",
+            f"/projects/{other_project_id}/questions/{owner_question['id']}",
             headers=auth_headers,
             json={"question": "Cross-project edit?"},
         ),
-        "Question draft not found.",
+        "Question not found.",
     )
     _assert_not_found(
         client.post(
@@ -230,12 +230,11 @@ def _create_question(
     question: str,
 ) -> dict:
     response = client.post(
-        f"/projects/{project_id}/question-drafts",
+        f"/projects/{project_id}/questions",
         headers=auth_headers,
         json=_question_payload(document_id, chunk, question=question),
     )
     assert response.status_code == 201
-    assert response.json()["status"] == "approved"
     return response.json()
 
 

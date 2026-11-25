@@ -86,6 +86,11 @@ test('OCR scenario proves partial cleanup, stable canceled state, distinct retry
       .chunksCount,
     0,
   );
+  assert.equal(
+    (result.partialDataRemoved.afterCanceled as Record<string, unknown>)
+      .questionCount,
+    1,
+  );
   assert.deepEqual(result.cancelVsCompleteRace.lateTerminalStatuses, [
     'canceled',
     'canceled',
@@ -234,7 +239,7 @@ function document(
     chunks_count: chunks,
     has_text: hasText,
     processed_page_count: partial,
-    exam_item_count: partial,
+    question_count: 1,
   };
 }
 

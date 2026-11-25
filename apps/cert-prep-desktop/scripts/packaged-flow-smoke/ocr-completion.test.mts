@@ -5,7 +5,7 @@ import { buildOcrPageRecordEvidence } from '../ocr-page-record-evidence.mts';
 import {
   assertPdfPageOneScope,
   recordDocumentOcrCompletionEvidence,
-} from './streaming-capture-api.mts';
+} from './question-generation-observer-api.mts';
 import type { SmokeRunState } from './types.mts';
 import { PDF_PARSE_TERMINAL_TEXT_PATTERN } from './flow-steps.mts';
 

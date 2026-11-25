@@ -1,5 +1,5 @@
 """What the Source Library use cases need from storage, stored files, translation, the
-document worker pool, and the downstream contexts that extract text and write drafts."""
+document worker pool, and the downstream contexts that extract text and write questions."""
 
 from __future__ import annotations
 
@@ -59,10 +59,10 @@ class DocumentRepository(Protocol):
         """Store a processing document and attach it to the upload that claimed the operation."""
         ...
 
-    def record_exam_state(
-        self, project_id: str, document_id: str, *, status: str, exam_item_count: int
+    def record_question_count(
+        self, project_id: str, document_id: str, *, status: str, question_count: int
     ) -> None:
-        """Store the document's status and its count of question drafts."""
+        """Store the document's status and its count of questions."""
         ...
 
 
@@ -118,12 +118,12 @@ class StudyProjects(Protocol):
     def exists(self, project_id: str) -> bool: ...
 
 
-class DocumentDraftJobs(Protocol):
-    """Question Authoring's draft generation jobs of a document. Question Authoring owns them
+class DocumentQuestionJobs(Protocol):
+    """Question Authoring's question generation jobs of a document. Question Authoring owns them
     (D17)."""
 
     def discard_unfinished(self, project_id: str, document_id: str) -> None:
-        """Drop the document's jobs that have not ended; ended jobs stay as its draft history."""
+        """Drop the document's jobs that have not ended; ended jobs stay as its question history."""
         ...
 
 
@@ -250,8 +250,8 @@ class SourceExtraction(Protocol):
     ) -> SourceDocument: ...
 
 
-class ImportedDocumentDrafting(Protocol):
-    """Starts question drafts for a document whose import produced chunks (Question
+class ImportedQuestionGeneration(Protocol):
+    """Starts questions for a document whose import produced chunks (Question
     Authoring)."""
 
-    def draft_questions(self, project_id: str, document_id: str) -> None: ...
+    def start_question_generation(self, project_id: str, document_id: str) -> None: ...

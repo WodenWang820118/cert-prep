@@ -1,11 +1,11 @@
-from cert_prep_backend.authoring.domain.models import DraftSuggestion, SourceChunk
+from cert_prep_backend.authoring.domain.models import QuestionSuggestion, SourceChunk
 from cert_prep_backend.ai_providers.domain.provider import ProviderHealth
 from cert_prep_backend.platform.errors import LanguageModelUnavailable
 from cert_prep_contracts.llm import GenerationAttribution
 
 
-class MockExamProvider:
-    provider = "mock-exam"
+class FakeQuestionWriter:
+    provider = "question-writer"
     model = "gemma4:12b"
 
     def health(self) -> ProviderHealth:
@@ -16,11 +16,11 @@ class MockExamProvider:
             detail="test provider",
         )
 
-    def generate_drafts(
+    def write_questions(
         self, chunks: list[SourceChunk] | tuple[SourceChunk, ...], limit: int
-    ) -> list[DraftSuggestion]:
+    ) -> list[QuestionSuggestion]:
         suggestions = [
-            DraftSuggestion(
+            QuestionSuggestion(
                 chunk_id=chunk.id,
                 question=f"JLPT question {chunk.page_number}: choose the correct word.",
                 choices=["A correct", "B wrong"],
@@ -34,12 +34,12 @@ class MockExamProvider:
         ]
         return suggestions[:limit]
 
-    def generate_fast_first_draft(
+    def write_fast_first_question(
         self,
         source_chunk: SourceChunk,
-        candidate: DraftSuggestion,
-    ) -> DraftSuggestion | None:
-        return DraftSuggestion(
+        candidate: QuestionSuggestion,
+    ) -> QuestionSuggestion | None:
+        return QuestionSuggestion(
             chunk_id=source_chunk.id,
             question=candidate.question,
             choices=candidate.choices,
@@ -57,7 +57,7 @@ class MockExamProvider:
         )
 
 
-class MissingModelExamProvider(MockExamProvider):
+class MissingModelQuestionWriter(FakeQuestionWriter):
     model = "qwen3.5:4b"
 
     def health(self) -> ProviderHealth:
@@ -69,20 +69,20 @@ class MissingModelExamProvider(MockExamProvider):
             unavailable_reason="model_missing",
         )
 
-    def generate_drafts(
+    def write_questions(
         self, chunks: list[SourceChunk] | tuple[SourceChunk, ...], limit: int
-    ) -> list[DraftSuggestion]:
-        raise AssertionError("streaming worker should not call a missing model")
+    ) -> list[QuestionSuggestion]:
+        raise AssertionError("background worker should not call a missing model")
 
 
-class FailingExamProvider(MockExamProvider):
-    def generate_drafts(
+class FailingQuestionWriter(FakeQuestionWriter):
+    def write_questions(
         self, chunks: list[SourceChunk] | tuple[SourceChunk, ...], limit: int
-    ) -> list[DraftSuggestion]:
-        raise AssertionError("notice pages should not enqueue streaming draft jobs")
+    ) -> list[QuestionSuggestion]:
+        raise AssertionError("notice pages should not enqueue background question jobs")
 
 
-class FastFirstCompletionExamProvider(MockExamProvider):
+class FastFirstCompletionQuestionWriter(FakeQuestionWriter):
     provider = "ollama"
     model = "qwen3.5:4b"
 
@@ -90,27 +90,27 @@ class FastFirstCompletionExamProvider(MockExamProvider):
         self.fast_first_calls: list[dict] = []
         self.reasoning_calls: list[dict] = []
 
-    def generate_fast_first_draft(
+    def write_fast_first_question(
         self,
         source_chunk: SourceChunk,
-        candidate: DraftSuggestion,
-    ) -> DraftSuggestion | None:
+        candidate: QuestionSuggestion,
+    ) -> QuestionSuggestion | None:
         self.fast_first_calls.append(
             {
                 "page_numbers": [source_chunk.page_number],
                 "question": candidate.question,
             }
         )
-        return super().generate_fast_first_draft(source_chunk, candidate)
+        return super().write_fast_first_question(source_chunk, candidate)
 
-    def generate_reasoning_drafts(
+    def write_reasoning_questions(
         self,
         chunks: list[SourceChunk] | tuple[SourceChunk, ...],
         limit: int,
         *,
         num_ctx: int,
         num_predict: int,
-    ) -> list[DraftSuggestion]:
+    ) -> list[QuestionSuggestion]:
         self.reasoning_calls.append(
             {
                 "page_numbers": [chunk.page_number for chunk in chunks],
@@ -121,52 +121,52 @@ class FastFirstCompletionExamProvider(MockExamProvider):
         )
         raise AssertionError("fast-first completion should run before reasoning fallback")
 
-    def generate_drafts(
+    def write_questions(
         self, chunks: list[SourceChunk] | tuple[SourceChunk, ...], limit: int
-    ) -> list[DraftSuggestion]:
-        raise AssertionError("streaming hybrid path should use fast-first reasoning")
+    ) -> list[QuestionSuggestion]:
+        raise AssertionError("background hybrid path should use fast-first reasoning")
 
 
-class InvalidJsonReasoningExamProvider(MockExamProvider):
+class InvalidJsonReasoningQuestionWriter(FakeQuestionWriter):
     provider = "ollama"
     model = "qwen3.5:4b"
 
-    def generate_fast_first_draft(
+    def write_fast_first_question(
         self,
         source_chunk: SourceChunk,
-        candidate: DraftSuggestion,
-    ) -> DraftSuggestion | None:
+        candidate: QuestionSuggestion,
+    ) -> QuestionSuggestion | None:
         return None
 
-    def generate_reasoning_drafts(
+    def write_reasoning_questions(
         self,
         chunks: list[SourceChunk] | tuple[SourceChunk, ...],
         limit: int,
         *,
         num_ctx: int,
         num_predict: int,
-    ) -> list[DraftSuggestion]:
+    ) -> list[QuestionSuggestion]:
         raise LanguageModelUnavailable("Ollama returned invalid JSON.")
 
-    def generate_drafts(
+    def write_questions(
         self, chunks: list[SourceChunk] | tuple[SourceChunk, ...], limit: int
-    ) -> list[DraftSuggestion]:
-        raise AssertionError("streaming hybrid path should not retry full generation")
+    ) -> list[QuestionSuggestion]:
+        raise AssertionError("background hybrid path should not retry full generation")
 
 
-class TimeoutReasoningExamProvider(InvalidJsonReasoningExamProvider):
-    def generate_reasoning_drafts(
+class TimeoutReasoningQuestionWriter(InvalidJsonReasoningQuestionWriter):
+    def write_reasoning_questions(
         self,
         chunks: list[SourceChunk] | tuple[SourceChunk, ...],
         limit: int,
         *,
         num_ctx: int,
         num_predict: int,
-    ) -> list[DraftSuggestion]:
+    ) -> list[QuestionSuggestion]:
         raise LanguageModelUnavailable("Provider transient generation error: timed out")
 
 
-class ReleaseRecordingProvider(MockExamProvider):
+class ReleaseRecordingProvider(FakeQuestionWriter):
     provider = "future-provider"
     model = "future-model"
 
@@ -203,7 +203,7 @@ class ReleaseRecordingProvider(MockExamProvider):
         self.release_calls += 1
 
 
-class ReleaseKeepAliveRecordingOllamaProvider(MockExamProvider):
+class ReleaseKeepAliveRecordingOllamaProvider(FakeQuestionWriter):
     provider = "ollama"
     model = "qwen3.5:4b"
 
@@ -211,20 +211,20 @@ class ReleaseKeepAliveRecordingOllamaProvider(MockExamProvider):
         self.fast_first_keep_alive_values: list[str | float | int | None] = []
         self.reasoning_keep_alive_values: list[str | float | int | None] = []
 
-    def streaming_generation_kwargs(self) -> dict[str, int]:
+    def background_generation_kwargs(self) -> dict[str, int]:
         return {"keep_alive": 0}
 
-    def generate_fast_first_draft(
+    def write_fast_first_question(
         self,
         source_chunk: SourceChunk,
-        candidate: DraftSuggestion,
+        candidate: QuestionSuggestion,
         *,
         keep_alive: str | float | int | None = None,
-    ) -> DraftSuggestion | None:
+    ) -> QuestionSuggestion | None:
         self.fast_first_keep_alive_values.append(keep_alive)
         return None
 
-    def generate_reasoning_drafts(
+    def write_reasoning_questions(
         self,
         chunks: list[SourceChunk] | tuple[SourceChunk, ...],
         limit: int,
@@ -232,13 +232,13 @@ class ReleaseKeepAliveRecordingOllamaProvider(MockExamProvider):
         num_ctx: int,
         num_predict: int,
         keep_alive: str | float | int | None = None,
-    ) -> list[DraftSuggestion]:
+    ) -> list[QuestionSuggestion]:
         self.reasoning_keep_alive_values.append(keep_alive)
         if not chunks or limit <= 0:
             return []
         chunk = chunks[0]
         return [
-            DraftSuggestion(
+            QuestionSuggestion(
                 chunk_id=chunk.id,
                 question=f"JLPT question {chunk.page_number}: choose the correct word.",
                 choices=["A correct", "B wrong"],
@@ -250,7 +250,7 @@ class ReleaseKeepAliveRecordingOllamaProvider(MockExamProvider):
             )
         ]
 
-    def generate_drafts(
+    def write_questions(
         self, chunks: list[SourceChunk] | tuple[SourceChunk, ...], limit: int
-    ) -> list[DraftSuggestion]:
-        raise AssertionError("streaming hybrid path should use fast-first reasoning")
+    ) -> list[QuestionSuggestion]:
+        raise AssertionError("background hybrid path should use fast-first reasoning")

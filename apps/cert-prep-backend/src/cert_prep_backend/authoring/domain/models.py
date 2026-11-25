@@ -14,26 +14,20 @@ from cert_prep_backend.source_library.domain.exam_content import (
 )
 
 
-class DraftStatus(StrEnum):
-    APPROVED = "approved"
-
-
-class DraftGenerationStrategy(StrEnum):
+class QuestionGenerationStrategy(StrEnum):
     DETERMINISTIC_ONLY = "deterministic_only"
     HYBRID_REASONING = "hybrid_reasoning"
 
 
 class AnswerKeySource(StrEnum):
     MANUAL = "manual"
-    PDF = "pdf"
+    SOURCE = "source"
     AI_INFERRED = "ai_inferred"
 
 
-DraftStatusValue: TypeAlias = DraftStatus | str
-DraftGenerationStrategyValue: TypeAlias = DraftGenerationStrategy | str
+QuestionGenerationStrategyValue: TypeAlias = QuestionGenerationStrategy | str
 AnswerKeySourceValue: TypeAlias = AnswerKeySource | str
 
-GENERATED_DRAFT_STATUS = DraftStatus.APPROVED
 DEFAULT_MANUAL_ANSWER_KEY_SOURCE = AnswerKeySource.MANUAL
 DEFAULT_GENERATED_ANSWER_KEY_SOURCE = AnswerKeySource.AI_INFERRED
 
@@ -60,7 +54,7 @@ class SourceChunk:
 
 
 def source_chunk_from_document_chunk(chunk: DocumentChunk) -> SourceChunk:
-    """The Source Library chunk as a draft source, keeping edited audio text canonical."""
+    """The Source Library chunk as a question source, keeping edited audio text canonical."""
 
     return SourceChunk(
         id=chunk.id,
@@ -78,7 +72,7 @@ def source_chunk_from_document_chunk(chunk: DocumentChunk) -> SourceChunk:
 
 
 @dataclass(frozen=True, slots=True)
-class DraftSuggestion:
+class QuestionSuggestion:
     chunk_id: str
     question: str
     choices: Sequence[str]
@@ -87,7 +81,6 @@ class DraftSuggestion:
     rationale: str
     citation_page: int
     source_excerpt: str
-    status: DraftStatus | str = GENERATED_DRAFT_STATUS
     confidence: float | None = None
     source_order: int | None = None
     source_question_number: str | None = None
@@ -105,7 +98,6 @@ class DraftSuggestion:
             "answer_key_source",
             answer_key_source_from_value(self.answer_key_source),
         )
-        object.__setattr__(self, "status", draft_status_from_value(self.status))
         object.__setattr__(self, "item_kind", question_item_kind_from_value(self.item_kind))
         if self.confidence is not None:
             object.__setattr__(self, "confidence", float(self.confidence))
@@ -130,7 +122,7 @@ class DraftSuggestion:
 
 
 @dataclass(frozen=True, slots=True)
-class UnavailableDraftBlock:
+class UnavailableQuestionBlock:
     """A parsed source block that was retained but could not become playable."""
 
     chunk_id: str
@@ -154,9 +146,9 @@ class UnavailableDraftBlock:
 
 
 @dataclass(frozen=True, slots=True)
-class DraftGenerationResult:
-    suggestions: list[DraftSuggestion]
-    unavailable_blocks: list[UnavailableDraftBlock]
+class QuestionGenerationResult:
+    suggestions: list[QuestionSuggestion]
+    unavailable_blocks: list[UnavailableQuestionBlock]
 
 
 def answer_key_source_from_value(
@@ -174,16 +166,3 @@ def answer_key_source_from_value(
     return default
 
 
-def draft_status_from_value(
-    value: DraftStatus | str | None,
-    *,
-    default: DraftStatus = DraftStatus.APPROVED,
-) -> DraftStatus:
-    if isinstance(value, DraftStatus):
-        return value
-    if isinstance(value, str):
-        try:
-            return DraftStatus(value)
-        except ValueError:
-            return default
-    return default

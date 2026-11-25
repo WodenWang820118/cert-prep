@@ -8,7 +8,7 @@ import {
 import type { WrongAnswerRead } from '../../../core/domain';
 import { ReviewDisplayService } from '../../data';
 import { displayChoice } from '../../../authoring/domain';
-import { DraftReviewStore } from '../../../authoring/data';
+import { QuestionsStore } from '../../../authoring/data';
 import { OperationStore } from '../../../core/data';
 import { ReviewRetryNavigationService } from '../../data';
 import { ProjectStore } from '../../../projects/data';
@@ -30,7 +30,7 @@ export class WrongAnswerRetryComponent {
   protected readonly review = inject(WrongAnswerRetryStore);
   protected readonly sourceImport = inject(SourceImportStore);
   private readonly display = inject(ReviewDisplayService);
-  private readonly drafts = inject(DraftReviewStore);
+  private readonly questionsStore = inject(QuestionsStore);
   private readonly retryNavigation = inject(ReviewRetryNavigationService);
 
   protected readonly busyActions = ['review', 'session'] as const;
@@ -70,7 +70,7 @@ export class WrongAnswerRetryComponent {
 
   protected correctionChoices(wrong: WrongAnswerRead): readonly string[] {
     return (
-      this.drafts.drafts().find((draft) => draft.id === wrong.question_id)
+      this.questionsStore.questions().find((question) => question.id === wrong.question_id)
         ?.choices ?? []
     );
   }

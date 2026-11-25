@@ -20,7 +20,7 @@ import {
   runRandomDrawCorrectClear,
   uploadAndParsePdf,
   verifyMarkdownExport,
-  verifyStreamingPracticeReady,
+  verifyGeneratedQuestionsPracticeReady,
 } from './flow-steps.mts';
 import { ensureCaptureRuntimeReady } from './runtime-install-flow.mts';
 import {
@@ -31,9 +31,9 @@ import {
 import { installPythonRuntimeIfNeeded } from './runtime-install-flow.mts';
 import { startResourceSampling } from './resource-sampling.mts';
 import { log, screenshot } from './runner-context.mts';
-import { writeStreamingBaselineArtifacts } from './streaming-baseline-report.mts';
-import { refreshFirstChunkGateMetrics } from './streaming-capture.mts';
-import { FIRST_CHUNK_GATE_MS } from './streaming-evidence.mts';
+import { writeQuestionGenerationBaselineArtifacts } from './question-generation-baseline-report.mts';
+import { refreshFirstChunkGateMetrics } from './question-generation-observer.mts';
+import { FIRST_CHUNK_GATE_MS } from './question-generation-evidence.mts';
 import { errorMessage, normalizePath } from './text-utils.mts';
 import { unavailableGenerationReadinessSnapshot } from './generation-readiness.mts';
 import {
@@ -73,12 +73,12 @@ async function runFlow(run: SmokeRunState): Promise<void> {
     log(run, 'OCR-only acceptance completed');
     return;
   }
-  if (run.options.waitForStreamingComplete) {
-    if (run.options.verifyStreamingPracticeReady) {
-      await verifyStreamingPracticeReady(run);
+  if (run.options.waitForQuestionJobs) {
+    if (run.options.verifyGeneratedQuestionsPracticeReady) {
+      await verifyGeneratedQuestionsPracticeReady(run);
     }
     run.metrics.status = 'completed';
-    log(run, 'streaming baseline completed');
+    log(run, 'question generation baseline completed');
     return;
   }
   await createAndEditQuestion(run);
@@ -124,7 +124,7 @@ function writeCloseoutArtifacts(
 ): void {
   try {
     run.metrics.observations.push(`closeout checkpoint: ${label}`);
-    writeStreamingBaselineArtifacts(run, {
+    writeQuestionGenerationBaselineArtifacts(run, {
       finalized,
       recordFailure: recordBaselineFailure,
     });
@@ -151,7 +151,7 @@ function logFinalMetricsSummary(run: SmokeRunState): void {
             join(run.options.outDir, 'metrics.json'),
           ),
         ),
-        streaming_baseline: run.metrics.streaming_baseline ?? null,
+        question_generation_baseline: run.metrics.question_generation_baseline ?? null,
         production_summary: run.metrics.production_summary ?? null,
       },
       null,
@@ -189,16 +189,16 @@ export async function runPackagedFlowSmoke(
     ),
     first_chunk_gate_ms: FIRST_CHUNK_GATE_MS,
     first_chunk_under_gate: false,
-    streaming_draft_page_limit: parsedOptions.streamingDraftPageLimit,
-    streaming_draft_workers: parsedOptions.streamingDraftWorkers,
-    wait_for_streaming_complete: parsedOptions.waitForStreamingComplete,
-    practice_ready_from_streamed_questions: false,
+    question_jobs_chunk_limit: parsedOptions.questionJobsChunkLimit,
+    question_job_workers: parsedOptions.questionJobWorkers,
+    wait_for_question_jobs: parsedOptions.waitForQuestionJobs,
+    practice_ready_from_generated_questions: false,
     app_data_dir: parsedOptions.appDataDir
       ? normalizePath(
           relative(parsedOptions.workspaceRoot, parsedOptions.appDataDir),
         )
       : undefined,
-    streaming_questions: {
+    question_generation: {
       job_snapshots: [],
       question_snapshots: [],
       status_counts: {},
@@ -216,9 +216,9 @@ export async function runPackagedFlowSmoke(
     processBaseline: { all: [], nodePids: new Set() },
     projectApi: null,
     uploadedDocument: null,
-    streamingDraftParseStartedAt: null,
-    streamingDraftCaptureOpen: false,
-    streamingApiPollErrorCaptured: false,
+    questionObservationStartedAt: null,
+    questionObservationActive: false,
+    questionGenerationApiPollErrorCaptured: false,
     acceptanceVideoPaths: [],
     acceptanceTracePaths: [],
     acceptanceTraceOwned: false,

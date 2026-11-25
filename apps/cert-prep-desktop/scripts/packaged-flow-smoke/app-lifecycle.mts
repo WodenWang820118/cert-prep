@@ -48,7 +48,7 @@ import {
   stopAcceptanceCapture,
   waitText,
 } from './runner-context.mts';
-import { observeStreamingApiResponses } from './streaming-capture.mts';
+import { observeQuestionGenerationApiResponses } from './question-generation-observer.mts';
 import { errorMessage, isRecord } from './text-utils.mts';
 import { ensureCaptureRuntimeReady } from './runtime-install-flow.mts';
 import {
@@ -438,7 +438,7 @@ export async function restartAndVerifyPersistence(
     .filter({ hasText: /Parallel Parsing QA/i })
     .first();
   await persistedProject.waitFor({ state: 'visible', timeout: 90_000 });
-  let projectPersisted = /Source files|Exam Questions|Parsing complete/i.test(
+  let projectPersisted = /Source files|Parsing complete/i.test(
     await bodyText(run),
   );
   if (!projectPersisted) {
@@ -446,21 +446,21 @@ export async function restartAndVerifyPersistence(
       'Project was not auto-selected after restart; selected it manually for persistence verification.',
     );
     await persistedProject.click();
-    const buildLink = activePage(run).getByRole('link', {
-      name: 'Build',
+    const questionsLink = activePage(run).getByRole('link', {
+      name: 'Questions',
       exact: true,
     });
-    await buildLink.waitFor({ state: 'visible', timeout: 30_000 });
-    await buildLink.click({ timeout: 30_000 });
+    await questionsLink.waitFor({ state: 'visible', timeout: 30_000 });
+    await questionsLink.click({ timeout: 30_000 });
     await waitText(
       run,
-      /Source files|Exam Questions|Parsing complete/i,
+      /Source files|Parsing complete/i,
       90_000,
       'project selected after restart',
     );
     projectPersisted = true;
   }
-  await screenshot(run, 'restart-persistence-build-state');
+  await screenshot(run, 'restart-persistence-questions-state');
   let reviewPersisted = true;
   if (run.options.acceptanceVerifyMarkdownExport) {
     const reviewLink = activePage(run).getByRole('link', {
@@ -750,7 +750,7 @@ export async function launchAppAndConnect(run: SmokeRunState): Promise<void> {
   run.page =
     context.pages()[0] ??
     (await context.waitForEvent('page', { timeout: 30_000 }));
-  observeStreamingApiResponses(run, run.page);
+  observeQuestionGenerationApiResponses(run, run.page);
   await run.page.setViewportSize({ width: 1440, height: 900 });
   await run.page
     .waitForLoadState('domcontentloaded', { timeout: 30_000 })
@@ -813,17 +813,17 @@ export function buildAppLaunchEnvironment(
     CERT_PREP_LLM_PROVIDER: run.options.llmProvider,
     CERT_PREP_OLLAMA_MODEL: DEFAULT_LLM_MODEL,
     ...isolatedOllamaEnvironment,
-    ...(run.options.streamingDraftPageLimit
+    ...(run.options.questionJobsChunkLimit
       ? {
-          CERT_PREP_STREAMING_DRAFT_GENERATION_PAGE_LIMIT: String(
-            run.options.streamingDraftPageLimit,
+          CERT_PREP_QUESTION_JOBS_CHUNK_LIMIT: String(
+            run.options.questionJobsChunkLimit,
           ),
         }
       : {}),
-    ...(run.options.streamingDraftWorkers
+    ...(run.options.questionJobWorkers
       ? {
-          CERT_PREP_STREAMING_DRAFT_WORKERS: String(
-            run.options.streamingDraftWorkers,
+          CERT_PREP_QUESTION_JOB_WORKERS: String(
+            run.options.questionJobWorkers,
           ),
         }
       : {}),

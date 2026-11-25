@@ -25,7 +25,7 @@ def seed_job(database, job_id, status, *, offset=0, error="old error", commit=No
     with database.connect() as connection:
         connection.execute(
             """
-            INSERT INTO runtime_installation_jobs(
+            INSERT INTO llm_installation_jobs(
                 id, kind, provider, model, status, phase, cancellable,
                 detail, completed, total, error, created_at, updated_at, commit_started_at
             ) VALUES (?, 'ollama', 'saved-provider', 'saved-model', ?, 'saved-phase', 1,
@@ -38,7 +38,7 @@ def seed_job(database, job_id, status, *, offset=0, error="old error", commit=No
 def saved_job(database, job_id):
     with database.connect() as connection:
         return dict(connection.execute(
-            "SELECT * FROM runtime_installation_jobs WHERE id = ?", (job_id,),
+            "SELECT * FROM llm_installation_jobs WHERE id = ?", (job_id,),
         ).fetchone())
 
 
@@ -158,13 +158,13 @@ def test_recovery_retains_exact_newest_100_with_created_and_id_tiebreaks(tmp_pat
         seed_job(database, f"history-{index:03}", Status.SUCCEEDED, offset=index)
     # Equal updated timestamps sort by created_at, then descending id.
     with database.connect() as connection:
-        connection.execute("UPDATE runtime_installation_jobs SET updated_at = '2025-12-01T00:00:00+00:00'")
+        connection.execute("UPDATE llm_installation_jobs SET updated_at = '2025-12-01T00:00:00+00:00'")
         connection.execute(
-            "UPDATE runtime_installation_jobs SET created_at = '2025-01-01T00:01:44+00:00' "
+            "UPDATE llm_installation_jobs SET created_at = '2025-01-01T00:01:44+00:00' "
             "WHERE id IN ('history-000', 'history-001')"
         )
         expected = [str(row["id"]) for row in connection.execute(
-            "SELECT id FROM runtime_installation_jobs "
+            "SELECT id FROM llm_installation_jobs "
             "ORDER BY updated_at DESC, created_at DESC, id DESC LIMIT 100"
         )]
     manager = make_manager(db=database)
@@ -178,7 +178,7 @@ def test_recovery_retains_exact_newest_100_with_created_and_id_tiebreaks(tmp_pat
             with pytest.raises(KeyError):
                 manager.get_installation(job_id)
     with database.connect() as connection:
-        assert connection.execute("SELECT COUNT(*) FROM runtime_installation_jobs").fetchone()[0] == 105
+        assert connection.execute("SELECT COUNT(*) FROM llm_installation_jobs").fetchone()[0] == 105
 
 
 @pytest.mark.parametrize("status", [Status.QUEUED, Status.RUNNING, Status.CANCEL_REQUESTED])
@@ -217,7 +217,7 @@ def test_eviction_uses_oldest_terminal_update_and_keeps_active_and_database_hist
     assert list(manager._jobs) == [active.id, *(job.id for job in finished[2:])]
     assert manager.get_installation(finished[-1].id) == finished[-1]
     with database.connect() as connection:
-        assert connection.execute("SELECT COUNT(*) FROM runtime_installation_jobs").fetchone()[0] == 102
+        assert connection.execute("SELECT COUNT(*) FROM llm_installation_jobs").fetchone()[0] == 102
 
 
 def test_terminal_finalization_evicts_oldest_terminal_not_oldest_active(
@@ -230,7 +230,7 @@ def test_terminal_finalization_evicts_oldest_terminal_not_oldest_active(
     # would evict the wrong job.
     with database.connect() as connection:
         connection.execute(
-            "UPDATE runtime_installation_jobs SET updated_at = '2024-01-01T00:00:00+00:00' "
+            "UPDATE llm_installation_jobs SET updated_at = '2024-01-01T00:00:00+00:00' "
             "WHERE id = 'history-099'"
         )
     manager = make_manager(db=database)

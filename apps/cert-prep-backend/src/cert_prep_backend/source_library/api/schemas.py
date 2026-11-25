@@ -25,7 +25,7 @@ class DocumentRead(BaseModel):
     extraction_warnings: str | None
     failure_message: str | None
     processed_page_count: int
-    exam_item_count: int
+    question_count: int
     content_profile: ContentProfileValue
     classification_detail: str
     chunks_count: int

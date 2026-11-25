@@ -48,7 +48,7 @@ export class App implements OnInit, OnDestroy {
       id: 'build',
       label: 'Build',
       pages: [
-        { id: 'build', label: 'Build', icon: 'lucideWrench', path: '/build' },
+        { id: 'questions', label: 'Questions', icon: 'lucideWrench', path: '/questions' },
         {
           id: 'capture_workbench',
           label: 'Capture Workbench',

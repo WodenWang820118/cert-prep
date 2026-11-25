@@ -1,1 +1,1 @@
-export { DraftReviewPanelComponent } from './draft-review-panel/draft-review-panel.component';
+export { QuestionsPanelComponent } from './questions-panel/questions-panel.component';

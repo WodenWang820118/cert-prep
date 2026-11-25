@@ -12,7 +12,7 @@ test('acceptance screenshot privacy contract covers source, OCR, and generated c
   for (const selector of [
     '[aria-label="Selected source file upload status"]',
     '.workbench-preview-list',
-    '[data-testid="draft-question-card"]',
+    '[data-testid="question-card"]',
     '.practice-question-card',
     '[data-testid="capture-result"]',
     'capture-workbench',

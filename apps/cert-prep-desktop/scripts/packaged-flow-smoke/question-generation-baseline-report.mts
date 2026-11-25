@@ -1,0 +1,770 @@
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
+
+import { DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
+import {
+  EXPECTED_BASELINE_CHUNKS,
+  EXPECTED_BASELINE_PAGES,
+  latestQuestionGenerationJobSnapshot,
+  latestQuestionSnapshot,
+  refreshFirstChunkGateMetrics,
+} from './question-generation-observer.mts';
+import { questionJobCompletionState } from './question-generation-evidence.mts';
+import { isRecord, normalizePath } from './text-utils.mts';
+import type { PublicProcessRecord } from '../process-lifecycle/processes.mts';
+import type {
+  AcceptanceIsolationSnapshot,
+  GenerationReadinessSnapshot,
+  LlmHealthSnapshot,
+  ResourceSamplingArtifacts,
+  ResourcesReleasedAtEndSnapshot,
+  SmokeRunState,
+  QuestionJobAttribution,
+  QuestionJobCompletionState,
+} from './types.mts';
+
+export interface QuestionGenerationBaselineReport {
+  schema_version: 1;
+  status: 'passed' | 'failed';
+  generated_at: string;
+  git_commit: string | null;
+  artifacts: {
+    out_dir: string;
+    metrics_json: string;
+    baseline_json: string;
+    baseline_markdown: string;
+    screenshots: string[];
+    resource_sampling?: ResourceSamplingArtifacts;
+  };
+  input: {
+    pdf_path: string;
+    pdf_bytes: number;
+    pdf_sha256: string;
+    expected_pages: 46;
+    expected_chunks: 46;
+  };
+  runtime: {
+    exe_path: string;
+    app_data_dir: string | null;
+    llm_model: string;
+    llm_configured_model: string;
+    llm_effective_model: string | null;
+    llm_fallback_reason: string | null;
+    llm_health: LlmHealthSnapshot | null;
+    question_jobs_chunk_limit: number | null;
+    question_job_workers: number | null;
+    question_jobs_complete_timeout_ms: number;
+    llm_provider: string;
+  };
+  timings_ms: Record<string, number | null>;
+  ocr_completion: {
+    pages_processed: number | null;
+    total_pages: number | null;
+    chunks: number | null;
+  };
+  question_generation: {
+    job_count: number;
+    final_status_counts: Record<string, number>;
+    completion_state: QuestionJobCompletionState;
+    generated_count: number;
+    question_count: number;
+    usable_question_count: number;
+    first_usable_after_parse_complete: boolean;
+    practice_ready_from_generated_questions: boolean;
+    job_snapshot_count: number;
+    question_snapshot_count: number;
+    blocker: string | null;
+  };
+  cleanup: {
+    gracefulExited: boolean | null;
+    fallbackUsed: boolean | null;
+    exitCode: number | null;
+    residualProcesses: PublicProcessRecord[];
+    nodeClosedCount: number | null;
+  };
+  checks: Record<string, boolean>;
+  errors: string[];
+}
+
+interface GpuRoutingChecks {
+  capture_runtime_process_observed: boolean;
+  capture_runtime_uses_amd_igpu: boolean;
+  gpu_luid_map_usable: boolean;
+}
+
+interface PackagedQuestionGenerationProductionChecks extends Record<string, boolean> {
+  ollama_provider_exact: boolean;
+  ollama_model_exact: boolean;
+  provider_no_fallback: boolean;
+  model_no_fallback: boolean;
+  execution_mode_supported: boolean;
+  execution_warning_consistent: boolean;
+}
+
+interface PackagedQuestionGenerationProductionSummary {
+  schema_version: 6;
+  status: 'incomplete' | 'passed' | 'failed';
+  generated_at: string;
+  provider_policy: 'ollama-only-alpha';
+  acceptance_isolation_at_launch: AcceptanceIsolationSnapshot | null;
+  policy_model: string | null;
+  selected_model: string | null;
+  configured_model: string | null;
+  effective_model: string | null;
+  provider_fallback_reason: string | null;
+  model_fallback_reason: string | null;
+  /** @deprecated Use provider_fallback_reason and model_fallback_reason. */
+  fallback_reason: string | null;
+  llm_health: LlmHealthSnapshot | null;
+  execution_mode: 'auto' | 'cpu' | null;
+  execution_warning: string | null;
+  llm_provider: string | null;
+  provider_preference: string;
+  configured_provider: string | null;
+  generation_ready_at_start: GenerationReadinessSnapshot | null;
+  succeeded_jobs: QuestionJobAttribution[];
+  producing_jobs: QuestionJobAttribution[];
+  resources_released_at_end: ResourcesReleasedAtEndSnapshot | null;
+  whole_source_question_count: number | null;
+  artifacts: {
+    production_summary_json: string;
+    baseline_json: string;
+    baseline_markdown: string;
+    metrics_json: string;
+    resource_sampling?: ResourceSamplingArtifacts;
+  };
+  timings_ms: QuestionGenerationBaselineReport['timings_ms'];
+  ocr_completion: QuestionGenerationBaselineReport['ocr_completion'];
+  question_generation: QuestionGenerationBaselineReport['question_generation'];
+  gpu_routing_checks: GpuRoutingChecks | null;
+  checks: PackagedQuestionGenerationProductionChecks;
+  errors: string[];
+}
+
+export function writeQuestionGenerationBaselineArtifacts(
+  run: SmokeRunState,
+  {
+    finalized,
+    recordFailure = true,
+  }: {
+    readonly finalized: boolean;
+    readonly recordFailure?: boolean;
+  },
+): void {
+  if (!run.options.waitForQuestionJobs) {
+    return;
+  }
+
+  let report = buildQuestionGenerationBaselineReport(run);
+  let productionSummary = run.options.productionSummary
+    ? buildProductionSummary(run, report, { finalized })
+    : null;
+  if (
+    report.status === 'failed' &&
+    finalized &&
+    recordFailure &&
+    productionSummary?.status !== 'passed'
+  ) {
+    run.metrics.errors.push('Question generation baseline checks failed.');
+    report = buildQuestionGenerationBaselineReport(run);
+    productionSummary = run.options.productionSummary
+      ? buildProductionSummary(run, report, { finalized })
+      : null;
+  }
+  if (productionSummary?.status === 'failed' && finalized && recordFailure) {
+    run.metrics.errors.push('Packaged question generation production checks failed.');
+    report = buildQuestionGenerationBaselineReport(run);
+    productionSummary = buildProductionSummary(run, report, { finalized });
+  }
+  const jsonPath = join(run.options.outDir, 'question-generation-baseline.json');
+  const markdownPath = join(run.options.outDir, 'question-generation-baseline.md');
+  writeFileSync(jsonPath, `${JSON.stringify(report, null, 2)}\n`);
+  writeFileSync(markdownPath, renderQuestionGenerationBaselineMarkdown(report));
+  run.metrics.question_generation_baseline = {
+    status: report.status,
+    json: normalizePath(relative(run.options.workspaceRoot, jsonPath)),
+    markdown: normalizePath(relative(run.options.workspaceRoot, markdownPath)),
+  };
+  if (run.options.productionSummary) {
+    productionSummary ??= buildProductionSummary(run, report, { finalized });
+    const productionSummaryPath = join(
+      run.options.outDir,
+      'production-summary.json',
+    );
+    writeFileSync(
+      productionSummaryPath,
+      `${JSON.stringify(productionSummary, null, 2)}\n`,
+    );
+    run.metrics.production_summary = normalizePath(
+      relative(run.options.workspaceRoot, productionSummaryPath),
+    );
+  }
+}
+
+export function buildQuestionGenerationBaselineReport(
+  run: SmokeRunState,
+): QuestionGenerationBaselineReport {
+  const latestJob = latestQuestionGenerationJobSnapshot(run);
+  const latestQuestion = latestQuestionSnapshot(run);
+  const finalStatusCounts = latestJob?.status_counts ?? {};
+  const completionState = questionJobCompletionState(finalStatusCounts);
+  refreshFirstChunkGateMetrics(run);
+  const timings = run.metrics.ui_timings_ms;
+  const firstUsable =
+    run.metrics.question_generation.first_usable_question_visible_ms;
+  const parseComplete = timings.parse_complete_visible;
+  const firstUsableAfterParseComplete =
+    firstUsable !== undefined &&
+    parseComplete !== undefined &&
+    firstUsable >= parseComplete;
+  const chunksAccepted = acceptedOcrChunkCount(run);
+  const checks = {
+    no_script_errors: run.metrics.errors.length === 0,
+    graceful_close: run.metrics.final_close?.gracefulExited === true,
+    no_residual_processes:
+      run.metrics.final_close !== undefined &&
+      run.metrics.process_cleanup !== undefined &&
+      run.metrics.final_close.residualProcesses.length === 0 &&
+      run.metrics.process_cleanup.residue_after_close.length === 0,
+    ocr_completed_46_pages:
+      run.metrics.ocr_completion?.pages_processed === EXPECTED_BASELINE_PAGES &&
+      run.metrics.ocr_completion?.total_pages === EXPECTED_BASELINE_PAGES,
+    ...(run.options.allowCaptureChunkVariance
+      ? { ocr_chunks_present: chunksAccepted }
+      : { ocr_completed_46_chunks: chunksAccepted }),
+    first_chunk_under_gate: run.metrics.first_chunk_under_gate,
+    first_usable_after_parse_complete: firstUsableAfterParseComplete,
+    all_jobs_terminal: completionState.all_terminal,
+    all_jobs_succeeded: completionState.all_succeeded,
+    generated_equals_usable:
+      (latestJob?.generated_count ?? 0) > 0 &&
+      latestJob?.generated_count === latestQuestion?.usable_question_count,
+    no_question_generation_blocker: !run.metrics.question_generation.blocker,
+    ...(run.options.verifyGeneratedQuestionsPracticeReady
+      ? {
+          question_generation_practice_ready:
+            run.metrics.practice_ready_from_generated_questions === true,
+        }
+      : {}),
+  };
+  const status = Object.values(checks).every(Boolean) ? 'passed' : 'failed';
+  const metricsPath = join(run.options.outDir, 'metrics.json');
+  const baselineJsonPath = join(run.options.outDir, 'question-generation-baseline.json');
+  const baselineMarkdownPath = join(
+    run.options.outDir,
+    'question-generation-baseline.md',
+  );
+
+  return {
+    schema_version: 1,
+    status,
+    generated_at: new Date().toISOString(),
+    git_commit: currentGitCommit(run),
+    artifacts: {
+      out_dir: normalizePath(
+        relative(run.options.workspaceRoot, run.options.outDir),
+      ),
+      metrics_json: normalizePath(
+        relative(run.options.workspaceRoot, metricsPath),
+      ),
+      baseline_json: normalizePath(
+        relative(run.options.workspaceRoot, baselineJsonPath),
+      ),
+      baseline_markdown: normalizePath(
+        relative(run.options.workspaceRoot, baselineMarkdownPath),
+      ),
+      screenshots: run.metrics.screenshots,
+      ...(run.metrics.resource_sampling
+        ? { resource_sampling: run.metrics.resource_sampling }
+        : {}),
+    },
+    input: {
+      pdf_path: normalizePath(
+        relative(run.options.workspaceRoot, run.options.pdfPath),
+      ),
+      pdf_bytes: statSync(run.options.pdfPath).size,
+      pdf_sha256: sha256File(run.options.pdfPath),
+      expected_pages: EXPECTED_BASELINE_PAGES,
+      expected_chunks: EXPECTED_BASELINE_CHUNKS,
+    },
+    runtime: {
+      exe_path: normalizePath(
+        relative(run.options.workspaceRoot, run.options.exePath),
+      ),
+      app_data_dir: run.options.appDataDir
+        ? normalizePath(
+            relative(run.options.workspaceRoot, run.options.appDataDir),
+          )
+        : null,
+      llm_provider: run.options.llmProvider,
+      llm_model: DEFAULT_LLM_MODEL,
+      llm_configured_model:
+        run.metrics.llm_configured_model ?? DEFAULT_LLM_MODEL,
+      llm_effective_model: run.metrics.llm_effective_model ?? null,
+      llm_fallback_reason: run.metrics.llm_fallback_reason ?? null,
+      llm_health: run.metrics.llm_health ?? null,
+      question_jobs_chunk_limit: run.options.questionJobsChunkLimit ?? null,
+      question_job_workers: run.options.questionJobWorkers ?? null,
+      question_jobs_complete_timeout_ms: run.options.questionJobsCompleteTimeoutMs,
+    },
+    timings_ms: {
+      upload_to_processing_visible:
+        timings.upload_to_processing_visible ?? null,
+      first_chunk_gate_ms: run.metrics.first_chunk_gate_ms,
+      first_chunk_visible: timings.first_chunk_visible ?? null,
+      question_generation_status_visible:
+        timings.question_generation_status_visible ?? null,
+      first_streamed_question_visible:
+        run.metrics.question_generation.first_question_visible_ms ?? null,
+      first_usable_question_visible: firstUsable ?? null,
+      parse_complete_visible: parseComplete ?? null,
+      question_generation_all_jobs_terminal:
+        run.metrics.question_generation.all_jobs_terminal_ms ?? null,
+      practice_ready_visible_ms: timings.practice_ready_visible_ms ?? null,
+      practice_first_question_visible_ms:
+        timings.practice_first_question_visible_ms ?? null,
+    },
+    ocr_completion: {
+      pages_processed: run.metrics.ocr_completion?.pages_processed ?? null,
+      total_pages: run.metrics.ocr_completion?.total_pages ?? null,
+      chunks: run.metrics.ocr_completion?.chunks ?? null,
+    },
+    question_generation: {
+      job_count: latestJob?.item_count ?? 0,
+      final_status_counts: finalStatusCounts,
+      completion_state: completionState,
+      generated_count: latestJob?.generated_count ?? 0,
+      question_count: latestQuestion?.item_count ?? 0,
+      usable_question_count: latestQuestion?.usable_question_count ?? 0,
+      first_usable_after_parse_complete: firstUsableAfterParseComplete,
+      practice_ready_from_generated_questions:
+        run.metrics.practice_ready_from_generated_questions === true,
+      job_snapshot_count: run.metrics.question_generation.job_snapshots.length,
+      question_snapshot_count:
+        run.metrics.question_generation.question_snapshots.length,
+      blocker: run.metrics.question_generation.blocker ?? null,
+    },
+    cleanup: {
+      gracefulExited: run.metrics.final_close?.gracefulExited ?? null,
+      fallbackUsed: run.metrics.final_close?.fallbackUsed ?? null,
+      exitCode: run.metrics.final_close?.exitCode ?? null,
+      residualProcesses:
+        run.metrics.final_close?.residualProcesses ??
+        run.metrics.process_cleanup?.residue_after_close ??
+        [],
+      nodeClosedCount:
+        run.metrics.process_cleanup?.node_cleanup_summary.closed_count ?? null,
+    },
+    checks,
+    errors: run.metrics.errors,
+  };
+}
+
+export function buildProductionSummary(
+  run: SmokeRunState,
+  report: QuestionGenerationBaselineReport,
+  { finalized = true }: { readonly finalized?: boolean } = {},
+): PackagedQuestionGenerationProductionSummary {
+  const resourceSummary = readResourceSummary(run);
+  const gpuRoutingChecks = readGpuRoutingChecks(resourceSummary);
+  const finalJobs = latestQuestionGenerationJobSnapshot(run)?.jobs ?? [];
+  const succeededJobs = finalJobs.filter((job) => job.status === 'succeeded');
+  const producingJobs = succeededJobs.filter((job) => job.generated_count > 0);
+  const configuredProvider = uniqueCompleteValue(
+    succeededJobs.map((job) => job.configured_provider),
+  );
+  const configuredModel = uniqueCompleteValue(
+    succeededJobs.map((job) => job.configured_model),
+  );
+  const effectiveProvider = uniqueCompleteValue(
+    succeededJobs.map((job) => job.effective_provider),
+  );
+  const effectiveModel = uniqueCompleteValue(
+    succeededJobs.map((job) => job.effective_model),
+  );
+  const fallbackReason = uniqueFallbackReason(succeededJobs);
+  const providerFallbackReason = run.metrics.provider_fallback_reason ?? null;
+  const modelFallbackReason =
+    fallbackReason ?? run.metrics.model_fallback_reason ?? null;
+  const llmHealth = run.metrics.llm_health ?? report.runtime.llm_health;
+  const executionMode = llmHealth?.execution_mode ?? null;
+  const executionWarning = llmHealth?.execution_warning ?? null;
+  const exactOllamaJobs =
+    succeededJobs.length > 0 &&
+    succeededJobs.every(
+      (job) =>
+        job.attribution_complete &&
+        job.configured_provider === 'ollama' &&
+        job.effective_provider === 'ollama',
+    );
+  const resourcesReleased = run.metrics.resources_released_at_end;
+  const readinessAtStart = run.metrics.generation_readiness_at_start;
+  const checks: PackagedQuestionGenerationProductionChecks = {
+    cleanup_finalized: finalized,
+    smoke_completed: run.metrics.status === 'completed',
+    no_script_errors: run.metrics.errors.length === 0,
+    question_generation_baseline_passed: report.status === 'passed',
+    graceful_close: report.checks.graceful_close === true,
+    no_residual_processes: report.checks.no_residual_processes === true,
+    generation_ready_at_start: generationReadinessPassed(
+      readinessAtStart,
+      effectiveProvider,
+      configuredModel,
+      effectiveModel,
+      DEFAULT_LLM_MODEL,
+      report.runtime.llm_provider,
+    ),
+    final_job_evidence_complete:
+      finalJobs.length === report.question_generation.job_count &&
+      finalJobs.length === report.question_generation.completion_state.total_count &&
+      finalJobs.every((job) => job.status !== null) &&
+      succeededJobs.length ===
+        report.question_generation.completion_state.succeeded_count,
+    succeeded_job_attribution_complete:
+      succeededJobs.length > 0 &&
+      succeededJobs.every((job) => job.attribution_complete),
+    producing_job_attribution_present: producingJobs.length > 0,
+    producing_job_attribution_complete:
+      producingJobs.length > 0 &&
+      producingJobs.every((job) => job.attribution_complete),
+    producing_job_provider_consistent:
+      configuredProvider !== null && configuredProvider === effectiveProvider,
+    resources_released_at_end: resourcesReleasedPassed(
+      resourcesReleased,
+      effectiveProvider,
+    ),
+    whole_source_questions_present:
+      (run.metrics.whole_source_question_count ?? 0) > 0,
+    ocr_completed_expected_pages:
+      report.ocr_completion.pages_processed === EXPECTED_BASELINE_PAGES &&
+      report.ocr_completion.total_pages === EXPECTED_BASELINE_PAGES,
+    ocr_chunks_present: acceptedOcrChunkCount(run),
+    ollama_provider_exact: effectiveProvider === 'ollama' && exactOllamaJobs,
+    ollama_model_exact:
+      configuredModel === DEFAULT_LLM_MODEL &&
+      effectiveModel === DEFAULT_LLM_MODEL,
+    provider_no_fallback: providerFallbackReason === null,
+    model_no_fallback: modelFallbackReason === null,
+    execution_mode_supported:
+      executionMode === 'auto' || executionMode === 'cpu',
+    execution_warning_consistent: executionWarningConsistent(
+      executionMode,
+      executionWarning,
+    ),
+    question_generation_jobs_succeeded: report.question_generation.completion_state.all_succeeded,
+    selected_model_produced_usable_questions:
+      effectiveModel !== null && report.question_generation.usable_question_count > 0,
+    question_generation_practice_ready:
+      report.question_generation.practice_ready_from_generated_questions,
+  };
+  checks.acceptance_fresh_run_isolation = acceptanceIsolationPassed(
+    run.metrics.acceptance_isolation_at_launch,
+  );
+  const productionSummaryPath = join(
+    run.options.outDir,
+    'production-summary.json',
+  );
+  const checksPassed = Object.values(checks).every(Boolean);
+
+  return {
+    schema_version: 6,
+    status: finalized ? (checksPassed ? 'passed' : 'failed') : 'incomplete',
+    generated_at: report.generated_at,
+    provider_policy: 'ollama-only-alpha',
+    acceptance_isolation_at_launch:
+      run.metrics.acceptance_isolation_at_launch ?? null,
+    policy_model:
+      readinessAtStart?.provider_selection?.configured_model ?? null,
+    selected_model: effectiveModel,
+    llm_provider: effectiveProvider,
+    provider_preference: report.runtime.llm_provider,
+    configured_provider: configuredProvider,
+    configured_model: configuredModel,
+    effective_model: effectiveModel,
+    provider_fallback_reason: providerFallbackReason,
+    model_fallback_reason: modelFallbackReason,
+    fallback_reason: modelFallbackReason,
+    llm_health: llmHealth,
+    execution_mode: executionMode,
+    execution_warning: executionWarning,
+    generation_ready_at_start: readinessAtStart ?? null,
+    succeeded_jobs: succeededJobs,
+    producing_jobs: producingJobs,
+    resources_released_at_end: resourcesReleased ?? null,
+    whole_source_question_count: run.metrics.whole_source_question_count ?? null,
+    artifacts: {
+      production_summary_json: normalizePath(
+        relative(run.options.workspaceRoot, productionSummaryPath),
+      ),
+      baseline_json: report.artifacts.baseline_json,
+      baseline_markdown: report.artifacts.baseline_markdown,
+      metrics_json: report.artifacts.metrics_json,
+      ...(report.artifacts.resource_sampling
+        ? { resource_sampling: report.artifacts.resource_sampling }
+        : {}),
+    },
+    timings_ms: report.timings_ms,
+    ocr_completion: report.ocr_completion,
+    question_generation: report.question_generation,
+    gpu_routing_checks: gpuRoutingChecks,
+    checks,
+    errors: run.metrics.errors,
+  };
+}
+
+function uniqueCompleteValue(
+  values: readonly (string | null)[],
+): string | null {
+  if (values.length === 0 || values.some((value) => value === null)) {
+    return null;
+  }
+  const unique = new Set(values);
+  return unique.size === 1 ? (values[0] ?? null) : null;
+}
+
+function uniqueFallbackReason(
+  jobs: readonly QuestionJobAttribution[],
+): string | null {
+  if (jobs.length === 0 || jobs.every((job) => job.fallback_reason === null)) {
+    return null;
+  }
+  const reasons = jobs.map((job) => job.fallback_reason);
+  return uniqueCompleteValue(reasons);
+}
+
+function executionWarningConsistent(
+  mode: 'auto' | 'cpu' | null,
+  warning: string | null,
+): boolean {
+  if (mode === 'cpu') {
+    return warning !== null && warning.trim().length > 0;
+  }
+  return mode === 'auto' && warning === null;
+}
+
+function generationReadinessPassed(
+  snapshot: GenerationReadinessSnapshot | undefined,
+  effectiveProvider: string | null,
+  configuredModel: string | null,
+  effectiveModel: string | null,
+  policyConfiguredModel: string,
+  providerPreference: string,
+): boolean {
+  if (
+    snapshot?.ready !== true ||
+    snapshot.blockers.length > 0 ||
+    snapshot.provider_selection === null ||
+    effectiveProvider === null ||
+    configuredModel === null ||
+    effectiveModel === null
+  ) {
+    return false;
+  }
+  const selection = snapshot.provider_selection;
+  // Provider selection keeps the policy model in configured_model, while an
+  // Ollama job's configured model is the resolved local profile alias.
+  if (
+    selection.preference !== providerPreference ||
+    selection.selected_provider !== effectiveProvider ||
+    selection.effective_provider !== effectiveProvider ||
+    selection.configured_model !== policyConfiguredModel ||
+    selection.effective_model !== configuredModel
+  ) {
+    return false;
+  }
+
+  return (
+    effectiveProvider === 'ollama' &&
+    selection.fallback_reason === null &&
+    runtimeRequirementAvailable(snapshot, 'ollama', null, true) &&
+    runtimeRequirementAvailable(
+      snapshot,
+      'ollama_model',
+      configuredModel,
+      false,
+    )
+  );
+}
+
+function runtimeRequirementAvailable(
+  snapshot: GenerationReadinessSnapshot,
+  kind: string,
+  version: string | null,
+  requireInstalledPath: boolean,
+): boolean {
+  return snapshot.llm_requirements.some(
+    (requirement) =>
+      requirement.kind === kind &&
+      requirement.available === true &&
+      (version === null || requirement.version === version) &&
+      (!requireInstalledPath || requirement.installed_path_verified),
+  );
+}
+
+function resourcesReleasedPassed(
+  snapshot: ResourcesReleasedAtEndSnapshot | undefined,
+  effectiveProvider: string | null,
+): boolean {
+  if (
+    snapshot?.released !== true ||
+    snapshot.pre_close_release_proven !== true ||
+    snapshot.pre_close_captured_at === null ||
+    snapshot.pre_close_stable_empty_snapshots < 2 ||
+    snapshot.stable_empty_snapshots < 2 ||
+    snapshot.alive_owned_processes.length > 0
+  ) {
+    return false;
+  }
+  return effectiveProvider === 'ollama';
+}
+
+function acceptanceIsolationPassed(
+  snapshot: AcceptanceIsolationSnapshot | undefined,
+): boolean {
+  return (
+    snapshot?.out_dir_created_by_runner === true &&
+    snapshot.app_data_dir_created_by_runner === true &&
+    snapshot.app_data_dir_empty_at_launch === true &&
+    (snapshot.paths_within_workspace_run_root === true ||
+      snapshot.app_data_dir_within_controlled_root === true) &&
+    snapshot.reparse_points_absent === true
+  );
+}
+
+function renderQuestionGenerationBaselineMarkdown(
+  report: QuestionGenerationBaselineReport,
+): string {
+  return `# Packaged Question generation Baseline
+
+- Status: ${report.status}
+- Generated: ${report.generated_at}
+- Git commit: ${report.git_commit ?? 'unknown'}
+- Model: ${renderModelMarkdown(report)}
+- PDF: ${report.input.pdf_path} (${report.input.pdf_bytes} bytes)
+- OCR: ${report.ocr_completion.pages_processed}/${report.ocr_completion.total_pages} pages, ${report.ocr_completion.chunks} chunks
+- First chunk visible: ${formatMaybeMs(report.timings_ms.first_chunk_visible)} (gate: ${formatMaybeMs(report.timings_ms.first_chunk_gate_ms)}, under gate: ${String(report.checks.first_chunk_under_gate)})
+- First usable qwen question: ${formatMaybeMs(report.timings_ms.first_usable_question_visible)}
+- Parse complete: ${formatMaybeMs(report.timings_ms.parse_complete_visible)}
+- All question generation jobs terminal: ${formatMaybeMs(report.timings_ms.question_generation_all_jobs_terminal)}
+- Practice ready from generated questions: ${String(report.question_generation.practice_ready_from_generated_questions)}
+- Practice first question: ${formatMaybeMs(report.timings_ms.practice_first_question_visible_ms)}
+- Jobs: ${report.question_generation.job_count}, generated: ${report.question_generation.generated_count}, usable questions: ${report.question_generation.usable_question_count}
+- Final job statuses: ${JSON.stringify(report.question_generation.final_status_counts)}
+- Graceful close: ${String(report.cleanup.gracefulExited)}, fallback used: ${String(report.cleanup.fallbackUsed)}, residual processes: ${report.cleanup.residualProcesses.length}
+
+Artifacts:
+
+- Metrics: ${report.artifacts.metrics_json}
+- Baseline JSON: ${report.artifacts.baseline_json}
+- Screenshots: ${report.artifacts.screenshots.length}
+${renderResourceSamplingMarkdown(report.artifacts.resource_sampling)}
+`;
+}
+
+function renderModelMarkdown(report: QuestionGenerationBaselineReport): string {
+  const configured = report.runtime.llm_configured_model;
+  if (report.runtime.llm_health?.available === false) {
+    return `${configured} (unavailable: ${report.runtime.llm_health.detail ?? 'provider unavailable'})`;
+  }
+  const effective = report.runtime.llm_effective_model ?? configured;
+  if (effective !== configured) {
+    return `${effective} (configured: ${configured}, fallback: ${report.runtime.llm_fallback_reason ?? 'active'})`;
+  }
+  return configured;
+}
+
+function readResourceSummary(
+  run: SmokeRunState,
+): Record<string, unknown> | null {
+  const summaryPath = run.metrics.resource_sampling?.windows_summary_json;
+  if (!summaryPath) {
+    return null;
+  }
+
+  const absolutePath = join(run.options.workspaceRoot, summaryPath);
+  if (!existsSync(absolutePath)) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(
+      readFileSync(absolutePath, 'utf8').replace(/^\uFEFF/, ''),
+    );
+    return isRecord(payload) ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+function readGpuRoutingChecks(
+  resourceSummary: Record<string, unknown> | null,
+): GpuRoutingChecks | null {
+  const payload = recordField(resourceSummary, 'gpu_routing_checks');
+  if (payload === null) {
+    return null;
+  }
+  return {
+    capture_runtime_process_observed:
+      payload.capture_runtime_process_observed === true,
+    capture_runtime_uses_amd_igpu: payload.capture_runtime_uses_amd_igpu === true,
+    gpu_luid_map_usable: payload.gpu_luid_map_usable === true,
+  };
+}
+
+function recordField(
+  record: Record<string, unknown> | null,
+  key: string,
+): Record<string, unknown> | null {
+  const value = record?.[key];
+  return isRecord(value) ? value : null;
+}
+
+function acceptedOcrChunkCount(run: SmokeRunState): boolean {
+  const chunks = run.metrics.ocr_completion?.chunks;
+  if (chunks === EXPECTED_BASELINE_CHUNKS) {
+    return true;
+  }
+  return (
+    run.options.allowCaptureChunkVariance &&
+    chunks !== null &&
+    chunks !== undefined &&
+    chunks > 0 &&
+    chunks <= EXPECTED_BASELINE_CHUNKS
+  );
+}
+
+function formatMaybeMs(value: number | null): string {
+  return value === null ? 'n/a' : `${value} ms`;
+}
+
+function renderResourceSamplingMarkdown(
+  artifacts: ResourceSamplingArtifacts | undefined,
+): string {
+  if (!artifacts) {
+    return '';
+  }
+  const paths = [
+    artifacts.windows_dxgi_adapters_json,
+    artifacts.windows_counters_csv,
+    artifacts.windows_summary_json,
+  ].filter((path): path is string => Boolean(path));
+  if (paths.length === 0) {
+    return '';
+  }
+  return `- Resource sampling: ${paths.join(', ')}`;
+}
+
+function sha256File(filePath: string): string {
+  return createHash('sha256').update(readFileSync(filePath)).digest('hex');
+}
+
+function currentGitCommit(run: SmokeRunState): string | null {
+  const result = spawnSync('git', ['rev-parse', 'HEAD'], {
+    cwd: run.options.workspaceRoot,
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  return result.status === 0 ? result.stdout.trim() || null : null;
+}

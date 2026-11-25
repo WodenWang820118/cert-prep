@@ -6,49 +6,49 @@ from sqlite3 import Connection, Row
 from uuid import uuid4
 
 from cert_prep_backend.authoring.application.ports import (
-    DocumentExamState,
-    DraftSources,
+    DocumentQuestionCount,
+    QuestionSources,
     StudyProjects,
 )
-from cert_prep_backend.authoring.domain.draft import DraftEdit, NewQuestionDraft, QuestionDraft
-from cert_prep_backend.authoring.domain.models import DraftSuggestion, UnavailableDraftBlock
-from cert_prep_backend.authoring.domain.generation import DraftJobCanceledError
+from cert_prep_backend.authoring.domain.question import QuestionEdit, NewQuestion, Question
+from cert_prep_backend.authoring.domain.models import QuestionSuggestion, UnavailableQuestionBlock
+from cert_prep_backend.authoring.domain.generation import QuestionJobCanceledError
 from cert_prep_backend.platform.database import Database, utc_now
 from cert_prep_backend.platform.errors import NotFoundError
 
-BindDocumentExamState = Callable[[Connection], DocumentExamState]
-"""Source Library's exam state of documents on the given connection, so it joins the commit."""
+BindDocumentQuestionCount = Callable[[Connection], DocumentQuestionCount]
+"""Source Library's question count and status of documents on the given connection, so it joins the commit."""
 
 
-def create_draft(
+def create_question(
     db: Database,
     project_id: str,
-    payload: NewQuestionDraft,
+    payload: NewQuestion,
     *,
     projects: StudyProjects,
-    sources: DraftSources,
-) -> QuestionDraft:
+    sources: QuestionSources,
+) -> Question:
     if not projects.exists(project_id):
         raise NotFoundError("Project not found.")
     payload.ensure_source_is_complete()
     if payload.cites_a_source:
         assert payload.document_id is not None and payload.chunk_id is not None
         sources.chunk(project_id, payload.document_id, payload.chunk_id)
-    draft_id = str(uuid4())
+    question_id = str(uuid4())
     now = utc_now()
     with db.connect() as connection:
         connection.execute(
             """
-            INSERT INTO question_drafts(
+            INSERT INTO questions(
                 id, project_id, document_id, chunk_id, question, choices_json,
-                answer, answer_key_source, rationale, citation_page, source_excerpt, status,
+                answer, answer_key_source, rationale, citation_page, source_excerpt,
                 confidence, source_order, source_question_number, item_kind, group_key, group_prompt,
-                rejection_reason, created_at, updated_at
+                created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                draft_id,
+                question_id,
                 project_id,
                 payload.document_id,
                 payload.chunk_id,
@@ -69,38 +69,38 @@ def create_draft(
                 now,
             ),
         )
-        row = _draft_query(connection, project_id, draft_id)
+        row = _question_query(connection, project_id, question_id)
     if row is None:
-        raise NotFoundError("Question draft not found.")
-    return _draft_from_row(row)
+        raise NotFoundError("Question not found.")
+    return _question_from_row(row)
 
 
-def create_generated_drafts(
+def create_generated_questions(
     db: Database,
     *,
     project_id: str,
     document_id: str,
-    suggestions: list[DraftSuggestion],
+    suggestions: list[QuestionSuggestion],
     projects: StudyProjects,
-) -> list[QuestionDraft]:
+) -> list[Question]:
     if not projects.exists(project_id):
         raise NotFoundError("Project not found.")
     now = utc_now()
-    draft_ids: list[str] = []
+    question_ids: list[str] = []
     with db.connect() as connection:
         for index, suggestion in enumerate(suggestions, start=1):
-            if _matching_generated_draft_exists(
+            if _matching_generated_question_exists(
                 connection,
                 project_id=project_id,
                 document_id=document_id,
                 suggestion=suggestion,
             ):
                 continue
-            draft_id = str(uuid4())
-            draft_ids.append(draft_id)
-            _insert_generated_draft(
+            question_id = str(uuid4())
+            question_ids.append(question_id)
+            _insert_generated_question(
                 connection,
-                draft_id=draft_id,
+                question_id=question_id,
                 project_id=project_id,
                 document_id=document_id,
                 suggestion=suggestion,
@@ -109,28 +109,28 @@ def create_generated_drafts(
             )
         rows = [
             row
-            for draft_id in draft_ids
-            if (row := _draft_query(connection, project_id, draft_id)) is not None
+            for question_id in question_ids
+            if (row := _question_query(connection, project_id, question_id)) is not None
         ]
-    return [_draft_from_row(row) for row in rows]
+    return [_question_from_row(row) for row in rows]
 
 
-def append_generated_drafts_and_complete_job(
+def append_generated_questions_and_complete_job(
     db: Database,
     *,
     job_id: str,
     project_id: str,
     document_id: str,
-    suggestions: list[DraftSuggestion],
+    suggestions: list[QuestionSuggestion],
     effective_provider: str | None,
     effective_model: str | None,
     fallback_reason: str | None,
-    exam_state: BindDocumentExamState,
+    question_count: BindDocumentQuestionCount,
     projects: StudyProjects,
-) -> list[QuestionDraft]:
-    """Commit generated drafts, the document's exam state and the job's exact successful
+) -> list[Question]:
+    """Commit generated questions, the document's question count and status and the job's exact successful
     attribution atomically. The job ran after the document was imported, so Source Library
-    records the import's draft count."""
+    records the import's question count."""
 
     if not projects.exists(project_id):
         raise NotFoundError("Project not found.")
@@ -138,19 +138,19 @@ def append_generated_drafts_and_complete_job(
         # The count and the document's status are read and written under one write lock, as
         # the single UPDATE that used to do both was.
         connection.execute("BEGIN IMMEDIATE")
-        rows = _append_generated_drafts(
+        rows = _append_generated_questions(
             connection,
             project_id=project_id,
             document_id=document_id,
             suggestions=suggestions,
         )
-        exam_state(connection).record_import_draft_count(
-            project_id, document_id, _document_draft_count(connection, project_id, document_id)
+        question_count(connection).record_import_question_count(
+            project_id, document_id, _document_question_count(connection, project_id, document_id)
         )
         now = utc_now()
         updated_job = connection.execute(
             """
-            UPDATE draft_generation_jobs
+            UPDATE question_generation_jobs
             SET status = 'succeeded',
                 phase = 'completed',
                 cancellable = 0,
@@ -180,34 +180,34 @@ def append_generated_drafts_and_complete_job(
             job = connection.execute(
                 """
                 SELECT status
-                FROM draft_generation_jobs
+                FROM question_generation_jobs
                 WHERE id = ? AND project_id = ? AND document_id = ?
                 """,
                 (job_id, project_id, document_id),
             ).fetchone()
             if job is not None and job["status"] in {"cancel_requested", "canceled"}:
-                raise DraftJobCanceledError("Draft generation was canceled before commit.")
+                raise QuestionJobCanceledError("Question generation was canceled before commit.")
             raise NotFoundError(
-                "Draft generation job was not in its atomic commit phase."
+                "Question generation job was not in its atomic commit phase."
             )
-    return [_draft_from_row(row) for row in rows]
+    return [_question_from_row(row) for row in rows]
 
 
-def append_generated_drafts_and_complete_manual_operation(
+def append_generated_questions_and_complete_manual_operation(
     db: Database,
     *,
     operation_id: str,
     project_id: str,
     document_id: str,
-    suggestions: list[DraftSuggestion],
+    suggestions: list[QuestionSuggestion],
     effective_provider: str | None,
     effective_model: str | None,
     fallback_reason: str | None,
-    exam_state: BindDocumentExamState,
-    unavailable_blocks: Sequence[UnavailableDraftBlock] = (),
+    question_count: BindDocumentQuestionCount,
+    unavailable_blocks: Sequence[UnavailableQuestionBlock] = (),
     projects: StudyProjects,
-) -> list[QuestionDraft]:
-    """Atomically publish manual drafts, the document's exam state and the operation's final
+) -> list[Question]:
+    """Atomically publish manual questions, the document's question count and status and the operation's final
     attribution."""
 
     if not projects.exists(project_id):
@@ -215,19 +215,19 @@ def append_generated_drafts_and_complete_manual_operation(
     with db.connect() as connection:
         # One write lock over the count and the document's status, as for a job commit.
         connection.execute("BEGIN IMMEDIATE")
-        rows = _append_generated_drafts(
+        rows = _append_generated_questions(
             connection,
             project_id=project_id,
             document_id=document_id,
             suggestions=suggestions,
         )
-        exam_state(connection).record_draft_count(
-            project_id, document_id, _document_draft_count(connection, project_id, document_id)
+        question_count(connection).record_question_count(
+            project_id, document_id, _document_question_count(connection, project_id, document_id)
         )
         now = utc_now()
         updated = connection.execute(
             """
-            UPDATE manual_draft_generation_operations
+            UPDATE manual_question_generations
             SET status = 'succeeded', phase = 'completed', cancellable = 0,
                 generated_count = ?, error = NULL,
                 effective_provider = ?, effective_model = ?, fallback_reason = ?,
@@ -255,7 +255,7 @@ def append_generated_drafts_and_complete_manual_operation(
             operation = connection.execute(
                 """
                 SELECT status
-                FROM manual_draft_generation_operations
+                FROM manual_question_generations
                 WHERE id = ? AND project_id = ? AND document_id = ?
                 """,
                 (operation_id, project_id, document_id),
@@ -264,50 +264,50 @@ def append_generated_drafts_and_complete_manual_operation(
                 "cancel_requested",
                 "canceled",
             }:
-                raise DraftJobCanceledError(
-                    "Manual draft generation was canceled before commit."
+                raise QuestionJobCanceledError(
+                    "Manual question generation was canceled before commit."
                 )
             raise NotFoundError(
-                "Manual draft generation was not in its atomic commit phase."
+                "Manual question generation was not in its atomic commit phase."
             )
-    return [_draft_from_row(row) for row in rows]
+    return [_question_from_row(row) for row in rows]
 
 
-def _document_draft_count(connection: Connection, project_id: str, document_id: str) -> int:
-    """Every draft of the document, whatever its status: the document's exam item count."""
+def _document_question_count(connection: Connection, project_id: str, document_id: str) -> int:
+    """Every question of the document, which gives the document's question count."""
 
     return connection.execute(
         """
         SELECT COUNT(*)
-        FROM question_drafts
+        FROM questions
         WHERE project_id = ? AND document_id = ?
         """,
         (project_id, document_id),
     ).fetchone()[0]
 
 
-def _insert_generated_draft(
+def _insert_generated_question(
     connection,
     *,
-    draft_id: str,
+    question_id: str,
     project_id: str,
     document_id: str,
-    suggestion: DraftSuggestion,
+    suggestion: QuestionSuggestion,
     source_order: int,
     now: str,
 ) -> None:
     connection.execute(
         """
-        INSERT INTO question_drafts(
+        INSERT INTO questions(
             id, project_id, document_id, chunk_id, question, choices_json,
-            answer, answer_key_source, rationale, citation_page, source_excerpt, status,
+            answer, answer_key_source, rationale, citation_page, source_excerpt,
             confidence, source_order, source_question_number, item_kind, group_key, group_prompt,
-            rejection_reason, created_at, updated_at
+            created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            draft_id,
+            question_id,
             project_id,
             document_id,
             suggestion.chunk_id,
@@ -318,7 +318,6 @@ def _insert_generated_draft(
             suggestion.rationale,
             suggestion.citation_page,
             suggestion.source_excerpt,
-            suggestion.status.value,
             suggestion.confidence,
             source_order,
             suggestion.source_question_number,
@@ -331,28 +330,28 @@ def _insert_generated_draft(
     )
 
 
-def _append_generated_drafts(
+def _append_generated_questions(
     connection,
     *,
     project_id: str,
     document_id: str,
-    suggestions: list[DraftSuggestion],
+    suggestions: list[QuestionSuggestion],
 ) -> list[Row]:
     now = utc_now()
-    draft_ids: list[str] = []
+    question_ids: list[str] = []
     for index, suggestion in enumerate(suggestions, start=1):
-        if _matching_generated_draft_exists(
+        if _matching_generated_question_exists(
             connection,
             project_id=project_id,
             document_id=document_id,
             suggestion=suggestion,
         ):
             continue
-        draft_id = str(uuid4())
-        draft_ids.append(draft_id)
-        _insert_generated_draft(
+        question_id = str(uuid4())
+        question_ids.append(question_id)
+        _insert_generated_question(
             connection,
-            draft_id=draft_id,
+            question_id=question_id,
             project_id=project_id,
             document_id=document_id,
             suggestion=suggestion,
@@ -361,40 +360,40 @@ def _append_generated_drafts(
         )
     return [
         row
-        for draft_id in draft_ids
-        if (row := _draft_query(connection, project_id, draft_id)) is not None
+        for question_id in question_ids
+        if (row := _question_query(connection, project_id, question_id)) is not None
     ]
 
 
-def list_drafts(
+def list_questions(
     db: Database,
     project_id: str,
     *,
     projects: StudyProjects,
-) -> list[QuestionDraft]:
+) -> list[Question]:
     if not projects.exists(project_id):
         raise NotFoundError("Project not found.")
     with db.connect() as connection:
         rows = connection.execute(
             """
             SELECT *
-            FROM question_drafts
+            FROM questions
             WHERE project_id = ?
             ORDER BY created_at DESC
             """,
             (project_id,),
         ).fetchall()
-    return [_draft_from_row(row) for row in rows]
+    return [_question_from_row(row) for row in rows]
 
 
-def update_draft(
-    db: Database, project_id: str, draft_id: str, payload: DraftEdit
-) -> QuestionDraft:
-    edited = get_draft(db, project_id, draft_id).edited(payload, now=utc_now())
+def update_question(
+    db: Database, project_id: str, question_id: str, payload: QuestionEdit
+) -> Question:
+    edited = get_question(db, project_id, question_id).edited(payload, now=utc_now())
     with db.connect() as connection:
         connection.execute(
             """
-            UPDATE question_drafts
+            UPDATE questions
             SET question = ?, choices_json = ?, answer = ?, answer_key_source = ?, rationale = ?,
                 citation_page = ?, source_excerpt = ?, confidence = ?, source_order = ?,
                 source_question_number = ?, item_kind = ?, group_key = ?, group_prompt = ?,
@@ -417,27 +416,27 @@ def update_draft(
                 edited.group_prompt,
                 edited.updated_at,
                 project_id,
-                draft_id,
+                question_id,
             ),
         )
-        row = _draft_query(connection, project_id, draft_id)
+        row = _question_query(connection, project_id, question_id)
     if row is None:
-        raise NotFoundError("Question draft not found.")
-    return _draft_from_row(row)
+        raise NotFoundError("Question not found.")
+    return _question_from_row(row)
 
 
-def get_draft(db: Database, project_id: str, draft_id: str) -> QuestionDraft:
+def get_question(db: Database, project_id: str, question_id: str) -> Question:
     with db.connect() as connection:
-        row = _draft_query(connection, project_id, draft_id)
+        row = _question_query(connection, project_id, question_id)
     if row is None:
-        raise NotFoundError("Question draft not found.")
-    return _draft_from_row(row)
+        raise NotFoundError("Question not found.")
+    return _question_from_row(row)
 
 
-def _approved_questions(
+def _source_questions(
     connection: Connection, project_id: str, *, document_id: str | None
-) -> list[QuestionDraft]:
-    """Approved drafts in the order practice asks them.
+) -> list[Question]:
+    """Questions in the order practice asks them.
 
     A project lists them by id. One document lists them in source order: a missing
     source order sorts after the ones that have it, then by page, creation and id.
@@ -447,8 +446,8 @@ def _approved_questions(
         rows = connection.execute(
             """
             SELECT *
-            FROM question_drafts
-            WHERE project_id = ? AND status = 'approved'
+            FROM questions
+            WHERE project_id = ?
             ORDER BY id
             """,
             (project_id,),
@@ -457,8 +456,8 @@ def _approved_questions(
         rows = connection.execute(
             """
             SELECT *
-            FROM question_drafts
-            WHERE project_id = ? AND document_id = ? AND status = 'approved'
+            FROM questions
+            WHERE project_id = ? AND document_id = ?
             ORDER BY
                 CASE WHEN source_order IS NULL THEN 1 ELSE 0 END,
                 source_order,
@@ -468,46 +467,46 @@ def _approved_questions(
             """,
             (project_id, document_id),
         ).fetchall()
-    return [_draft_from_row(row) for row in rows]
+    return [_question_from_row(row) for row in rows]
 
 
-def _drafts_for_ids(
-    connection: Connection, project_id: str, draft_ids: Sequence[str]
-) -> list[QuestionDraft]:
-    ids = list(dict.fromkeys(draft_ids))
+def _questions_for_ids(
+    connection: Connection, project_id: str, question_ids: Sequence[str]
+) -> list[Question]:
+    ids = list(dict.fromkeys(question_ids))
     if not ids:
         return []
     placeholders = ", ".join("?" for _ in ids)
     rows = connection.execute(
         f"""
         SELECT *
-        FROM question_drafts
+        FROM questions
         WHERE project_id = ? AND id IN ({placeholders})
         """,
         (project_id, *ids),
     ).fetchall()
-    return [_draft_from_row(row) for row in rows]
+    return [_question_from_row(row) for row in rows]
 
 
-def _draft_query(connection, project_id: str, draft_id: str) -> Row | None:
+def _question_query(connection, project_id: str, question_id: str) -> Row | None:
     return connection.execute(
-        "SELECT * FROM question_drafts WHERE project_id = ? AND id = ?",
-        (project_id, draft_id),
+        "SELECT * FROM questions WHERE project_id = ? AND id = ?",
+        (project_id, question_id),
     ).fetchone()
 
 
-def _matching_generated_draft_exists(
+def _matching_generated_question_exists(
     connection,
     *,
     project_id: str,
     document_id: str,
-    suggestion: DraftSuggestion,
+    suggestion: QuestionSuggestion,
 ) -> bool:
     if suggestion.source_question_number:
         row = connection.execute(
             """
             SELECT id
-            FROM question_drafts
+            FROM questions
             WHERE project_id = ?
               AND document_id = ?
               AND chunk_id = ?
@@ -527,7 +526,7 @@ def _matching_generated_draft_exists(
     row = connection.execute(
         """
         SELECT id
-        FROM question_drafts
+        FROM questions
         WHERE project_id = ?
           AND document_id = ?
           AND chunk_id = ?
@@ -544,8 +543,8 @@ def _matching_generated_draft_exists(
     return row is not None
 
 
-def _draft_from_row(row: Row) -> QuestionDraft:
-    return QuestionDraft(
+def _question_from_row(row: Row) -> Question:
+    return Question(
         id=row["id"],
         project_id=row["project_id"],
         document_id=row["document_id"],
@@ -566,15 +565,13 @@ def _draft_from_row(row: Row) -> QuestionDraft:
         item_kind=row["item_kind"],
         group_key=row["group_key"],
         group_prompt=row["group_prompt"],
-        status=row["status"],
-        rejection_reason=row["rejection_reason"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
 
 
-class SqliteQuestionDraftRepository:
-    """Question drafts stored in SQLite."""
+class SqliteQuestionRepository:
+    """Questions stored in SQLite."""
 
     def __init__(
         self,
@@ -582,7 +579,7 @@ class SqliteQuestionDraftRepository:
         connection: Connection | None = None,
         *,
         projects: StudyProjects,
-        sources: DraftSources,
+        sources: QuestionSources,
     ) -> None:
         # A caller's connection joins that transaction for reads. Practice passes the
         # connection of its unit of work; the write methods still open their own.
@@ -591,23 +588,23 @@ class SqliteQuestionDraftRepository:
         self._projects = projects
         self._sources = sources
 
-    def drafts_of(self, project_id: str) -> list[QuestionDraft]:
-        return list_drafts(self._db, project_id, projects=self._projects)
+    def questions_of(self, project_id: str) -> list[Question]:
+        return list_questions(self._db, project_id, projects=self._projects)
 
-    def write(self, project_id: str, draft: NewQuestionDraft) -> QuestionDraft:
-        return create_draft(
-            self._db, project_id, draft, projects=self._projects, sources=self._sources
+    def write(self, project_id: str, authored_question: NewQuestion) -> Question:
+        return create_question(
+            self._db, project_id, authored_question, projects=self._projects, sources=self._sources
         )
 
-    def edit(self, project_id: str, draft_id: str, edit: DraftEdit) -> QuestionDraft:
+    def edit(self, project_id: str, question_id: str, edit: QuestionEdit) -> Question:
         if not self._projects.exists(project_id):
             raise NotFoundError("Project not found.")
-        return update_draft(self._db, project_id, draft_id, edit)
+        return update_question(self._db, project_id, question_id, edit)
 
     def add_generated(
-        self, project_id: str, document_id: str, suggestions: Sequence[DraftSuggestion]
-    ) -> list[QuestionDraft]:
-        return create_generated_drafts(
+        self, project_id: str, document_id: str, suggestions: Sequence[QuestionSuggestion]
+    ) -> list[Question]:
+        return create_generated_questions(
             self._db,
             project_id=project_id,
             document_id=document_id,
@@ -615,22 +612,28 @@ class SqliteQuestionDraftRepository:
             projects=self._projects,
         )
 
-    def approved(self, project_id: str, *, document_id: str | None) -> list[QuestionDraft]:
+    def count_for_source(self, project_id: str, document_id: str) -> int:
         if self._connection is not None:
-            return _approved_questions(self._connection, project_id, document_id=document_id)
+            return _document_question_count(self._connection, project_id, document_id)
         with self._db.connect() as connection:
-            return _approved_questions(connection, project_id, document_id=document_id)
+            return _document_question_count(connection, project_id, document_id)
 
-    def find(self, project_id: str, draft_id: str) -> QuestionDraft | None:
+    def for_source(self, project_id: str, *, document_id: str | None) -> list[Question]:
         if self._connection is not None:
-            row = _draft_query(self._connection, project_id, draft_id)
+            return _source_questions(self._connection, project_id, document_id=document_id)
+        with self._db.connect() as connection:
+            return _source_questions(connection, project_id, document_id=document_id)
+
+    def find(self, project_id: str, question_id: str) -> Question | None:
+        if self._connection is not None:
+            row = _question_query(self._connection, project_id, question_id)
         else:
             with self._db.connect() as connection:
-                row = _draft_query(connection, project_id, draft_id)
-        return None if row is None else _draft_from_row(row)
+                row = _question_query(connection, project_id, question_id)
+        return None if row is None else _question_from_row(row)
 
-    def find_many(self, project_id: str, draft_ids: Sequence[str]) -> list[QuestionDraft]:
+    def find_many(self, project_id: str, question_ids: Sequence[str]) -> list[Question]:
         if self._connection is not None:
-            return _drafts_for_ids(self._connection, project_id, draft_ids)
+            return _questions_for_ids(self._connection, project_id, question_ids)
         with self._db.connect() as connection:
-            return _drafts_for_ids(connection, project_id, draft_ids)
+            return _questions_for_ids(connection, project_id, question_ids)

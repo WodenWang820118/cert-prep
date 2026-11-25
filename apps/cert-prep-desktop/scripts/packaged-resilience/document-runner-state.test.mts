@@ -44,12 +44,12 @@ test('document runner builds the packaged smoke run state from its options', asy
     llmProvider: 'auto',
     acceptanceIsolation: true,
     candidateDistributionProfile: 'public_unsigned_alpha',
-    waitForStreamingComplete: false,
-    streamingCompleteTimeoutMs: 12_345,
+    waitForQuestionJobs: false,
+    questionJobsCompleteTimeoutMs: 12_345,
     skipGpuSampling: true,
     productionSummary: false,
     allowCaptureChunkVariance: true,
-    verifyStreamingPracticeReady: false,
+    verifyGeneratedQuestionsPracticeReady: false,
   });
   assert.equal(Number.isNaN(Date.parse(startedAt)), false);
   assert.deepEqual(seen.metrics, {
@@ -66,10 +66,10 @@ test('document runner builds the packaged smoke run state from its options', asy
     generation_readiness_at_start: seen.metrics.generation_readiness_at_start,
     first_chunk_gate_ms: 15_000,
     first_chunk_under_gate: false,
-    wait_for_streaming_complete: false,
-    practice_ready_from_streamed_questions: false,
+    wait_for_question_jobs: false,
+    practice_ready_from_generated_questions: false,
     app_data_dir: relative(workspaceRoot, join(diagnosticsRoot, 'app-data')),
-    streaming_questions: {
+    question_generation: {
       job_snapshots: [],
       question_snapshots: [],
       status_counts: {},
@@ -89,9 +89,9 @@ test('document runner builds the packaged smoke run state from its options', asy
       processBaseline: { all: [], nodePids: new Set() },
       projectApi: null,
       uploadedDocument: null,
-      streamingDraftParseStartedAt: null,
-      streamingDraftCaptureOpen: false,
-      streamingApiPollErrorCaptured: false,
+      questionObservationStartedAt: null,
+      questionObservationActive: false,
+      questionGenerationApiPollErrorCaptured: false,
     },
   );
 });

@@ -61,7 +61,7 @@ def _wait_for_document_progress(
     )
 
 
-def _wait_for_question_drafts(
+def _wait_for_questions(
     client: TestClient,
     auth_headers,
     project_id: str,
@@ -71,30 +71,30 @@ def _wait_for_question_drafts(
     deadline = time.monotonic() + 5
     latest: list[dict] = []
     while time.monotonic() < deadline:
-        response = client.get(f"/projects/{project_id}/question-drafts", headers=auth_headers)
+        response = client.get(f"/projects/{project_id}/questions", headers=auth_headers)
         assert response.status_code == 200
         latest = response.json()["items"]
         if len(latest) >= count:
             return latest
         time.sleep(0.05)
-    raise AssertionError(f"Question drafts did not reach count={count}: {latest}")
+    raise AssertionError(f"Questions did not reach count={count}: {latest}")
 
 
-def _draft_job_statuses(
+def _question_job_statuses(
     client: TestClient,
     auth_headers,
     project_id: str,
     document_id: str,
 ) -> list[str]:
     response = client.get(
-        f"/projects/{project_id}/documents/{document_id}/draft-jobs",
+        f"/projects/{project_id}/documents/{document_id}/question-jobs",
         headers=auth_headers,
     )
     assert response.status_code == 200
     return [job["status"] for job in response.json()["items"]]
 
 
-def _wait_for_draft_jobs(
+def _wait_for_question_jobs(
     client: TestClient,
     auth_headers,
     project_id: str,
@@ -107,7 +107,7 @@ def _wait_for_draft_jobs(
     latest: list[dict] = []
     while time.monotonic() < deadline:
         response = client.get(
-            f"/projects/{project_id}/documents/{document_id}/draft-jobs",
+            f"/projects/{project_id}/documents/{document_id}/question-jobs",
             headers=auth_headers,
         )
         assert response.status_code == 200
@@ -115,4 +115,4 @@ def _wait_for_draft_jobs(
         if len(latest) >= count and all(job["status"] == status for job in latest[:count]):
             return latest
         time.sleep(0.05)
-    raise AssertionError(f"Draft jobs did not reach status={status}, count={count}: {latest}")
+    raise AssertionError(f"Question jobs did not reach status={status}, count={count}: {latest}")

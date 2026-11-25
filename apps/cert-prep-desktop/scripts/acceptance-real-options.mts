@@ -252,7 +252,7 @@ export async function createAcceptanceSmokeOptions(
             outDir: join(packagedRunRoot, 'image-ocr-run'),
             appDataDir: appDataDirectories[1]!,
             cdpPort: options.cdpPort + 3,
-            timeoutMs: Math.max(options.streamingCompleteTimeoutMs, 300_000),
+            timeoutMs: Math.max(options.questionJobsCompleteTimeoutMs, 300_000),
             acceptanceIsolation: true,
             ...(captureRuntimeMirror
               ? { captureRuntimeWorkerMirrorUrl: captureRuntimeMirror.url }

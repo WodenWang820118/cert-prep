@@ -101,7 +101,7 @@ host never retries on CPU.
 `hostStructuringOwner: 'component'`, `hostManagedHandshake: true` and
 `showRuntimeSetup: false`. Capture review accepts PDF and image only, so the
 page offers no recordings; recordings are imported in the source library (the
-Build page). Its `CertPrepCaptureClient` calls the authenticated
+Questions page). Its `CertPrepCaptureClient` calls the authenticated
 backend at `/projects/{project_id}/capture-reviews`; the browser never
 calls Capture Runtime. The client and structuring provider are cold RxJS
 Observables: unsubscribing closes only that backend SSE listener and never

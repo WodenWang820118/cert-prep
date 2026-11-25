@@ -96,7 +96,7 @@
 
   app-project-rail,
   app-source-import-panel,
-  app-draft-review-panel,
+  app-questions-panel,
   app-practice-panel,
   app-wrong-answer-retry {
     display: contents;
@@ -357,7 +357,7 @@
     margin-bottom: 0.25rem;
   }
 
-  .build-grid {
+  .questions-grid {
     display: grid;
     grid-template-columns: minmax(22rem, 1fr) minmax(24rem, 1fr);
     align-items: start;
@@ -528,12 +528,6 @@
     color: var(--workbench-muted);
     font-size: 0.75rem;
     font-weight: 700;
-  }
-
-  .workbench-tag.is-primary {
-    border-color: var(--workbench-primary-border);
-    background: var(--workbench-primary-soft);
-    color: #001b3d;
   }
 
   .workbench-metrics {
@@ -894,7 +888,7 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .build-grid {
+    .questions-grid {
       grid-template-columns: 1fr;
     }
   }

@@ -175,7 +175,7 @@ async function runLazyCaptureJourney(
     (url) =>
       url.pathname === '/' ||
       url.pathname === '/runtime' ||
-      url.pathname === '/build',
+      url.pathname === '/questions',
     { timeout: 60_000 },
   );
   await waitText(
@@ -327,9 +327,9 @@ async function runLazyCaptureJourney(
   await waitForCaptureWorkbenchReady(run);
   await verifyPersistedDocument(run, capture.documentId, secondRotation.api);
   await relaunchedPage
-    .getByRole('link', { name: 'Build', exact: true })
+    .getByRole('link', { name: 'Questions', exact: true })
     .click();
-  await waitText(run, /Step 01: Source files/, 60_000, 'Build source files');
+  await waitText(run, /Step 01: Source files/, 60_000, 'Questions page source files');
   await waitText(
     run,
     new RegExp(fixtureName.replace('.', '\\.')),
@@ -891,12 +891,12 @@ function createRun(
     llmProvider: 'fake',
     acceptanceIsolation: true,
     candidateDistributionProfile: 'local_nonpublishable',
-    waitForStreamingComplete: false,
-    streamingCompleteTimeoutMs: 120_000,
+    waitForQuestionJobs: false,
+    questionJobsCompleteTimeoutMs: 120_000,
     skipGpuSampling: true,
     productionSummary: false,
     allowCaptureChunkVariance: true,
-    verifyStreamingPracticeReady: false,
+    verifyGeneratedQuestionsPracticeReady: false,
   };
   const metrics: SmokeMetrics = {
     status: 'running',
@@ -914,7 +914,7 @@ function createRun(
     ),
     first_chunk_gate_ms: 15_000,
     first_chunk_under_gate: false,
-    streaming_questions: {
+    question_generation: {
       job_snapshots: [],
       question_snapshots: [],
       status_counts: {},
@@ -932,8 +932,8 @@ function createRun(
     processBaseline: { all: [], nodePids: new Set() },
     projectApi: null,
     uploadedDocument: null,
-    streamingDraftParseStartedAt: null,
-    streamingDraftCaptureOpen: false,
-    streamingApiPollErrorCaptured: false,
+    questionObservationStartedAt: null,
+    questionObservationActive: false,
+    questionGenerationApiPollErrorCaptured: false,
   };
 }

@@ -1,0 +1,157 @@
+<article class="workbench-question-card" data-testid="question-card">
+  <div class="workbench-question-meta">
+    <app-ai-inferred-answer-badge [source]="model().answerKeySource" />
+    @if (model().citationPage !== null) {
+      <span>Page {{ model().citationPage }}</span>
+    }
+  </div>
+
+  @if (model().isEditing) {
+    @if (model().edit; as edit) {
+      <div class="workbench-edit-form">
+        <label class="workbench-field">
+          <span>Question</span>
+          <input
+            hlmInput
+            [name]="model().fieldPrefix + '-question'"
+            [value]="edit.question"
+            (input)="emit({ type: 'set-question', value: valueFrom($event) })"
+          />
+        </label>
+
+        <fieldset class="m-0 grid gap-2 border-0 p-0">
+          <legend class="pb-1 text-sm font-bold text-muted-foreground">
+            Choices
+          </legend>
+          @for (choice of edit.choices; track $index) {
+            <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+              <input
+                hlmInput
+                [name]="model().fieldPrefix + '-choice-' + $index"
+                [value]="choice"
+                (input)="
+                  emit({
+                    type: 'set-choice',
+                    index: $index,
+                    value: valueFrom($event),
+                  })
+                "
+              />
+              <button
+                class="workbench-secondary-button"
+                type="button"
+                [attr.aria-label]="'Remove choice ' + ($index + 1)"
+                [disabled]="edit.choices.length <= 2"
+                (click)="emit({ type: 'remove-choice', index: $index })"
+              >
+                <app-icon name="lucideX" />
+              </button>
+            </div>
+          }
+          <button
+            class="workbench-secondary-button"
+            type="button"
+            (click)="emit({ type: 'add-choice' })"
+          >
+            <app-icon name="lucidePlus" />
+            <span>Add choice</span>
+          </button>
+        </fieldset>
+
+        <label class="workbench-field">
+          <span>Answer</span>
+          <select
+            [name]="model().fieldPrefix + '-answer'"
+            [value]="edit.answer"
+            (change)="emit({ type: 'set-answer', value: valueFrom($event) })"
+          >
+            <option value="">Select answer</option>
+            @for (choice of edit.choices; track $index) {
+              <option [value]="choice">
+                {{ displayChoice(edit.choices, choice) || 'Choice ' + ($index + 1) }}
+              </option>
+            }
+          </select>
+        </label>
+
+        <label class="workbench-field">
+          <span>Rationale</span>
+          <textarea
+            [name]="model().fieldPrefix + '-rationale'"
+            [value]="edit.rationale"
+            (input)="emit({ type: 'set-rationale', value: valueFrom($event) })"
+          ></textarea>
+        </label>
+      </div>
+    }
+  } @else {
+    <h3>{{ model().question }}</h3>
+    <ol class="workbench-choice-list" aria-label="Choices">
+      @for (choice of model().choices; track $index) {
+        <li
+          class="workbench-choice"
+          [class.is-answer]="choice === model().answer"
+        >
+          <span class="workbench-choice-key">{{ choiceKey($index) }}</span>
+          <span>{{ displayChoice(model().choices, choice) }}</span>
+          @if (choice === model().answer) {
+            <app-icon name="lucideCheck" />
+          }
+        </li>
+      }
+    </ol>
+    @if (model().rationale) {
+      <div class="workbench-rationale">
+        <strong>Rationale</strong>
+        <p>{{ model().rationale }}</p>
+      </div>
+    }
+    <div class="workbench-rationale">
+      <div class="flex flex-wrap items-center gap-2">
+        <strong>Answer</strong>
+        <app-ai-inferred-answer-badge [source]="model().answerKeySource" />
+      </div>
+      <p>{{ displayChoice(model().choices, model().answer) || 'No answer selected.' }}</p>
+    </div>
+  }
+
+  <div class="workbench-rationale">
+    <strong>Source evidence</strong>
+    @if (model().sourceExcerpt) {
+      <p>{{ model().sourceExcerpt }}</p>
+    } @else {
+      <p>No source excerpt is available.</p>
+    }
+  </div>
+
+  <div class="flex flex-wrap justify-end gap-2">
+    @if (model().isEditing) {
+      <button
+        class="workbench-secondary-button"
+        type="button"
+        [disabled]="model().saveBusy"
+        (click)="emit({ type: 'cancel-edit' })"
+      >
+        Cancel
+      </button>
+      <button
+        class="workbench-action-button"
+        type="button"
+        [disabled]="model().saveBusy"
+        (click)="emit({ type: 'save' })"
+      >
+        <app-icon name="lucideSave" [busy]="model().saveBusy" />
+        <span>Save</span>
+      </button>
+    } @else {
+      <button
+        class="workbench-secondary-button"
+        type="button"
+        (click)="emit({ type: 'start-edit' })"
+      >
+        <app-icon name="lucidePencil" />
+        <span>Edit</span>
+      </button>
+    }
+  </div>
+</article>

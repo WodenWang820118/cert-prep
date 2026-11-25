@@ -1,4 +1,4 @@
-"""Source Library as the source of drafts: a document's chunks, and its count of drafts."""
+"""Source Library as the source of questions: a document's chunks, and its count of questions."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from cert_prep_backend.source_library.application import use_cases as source_lib
 from cert_prep_backend.source_library.application.ports import DocumentRepository
 
 
-class SourceLibraryDraftSources:
-    """Reads chunks through Source Library's use cases and records a document's draft count."""
+class SourceLibraryQuestionSources:
+    """Reads chunks through Source Library's use cases and records a document's question count."""
 
     def __init__(self, documents: DocumentRepository) -> None:
         self._documents = documents
@@ -24,8 +24,8 @@ class SourceLibraryDraftSources:
             source_library.view_chunk(self._documents, project_id, document_id, chunk_id)
         )
 
-    def record_draft_count(self, project_id: str, document_id: str, count: int) -> None:
-        source_library.record_draft_count(self._documents, project_id, document_id, count)
+    def record_question_count(self, project_id: str, document_id: str, count: int) -> None:
+        source_library.record_question_count(self._documents, project_id, document_id, count)
 
-    def record_import_draft_count(self, project_id: str, document_id: str, count: int) -> None:
-        source_library.record_import_draft_count(self._documents, project_id, document_id, count)
+    def record_import_question_count(self, project_id: str, document_id: str, count: int) -> None:
+        source_library.record_import_question_count(self._documents, project_id, document_id, count)

@@ -2,8 +2,8 @@
 function loads the operation, lets the aggregate decide, and applies the result with an
 update guarded by the state it was decided from.
 
-Stopping or retrying a run discards the document's unfinished draft generation jobs. Question
-Authoring owns those jobs, so the functions that do it take `draft_jobs`, which binds that
+Stopping or retrying a run discards the document's unfinished question generation jobs. Question
+Authoring owns those jobs, so the functions that do it take `question_jobs`, which binds that
 context's jobs to the run's connection: the jobs go in the run's transaction. The repositories
 check that the project exists before they call these functions.
 """
@@ -24,7 +24,7 @@ from cert_prep_backend.platform.errors import (
     DocumentProcessingCanceledError,
     NotFoundError,
 )
-from cert_prep_backend.source_library.application.ports import DocumentDraftJobs
+from cert_prep_backend.source_library.application.ports import DocumentQuestionJobs
 from cert_prep_backend.source_library.domain.document import PageExtraction, SourceDocument
 from cert_prep_backend.source_library.domain.operation import (
     DocumentOperation,
@@ -46,8 +46,8 @@ from cert_prep_backend.source_library.infrastructure.records import (
     document_query,
 )
 
-BindDraftJobs = Callable[[Connection], DocumentDraftJobs]
-"""Question Authoring's draft jobs on the given connection, so they join its transaction."""
+BindQuestionJobs = Callable[[Connection], DocumentQuestionJobs]
+"""Question Authoring's question jobs on the given connection, so they join its transaction."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -421,7 +421,7 @@ def acknowledge_cancellation(
     *,
     project_id: str,
     operation_id: str,
-    draft_jobs: BindDraftJobs,
+    question_jobs: BindQuestionJobs,
 ) -> DocumentOperation:
     now = utc_now()
     with db.connect() as connection:
@@ -432,7 +432,7 @@ def acknowledge_cancellation(
         if canceled is operation:
             return operation
         _record_stopped_document(
-            connection, canceled, draft_jobs=draft_jobs(connection), now=now
+            connection, canceled, question_jobs=question_jobs(connection), now=now
         )
         _apply(
             connection,
@@ -449,7 +449,7 @@ def finish_failed(
     project_id: str,
     operation_id: str,
     error: str,
-    draft_jobs: BindDraftJobs,
+    question_jobs: BindQuestionJobs,
     document_status: str | None = None,
     extraction_method: str | None = None,
 ) -> DocumentOperation:
@@ -464,7 +464,7 @@ def finish_failed(
         _record_stopped_document(
             connection,
             stopped,
-            draft_jobs=draft_jobs(connection),
+            question_jobs=question_jobs(connection),
             document_status=document_status,
             extraction_method=extraction_method,
             now=now,
@@ -478,7 +478,7 @@ def start_retry_operation(
     *,
     project_id: str,
     document_id: str,
-    draft_jobs: BindDraftJobs,
+    question_jobs: BindQuestionJobs,
     operation_id: str | None = None,
 ) -> DocumentOperation:
     """Reset retryable parsing state and create its linked running operation atomically."""
@@ -509,7 +509,7 @@ def start_retry_operation(
         )
         _reset_document_derived_state(
             connection,
-            draft_jobs=draft_jobs(connection),
+            question_jobs=question_jobs(connection),
             project_id=project_id,
             document_id=document_id,
             status="processing",
@@ -547,7 +547,7 @@ def start_retry_operation(
         return _required_operation(_operation_query_by_id(connection, next_operation_id))
 
 
-def recover_operations(db: Database, *, draft_jobs: BindDraftJobs) -> int:
+def recover_operations(db: Database, *, question_jobs: BindQuestionJobs) -> int:
     """Fail interrupted work while honoring durable user cancellation."""
 
     with db.connect() as connection:
@@ -565,7 +565,7 @@ def recover_operations(db: Database, *, draft_jobs: BindDraftJobs) -> int:
                 db,
                 project_id=str(row["project_id"]),
                 operation_id=str(row["id"]),
-                draft_jobs=draft_jobs,
+                question_jobs=question_jobs,
             )
         else:
             finish_failed(
@@ -573,7 +573,7 @@ def recover_operations(db: Database, *, draft_jobs: BindDraftJobs) -> int:
                 project_id=str(row["project_id"]),
                 operation_id=str(row["id"]),
                 error="Document processing was interrupted by an app restart.",
-                draft_jobs=draft_jobs,
+                question_jobs=question_jobs,
             )
     return len(rows)
 
@@ -687,7 +687,7 @@ def _record_stopped_document(
     connection: Connection,
     stopped: DocumentOperation,
     *,
-    draft_jobs: DocumentDraftJobs,
+    question_jobs: DocumentQuestionJobs,
     document_status: str | None = None,
     extraction_method: str | None = None,
     now: str,
@@ -705,7 +705,7 @@ def _record_stopped_document(
         if stopped.status is DocumentOperationStatus.CANCELED:
             _preserve_canceled_audio_state(
                 connection,
-                draft_jobs=draft_jobs,
+                question_jobs=question_jobs,
                 project_id=project_id,
                 document_id=document_id,
                 now=now,
@@ -713,7 +713,7 @@ def _record_stopped_document(
         else:
             _preserve_failed_audio_state(
                 connection,
-                draft_jobs=draft_jobs,
+                question_jobs=question_jobs,
                 project_id=project_id,
                 document_id=document_id,
                 error=stopped.error,
@@ -728,7 +728,7 @@ def _record_stopped_document(
     )
     _reset_document_derived_state(
         connection,
-        draft_jobs=draft_jobs,
+        question_jobs=question_jobs,
         project_id=project_id,
         document_id=document_id,
         status=state.status,
@@ -765,7 +765,7 @@ def _operation_values(
 def _reset_document_derived_state(
     connection: Connection,
     *,
-    draft_jobs: DocumentDraftJobs,
+    question_jobs: DocumentQuestionJobs,
     project_id: str,
     document_id: str,
     status: str,
@@ -774,18 +774,19 @@ def _reset_document_derived_state(
     processed_page_count: int = 0,
     now: str,
 ) -> None:
-    draft_jobs.discard_unfinished(project_id, document_id)
+    question_jobs.discard_unfinished(project_id, document_id)
     connection.execute(
         "DELETE FROM document_chunks WHERE project_id = ? AND document_id = ?",
         (project_id, document_id),
     )
+    # The document's questions outlive its chunks, so its question count stays as it is.
     updated = connection.execute(
         """
         UPDATE documents
         SET status = ?, has_text = 0, extraction_method = ?,
             ocr_device = NULL, extraction_warnings = NULL, extraction_provenance = NULL,
             failure_message = ?,
-            processed_page_count = ?, exam_item_count = 0,
+            processed_page_count = ?,
             content_profile = 'unknown', classification_detail = '',
             updated_at = ?
         WHERE project_id = ? AND id = ?
@@ -827,12 +828,12 @@ _KEEP_PROVENANCE_OF_COMPLETED_TRANSCRIPT = """CASE
 def _preserve_canceled_audio_state(
     connection: Connection,
     *,
-    draft_jobs: DocumentDraftJobs,
+    question_jobs: DocumentQuestionJobs,
     project_id: str,
     document_id: str,
     now: str,
 ) -> None:
-    draft_jobs.discard_unfinished(project_id, document_id)
+    question_jobs.discard_unfinished(project_id, document_id)
     chunks_count = connection.execute(
         """
         SELECT COUNT(*) FROM document_chunks
@@ -849,7 +850,7 @@ def _preserve_canceled_audio_state(
         + _KEEP_PROVENANCE_OF_COMPLETED_TRANSCRIPT
         + """,
             failure_message = NULL,
-            processed_page_count = ?, exam_item_count = 0,
+            processed_page_count = ?,
             content_profile = ?, classification_detail = '',
             transcription_status = CASE
                 WHEN transcription_status = 'succeeded' THEN 'succeeded'
@@ -882,7 +883,7 @@ def _preserve_canceled_audio_state(
 def _preserve_failed_audio_state(
     connection: Connection,
     *,
-    draft_jobs: DocumentDraftJobs,
+    question_jobs: DocumentQuestionJobs,
     project_id: str,
     document_id: str,
     error: str | None,
@@ -890,7 +891,7 @@ def _preserve_failed_audio_state(
 ) -> None:
     """Keep incremental transcript data while making an audio failure retryable."""
 
-    draft_jobs.discard_unfinished(project_id, document_id)
+    question_jobs.discard_unfinished(project_id, document_id)
     chunks_count = connection.execute(
         """
         SELECT COUNT(*) FROM document_chunks
@@ -911,7 +912,7 @@ def _preserve_failed_audio_state(
         + _KEEP_PROVENANCE_OF_COMPLETED_TRANSCRIPT
         + """,
             failure_message = CASE WHEN transcription_status != 'succeeded' THEN ? END,
-            processed_page_count = ?, exam_item_count = 0,
+            processed_page_count = ?,
             content_profile = ?, classification_detail = '',
             transcription_status = CASE
                 WHEN transcription_status = 'succeeded' THEN 'succeeded'
@@ -960,7 +961,7 @@ def _operation_from_row(row: Row) -> DocumentOperation:
 
 
 __all__ = [
-    "BindDraftJobs",
+    "BindQuestionJobs",
     "DocumentOperationClaim",
     "acknowledge_cancellation",
     "cancel_document_processing",

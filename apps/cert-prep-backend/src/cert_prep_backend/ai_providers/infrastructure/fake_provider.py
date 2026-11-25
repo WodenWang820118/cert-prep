@@ -9,7 +9,7 @@ class FakeLLMProvider:
     """Deterministic local provider used when Ollama is not configured.
 
     It is always available and has no model to call: Question Authoring writes placeholder
-    drafts for it.
+    questions for it.
     """
 
     provider = "fake"
@@ -18,7 +18,7 @@ class FakeLLMProvider:
         self.model = model
 
     def health(self) -> ProviderHealth:
-        """Return an always-available health snapshot for local deterministic drafts."""
+        """Return an always-available health snapshot for local deterministic questions."""
 
         return ProviderHealth(
             provider=self.provider,

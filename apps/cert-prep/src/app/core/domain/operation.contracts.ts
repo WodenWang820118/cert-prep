@@ -13,7 +13,7 @@ export type BusyAction =
   | 'transcript-translate'
   | 'transcript-translate-all'
   | 'questions'
-  | 'saveDraft'
+  | 'saveQuestion'
   | 'session'
   | 'attempt'
   | 'review'

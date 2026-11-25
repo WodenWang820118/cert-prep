@@ -139,7 +139,7 @@ describe('CaptureWorkbenchPage', () => {
       '.capture-status',
     ) as HTMLElement;
     expect(status.textContent).toContain('Capture Workbench is ready.');
-    expect(status.textContent).toContain('Import recordings on the Build page.');
+    expect(status.textContent).toContain('Import recordings on the Questions page.');
   });
 
   it('waits for the custom element view before configuring a defined component', async () => {

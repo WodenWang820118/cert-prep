@@ -24,9 +24,9 @@ test('refreshes transport and page through the caller across two forced restarts
   const resumedSession = session('active', [firstAttempt]);
   const completedSession = session('completed', [firstAttempt, secondAttempt]);
   const initialTransport = new ScriptedTransport('initial', [
-    request('GET', `/projects/${projectId}/question-drafts`, {
+    request('GET', `/projects/${projectId}/questions`, {
       status: 200,
-      body: { items: [draft(questionOne), draft(questionTwo)] },
+      body: { items: [questionPayload(questionOne), questionPayload(questionTwo)] },
     }),
     request(
       'POST',
@@ -136,9 +136,9 @@ test('refreshes transport and page through the caller across two forced restarts
 
 test('rejects a new full-document session with fewer than two questions', async () => {
   const transport = new ScriptedTransport('one-question session', [
-    request('GET', `/projects/${projectId}/question-drafts`, {
+    request('GET', `/projects/${projectId}/questions`, {
       status: 200,
-      body: { items: [draft(questionOne), draft(questionTwo)] },
+      body: { items: [questionPayload(questionOne), questionPayload(questionTwo)] },
     }),
     request('POST', sessionsPath, {
       status: 201,
@@ -164,9 +164,9 @@ test('rejects a new full-document session with fewer than two questions', async 
 
 test('fails closed when a session response drifts to another project', async () => {
   const transport = new ScriptedTransport('project drift', [
-    request('GET', `/projects/${projectId}/question-drafts`, {
+    request('GET', `/projects/${projectId}/questions`, {
       status: 200,
-      body: { items: [draft(questionOne), draft(questionTwo)] },
+      body: { items: [questionPayload(questionOne), questionPayload(questionTwo)] },
     }),
     request('POST', sessionsPath, {
       status: 201,
@@ -212,9 +212,9 @@ async function assertResumeRejects(
 ): Promise<void> {
   const firstAttempt = attempt('attempt-1', questionOne.id);
   const initialTransport = new ScriptedTransport('resume setup', [
-    request('GET', `/projects/${projectId}/question-drafts`, {
+    request('GET', `/projects/${projectId}/questions`, {
       status: 200,
-      body: { items: [draft(questionOne), draft(questionTwo)] },
+      body: { items: [questionPayload(questionOne), questionPayload(questionTwo)] },
     }),
     request('POST', sessionsPath, {
       status: 201,
@@ -315,7 +315,7 @@ function question(id: string, answer: string): TestQuestion {
   return { id, answer, document_id: documentId };
 }
 
-function draft(value: TestQuestion): Record<string, unknown> {
+function questionPayload(value: TestQuestion): Record<string, unknown> {
   return {
     id: value.id,
     project_id: projectId,

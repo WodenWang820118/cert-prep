@@ -41,7 +41,7 @@ from cert_prep_backend.source_library.application.ports import (
     DocumentOperationRepository,
     DocumentRepository,
     DocumentWork,
-    ImportedDocumentDrafting,
+    ImportedQuestionGeneration,
     SourceExtraction,
     SourceFileStore,
 )
@@ -119,8 +119,8 @@ def get_source_extraction(request: Request) -> SourceExtraction:
     return extraction
 
 
-def get_imported_document_drafting(request: Request) -> ImportedDocumentDrafting:
-    return request.app.state.imported_document_drafting
+def get_imported_question_generation(request: Request) -> ImportedQuestionGeneration:
+    return request.app.state.imported_question_generation
 
 
 def _processes_in_background(request: Request) -> bool:
@@ -195,7 +195,7 @@ async def upload_document(
     files: SourceFileStore = Depends(get_source_file_store),
     work: DocumentWork = Depends(get_document_work),
     extraction: SourceExtraction = Depends(get_source_extraction),
-    drafting: ImportedDocumentDrafting = Depends(get_imported_document_drafting),
+    question_generation: ImportedQuestionGeneration = Depends(get_imported_question_generation),
 ) -> dict:
     try:
         return await source_library.import_document(
@@ -205,7 +205,7 @@ async def upload_document(
             files,
             work,
             extraction,
-            drafting,
+            question_generation,
             project_id=project_id,
             operation_id=operation_id_header or str(uuid4()),
             upload=file,
@@ -290,7 +290,7 @@ async def retry_document_processing(
     operations: DocumentOperationRepository = Depends(get_document_operation_repository),
     files: SourceFileStore = Depends(get_source_file_store),
     work: DocumentWork = Depends(get_document_work),
-    drafting: ImportedDocumentDrafting = Depends(get_imported_document_drafting),
+    question_generation: ImportedQuestionGeneration = Depends(get_imported_question_generation),
 ) -> dict:
     operation_id = operation_id_header or str(uuid4())
     try:
@@ -303,7 +303,7 @@ async def retry_document_processing(
                 files,
                 work,
                 extraction,
-                drafting,
+                question_generation,
                 project_id=project_id,
                 document_id=document_id,
                 operation_id=operation_id,

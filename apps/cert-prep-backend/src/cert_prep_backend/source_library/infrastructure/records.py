@@ -45,7 +45,7 @@ def document_from_row(row: Row) -> SourceDocument:
         extraction_warnings=row["extraction_warnings"],
         failure_message=row["failure_message"],
         processed_page_count=row["processed_page_count"],
-        exam_item_count=row["exam_item_count"],
+        question_count=row["question_count"],
         content_profile=row["content_profile"],
         classification_detail=row["classification_detail"],
         chunks_count=row["chunks_count"],

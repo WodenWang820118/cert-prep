@@ -8,13 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from cert_prep_backend.authoring.domain.draft import NewQuestionDraft
+from cert_prep_backend.authoring.domain.question import NewQuestion
 from cert_prep_backend.authoring.domain.models import SourceChunk
-from cert_prep_backend.authoring.infrastructure.sources import SourceLibraryDraftSources
+from cert_prep_backend.authoring.infrastructure.sources import SourceLibraryQuestionSources
 from cert_prep_backend.bootstrap.authoring_links import (
     authoring_documents,
-    draft_generation_job_repository,
-    question_draft_repository,
+    question_generation_job_repository,
+    question_repository,
 )
 from cert_prep_backend.bootstrap.capture_links import (
     bind_capture_review_commit,
@@ -82,11 +82,11 @@ def test_authoring_documents_adapter(tmp_path: Path) -> None:
         documents.require("other-proj", doc_id)
 
 
-def test_source_library_draft_sources_chunks_and_draft_counts(tmp_path: Path) -> None:
+def test_source_library_question_sources_chunks_and_question_counts(tmp_path: Path) -> None:
     db = _database(tmp_path)
     doc_id = _attach_pdf(db, operation_id="upload-2")
     docs = document_repository(db)
-    sources = SourceLibraryDraftSources(docs)
+    sources = SourceLibraryQuestionSources(docs)
 
     with db.connect() as connection:
         connection.execute(
@@ -113,18 +113,18 @@ def test_source_library_draft_sources_chunks_and_draft_counts(tmp_path: Path) ->
         sources.chunk("proj", doc_id, "missing-chunk")
 
     # A document still being processed stays processing; only the count changes.
-    sources.record_draft_count("proj", doc_id, 5)
+    sources.record_question_count("proj", doc_id, 5)
     doc = docs.document("proj", doc_id)
     assert doc.status == "processing"
-    assert doc.exam_item_count == 5
+    assert doc.question_count == 5
 
-    # record_import_draft_count
-    sources.record_import_draft_count("proj", doc_id, 3)
+    # record_import_question_count
+    sources.record_import_question_count("proj", doc_id, 3)
     doc = docs.document("proj", doc_id)
-    assert doc.exam_item_count == 3
+    assert doc.question_count == 3
 
 
-def test_question_draft_repository_and_draft_generation_jobs(tmp_path: Path) -> None:
+def test_question_repository_and_question_generation_jobs(tmp_path: Path) -> None:
     db = _database(tmp_path)
     doc_id = _attach_pdf(db, operation_id="upload-3")
     with db.connect() as connection:
@@ -139,10 +139,10 @@ def test_question_draft_repository_and_draft_generation_jobs(tmp_path: Path) -> 
             (doc_id,),
         )
 
-    drafts = question_draft_repository(db)
-    draft = drafts.write(
+    questions = question_repository(db)
+    authored_question = questions.write(
         "proj",
-        NewQuestionDraft(
+        NewQuestion(
             question="What is this?",
             choices=("A", "B", "C", "D"),
             answer="A",
@@ -152,21 +152,21 @@ def test_question_draft_repository_and_draft_generation_jobs(tmp_path: Path) -> 
             chunk_id="chunk-1",
         ),
     )
-    assert draft.id is not None
-    assert draft.question == "What is this?"
+    assert authored_question.id is not None
+    assert authored_question.question == "What is this?"
 
-    all_drafts = drafts.drafts_of("proj")
-    assert len(all_drafts) == 1
-    assert all_drafts[0].id == draft.id
+    all_questions = questions.questions_of("proj")
+    assert len(all_questions) == 1
+    assert all_questions[0].id == authored_question.id
 
-    found = drafts.find("proj", draft.id)
+    found = questions.find("proj", authored_question.id)
     assert found is not None
-    assert found.id == draft.id
+    assert found.id == authored_question.id
 
-    found_many = drafts.find_many("proj", [draft.id, "non-existent"])
+    found_many = questions.find_many("proj", [authored_question.id, "non-existent"])
     assert len(found_many) == 1
 
-    jobs = draft_generation_job_repository(db)
+    jobs = question_generation_job_repository(db)
     document_jobs = jobs.jobs_of("proj", doc_id)
     assert document_jobs == []
 

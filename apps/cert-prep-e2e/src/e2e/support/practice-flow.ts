@@ -1,8 +1,8 @@
 import { expect, type Page } from '@playwright/test';
 import type { DocumentRead, ProjectRead } from '@cert-prep/api';
 import type {
-  CompleteQuestionDraft,
-  CompleteQuestionDraftWithExcerpt,
+  CompleteQuestion,
+  CompleteQuestionWithExcerpt,
   MockCertPrepApi,
 } from './mock-api';
 
@@ -38,16 +38,16 @@ export async function createProject(
   ).toBeVisible();
 }
 
-export async function uploadDocumentAndExpectDraft(
+export async function uploadDocumentAndExpectQuestion(
   page: Page,
   api: MockCertPrepApi,
   options: {
     readonly document?: DocumentRead;
-    readonly draft?: CompleteQuestionDraftWithExcerpt;
+    readonly question?: CompleteQuestionWithExcerpt;
   } = {},
 ): Promise<void> {
   const document = options.document ?? api.document;
-  const draft = options.draft ?? api.draft;
+  const question = options.question ?? api.question;
 
   const sourceFileInput = page.locator('input[aria-label="Source files"]');
   await sourceFileInput.setInputFiles([]);
@@ -65,17 +65,16 @@ export async function uploadDocumentAndExpectDraft(
   await expect(
     page.getByRole('heading', { name: 'Ready to review' }),
   ).toBeVisible();
-  await expect(page.getByText(draft.question)).toBeVisible({
+  await expect(page.getByText(question.question)).toBeVisible({
     timeout: 15_000,
   });
-  await expect(page.getByText(draft.source_excerpt)).toBeVisible({
+  await expect(page.getByText(question.source_excerpt)).toBeVisible({
     timeout: 15_000,
   });
   await expect(
     page
-      .getByTestId('draft-question-card')
-      .filter({ hasText: draft.question })
-      .getByText('Ready for practice', { exact: true }),
+      .getByTestId('question-card')
+      .filter({ hasText: question.question }),
   ).toBeVisible();
 }
 
@@ -85,23 +84,23 @@ export async function createWorkspaceWithUploadedDocument(
   options: {
     readonly project?: ProjectRead;
     readonly document?: DocumentRead;
-    readonly draft?: CompleteQuestionDraftWithExcerpt;
+    readonly question?: CompleteQuestionWithExcerpt;
   } = {},
 ): Promise<void> {
   const project = options.project ?? api.project;
   await page.goto('/');
   await createProject(page, api, project);
   await expectWorkspaceReady(page);
-  await uploadDocumentAndExpectDraft(page, api, options);
+  await uploadDocumentAndExpectQuestion(page, api, options);
 }
 
 export async function startRandomDraw(
   page: Page,
   api: MockCertPrepApi,
-  questionCount = api.playableDrafts.length,
+  questionCount = api.playableQuestions.length,
 ): Promise<void> {
   await page.getByRole('link', { name: 'Random draw' }).click();
-  await expectRandomDrawAvailableCount(page, api.playableDrafts.length);
+  await expectRandomDrawAvailableCount(page, api.playableQuestions.length);
   await page
     .getByRole('spinbutton', { name: 'Random draw size' })
     .fill(String(questionCount));
@@ -114,7 +113,7 @@ export async function startWholeSource(
   api: MockCertPrepApi,
   document = api.wholeSourceDocument,
 ): Promise<void> {
-  const questionCount = api.playableDraftsForDocument(document.id).length;
+  const questionCount = api.playableQuestionsForDocument(document.id).length;
 
   await page.getByRole('link', { name: 'Whole source' }).click();
   await expect(page.getByRole('heading', { name: 'Whole source' })).toBeVisible();
@@ -143,7 +142,7 @@ export async function selectActiveDocument(
   page: Page,
   document: DocumentRead,
 ): Promise<void> {
-  await page.getByRole('link', { name: 'Build' }).click();
+  await page.getByRole('link', { name: 'Questions', exact: true }).click();
   await page.getByLabel('Project source library').selectOption(document.id);
   await expect(
     page
@@ -165,15 +164,15 @@ export async function runMultiPdfIsolationScenario(
   }
 
   for (const document of [alternateDocument, defaultDocument]) {
-    const selectedDocumentDrafts = api.playableDraftsForDocument(document.id);
+    const selectedDocumentQuestions = api.playableQuestionsForDocument(document.id);
     await selectActiveDocument(page, document);
     await startWholeSource(page, api, document);
     expectWholeSourceSessionToUseOnlyDocument(api, document);
     await completePracticeQuestions(
       page,
       api,
-      selectedDocumentDrafts,
-      (draft) => draft.answer,
+      selectedDocumentQuestions,
+      (question) => question.answer,
     );
     expect(api.wrongAnswers()).toHaveLength(0);
   }
@@ -214,11 +213,11 @@ export async function runMultiPdfBatchUploadScenario(
 
   for (const document of [firstDocument, secondDocument]) {
     await selectDocumentFromLibrary(page, document);
-    const [draft] = api.playableDraftsForDocument(document.id);
-    if (draft === undefined) {
-      throw new Error(`Document ${document.id} needs a playable mocked draft.`);
+    const [question] = api.playableQuestionsForDocument(document.id);
+    if (question === undefined) {
+      throw new Error(`Document ${document.id} needs a playable mocked question.`);
     }
-    await expectAiInferredPlayableDraft(page, draft);
+    await expectAiInferredPlayableQuestion(page, question);
   }
 
   await startWholeSource(page, api, secondDocument);
@@ -229,23 +228,23 @@ export function expectWholeSourceSessionToUseOnlyDocument(
   api: MockCertPrepApi,
   document: DocumentRead,
 ): void {
-  const selectedDocumentDrafts = api.playableDraftsForDocument(document.id);
-  const excludedDraftIds = api.playableDrafts
-    .filter((draft) => draft.document_id !== document.id)
-    .map((draft) => draft.id);
+  const selectedDocumentQuestions = api.playableQuestionsForDocument(document.id);
+  const excludedQuestionIds = api.playableQuestions
+    .filter((question) => question.document_id !== document.id)
+    .map((question) => question.id);
   const session = api.currentSession();
 
   expect(session).not.toBeNull();
   expect(api.practiceSessionPayload()).toMatchObject({
     mode: 'full_document',
     document_id: document.id,
-    question_count: selectedDocumentDrafts.length,
+    question_count: selectedDocumentQuestions.length,
   });
   expect(session?.question_ids).toEqual(
-    selectedDocumentDrafts.map((draft) => draft.id),
+    selectedDocumentQuestions.map((question) => question.id),
   );
   expect(session?.question_ids).toEqual(
-    expect.not.arrayContaining(excludedDraftIds),
+    expect.not.arrayContaining(excludedQuestionIds),
   );
 }
 
@@ -269,16 +268,20 @@ async function selectDocumentFromLibrary(
   await expect(documentLibrary).toHaveValue(document.id);
 }
 
-async function expectAiInferredPlayableDraft(
+async function expectAiInferredPlayableQuestion(
   page: Page,
-  draft: CompleteQuestionDraft,
+  question: CompleteQuestion,
 ): Promise<void> {
-  const card = page.getByTestId('draft-question-card').filter({
-    hasText: draft.question,
+  // The panel lists only playable questions, so a listed card is playable; its answer
+  // is marked as inferred both by the card header and by the answer.
+  const card = page.getByTestId('question-card').filter({
+    hasText: question.question,
   });
-  await expect(
-    card.getByText('Ready for practice', { exact: true }),
-  ).toBeVisible();
+  await expect(card).toBeVisible();
+  await expect(card.getByTestId('ai-inferred-answer')).toHaveText([
+    'System-inferred answer',
+    'System-inferred answer',
+  ]);
 }
 
 export async function expectRandomDrawAvailableCount(
@@ -297,7 +300,7 @@ export async function expectWholeSourceDocumentOptions(
   const documentSelect = page
     .getByRole('region', { name: 'Source Document' })
     .getByRole('combobox');
-  const selectedDocumentQuestionCount = api.playableDraftsForDocument(
+  const selectedDocumentQuestionCount = api.playableQuestionsForDocument(
     api.wholeSourceDocument.id,
   ).length;
   await expect(
@@ -307,7 +310,7 @@ export async function expectWholeSourceDocumentOptions(
   ).toHaveCount(1);
 
   for (const document of api.documents) {
-    const questionCount = api.playableDraftsForDocument(document.id).length;
+    const questionCount = api.playableQuestionsForDocument(document.id).length;
     if (questionCount === 0) {
       await expect(
         documentSelect.locator('option', { hasText: document.filename }),
@@ -319,18 +322,18 @@ export async function expectWholeSourceDocumentOptions(
 export async function completePracticeQuestions(
   page: Page,
   api: MockCertPrepApi,
-  drafts: readonly CompleteQuestionDraft[],
-  answerForDraft: (draft: CompleteQuestionDraft) => string,
+  questions: readonly CompleteQuestion[],
+  answerForQuestion: (question: CompleteQuestion) => string,
 ): Promise<void> {
   const initialAttemptCount = api.attempts().length;
 
-  for (const [index, draft] of drafts.entries()) {
-    await expect(page.getByText(draft.question)).toBeVisible();
-    await page.getByRole('radio', { name: answerForDraft(draft) }).check();
+  for (const [index, question] of questions.entries()) {
+    await expect(page.getByText(question.question)).toBeVisible();
+    await page.getByRole('radio', { name: answerForQuestion(question) }).check();
     await page.getByRole('button', { name: 'Submit answer' }).click();
 
     const answeredCount = index + 1;
-    await expectSessionProgress(page, answeredCount, drafts.length);
+    await expectSessionProgress(page, answeredCount, questions.length);
   }
 
   await expect(
@@ -339,26 +342,26 @@ export async function completePracticeQuestions(
     ),
   ).toBeVisible();
   await expect(page.getByText('100%')).toBeVisible();
-  expect(api.attempts()).toHaveLength(initialAttemptCount + drafts.length);
+  expect(api.attempts()).toHaveLength(initialAttemptCount + questions.length);
 }
 
 export async function retryWrongAnswerAndClearReview(
   page: Page,
   api: MockCertPrepApi,
 ): Promise<void> {
-  const draft = api.draft;
-  await completePracticeQuestions(page, api, [draft], wrongChoiceForDraft);
+  const question = api.question;
+  await completePracticeQuestions(page, api, [question], wrongChoiceForQuestion);
 
   const wrongAnswer = api
     .wrongAnswers()
-    .find((candidate) => candidate.question_id === draft.id);
+    .find((candidate) => candidate.question_id === question.id);
   expect(wrongAnswer).toBeDefined();
 
   await openWrongAnswerRetryPage(page);
   await expect(page.getByText('1 recorded')).toBeVisible();
   await page
     .locator('article.wrong-answer-card')
-    .filter({ hasText: draft.question })
+    .filter({ hasText: question.question })
     .getByRole('button', { name: 'Retry' })
     .click();
 
@@ -376,7 +379,7 @@ export async function retryWrongAnswerAndClearReview(
   await completePracticeQuestions(
     page,
     api,
-    [draft],
+    [question],
     (question) => question.answer,
   );
   expect(api.wrongAnswers()).toHaveLength(0);
@@ -395,15 +398,15 @@ export async function startRetryForAllWrongAnswersAndClearReview(
   page: Page,
   api: MockCertPrepApi,
 ): Promise<void> {
-  const drafts = api.playableDrafts.slice(0, 2);
-  await completePracticeQuestions(page, api, drafts, wrongChoiceForDraft);
+  const questions = api.playableQuestions.slice(0, 2);
+  await completePracticeQuestions(page, api, questions, wrongChoiceForQuestion);
   const wrongAttemptIds = api
     .wrongAnswers()
     .map((wrongAnswer) => wrongAnswer.attempt_id);
-  expect(wrongAttemptIds).toHaveLength(drafts.length);
+  expect(wrongAttemptIds).toHaveLength(questions.length);
 
   await openWrongAnswerRetryPage(page);
-  await expect(page.getByText(`${drafts.length} recorded`)).toBeVisible();
+  await expect(page.getByText(`${questions.length} recorded`)).toBeVisible();
   await page.getByRole('button', { name: 'Start wrong-answer retry' }).click();
 
   await expect(
@@ -414,13 +417,13 @@ export async function startRetryForAllWrongAnswersAndClearReview(
     .toMatchObject({
       mode: 'review_retry',
       wrong_attempt_ids: wrongAttemptIds,
-      question_count: drafts.length,
+      question_count: questions.length,
     });
 
   await completePracticeQuestions(
     page,
     api,
-    drafts,
+    questions,
     (question) => question.answer,
   );
   expect(api.wrongAnswers()).toHaveLength(0);
@@ -499,21 +502,21 @@ export async function startWrongAnswerSummaryWeakAreaRetry(
 export async function expectWrongAnswerRetry(
   page: Page,
   api: MockCertPrepApi,
-  drafts: readonly CompleteQuestionDraft[],
+  questions: readonly CompleteQuestion[],
 ): Promise<void> {
   const wrongAnswers = api.wrongAnswers();
-  expect(wrongAnswers).toHaveLength(drafts.length);
+  expect(wrongAnswers).toHaveLength(questions.length);
   await openWrongAnswerRetryPage(page);
-  await expect(page.getByText(`${drafts.length} recorded`)).toBeVisible();
+  await expect(page.getByText(`${questions.length} recorded`)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Refresh' })).toBeEnabled();
 
-  for (const draft of drafts) {
+  for (const question of questions) {
     const wrongAnswer = wrongAnswers.find(
-      (candidate) => candidate.question_id === draft.id,
+      (candidate) => candidate.question_id === question.id,
     );
     expect(wrongAnswer).toBeDefined();
     const card = page.locator('article.wrong-answer-card').filter({
-      hasText: draft.question,
+      hasText: question.question,
     });
     const selectedAnswerPanel = card.getByRole('region', {
       name: /your answer|selected answer/i,
@@ -528,7 +531,7 @@ export async function expectWrongAnswerRetry(
 
     await expect(card).toBeVisible();
     await expect(
-      card.getByText(`Page ${draft.citation_page ?? 'n/a'}`),
+      card.getByText(`Page ${question.citation_page ?? 'n/a'}`),
     ).toBeVisible();
     await expect(selectedAnswerPanel).toBeVisible();
     await expect(
@@ -538,11 +541,11 @@ export async function expectWrongAnswerRetry(
     ).toBeVisible();
     await expect(correctAnswerPanel).toBeVisible();
     await expect(
-      correctAnswerPanel.getByText(draft.answer, { exact: true }),
+      correctAnswerPanel.getByText(question.answer, { exact: true }),
     ).toBeVisible();
-    await expect(rationalePanel.getByText(draft.rationale)).toBeVisible();
-    if (draft.source_excerpt !== null) {
-      await expect(sourcePanel.getByText(draft.source_excerpt)).toBeVisible();
+    await expect(rationalePanel.getByText(question.rationale)).toBeVisible();
+    if (question.source_excerpt !== null) {
+      await expect(sourcePanel.getByText(question.source_excerpt)).toBeVisible();
     }
     await expect(
       card.getByRole('button', { name: 'Discuss mistake with AI' }),
@@ -561,10 +564,10 @@ export async function expectWrongAnswerRetry(
   }
 }
 
-export function wrongChoiceForDraft(draft: CompleteQuestionDraft): string {
-  const wrongChoice = draft.choices.find((choice) => choice !== draft.answer);
+export function wrongChoiceForQuestion(question: CompleteQuestion): string {
+  const wrongChoice = question.choices.find((choice) => choice !== question.answer);
   if (wrongChoice === undefined) {
-    throw new Error(`Draft ${draft.id} does not have a wrong choice.`);
+    throw new Error(`Question ${question.id} does not have a wrong choice.`);
   }
   return wrongChoice;
 }

@@ -20,7 +20,7 @@ class LLMProviderPreference(StrEnum):
 
 
 class LLMProviderName(StrEnum):
-    """Concrete providers that can execute local draft generation."""
+    """Concrete providers that can execute local question generation."""
 
     OLLAMA = "ollama"
     FAKE = "fake"

@@ -155,11 +155,11 @@ def test_wrong_answer_explanation_uses_targeted_attempt_lookup(
     with client.app.state.database.connect() as connection:
         connection.execute(
             """
-            INSERT INTO question_drafts(
+            INSERT INTO questions(
                 id, project_id, document_id, chunk_id, question, choices_json, answer,
-                rationale, citation_page, source_excerpt, status, created_at, updated_at
+                rationale, citation_page, source_excerpt, created_at, updated_at
             )
-            VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)
+            VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 corrupt_question_id,

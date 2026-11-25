@@ -49,7 +49,7 @@ export function createCertPrepHttpResourceClientFake(api: FakeApi): CertPrepHttp
       const project = projectId(); const document = documentId();
       return project !== null && project !== undefined && document !== null && document !== undefined ? `${project}:${document}` : undefined;
     }, [], (compoundId) => { const [project, document] = String(compoundId).split(':'); return invoke('listDocumentChunks', project, document).pipe(mapItems(items)); }),
-    questionDrafts: (projectId: CertPrepResourceKey) => fakeResource(key(projectId), [], (id) => invoke('listQuestionDrafts', id).pipe(mapItems(items))),
+    questions: (projectId: CertPrepResourceKey) => fakeResource(key(projectId), [], (id) => invoke('listQuestions', id).pipe(mapItems(items))),
     activePracticeSessions: (projectId: CertPrepResourceKey) => fakeResource(key(projectId), [], (id) => invoke('listActivePracticeSessions', id).pipe(mapItems(items))),
     wrongAnswers: (projectId: CertPrepResourceKey) => fakeResource(key(projectId), [], (id) => invoke('listWrongAnswers', id).pipe(mapItems(items))),
     wrongAnswerSummary: (projectId: CertPrepResourceKey) => fakeResource(key(projectId), null, (id) => invoke('summarizeWrongAnswers', id)),

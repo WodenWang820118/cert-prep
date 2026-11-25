@@ -9,7 +9,7 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import type { PracticeAttemptRead } from '../../../core/domain';
-import { DraftReviewStore } from '../../../authoring/data';
+import { QuestionsStore } from '../../../authoring/data';
 import { OperationStore } from '../../../core/data';
 import type { PracticeSessionMode } from '../../domain';
 import { PracticeStore } from '../../data';
@@ -30,7 +30,7 @@ import { AppIconComponent } from '../../../core/ui';
 export class PracticePanelComponent implements OnInit {
   readonly sessionMode = input<PracticeSessionMode>('random_draw');
 
-  private readonly drafts = inject(DraftReviewStore);
+  private readonly questionsStore = inject(QuestionsStore);
   private readonly projects = inject(ProjectStore);
   private readonly sourceImport = inject(SourceImportStore);
   private readonly choiceKeys = inject(ChoiceKeyService);
@@ -39,7 +39,7 @@ export class PracticePanelComponent implements OnInit {
   protected readonly practice = inject(PracticeStore);
   protected readonly displayChoice = displayChoice;
   private readonly inputErrorSync = effect(() => {
-    if (this.drafts.draftsError() !== undefined || this.sourceImport.documentsError() !== undefined) {
+    if (this.questionsStore.questionsError() !== undefined || this.sourceImport.documentsError() !== undefined) {
       this.operations.fail(
         'Practice data could not be loaded. Try refreshing the project.',
       );
@@ -179,7 +179,7 @@ export class PracticePanelComponent implements OnInit {
       return snapshot.answer_key_source;
     }
 
-    return this.drafts.drafts().find((draft) => draft.id === questionId)
+    return this.questionsStore.questions().find((question) => question.id === questionId)
       ?.answer_key_source;
   }
 
@@ -189,7 +189,7 @@ export class PracticePanelComponent implements OnInit {
       return;
     }
 
-    this.drafts.load(project.id);
+    this.questionsStore.load(project.id);
     if (
       this.sessionMode() === 'full_document' &&
       this.sourceImport.documents().length === 0

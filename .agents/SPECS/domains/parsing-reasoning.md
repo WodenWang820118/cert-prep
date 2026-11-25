@@ -57,7 +57,7 @@ contract and fail-closed policy.
 
 Document cancellation, retry, timeout, and runtime-unavailable states are
 durable and explicit. Raw/result validation, review confirmation, and process
-cleanup must complete before the capture job is removed. Draft-generation jobs
+cleanup must complete before the capture job is removed. Question generation jobs
 remain isolated by project and document and retain their existing restart and
 wrong-answer recovery contracts.
 

@@ -6,7 +6,7 @@ from typing import Any
 
 from cert_prep_backend.source_library.domain.exam_content import question_item_kind_from_value
 from cert_prep_backend.authoring.domain.deterministic_parser import is_exam_source_chunk
-from cert_prep_backend.authoring.domain.models import DraftSuggestion, SourceChunk
+from cert_prep_backend.authoring.domain.models import QuestionSuggestion, SourceChunk
 from cert_prep_backend.authoring.domain.question_admission import (
     AdmissionRejection,
     ExtractedQuestion,
@@ -16,7 +16,7 @@ from cert_prep_backend.authoring.domain.normalization import normalize_answer
 from cert_prep_backend.platform.errors import LanguageModelUnavailable
 
 
-EXAM_ITEMS_SCHEMA: dict[str, Any] = {
+QUESTION_ITEMS_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "items": {
@@ -74,8 +74,8 @@ def admit_reasoning_item(
     raw_item: Any,
     chunks_by_page: dict[int, SourceChunk],
     chunks_by_id: dict[str, SourceChunk],
-) -> DraftSuggestion | AdmissionRejection:
-    """Map one reasoning JSON item to a draft, or name the first check it fails.
+) -> QuestionSuggestion | AdmissionRejection:
+    """Map one reasoning JSON item to a question, or name the first check it fails.
 
     Order: the model's JSON shape, the source page it cites, the content rules of
     ``admit_extracted_question`` (which may clean the stem), then answer and excerpt
@@ -121,18 +121,18 @@ def admit_reasoning_item(
     source_excerpt = _source_excerpt(raw_item.get("source_excerpt"), chunk)
     if not source_excerpt:
         return AdmissionRejection.EXCERPT_NOT_IN_SOURCE
-    if not _looks_like_exam_item(question, choices, source_excerpt):
-        return AdmissionRejection.NOT_AN_EXAM_ITEM
+    if not _looks_like_question_item(question, choices, source_excerpt):
+        return AdmissionRejection.NOT_A_QUESTION_ITEM
 
     answer_key_source = _text(raw_item.get("answer_key_source"))
-    if answer_key_source not in {"pdf", "ai_inferred"}:
+    if answer_key_source not in {"source", "ai_inferred"}:
         answer_key_source = "ai_inferred"
     source_question_number = _text(raw_item.get("source_question_number")) or None
     item_kind = question_item_kind_from_value(_text(raw_item.get("item_kind")))
     group_key = _text(raw_item.get("group_key")) or None
     group_prompt = _text(raw_item.get("group_prompt")) or None
 
-    return DraftSuggestion(
+    return QuestionSuggestion(
         chunk_id=chunk.id,
         question=question,
         choices=choices,
@@ -220,7 +220,7 @@ def _whitespace_aligned_source_excerpt(excerpt: str, source: str) -> str:
     return source[source_indices[start] : source_indices[end] + 1]
 
 
-def _looks_like_exam_item(question: str, choices: list[str], source_excerpt: str) -> bool:
+def _looks_like_question_item(question: str, choices: list[str], source_excerpt: str) -> bool:
     combined = f"{question} {source_excerpt}".lower()
     japanese_version_notice = (
         "\u3053\u306e\u8a66\u9a13\u554f\u984c\u306b\u306f\u8907\u6570"

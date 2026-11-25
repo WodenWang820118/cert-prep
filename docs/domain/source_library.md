@@ -137,18 +137,18 @@ stateDiagram-v2
 | 取消作業           | `cancel_operation`          | 取消一個作業；還沒開始的作業 id 先記為已取消，之後不能再用                               |
 | 取消處理           | `cancel_processing`         | 取消正在處理一份教材的作業                                                               |
 | 列出段落           | `list_chunks`               | 教材的段落，依頁碼或時間排列                                                             |
-| 查看段落           | `view_chunk`                | 給題目編寫：草稿引用的一個段落；教材沒有這個段落時回「Document chunk not found.」        |
+| 查看段落           | `view_chunk`                | 給題目編寫：題目引用的一個段落；教材沒有這個段落時回「Document chunk not found.」        |
 | 修正段落           | `edit_chunk`                | 修正一段轉錄文字；它的翻譯變成過期                                                       |
 | 翻譯段落           | `translate_chunk`           | 把一段轉錄翻譯成繁體中文                                                                 |
 | 翻譯過期段落       | `translate_stale_chunks`    | 翻譯所有修正後還沒重新翻譯的段落                                                         |
 | 重新開機復原       | `recover_interrupted_work`  | 確認已要求的取消、讓中斷的作業失敗、整理仍標成處理中的教材                               |
 | 接收上傳           | `receive_upload`            | 讀入上傳的檔案，超過大小上限時立即拒絕（`SourceTooLarge`）；擷取檢閱的上傳也用它         |
-| 匯入教材           | `import_document`           | 不經檢閱的匯入：認領作業 id、驗證並保存原始檔、附上教材，再擷取文字並開始起草題目        |
+| 匯入教材           | `import_document`           | 不經檢閱的匯入：認領作業 id、驗證並保存原始檔、附上教材，再擷取文字並開始產生題目        |
 | 重試處理           | `retry_document_processing` | 以新的作業 id 從保存的原始檔重新處理教材；原始檔不見或被改過時無法重試                   |
 | 查看作業進度       | `view_operation_progress`   | 作業與它處理的教材，作業事件串流的快照                                                   |
 | 查看進行中作業     | `view_active_operation`     | 教材仍在排隊、執行或取消中的作業；沒有時是 `NotFoundError`                               |
-| 記錄草稿數         | `record_draft_count`        | 給題目編寫：學習者要求的草稿寫好後記錄教材的題目數；處理中的教材維持處理中，其他變成可用 |
-| 記錄匯入後的草稿數 | `record_import_draft_count` | 給題目編寫：匯入後產生的草稿寫好後記錄題目數；有文字與段落時可用，否則 `no_text_detected`     |
+| 記錄題目數         | `record_question_count`        | 給題目編寫：學習者要求的題目寫好後記錄教材所有題目的總數；處理中的教材維持處理中，其他變成可用 |
+| 記錄匯入後的題目數 | `record_import_question_count` | 給題目編寫：匯入後產生的題目寫好後記錄教材所有題目的總數；有文字與段落時可用，否則 `no_text_detected`     |
 
 匯入與重試的規則：
 
@@ -158,7 +158,7 @@ stateDiagram-v2
 - 認領之後，檔案太大、格式不符、擷取無法使用或其他失敗都讓作業失敗；取消、衝突、專案或教材不存在不改變作業。
 - 處理在背景（`DocumentWork`，即 document worker pool）或在請求內執行。排隊中被取消的工作直接確認取消；開始處理後，作業不再是「處理這份教材、可以取消」（`DocumentOperation.is_processing`）或 app 正在關閉時，擷取停止並確認取消。
 - 擷取經 port `SourceExtraction`（擷取整合的 `CaptureSourceExtraction`）寫入段落；沒有文字時作業失敗、教材記為 `no_text_detected`（`SourceTextNotDetected`），其他擷取失敗記下擷取的訊息（`SourceExtractionFailed`）。
-- 有段落時經 port `ImportedDocumentDrafting`（題目編寫的 `draft_imported_document`）開始起草題目。
+- 有段落時經 port `ImportedQuestionGeneration`（題目編寫的 `generate_imported_questions`）開始產生題目。
 
 ## 主要流程
 
@@ -180,16 +180,16 @@ sequenceDiagram
   UC-->>API: DocumentOperation
 ```
 
-`create_app` 經 `bootstrap/source_library_links.py` 的 `document_repository` 與 `document_operation_repository` 建立 `SqliteDocumentRepository`、`SqliteDocumentOperationRepository`，再建立 `LocalSourceFileStore`、`DocumentChunkTranslator`、`PoolDocumentWork`，放在 `app.state.document_repository`、`document_operation_repository`、`source_file_store`、`chunk_translator`、`document_work`；擷取與起草的 port 由下游的上下文實作，放在 `app.state.source_extraction`（Capture Runtime 沒有設定時是 `None`，匯入與重試回 503）與 `imported_document_drafting`。router 只依 `application/ports.py` 的 port 呼叫用例。作業的每一次轉換是一個交易，在 repository 裡讀出作業、交給 `DocumentOperation` 決定、以原狀態為條件寫回。作業失敗、取消或重試時，同一個交易也重設教材、刪掉它的段落，並刪掉它還沒結束的草稿產生工作（見下節「題目編寫」）。
+`create_app` 經 `bootstrap/source_library_links.py` 的 `document_repository` 與 `document_operation_repository` 建立 `SqliteDocumentRepository`、`SqliteDocumentOperationRepository`，再建立 `LocalSourceFileStore`、`DocumentChunkTranslator`、`PoolDocumentWork`，放在 `app.state.document_repository`、`document_operation_repository`、`source_file_store`、`chunk_translator`、`document_work`；擷取與題目產生的 port 由下游的上下文實作，放在 `app.state.source_extraction`（Capture Runtime 沒有設定時是 `None`，匯入與重試回 503）與 `imported_question_generation`。router 只依 `application/ports.py` 的 port 呼叫用例。作業的每一次轉換是一個交易，在 repository 裡讀出作業、交給 `DocumentOperation` 決定、以原狀態為條件寫回。作業失敗、取消或重試時，同一個交易也重設教材、刪掉它的段落，並刪掉它還沒結束的題目產生工作（見下節「題目編寫」）。
 
 ## 與其他上下文的關係
 
 - 學習專案：教材與作業屬於一個專案；專案不存在時是 404。`projects` 屬學習專案。repository 在呼叫儲存函式之前經教材來源的 port `StudyProjects` 呼叫學習專案的 `project_exists`（`bootstrap/source_library_links.py` 接線），用自己的連線，在作業的交易之前，和以前查 `projects` 資料表時一樣。
 - 擷取整合：不經檢閱的匯入經 port `SourceExtraction` 交給擷取整合的 `CaptureSourceExtraction`；擷取檢閱的上傳用 `receive_upload`。擷取結果寫成段落與檢閱流程經擷取整合的 port（`CapturePublication`、`BindCaptureReviewCommit`、`CaptureOperations`），由 `bootstrap/capture_links.py` 組裝，不直接呼叫 `source_library.infrastructure`。
-- 題目編寫：匯入或重試出段落後，經 port `ImportedDocumentDrafting` 開始起草；教材來源不依賴題目編寫。
-- 題目編寫：作業失敗、取消或重試時，教材還沒結束的草稿產生工作（`pending`、`running`、`cancel_requested`）要刪掉，已結束的留作紀錄。`draft_generation_jobs` 屬題目編寫，所以教材來源經自己的 port `DocumentDraftJobs` 呼叫 `discard_unfinished_generation_jobs`。`SqliteDocumentOperationRepository` 把作業交易（`BEGIN IMMEDIATE`）的連線交給題目編寫的 repository，工作和作業、教材、段落在同一個交易裡寫入或一起復原。擷取整合的檢閱復原與確認失敗也經 `DocumentOperationRepository` 停止作業，所以同樣刪掉這些工作。
-- 題目編寫：寫入產生的草稿時，題目編寫經它的 port `DocumentExamState` 呼叫 `record_draft_count` 或 `record_import_draft_count`；實作把題目編寫寫入交易的連線交給 `SqliteDocumentRepository`，教材的狀態與題目數和草稿一起寫入。
-- 題目編寫：讀段落與更新題目數經題目編寫的 port `DraftSources` 與教材來源用例 `list_chunks`、`view_chunk`、`record_draft_count`、`record_import_draft_count`，教材存在檢查經 `ProjectDocuments`，不直接呼叫 `source_library.infrastructure`。
+- 題目編寫：匯入或重試出段落後，經 port `ImportedQuestionGeneration` 開始產生題目；教材來源不依賴題目編寫。
+- 題目編寫：作業失敗、取消或重試時，教材還沒結束的題目產生工作（`pending`、`running`、`cancel_requested`）要刪掉，已結束的留作紀錄。`question_generation_jobs` 屬題目編寫，所以教材來源經自己的 port `DocumentQuestionJobs` 呼叫 `discard_unfinished_generation_jobs`。`SqliteDocumentOperationRepository` 把作業交易（`BEGIN IMMEDIATE`）的連線交給題目編寫的 repository，工作和作業、教材、段落在同一個交易裡寫入或一起復原。擷取整合的檢閱復原與確認失敗也經 `DocumentOperationRepository` 停止作業，所以同樣刪掉這些工作。
+- 題目編寫：寫入產生的題目時，題目編寫經它的 port `DocumentQuestionCount` 呼叫 `record_question_count` 或 `record_import_question_count`；實作把題目編寫寫入交易的連線交給 `SqliteDocumentRepository`，教材的狀態與題目數和題目一起寫入。
+- 題目編寫：讀段落與更新題目數經題目編寫的 port `QuestionSources` 與教材來源用例 `list_chunks`、`view_chunk`、`record_question_count`、`record_import_question_count`，教材存在檢查經 `ProjectDocuments`，不直接呼叫 `source_library.infrastructure`。
 - 練習與複習：整份教材模式經 `view_document` 確認教材屬於這個專案。這次讀取用自己的連線，在練習的寫入交易之前。
 - AI 供應：經 `application/ports.py` 的 `TraditionalChineseTranslator` 翻譯文字；`ChunkTranslator` 仍負責段落翻譯操作。`bootstrap/source_library_links.py` 注入 AI 供應的 `OllamaTraditionalChineseTranslator`，教材來源負責段落版本檢查、取消、翻譯結果的保存與批次結束時釋放資源。
 
@@ -197,7 +197,7 @@ sequenceDiagram
 
 ## 規則與資料來源
 
-- 資料表：`documents`、`document_chunks`、`document_operations` 屬教材來源；migration 在 `platform/database.py`。`projects` 與 `draft_generation_jobs` 由所屬上下文的用例使用，教材來源的 infrastructure 不查那些資料表。
+- 資料表：`documents`、`document_chunks`、`document_operations` 屬教材來源；migration 在 `platform/database.py`。`projects` 與 `question_generation_jobs` 由所屬上下文的用例使用，教材來源的 infrastructure 不查那些資料表。
 - 原始檔：`<data_dir>/uploads/<project_id>/<sha256><副檔名>`（`infrastructure/storage.py`）。
 - HTTP：`/projects/{project_id}/documents`、`/projects/{project_id}/document-operations`（`api/router.py`；DTO 在 `source_library/api/schemas.py` 與 `cert_prep_contracts.documents`）。作業的即時狀態經 `api/operation_events.py` 的 server-sent events（`…/document-operations/{operation_id}/events`、`…/documents/{document_id}/document-operation/events`）；串流由 `platform/sse.py` 提供，快照來自 `view_operation_progress`，作業結束時串流結束。
 - API 的 `SourceKind`、`SourceDocumentStatus`、`ExtractionMethod`、`ContentProfile`、`QuestionItemKind`、`DocumentOperationStatus`、`DocumentOperationPhase` 列舉值對應到概念集的 `source-library.*`。
@@ -215,6 +215,6 @@ sequenceDiagram
 
 教材來源只引用自己、學習專案（`projects/data` 的 `ProjectStore`）與 `core`（`core/data` 的 `CERT_PREP_API`、`CertPrepHttpResourceClient`、`CertPrepSseClient`、`OperationStore`，`core/domain` 的型別，`core/ui` 的圖示與按鈕）。
 
-教材來源是題目編寫的上游，不知道草稿：`SourceImportStore.documentActivity`（`SourceDocumentActivity`，目前專案的 id）在學習者上傳、選教材（再選同一份也算），以及有教材變成目前的教材時換成新的物件。題目編寫的 `DraftReviewStore` 監看它並重新載入專案的草稿，所以上傳之後才完成的教材不會被當成專案沒有草稿（[決策 D19](../../.agents/PLANS/ddd-refactor/decisions.md)）。匯入面板只呼叫 store，不送出事件；`/build` 頁（`core/shell` 的 `BuildPage`）只排版兩個面板。
+教材來源是題目編寫的上游，不知道題目：`SourceImportStore.documentActivity`（`SourceDocumentActivity`，目前專案的 id）在學習者上傳、選教材（再選同一份也算），以及有教材變成目前的教材時換成新的物件。題目編寫的 題目 store 監看它並重新載入專案的題目，所以上傳之後才完成的教材不會被當成專案沒有題目（[決策 D19](../../.agents/PLANS/ddd-refactor/decisions.md)）。匯入面板只呼叫 store，不送出事件；`/questions` 頁（`core/shell` 的 `QuestionsPage`）只排版兩個面板。
 
-下游經 `source-library/data` 讀 `SourceImportStore`：題目編寫（`DraftReviewStore`、`DraftStreamingJobsStore`、草稿面板）、練習（`PracticeStore`、練習面板、錯題）、擷取整合（`capture/feature` 的 `CaptureWorkbenchPage`）與殼層（`WorkspaceFacade` 切換專案時重設並載入最新的教材）。
+下游經 `source-library/data` 讀 `SourceImportStore`：題目編寫（題目 store、背景題目工作 store、題目面板）、練習（`PracticeStore`、練習面板、錯題）、擷取整合（`capture/feature` 的 `CaptureWorkbenchPage`）與殼層（`WorkspaceFacade` 切換專案時重設並載入最新的教材）。

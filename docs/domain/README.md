@@ -15,12 +15,12 @@ flowchart LR
   SRC -- 段落、內容類型 --> AUTH
   SRC -- 寫入教材與段落 --> CAP["擷取整合"]
   SRC --> PRAC
-  AUTH -- 已核可的題目 --> PRAC
+  AUTH -- 題目 --> PRAC
   AI["AI 供應"] --> AUTH
   AI --> PRAC
   AI --> CAP
   AI --> SRC
-  AI --> RUN["執行環境"]
+  AI --> RUN["語言模型佈建"]
 ```
 
 | 上下文     | 說明文件                                           | 後端程式                                 |
@@ -31,7 +31,7 @@ flowchart LR
 | 題目編寫   | [authoring.md](authoring.md)                       | `cert_prep_backend/authoring`            |
 | 練習與複習 | [practice.md](practice.md)                         | `cert_prep_backend/practice`             |
 | AI 供應    | [ai_providers.md](ai_providers.md)                 | `cert_prep_backend/ai_providers`         |
-| 執行環境   | [llm_provisioning.md](llm_provisioning.md) | `cert_prep_backend/llm_provisioning` |
+| 語言模型佈建 | [llm_provisioning.md](llm_provisioning.md) | `cert_prep_backend/llm_provisioning` |
 
 後端 C4、C5 已完成。前端依上下文分資料夾 C7 已完成（https://github.com/gx-capture/capture-workbench/issues/201）：`apps/cert-prep/src/app/<上下文>/{feature,ui,data,domain}`加`core/`，只建立有內容的層。`projects`、`source-library`、`capture`、`authoring`、`practice`、`runtime`與共用的`core` 全部完成搬移；技術資料夾與舊分層規則已移除，Sheriff 的上下文、層方向與公開 API 規則全面生效。`core/testing`為 spec-only 共用輔助，保留`layer:testing`，production 不可引用。前端 `runtime` 含 AI 供應的畫面，是教材來源、擷取整合、題目編寫與練習的上游（[決策 D18](../../.agents/PLANS/ddd-refactor/decisions.md)）。
 

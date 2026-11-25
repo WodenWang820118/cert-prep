@@ -1,4 +1,4 @@
-# 執行環境（LLM Provisioning）
+# 語言模型佈建（LLM Provisioning）
 
 程式：`apps/cert-prep-backend/src/cert_prep_backend/llm_provisioning`。
 
@@ -229,14 +229,14 @@ sequenceDiagram
 
 ## 與其他上下文的關係
 
-- **AI 供應（AI Providers）**：透過 `LLMModelInstaller` 銜接 `ModelDownloadProvider` 與 `ModelOnboardingProvider`；`/llm/machine-inventory` 委派給 AI 供應的 `inspect_machine`。AI 供應不依賴執行環境。
-- **擷取整合（Capture Integration）**：Capture SDK 的安裝與設定屬於擷取整合（`capture-runtime` 路由），執行環境不處理 Capture SDK 的安裝。
+- **AI 供應（AI Providers）**：透過 `LLMModelInstaller` 銜接 `ModelDownloadProvider` 與 `ModelOnboardingProvider`；`/llm/machine-inventory` 委派給 AI 供應的 `inspect_machine`。AI 供應不依賴語言模型佈建。
+- **擷取整合（Capture Integration）**：Capture SDK 的安裝與設定屬於擷取整合（`capture-runtime` 路由），語言模型佈建不處理 Capture SDK 的安裝。
 - **桌面端（Tauri）**：打包好的 Python 與 Capture Runtime 本機安裝屬於 Tauri 桌面端，在 Rust 中使用不同的 DTO 與種類處理，不與後端的執行環境安裝混淆。
-- **教材來源、題目編寫、練習與複習**：執行環境不直接依賴這些上下文。
+- **教材來源、題目編寫、練習與複習**：語言模型佈建不直接依賴這些上下文。
 
 ## 規則與資料來源
 
-- **資料表**：`runtime_installation_jobs`（SQLite 表，定義在 `platform/database.py`，具有部分唯一索引限制同一需求種類只能有一個進行中的工作）。
+- **資料表**：`llm_installation_jobs`（SQLite 表，定義在 `platform/database.py`，具有部分唯一索引限制同一需求種類只能有一個進行中的工作）。
 - **HTTP 路由與對應用例**：
   - `GET /llm/requirements` -> `list_llm_requirements`
   - `GET /llm/machine-inventory` -> 由 AI 供應的 router 呼叫 `inspect_machine`

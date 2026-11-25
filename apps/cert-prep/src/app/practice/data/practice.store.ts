@@ -13,7 +13,7 @@ import type {
   PracticeSessionQuestion,
 } from '../domain';
 import { PracticeSessionPayloadService } from './practice-session-payload.service';
-import { DraftReviewStore } from '../../authoring/data';
+import { QuestionsStore } from '../../authoring/data';
 import { OperationStore } from '../../core/data';
 import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../../source-library/data';
@@ -22,7 +22,7 @@ import { WrongAnswerRetryStore } from './wrong-answer-retry.store';
 @Injectable({ providedIn: 'root' })
 export class PracticeStore {
   private readonly api = inject(CERT_PREP_API);
-  private readonly drafts = inject(DraftReviewStore);
+  private readonly questionsStore = inject(QuestionsStore);
   private readonly operations = inject(OperationStore);
   private readonly projects = inject(ProjectStore);
   private readonly resources = inject(CertPrepHttpResourceClient);
@@ -55,7 +55,7 @@ export class PracticeStore {
   readonly lastAttempt = signal<PracticeAttemptRead | null>(null);
   readonly answeredQuestionIds = signal<ReadonlySet<string>>(new Set<string>());
   readonly questionCount = computed(
-    () => this.drafts.playableQuestions().length,
+    () => this.questionsStore.playableQuestions().length,
   );
   readonly effectiveRandomQuestionCount = computed(() =>
     this.sessionPayloads.effectiveRandomQuestionCount(
@@ -65,11 +65,11 @@ export class PracticeStore {
   );
   readonly questionsByDocument = computed(() => {
     const counts = new Map<string, number>();
-    for (const draft of this.drafts.playableQuestions()) {
-      if (draft.document_id === null) {
+    for (const question of this.questionsStore.playableQuestions()) {
+      if (question.document_id === null) {
         continue;
       }
-      counts.set(draft.document_id, (counts.get(draft.document_id) ?? 0) + 1);
+      counts.set(question.document_id, (counts.get(question.document_id) ?? 0) + 1);
     }
     return counts;
   });
@@ -132,11 +132,11 @@ export class PracticeStore {
     }
 
     // Older sessions can lack immutable snapshots. In that compatibility path,
-    // only still-playable live drafts are surfaced to the runner.
+    // only still-playable live questions are surfaced to the runner.
     return (
-      this.drafts
+      this.questionsStore
         .playableQuestions()
-        .find((draft) => draft.id === nextQuestionId) ?? null
+        .find((question) => question.id === nextQuestionId) ?? null
     );
   });
   readonly sessionProgress = computed(() => {
@@ -267,7 +267,7 @@ export class PracticeStore {
         this.answeredQuestionIds.set(new Set<string>());
         this.selectedAnswer.set('');
         this.lastAttempt.set(null);
-        this.drafts.load(project.id);
+        this.questionsStore.load(project.id);
       });
   }
 
@@ -343,7 +343,7 @@ export class PracticeStore {
         this.answeredQuestionIds.set(new Set(session.attempts.map((attempt) => attempt.question_id)));
         this.lastAttempt.set(session.attempts[session.attempts.length - 1] ?? null);
         this.selectedAnswer.set('');
-        this.drafts.load(project.id);
+        this.questionsStore.load(project.id);
       });
   }
 

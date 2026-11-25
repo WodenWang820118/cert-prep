@@ -128,9 +128,9 @@ class LazyLLMProvider:
         if callable(close):
             close()
 
-    def streaming_generation_kwargs(self) -> dict[str, object]:
+    def background_generation_kwargs(self) -> dict[str, object]:
         resolved = self._resolved_provider()
-        kwargs = getattr(resolved, "streaming_generation_kwargs", None)
+        kwargs = getattr(resolved, "background_generation_kwargs", None)
         if callable(kwargs):
             return dict(kwargs())
         return {}

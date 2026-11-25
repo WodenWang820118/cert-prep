@@ -1,7 +1,7 @@
 import type {
   DocumentRead,
   ProjectRead,
-  QuestionDraftRead,
+  QuestionRead,
 } from '../../domain';
 
 export const appProject: ProjectRead = {
@@ -33,7 +33,7 @@ export const appDocument: DocumentRead = {
   extraction_warnings: null,
   failure_message: null,
   processed_page_count: 12,
-  exam_item_count: 1,
+  question_count: 1,
   content_profile: 'vocabulary_single_questions',
   classification_detail: '{"profile":"vocabulary_single_questions"}',
   chunks_count: 6,
@@ -49,8 +49,8 @@ export const secondAppDocument: DocumentRead = {
   source_kind: 'pdf',
 };
 
-export const editableAppQuestion: QuestionDraftRead = {
-  id: 'draft-1',
+export const editableAppQuestion: QuestionRead = {
+  id: 'question-1',
   project_id: appProject.id,
   document_id: appDocument.id,
   chunk_id: 'chunk-1',
@@ -67,8 +67,6 @@ export const editableAppQuestion: QuestionDraftRead = {
   item_kind: 'vocabulary_single',
   group_key: null,
   group_prompt: null,
-  status: 'approved',
-  rejection_reason: null,
   created_at: '2026-06-17T00:00:00Z',
   updated_at: '2026-06-17T00:00:00Z',
 };

@@ -8,7 +8,7 @@ import {
   captureProjectApiAfterRestart,
   isProjectDocumentsCollectionResponse,
 } from './generation-readiness.mts';
-import { waitForUploadDocumentResponse } from './streaming-capture-api.mts';
+import { waitForUploadDocumentResponse } from './question-generation-observer-api.mts';
 import type { SmokeRunState } from './types.mts';
 
 const API_BASE_URL = 'http://127.0.0.1:8765';

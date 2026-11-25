@@ -9,9 +9,9 @@ import { CERT_PREP_API } from '../../../core/data';
 import type {
   PracticeAttemptRead,
   PracticeSessionRead,
-  QuestionDraftRead,
+  QuestionRead,
 } from '../../../core/domain';
-import { DraftReviewStore } from '../../../authoring/data';
+import { QuestionsStore } from '../../../authoring/data';
 import { OperationStore } from '../../../core/data';
 import { PracticeStore } from '../../data';
 import { ProjectStore } from '../../../projects/data';
@@ -52,7 +52,7 @@ describe('PracticePanelComponent', () => {
 
   describe.each(['random_draw', 'full_document'] as const)('%s session details and choices', (mode) => {
     it.each(['active', 'completed', 'abandoned'] as const)('shows the shortened id, %s status, and unique answered count', (status) => {
-      const questions = Array.from({ length: 5 }, (_, index) => editableQuestion(`draft-${index + 1}`));
+      const questions = Array.from({ length: 5 }, (_, index) => editableQuestion(`question-${index + 1}`));
       const store = arrangeActiveSession(questions);
       const id = '12345678-1234-1234-1234-123456789abc';
       store.practiceSession.set({
@@ -89,7 +89,7 @@ describe('PracticePanelComponent', () => {
     });
 
     it('hides source ordinals but submits the exact original answer', () => {
-      const question = editableQuestion('draft-1', {
+      const question = editableQuestion('question-1', {
         choices: ['１ からかって', '２ ためらって'], answer: '１ からかって',
       });
       const store = arrangeActiveSession([question]);
@@ -114,8 +114,8 @@ describe('PracticePanelComponent', () => {
     });
 
     it('adds the inferred-key note to the answered question, including when it is no longer active', () => {
-      const inferred = editableQuestion('draft-1', { answer_key_source: 'ai_inferred' });
-      const confirmed = editableQuestion('draft-2', { answer_key_source: 'manual' });
+      const inferred = editableQuestion('question-1', { answer_key_source: 'ai_inferred' });
+      const confirmed = editableQuestion('question-2', { answer_key_source: 'manual' });
       const store = arrangeActiveSession([inferred, confirmed]);
       store.practiceSession.set({
         ...practiceSession([inferred.id, confirmed.id]),
@@ -141,7 +141,7 @@ describe('PracticePanelComponent', () => {
       [true, 'Last answer: Correct (answer key inferred automatically, not confirmed)'],
       [false, 'Last answer: Needs review (answer key inferred automatically, not confirmed)'],
     ] as const)('suffixes a %s last answer when the key was inferred', (isCorrect, expected) => {
-      const question = editableQuestion('draft-1', { answer_key_source: 'pdf' });
+      const question = editableQuestion('question-1', { answer_key_source: 'source' });
       const store = arrangeActiveSession([question]);
       store.practiceSession.set({
         ...practiceSession([question.id]),
@@ -156,10 +156,10 @@ describe('PracticePanelComponent', () => {
       expect(fixture.nativeElement.textContent).toContain(expected);
     });
 
-    it.each(['manual', 'pdf', null] as const)(
+    it.each(['manual', 'source', null] as const)(
       'leaves the last-answer line unchanged when the key source is %s',
       (answerKeySource) => {
-        const question = editableQuestion('draft-1', {
+        const question = editableQuestion('question-1', {
           answer_key_source: answerKeySource ?? 'ai_inferred',
         });
         const store = arrangeActiveSession([question]);
@@ -178,8 +178,8 @@ describe('PracticePanelComponent', () => {
       },
     );
 
-    it('uses the live draft source when the session has no question snapshot', () => {
-      const question = editableQuestion('draft-1', { answer_key_source: 'ai_inferred' });
+    it('uses the live question source when the session has no question snapshot', () => {
+      const question = editableQuestion('question-1', { answer_key_source: 'ai_inferred' });
       const store = arrangeActiveSession([question]);
       store.lastAttempt.set(practiceAttempt(question.id, false));
       const fixture = TestBed.createComponent(PracticePanelComponent);
@@ -194,11 +194,11 @@ describe('PracticePanelComponent', () => {
 
   it('shows the effective random draw total before a session starts', () => {
     const projects = TestBed.inject(ProjectStore);
-    const drafts = TestBed.inject(DraftReviewStore);
+    const questionsStore = TestBed.inject(QuestionsStore);
     projects.projects.set([appProject]);
     projects.select(appProject.id);
-    drafts.drafts.set([editableAppQuestion]);
-    apiClient.listQuestionDrafts.mockReturnValue(
+    questionsStore.questions.set([editableAppQuestion]);
+    apiClient.listQuestions.mockReturnValue(
       of({ items: [editableAppQuestion] }),
     );
 
@@ -210,13 +210,13 @@ describe('PracticePanelComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Question 1 of 1');
   });
 
-  it('loads project documents and drafts before rendering whole source readiness', () => {
+  it('loads project documents and questions before rendering whole source readiness', () => {
     const projects = TestBed.inject(ProjectStore);
     projects.projects.set([appProject]);
     projects.select(appProject.id);
     apiClient.listDocuments.mockReturnValue(of({ items: [appDocument] }));
     apiClient.getDocument.mockReturnValue(of(appDocument));
-    apiClient.listQuestionDrafts.mockReturnValue(
+    apiClient.listQuestions.mockReturnValue(
       of({ items: [editableAppQuestion] }),
     );
 
@@ -227,7 +227,7 @@ describe('PracticePanelComponent', () => {
     fixture.detectChanges();
 
     expect(apiClient.listDocuments).toHaveBeenCalledWith(appProject.id);
-    expect(apiClient.listQuestionDrafts).toHaveBeenCalledWith(appProject.id);
+    expect(apiClient.listQuestions).toHaveBeenCalledWith(appProject.id);
     expect(metricValue(fixture.nativeElement, 'Documents')).toBe('1');
     expect(metricValue(fixture.nativeElement, 'Questions')).toBe('1');
     expect(buttonByText(fixture.nativeElement, 'Start whole source')?.disabled).toBe(
@@ -241,7 +241,7 @@ describe('PracticePanelComponent', () => {
     const unhandledRejection = vi.fn();
     projects.projects.set([appProject]);
     projects.select(appProject.id);
-    apiClient.listQuestionDrafts.mockReturnValue(
+    apiClient.listQuestions.mockReturnValue(
       throwError(() => new Error('offline')),
     );
     window.addEventListener('unhandledrejection', unhandledRejection);
@@ -264,7 +264,7 @@ describe('PracticePanelComponent', () => {
 
   it('selects an answer in an active practice session', () => {
     const store = arrangeActiveSession([editableAppQuestion]);
-    apiClient.listQuestionDrafts.mockReturnValue(
+    apiClient.listQuestions.mockReturnValue(
       of({ items: [editableAppQuestion] }),
     );
     const fixture = TestBed.createComponent(PracticePanelComponent);
@@ -370,13 +370,13 @@ describe('PracticePanelComponent', () => {
   });
 
   it('renders answered, current, and pending question navigator states', () => {
-    const firstQuestion = editableQuestion('draft-1', {
+    const firstQuestion = editableQuestion('question-1', {
       question: 'First question?',
     });
-    const secondQuestion = editableQuestion('draft-2', {
+    const secondQuestion = editableQuestion('question-2', {
       question: 'Second question?',
     });
-    const thirdQuestion = editableQuestion('draft-3', {
+    const thirdQuestion = editableQuestion('question-3', {
       question: 'Third question?',
     });
     const store = arrangeActiveSession([
@@ -433,17 +433,17 @@ function metricValue(root: ParentNode, label: string): string | null {
 }
 
 function arrangeActiveSession(
-  questions: readonly QuestionDraftRead[],
+  questions: readonly QuestionRead[],
 ): PracticeStore {
   const projects = TestBed.inject(ProjectStore);
-  const drafts = TestBed.inject(DraftReviewStore);
+  const questionsStore = TestBed.inject(QuestionsStore);
   const store = TestBed.inject(PracticeStore);
   projects.projects.set([appProject]);
   projects.select(appProject.id);
-  apiClientForCurrentTest().listQuestionDrafts.mockReturnValue(
+  apiClientForCurrentTest().listQuestions.mockReturnValue(
     of({ items: [...questions] }),
   );
-  drafts.drafts.set([...questions]);
+  questionsStore.questions.set([...questions]);
   store.practiceSession.set(
     practiceSession(questions.map((question) => question.id)),
   );
@@ -490,7 +490,7 @@ function practiceAttempt(
 }
 
 function snapshotQuestion(
-  question: QuestionDraftRead,
+  question: QuestionRead,
   answerKeySource: string | null,
 ): PracticeSessionRead['questions'][number] {
   return {
@@ -508,8 +508,8 @@ function snapshotQuestion(
 
 function editableQuestion(
   id: string,
-  overrides: Partial<QuestionDraftRead> = {},
-): QuestionDraftRead {
+  overrides: Partial<QuestionRead> = {},
+): QuestionRead {
   return {
     ...editableAppQuestion,
     id,
@@ -535,7 +535,7 @@ function createApiClient() {
   return {
     recordPracticeAttempt: vi.fn(),
     listWrongAnswers: vi.fn().mockReturnValue(of({ items: [] })),
-    listQuestionDrafts: vi.fn().mockReturnValue(of({ items: [] })),
+    listQuestions: vi.fn().mockReturnValue(of({ items: [] })),
     listDocuments: vi.fn().mockReturnValue(of({ items: [] })),
     getDocument: vi.fn().mockReturnValue(of(appDocument)),
     listDocumentChunks: vi.fn().mockReturnValue(of({ items: [] })),

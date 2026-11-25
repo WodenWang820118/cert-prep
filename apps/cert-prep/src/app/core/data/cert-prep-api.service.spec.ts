@@ -359,7 +359,7 @@ describe('CertPrepAuthenticatedTransport', () => {
 
   it('does not set Content-Type for a FormData upload', () => {
     const body = new FormData();
-    body.append('file', new Blob(['pdf']), 'exam.pdf');
+    body.append('file', new Blob(['pdf']), 'study-material.pdf');
     let response: unknown;
     api
       .uploadDocument('project-1', body, {

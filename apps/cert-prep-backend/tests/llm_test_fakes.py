@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from threading import Event
 
 from cert_prep_backend.platform.config import DEFAULT_OLLAMA_MODEL
-from cert_prep_backend.authoring.domain.models import DraftSuggestion, SourceChunk
+from cert_prep_backend.authoring.domain.models import QuestionSuggestion, SourceChunk
 from cert_prep_backend.ai_providers.domain.provider import ProviderHealth
 from cert_prep_contracts.hardware import (
     MachineCpuSnapshot,
@@ -92,7 +92,7 @@ class RecordingDownloadProvider:
             detail=self.detail,
         )
 
-    def generate_drafts(self, chunks: Sequence[SourceChunk], limit: int) -> list[DraftSuggestion]:
+    def write_questions(self, chunks: Sequence[SourceChunk], limit: int) -> list[QuestionSuggestion]:
         return []
 
     def pull_model(self, progress) -> None:

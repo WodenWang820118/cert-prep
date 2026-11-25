@@ -285,7 +285,7 @@ class CaptureEventSignal(Protocol):
     def wait_for_change(self, observed: int, *, timeout_seconds: float) -> int: ...
 
 
-class CaptureQuestionDrafting(Protocol):
+class CaptureQuestionGeneration(Protocol):
     def enqueue_document(self, project_id: str, document_id: str) -> None: ...
 
 

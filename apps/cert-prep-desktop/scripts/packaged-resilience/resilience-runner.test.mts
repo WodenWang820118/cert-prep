@@ -26,7 +26,7 @@ import {
   type RemainingResilienceRunnerDependencies,
   type RemainingScenarioProofs,
   type TimedProof,
-  waitForValidatedManualDraftPublication,
+  waitForValidatedManualQuestionPublication,
 } from './resilience-runner.mts';
 
 test('remaining resilience runner atomically publishes four checks and session restart after cleanup', async () => {
@@ -58,21 +58,21 @@ test('remaining resilience runner atomically publishes four checks and session r
     assert.deepEqual(
       readdirSync(join(result.outputRoot, 'cancellation')).sort(),
       [
-        'draft.json',
         'model.json',
         'ownedProcessesReleased.json',
+        'question.json',
         'runtime.json',
       ],
     );
-    const draft = JSON.parse(
+    const question = JSON.parse(
       readFileSync(
-        join(result.outputRoot, 'cancellation', 'draft.json'),
+        join(result.outputRoot, 'cancellation', 'question.json'),
         'utf8',
       ),
     ) as Record<string, unknown>;
-    const proof = draft.proof as Record<string, unknown>;
+    const proof = question.proof as Record<string, unknown>;
     const installation = proof.installationBinding as Record<string, unknown>;
-    const manualTerminal = proof.manualDraftTerminalResponse as Record<
+    const manualTerminal = proof.manualQuestionGenerationTerminalResponse as Record<
       string,
       unknown
     >;
@@ -165,17 +165,17 @@ test('remaining resilience runner removes staging when session evidence write fa
   }
 });
 
-test('manual draft terminal with zero generated drafts fails before publication polling', async () => {
+test('manual question terminal with zero generated questions fails before publication polling', async () => {
   let requestCount = 0;
   const transport: JsonTransport = {
     async request() {
       requestCount += 1;
-      throw new Error('question drafts must not be polled');
+      throw new Error('questions must not be polled');
     },
   };
 
   await assert.rejects(
-    waitForValidatedManualDraftPublication(
+    waitForValidatedManualQuestionPublication(
       transport,
       {
         id: 'operation-commit',
@@ -201,7 +201,7 @@ test('manual draft terminal with zero generated drafts fails before publication 
       },
       10_000,
     ),
-    /manual draft terminal cannot satisfy durable evidence; expected hybrid_reasoning, at least 2 generated drafts, exact effective Ollama attribution, and no fallback/,
+    /manual question terminal cannot satisfy durable evidence; expected hybrid_reasoning, at least 2 generated questions, exact effective Ollama attribution, and no fallback/,
   );
   assert.equal(requestCount, 0);
 });
@@ -297,14 +297,14 @@ function testDependencies(
 
 function validScenarioProofs(): RemainingScenarioProofs {
   return {
-    draft: timedFixture('draft'),
+    question: timedFixture('question'),
     runtime: timedFixture('runtime'),
     model: timedFixture('model'),
     sessionRestart: timedSessionFixture(),
   };
 }
 
-function timedFixture(check: 'draft' | 'runtime' | 'model'): TimedProof {
+function timedFixture(check: 'question' | 'runtime' | 'model'): TimedProof {
   const fixture = buildValidResilienceEvidence(check);
   return {
     startedAt: String(fixture.startedAt),

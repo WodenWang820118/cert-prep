@@ -30,11 +30,11 @@ import {
   startWrongAnswerSummaryWeakAreaRetry,
   startRetryForAllWrongAnswersAndClearReview,
   startRandomDraw,
-  uploadDocumentAndExpectDraft,
-  wrongChoiceForDraft,
+  uploadDocumentAndExpectQuestion,
+  wrongChoiceForQuestion,
 } from '../support/practice-flow';
 
-test('opens the Capture Workbench from Build navigation', async ({ page }) => {
+test('opens the Capture Workbench from the Questions page', async ({ page }) => {
   await installMockCertPrepApi(page);
   await seedMockApiConfig(page, apiBaseUrl, devToken);
   await page.goto('/');
@@ -45,7 +45,49 @@ test('opens the Capture Workbench from Build navigation', async ({ page }) => {
   ).toBeVisible();
 });
 
-test('completes Random draw for every playable mocked draft and records wrong answers', async ({
+test('observes manual question generation on the Questions page', async ({ page }) => {
+  const api = await installMockCertPrepApi(page);
+  await seedMockApiConfig(page, apiBaseUrl, devToken);
+  await createWorkspaceWithUploadedDocument(page, api);
+  await expect(page).toHaveURL(/\/questions$/);
+  const requests: string[] = [];
+  page.on('request', (request) => {
+    requests.push(`${request.method()} ${new URL(request.url()).pathname}`);
+  });
+  const generationStart = page.waitForRequest(
+    (request) =>
+      request.method() === 'POST' &&
+      /\/question-generations$/u.test(new URL(request.url()).pathname),
+  );
+  const generationEvents = page.waitForResponse((response) =>
+    /\/question-generations\/[^/]+\/events$/u.test(new URL(response.url()).pathname),
+  );
+  await page.getByTestId('question-generate').click();
+  // The page asks for a reasoning generation of the document it shows.
+  const start = await generationStart;
+  expect(new URL(start.url()).pathname).toBe(
+    `/projects/${api.project.id}/documents/${api.document.id}/question-generations`,
+  );
+  expect(start.postDataJSON()).toMatchObject({ strategy: 'hybrid_reasoning' });
+  // It follows the operation on its named event stream until the operation ends.
+  const events = await generationEvents;
+  expect(await events.text()).toContain('event: question-generation\n');
+  await expect(page.getByTestId('question-generate')).toBeEnabled();
+  // The ended generation makes the page read the project's questions again.
+  const eventsIndex = requests.findIndex((entry) =>
+    /^GET .*\/question-generations\/[^/]+\/events$/u.test(entry),
+  );
+  await expect
+    .poll(() =>
+      requests
+        .slice(eventsIndex + 1)
+        .includes(`GET /projects/${api.project.id}/questions`),
+    )
+    .toBe(true);
+  await expect(page.getByTestId('question-card').filter({ hasText: api.question.question })).toBeVisible();
+});
+
+test('completes Random draw for every playable mocked question and records wrong answers', async ({
   page,
 }) => {
   const api = await installMockCertPrepApi(page);
@@ -56,16 +98,16 @@ test('completes Random draw for every playable mocked draft and records wrong an
 
   expect(api.practiceSessionPayload()).toMatchObject({
     mode: 'random_draw',
-    question_count: api.playableDrafts.length,
+    question_count: api.playableQuestions.length,
   });
 
   await completePracticeQuestions(
     page,
     api,
-    api.playableDrafts,
-    wrongChoiceForDraft,
+    api.playableQuestions,
+    wrongChoiceForQuestion,
   );
-  await expectWrongAnswerRetry(page, api, api.playableDrafts);
+  await expectWrongAnswerRetry(page, api, api.playableQuestions);
 
   expect(api.seenPaths()).toEqual(expectedSeenPaths(api));
 });
@@ -99,8 +141,8 @@ test('captures the route-mocked practice journey for UI regression only', async 
     fullPage: true,
   });
 
-  await completePracticeQuestions(page, api, [api.draft], wrongChoiceForDraft);
-  await expectWrongAnswerRetry(page, api, [api.draft]);
+  await completePracticeQuestions(page, api, [api.question], wrongChoiceForQuestion);
+  await expectWrongAnswerRetry(page, api, [api.question]);
   await page.screenshot({
     path: resolve(screenshotDirectory, '03-wrong-answer-retry.png'),
     fullPage: true,
@@ -422,8 +464,8 @@ test('shows wrong-answer summary weak areas and starts a focused retry', async (
   await completePracticeQuestions(
     page,
     api,
-    api.playableDrafts.slice(0, 2),
-    wrongChoiceForDraft,
+    api.playableQuestions.slice(0, 2),
+    wrongChoiceForQuestion,
   );
   await expectWrongAnswerSummary(page, api);
   await startWrongAnswerSummaryWeakAreaRetry(page, api, {
@@ -435,7 +477,7 @@ test('shows wrong-answer summary weak areas and starts a focused retry', async (
   });
 });
 
-test('clears document draft practice and review state when switching projects', async ({
+test('clears document question practice and review state when switching projects', async ({
   page,
 }) => {
   const api = await installMockCertPrepApi(page);
@@ -443,9 +485,9 @@ test('clears document draft practice and review state when switching projects', 
 
   await createWorkspaceWithUploadedDocument(page, api);
   await createProject(page, api, api.secondaryProject);
-  await uploadDocumentAndExpectDraft(page, api, {
+  await uploadDocumentAndExpectQuestion(page, api, {
     document: api.secondaryDocument,
-    draft: api.secondaryDraft,
+    question: api.secondaryQuestion,
   });
 
   await page
@@ -458,9 +500,9 @@ test('clears document draft practice and review state when switching projects', 
   ).toBeVisible();
   await page.getByRole('link', { name: 'Random draw' }).click();
   await startRandomDraw(page, api, 1);
-  await completePracticeQuestions(page, api, [api.draft], wrongChoiceForDraft);
+  await completePracticeQuestions(page, api, [api.question], wrongChoiceForQuestion);
   await page.getByRole('link', { name: 'Wrong-answer retry' }).click();
-  await expect(page.getByText(api.draft.question)).toBeVisible();
+  await expect(page.getByText(api.question.question)).toBeVisible();
 
   const requestMarker = api.markRequestLog();
   await page
@@ -471,27 +513,27 @@ test('clears document draft practice and review state when switching projects', 
       'Wrong answers will appear here after a practice attempt needs review.',
     ),
   ).toBeVisible();
-  await expect(page.getByText(api.draft.question)).toBeHidden();
+  await expect(page.getByText(api.question.question)).toBeHidden();
 
   await page.getByRole('link', { name: 'Wrong-answer summary' }).click();
   await expect(page).toHaveURL(/\/wrong-answers\/summary$/);
   await expect(page.getByText('No weakness data yet.')).toBeVisible();
-  await expect(page.getByText(api.draft.question)).toBeHidden();
+  await expect(page.getByText(api.question.question)).toBeHidden();
 
-  await page.getByRole('link', { name: 'Build' }).click();
+  await page.getByRole('link', { name: 'Questions' }).click();
   await expect(
     page
       .locator('.workbench-file-name')
       .getByText(api.secondaryDocument.filename, { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText(api.secondaryDraft.question)).toBeVisible();
+  await expect(page.getByText(api.secondaryQuestion.question)).toBeVisible();
   await expect(page.getByText(api.document.filename)).toBeHidden();
-  await expect(page.getByText(api.draft.question)).toBeHidden();
+  await expect(page.getByText(api.question.question)).toBeHidden();
 
   await page.getByRole('link', { name: 'Random draw' }).click();
   await expectRandomDrawAvailableCount(
     page,
-    api.secondaryPlayableDrafts.length,
+    api.secondaryPlayableQuestions.length,
   );
   await expect(
     page.getByLabel('Session details').getByText('Not started'),
@@ -506,7 +548,7 @@ test('clears document draft practice and review state when switching projects', 
   expect(pathsAfterSwitch).toEqual(
     expect.arrayContaining([
       `GET /projects/${api.secondaryProject.id}/documents`,
-      `GET /projects/${api.secondaryProject.id}/question-drafts`,
+      `GET /projects/${api.secondaryProject.id}/questions`,
       `GET /projects/${api.secondaryProject.id}/wrong-answers`,
       `GET /projects/${api.secondaryProject.id}/wrong-answers/summary`,
       `POST /projects/${api.secondaryProject.id}/practice-sessions`,
@@ -519,23 +561,23 @@ test('clears document draft practice and review state when switching projects', 
   ).toEqual([]);
 });
 
-test('excludes incomplete approved-looking drafts from Random draw and Whole source', async ({
+test('excludes incomplete questions from Random draw and Whole source', async ({
   page,
 }) => {
   const api = await installMockCertPrepApi(page);
   await seedMockApiConfig(page, apiBaseUrl, devToken);
-  expect(api.incompleteApprovedDrafts.length).toBeGreaterThan(0);
+  expect(api.incompleteQuestions.length).toBeGreaterThan(0);
 
   await createWorkspaceWithUploadedDocument(page, api);
 
   await page.getByRole('link', { name: 'Random draw' }).click();
-  await expectRandomDrawAvailableCount(page, api.playableDrafts.length);
+  await expectRandomDrawAvailableCount(page, api.playableQuestions.length);
   await page.getByRole('spinbutton', { name: 'Random draw size' }).fill('100');
   await page.getByRole('button', { name: 'Start random draw' }).click();
   await expect.poll(() => api.practiceSessionPayload()).not.toBeNull();
   expect(api.practiceSessionPayload()).toMatchObject({
     mode: 'random_draw',
-    question_count: api.playableDrafts.length,
+    question_count: api.playableQuestions.length,
   });
 
   await expectWholeSourceDocumentOptions(page, api);
@@ -547,7 +589,7 @@ test('excludes incomplete approved-looking drafts from Random draw and Whole sou
   expect(api.practiceSessionPayload()).toMatchObject({
     mode: 'full_document',
     document_id: api.wholeSourceDocument.id,
-    question_count: api.playableDraftsForDocument(api.wholeSourceDocument.id)
+    question_count: api.playableQuestionsForDocument(api.wholeSourceDocument.id)
       .length,
   });
 });

@@ -9,7 +9,7 @@ import {
   stringField,
 } from './scenario-utils.mts';
 
-export type CancelableOperationKind = 'draft' | 'runtime' | 'model';
+export type CancelableOperationKind = 'question' | 'runtime' | 'model';
 
 interface CancelableOperationScenarioBase {
   readonly kind: CancelableOperationKind;
@@ -24,7 +24,7 @@ interface CancelableOperationScenarioBase {
 
 export type CancelableOperationScenario =
   | (CancelableOperationScenarioBase & {
-      readonly kind: 'draft';
+      readonly kind: 'question';
       readonly projectId: string;
       readonly documentId: string;
       readonly provider: string;
@@ -227,10 +227,10 @@ function assertOperationScope(
     scenario.kind !== 'runtime' ||
     stringField(body.kind, 'runtime response kind') === scenario.operationKind;
   const matchesDocumentScope =
-    scenario.kind !== 'draft' ||
-    (stringField(body.project_id, 'draft response project_id') ===
+    scenario.kind !== 'question' ||
+    (stringField(body.project_id, 'question response project_id') ===
       scenario.projectId &&
-      stringField(body.document_id, 'draft response document_id') ===
+      stringField(body.document_id, 'question response document_id') ===
         scenario.documentId);
   if (!matchesCommonScope || !matchesKindScope || !matchesDocumentScope) {
     throw new Error(`${scenario.kind} response scope did not match the request.`);
@@ -252,7 +252,7 @@ function proofScope(
   scenario: CancelableOperationScenario,
 ): Record<string, string> {
   const common = { provider: scenario.provider, model: scenario.model };
-  if (scenario.kind === 'draft') {
+  if (scenario.kind === 'question') {
     return {
       ...common,
       projectId: scenario.projectId,

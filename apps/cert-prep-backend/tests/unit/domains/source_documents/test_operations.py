@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from cert_prep_backend.bootstrap.app import create_app
-from cert_prep_backend.bootstrap.source_library_links import bind_document_draft_jobs
+from cert_prep_backend.bootstrap.source_library_links import bind_document_question_jobs
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.errors import (
     DocumentOperationConflictError,
@@ -21,7 +21,7 @@ from cert_prep_backend.source_library.domain.document import (
     ExtractedPage,
     PageExtraction,
 )
-from cert_prep_backend.authoring.infrastructure import draft_jobs
+from cert_prep_backend.authoring.infrastructure import question_generation_jobs
 from cert_prep_backend.source_library.infrastructure import operations
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.bootstrap.authoring_links import authoring_documents
@@ -161,7 +161,7 @@ def test_cancel_before_attach_is_terminal_and_creates_no_document(tmp_path: Path
         "skipped_missing_model",
     ],
 )
-def test_cancel_first_rolls_back_late_publication_and_preserves_draft_history(
+def test_cancel_first_rolls_back_late_publication_and_preserves_question_history(
     tmp_path: Path,
     terminal_status: str,
 ) -> None:
@@ -169,14 +169,14 @@ def test_cancel_first_rolls_back_late_publication_and_preserves_draft_history(
     _insert_project(db, "project")
     _attach(db, operation_id="upload", document_id="document")
     _seed_partial_work(db, "document")
-    _seed_terminal_draft_history(db, "document", status=terminal_status)
+    _seed_terminal_question_history(db, "document", status=terminal_status)
     with db.connect() as connection:
         terminal_row = connection.execute(
-            "SELECT * FROM draft_generation_jobs WHERE id = 'terminal-job'"
+            "SELECT * FROM question_generation_jobs WHERE id = 'terminal-job'"
         ).fetchone()
     assert terminal_row is not None
     terminal_before = dict(terminal_row)
-    public_terminal_before = draft_jobs.get_job(db, "terminal-job")
+    public_terminal_before = question_generation_jobs.get_job(db, "terminal-job")
 
     requested = operations.cancel_operation(
         db,
@@ -194,7 +194,7 @@ def test_cancel_first_rolls_back_late_publication_and_preserves_draft_history(
         )
     terminal = operations.acknowledge_cancellation(
         db,
-        draft_jobs=bind_document_draft_jobs(db),
+        question_jobs=bind_document_question_jobs(db),
         project_id="project",
         operation_id="upload",
     )
@@ -209,17 +209,15 @@ def test_cancel_first_rolls_back_late_publication_and_preserves_draft_history(
     assert document["ocr_device"] is None
     assert document["extraction_warnings"] is None
     assert document["failure_message"] is None
-    for column in (
-        "processed_page_count",
-        "exam_item_count",
-    ):
-        assert document[column] == 0
+    assert document["processed_page_count"] == 0
+    # The source's questions outlive the canceled run, so it still counts them.
+    assert document["question_count"] == 3
     with db.connect() as connection:
         assert connection.execute(
             "SELECT COUNT(*) FROM document_chunks WHERE document_id = 'document'"
         ).fetchone()[0] == 0
         remaining_jobs = connection.execute(
-            "SELECT * FROM draft_generation_jobs WHERE document_id = 'document'"
+            "SELECT * FROM question_generation_jobs WHERE document_id = 'document'"
         ).fetchall()
         assert len(remaining_jobs) == 1
         terminal_after = dict(remaining_jobs[0])
@@ -227,8 +225,8 @@ def test_cancel_first_rolls_back_late_publication_and_preserves_draft_history(
     assert terminal_after.pop("chunk_id") is None
     assert terminal_after == terminal_before
     assert terminal_after["source_chunk_id"] == "partial-chunk"
-    assert draft_jobs.get_job(db, "terminal-job") == public_terminal_before
-    assert draft_jobs.retry_document_jobs(
+    assert question_generation_jobs.get_job(db, "terminal-job") == public_terminal_before
+    assert question_generation_jobs.retry_document_jobs(
         db,
         project_id="project",
         document_id="document",
@@ -236,8 +234,8 @@ def test_cancel_first_rolls_back_late_publication_and_preserves_draft_history(
         model="obsolete-model",
         documents=authoring_documents(db),
     ) == []
-    assert draft_jobs.recover_runnable_jobs(db) == []
-    assert draft_jobs.get_job(db, "terminal-job") == public_terminal_before
+    assert question_generation_jobs.recover_runnable_jobs(db) == []
+    assert question_generation_jobs.get_job(db, "terminal-job") == public_terminal_before
 
 
 @pytest.mark.parametrize(
@@ -341,8 +339,8 @@ def test_audio_recovery_preserves_incremental_transcript_and_sets_specific_state
             """
         )
 
-    assert operations.recover_operations(db, draft_jobs=bind_document_draft_jobs(db)) == 1
-    assert operations.recover_operations(db, draft_jobs=bind_document_draft_jobs(db)) == 0
+    assert operations.recover_operations(db, question_jobs=bind_document_question_jobs(db)) == 1
+    assert operations.recover_operations(db, question_jobs=bind_document_question_jobs(db)) == 0
 
     operation = operations.get_operation(
         db,
@@ -412,17 +410,17 @@ def test_stopped_audio_keeps_extraction_provenance_only_with_its_completed_trans
             )
             """
         )
-    jobs = bind_document_draft_jobs(db)
+    jobs = bind_document_question_jobs(db)
     if stop == "cancel":
         operations.cancel_operation(db, project_id="project", operation_id="audio-upload")
         stopped = operations.acknowledge_cancellation(
-            db, draft_jobs=jobs, project_id="project", operation_id="audio-upload"
+            db, question_jobs=jobs, project_id="project", operation_id="audio-upload"
         )
         assert stopped.status == "canceled"
     else:
         stopped = operations.finish_failed(
             db,
-            draft_jobs=jobs,
+            question_jobs=jobs,
             project_id="project",
             operation_id="audio-upload",
             error="Transcription stopped.",
@@ -459,14 +457,14 @@ def test_publication_is_atomic_and_terminal_finalizers_are_read_only(
     ).status == "succeeded"
     assert operations.finish_failed(
         db,
-        draft_jobs=bind_document_draft_jobs(db),
+        question_jobs=bind_document_question_jobs(db),
         project_id="project",
         operation_id="upload",
         error="late failure",
     ).status == "succeeded"
     assert operations.acknowledge_cancellation(
         db,
-        draft_jobs=bind_document_draft_jobs(db),
+        question_jobs=bind_document_question_jobs(db),
         project_id="project",
         operation_id="upload",
     ).status == "succeeded"
@@ -566,7 +564,7 @@ def test_real_cancel_vs_publish_race_has_only_two_legal_outcomes(tmp_path: Path)
         assert cancel_result == "cancel_requested"
         operations.acknowledge_cancellation(
             db,
-            draft_jobs=bind_document_draft_jobs(db),
+            question_jobs=bind_document_question_jobs(db),
             project_id="project",
             operation_id="upload",
         )
@@ -603,7 +601,7 @@ def test_concurrent_retry_has_one_owner_and_recovery_is_idempotent(
     operations.cancel_operation(db, project_id="project", operation_id="first")
     operations.acknowledge_cancellation(
         db,
-        draft_jobs=bind_document_draft_jobs(db),
+        question_jobs=bind_document_question_jobs(db),
         project_id="project",
         operation_id="first",
     )
@@ -614,7 +612,7 @@ def test_concurrent_retry_has_one_owner_and_recovery_is_idempotent(
         try:
             return operations.start_retry_operation(
                 db,
-                draft_jobs=bind_document_draft_jobs(db),
+                question_jobs=bind_document_question_jobs(db),
                 project_id="project",
                 document_id="document",
                 operation_id=operation_id,
@@ -628,9 +626,9 @@ def test_concurrent_retry_has_one_owner_and_recovery_is_idempotent(
     assert results.count("conflict") == 1
     retry_id = next(result for result in results if result != "conflict")
     _seed_partial_work(db, "document")
-    assert operations.recover_operations(db, draft_jobs=bind_document_draft_jobs(db)) == 1
+    assert operations.recover_operations(db, question_jobs=bind_document_question_jobs(db)) == 1
     first_recovery = _terminal_snapshot(db, retry_id, "document")
-    assert operations.recover_operations(db, draft_jobs=bind_document_draft_jobs(db)) == 0
+    assert operations.recover_operations(db, question_jobs=bind_document_question_jobs(db)) == 0
     assert _terminal_snapshot(db, retry_id, "document") == first_recovery
     assert operations.get_operation(
         db,
@@ -645,7 +643,7 @@ def test_concurrent_retry_has_one_owner_and_recovery_is_idempotent(
             "SELECT COUNT(*) FROM document_chunks WHERE document_id = 'document'"
         ).fetchone()[0] == 0
         assert connection.execute(
-            "SELECT COUNT(*) FROM draft_generation_jobs WHERE document_id = 'document'"
+            "SELECT COUNT(*) FROM question_generation_jobs WHERE document_id = 'document'"
         ).fetchone()[0] == 0
 
 
@@ -751,12 +749,24 @@ def _seed_partial_work(db: Database, document_id: str) -> None:
             UPDATE documents
             SET has_text = 1, ocr_device = 'igpu', extraction_warnings = 'fallback',
                 failure_message = 'earlier failure',
-                processed_page_count = 1, exam_item_count = 3,
+                processed_page_count = 1, question_count = 3,
                 content_profile = 'mixed', classification_detail = 'partial'
             WHERE id = ?
             """,
             (document_id,),
         )
+        # The three questions the count claims.
+        for number in range(3):
+            connection.execute(
+                """
+                INSERT INTO questions(
+                    id, project_id, document_id, question, choices_json, created_at,
+                    updated_at
+                )
+                VALUES (?, 'project', ?, 'Earlier?', '["A", "B"]', '2026-07-14', '2026-07-14')
+                """,
+                (f"{document_id}-question-{number}", document_id),
+            )
         connection.execute(
             """
             INSERT INTO document_chunks(
@@ -772,7 +782,7 @@ def _seed_partial_work(db: Database, document_id: str) -> None:
         )
         connection.execute(
             """
-            INSERT INTO draft_generation_jobs(
+            INSERT INTO question_generation_jobs(
                 id, project_id, document_id, chunk_id, source_chunk_id,
                 page_number, strategy, status, provider, model,
                 created_at, updated_at
@@ -787,7 +797,7 @@ def _seed_partial_work(db: Database, document_id: str) -> None:
         )
 
 
-def _seed_terminal_draft_history(
+def _seed_terminal_question_history(
     db: Database,
     document_id: str,
     *,
@@ -797,7 +807,7 @@ def _seed_terminal_draft_history(
     with db.connect() as connection:
         connection.execute(
             """
-            INSERT INTO draft_generation_jobs(
+            INSERT INTO question_generation_jobs(
                 id, project_id, document_id, chunk_id, page_number, strategy,
                 source_chunk_id, status, phase, cancellable, provider, model,
                 effective_provider, effective_model, fallback_reason,

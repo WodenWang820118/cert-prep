@@ -38,11 +38,11 @@ def _schema(*, request_required: bool = True) -> dict:
                     "type": "string",
                     "enum": ["queued", "running", "canceled"],
                 },
-                "DraftGenerationJobStatus": {
+                "QuestionGenerationJobStatus": {
                     "type": "string",
                     "enum": ["pending", "running", "canceled"],
                 },
-                "ManualDraftOperationStatus": {
+                "ManualQuestionGenerationStatus": {
                     "type": "string",
                     "enum": ["queued", "running", "canceled"],
                 },
@@ -229,8 +229,8 @@ def test_generated_client_preserves_openapi_enum_literals() -> None:
     output = render_typescript(_schema())
 
     assert 'DocumentOperationStatus: "queued" | "running" | "canceled";' in output
-    assert 'DraftGenerationJobStatus: "pending" | "running" | "canceled";' in output
-    assert 'ManualDraftOperationStatus: "queued" | "running" | "canceled";' in output
+    assert 'QuestionGenerationJobStatus: "pending" | "running" | "canceled";' in output
+    assert 'ManualQuestionGenerationStatus: "queued" | "running" | "canceled";' in output
     assert 'LLMInstallationStatus: "queued" | "running" | "canceled";' in output
     assert 'SourceKind: "pdf" | "image" | "recording";' in output
     assert "LegacyStatus: string;" in output

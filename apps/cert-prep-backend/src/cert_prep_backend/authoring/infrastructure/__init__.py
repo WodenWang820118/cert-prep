@@ -1,1 +1,1 @@
-"""SQLite storage of drafts and jobs, and how drafts are written with a language model."""
+"""SQLite storage of questions and jobs, and how questions are written with a language model."""

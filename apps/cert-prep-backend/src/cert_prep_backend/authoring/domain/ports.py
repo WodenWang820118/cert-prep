@@ -1,7 +1,7 @@
-"""How Question Authoring asks for drafts: a draft writer and its optional capabilities.
+"""How Question Authoring asks for questions: a question writer and its optional capabilities.
 
-A draft writer turns source chunks into draft exam items with a language model of AI
-Providers; ``authoring.infrastructure.draft_writing.draft_writer_for`` picks the writer for
+A question writer turns source chunks into questions with a language model of AI
+Providers; ``authoring.infrastructure.question_writing.question_writer_for`` picks the writer for
 the configured model.
 """
 
@@ -10,47 +10,47 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, Protocol, runtime_checkable
 
-from cert_prep_backend.authoring.domain.models import DraftSuggestion, SourceChunk
+from cert_prep_backend.authoring.domain.models import QuestionSuggestion, SourceChunk
 
 __all__ = [
-    "DraftGenerationProvider",
-    "FastFirstDraftProvider",
-    "ReasoningDraftProvider",
+    "QuestionWriter",
+    "FastFirstQuestionWriter",
+    "ReasoningQuestionWriter",
 ]
 
 
 @runtime_checkable
-class DraftGenerationProvider(Protocol):
-    """Boundary for writers that turn source chunks into draft exam items."""
+class QuestionWriter(Protocol):
+    """Boundary for writers that turn source chunks into questions."""
 
-    def generate_drafts(self, chunks: Sequence[SourceChunk], limit: int) -> list[DraftSuggestion]:
-        """Generate up to limit draft suggestions from source chunks."""
+    def write_questions(self, chunks: Sequence[SourceChunk], limit: int) -> list[QuestionSuggestion]:
+        """Generate up to limit question suggestions from source chunks."""
         pass
 
 
 @runtime_checkable
-class ReasoningDraftProvider(Protocol):
+class ReasoningQuestionWriter(Protocol):
     """Writer capability for structured reasoning over source chunks."""
 
-    def generate_reasoning_drafts(
+    def write_reasoning_questions(
         self,
         chunks: Sequence[SourceChunk],
         limit: int,
         **kwargs: Any,
-    ) -> list[DraftSuggestion]:
-        """Generate drafts through the provider's reasoning path."""
+    ) -> list[QuestionSuggestion]:
+        """Generate questions through the provider's reasoning path."""
         pass
 
 
 @runtime_checkable
-class FastFirstDraftProvider(Protocol):
-    """Writer capability for completing one deterministic draft candidate."""
+class FastFirstQuestionWriter(Protocol):
+    """Writer capability for completing one deterministic question candidate."""
 
-    def generate_fast_first_draft(
+    def write_fast_first_question(
         self,
         source_chunk: SourceChunk,
-        candidate: DraftSuggestion,
+        candidate: QuestionSuggestion,
         **kwargs: Any,
-    ) -> DraftSuggestion | None:
-        """Complete answer/rationale fields for one deterministic draft."""
+    ) -> QuestionSuggestion | None:
+        """Complete answer/rationale fields for one deterministic question."""
         pass

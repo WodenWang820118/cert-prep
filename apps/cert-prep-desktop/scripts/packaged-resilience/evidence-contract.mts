@@ -3,7 +3,7 @@ export const RESILIENCE_EVIDENCE_SCHEMA_VERSION = 2 as const;
 export const RESILIENCE_CHECKS = [
   'upload',
   'ocr',
-  'draft',
+  'question',
   'runtime',
   'model',
   'cancelVsCompleteRace',
@@ -77,7 +77,7 @@ export interface EvidenceValidationContext {
   readonly acceptanceCompletedAt?: string;
 }
 
-export interface ManualDraftTerminalExpectation {
+export interface ManualQuestionGenerationTerminalExpectation {
   readonly operationId: string;
   readonly commitStartedAt: string;
   readonly projectId: string;
@@ -384,7 +384,7 @@ function validateCheckProof(
     case 'ocr':
       validateOcrProof(proof);
       return;
-    case 'draft':
+    case 'question':
       validateScopedCancellationProof(proof, check, window);
       return;
     case 'runtime':
@@ -495,15 +495,15 @@ function validateOcrProof(proof: Record<string, unknown>): void {
 
 function validateScopedCancellationProof(
   proof: Record<string, unknown>,
-  check: 'draft' | 'runtime' | 'model',
+  check: 'question' | 'runtime' | 'model',
   window: EvidenceWindow,
 ): void {
   const projectId =
-    check === 'draft'
+    check === 'question'
       ? scopedId(proof.projectId, check, 'projectId')
       : undefined;
   const documentId =
-    check === 'draft'
+    check === 'question'
       ? scopedId(proof.documentId, check, 'documentId')
       : undefined;
   const kind =
@@ -518,13 +518,13 @@ function validateScopedCancellationProof(
           check,
           'provider',
         )
-      : check === 'draft' || check === 'model'
+      : check === 'question' || check === 'model'
         ? exactString(proof.provider, OLLAMA_PROVIDER, check, 'provider')
         : undefined;
   const model =
     check === 'runtime'
       ? exactString(proof.model, OLLAMA_RUNTIME_MODEL, check, 'model')
-      : check === 'draft' || check === 'model'
+      : check === 'question' || check === 'model'
         ? exactString(proof.model, OLLAMA_MODEL, check, 'model')
         : undefined;
   const expectedScope = { projectId, documentId, kind, provider, model };
@@ -591,8 +591,8 @@ function validateScopedCancellationProof(
   ) {
     fail(check, 'cancel or non-cancellable commit evidence is incomplete');
   }
-  if (check === 'draft') {
-    assertManualDraftTerminalEvidence(proof.manualDraftTerminalResponse, {
+  if (check === 'question') {
+    assertManualQuestionGenerationTerminalEvidence(proof.manualQuestionGenerationTerminalResponse, {
       operationId: commitOperationId,
       commitStartedAt: commitStartedAtText,
       projectId: projectId as string,
@@ -602,12 +602,12 @@ function validateScopedCancellationProof(
   validateScenarioTransition(proof, check);
 }
 
-export function assertManualDraftTerminalEvidence(
+export function assertManualQuestionGenerationTerminalEvidence(
   rawResponse: unknown,
-  expected: ManualDraftTerminalExpectation,
+  expected: ManualQuestionGenerationTerminalExpectation,
 ): void {
-  const response = record(rawResponse, 'draft manualDraftTerminalResponse');
-  const terminal = operationSnapshot(response, 'draft', {
+  const response = record(rawResponse, 'question manualQuestionGenerationTerminalResponse');
+  const terminal = operationSnapshot(response, 'question', {
     operationId: expected.operationId,
     statuses: ['succeeded'],
     projectId: expected.projectId,
@@ -630,15 +630,15 @@ export function assertManualDraftTerminalEvidence(
       response.fallback_reason !== undefined)
   ) {
     fail(
-      'draft',
-      'manual draft terminal cannot satisfy durable evidence; expected hybrid_reasoning, at least 2 generated drafts, exact effective Ollama attribution, and no fallback',
+      'question',
+      'manual question terminal cannot satisfy durable evidence; expected hybrid_reasoning, at least 2 generated questions, exact effective Ollama attribution, and no fallback',
     );
   }
 }
 
 function validateScenarioTransition(
   proof: Record<string, unknown>,
-  check: 'draft' | 'runtime' | 'model',
+  check: 'question' | 'runtime' | 'model',
 ): void {
   const canceledState = record(proof.canceledState, `${check} canceledState`);
   if (positiveInteger(canceledState.observationWindowMs) < 1_000) {
@@ -653,8 +653,8 @@ function validateScenarioTransition(
     `${check} canceledState.afterWindow`,
   );
   switch (check) {
-    case 'draft':
-      validateDraftTransition(proof, immediate, afterWindow);
+    case 'question':
+      validateQuestionTransition(proof, immediate, afterWindow);
       return;
     case 'runtime':
       validateRuntimeTransition(proof, immediate, afterWindow);
@@ -665,29 +665,29 @@ function validateScenarioTransition(
   }
 }
 
-function validateDraftTransition(
+function validateQuestionTransition(
   proof: Record<string, unknown>,
   immediate: Record<string, unknown>,
   afterWindow: Record<string, unknown>,
 ): void {
   const uploadTriggeredJobs = record(
     proof.uploadTriggeredJobs,
-    'draft uploadTriggeredJobs',
+    'question uploadTriggeredJobs',
   );
   const jobCount = positiveInteger(uploadTriggeredJobs.jobCount);
   const statuses = stringArray(uploadTriggeredJobs.statuses);
   if (
     statuses.length !== jobCount ||
     !statuses.every((status) => status === 'skipped_missing_model') ||
-    nonNegativeInteger(uploadTriggeredJobs.usableDraftCount) !== 0 ||
-    nonNegativeInteger(proof.usableDraftCountBeforeManual) !== 0 ||
-    nonNegativeInteger(immediate.usableDraftCount) !== 0 ||
-    nonNegativeInteger(afterWindow.usableDraftCount) !== 0 ||
-    positiveInteger(proof.usableDraftCountAfterManual) < 2
+    nonNegativeInteger(uploadTriggeredJobs.usableQuestionCount) !== 0 ||
+    nonNegativeInteger(proof.usableQuestionCountBeforeManual) !== 0 ||
+    nonNegativeInteger(immediate.usableQuestionCount) !== 0 ||
+    nonNegativeInteger(afterWindow.usableQuestionCount) !== 0 ||
+    positiveInteger(proof.usableQuestionCountAfterManual) < 2
   ) {
     fail(
-      'draft',
-      'draft cancellation and manual publish transition is incomplete',
+      'question',
+      'question cancellation and manual publish transition is incomplete',
     );
   }
 }
@@ -892,7 +892,8 @@ function validatePartialDataProof(proof: Record<string, unknown>): void {
     nonNegativeInteger(after.chunksCount) !== 0 ||
     nonNegativeInteger(after.chunksEndpointItems) !== 0 ||
     after.hasText !== false ||
-    !allZeroDocumentMetrics(after) ||
+    nonNegativeInteger(after.processedPageCount) !== 0 ||
+    nonNegativeInteger(after.questionCount) < nonNegativeInteger(before.questionCount) ||
     proof.originalPdfRetryable !== true ||
     proof.latePublishSuppressed !== true ||
     positiveInteger(proof.latePublishObservationWindowMs) < 1_000
@@ -1032,13 +1033,6 @@ function operationSnapshot(
     fail(check, 'operation response scope or terminal state does not match');
   }
   return snapshot;
-}
-
-function allZeroDocumentMetrics(value: Record<string, unknown>): boolean {
-  return [
-    'processedPageCount',
-    'examItemCount',
-  ].every((key) => nonNegativeInteger(value[key]) === 0);
 }
 
 function record(value: unknown, label: string): Record<string, unknown> {

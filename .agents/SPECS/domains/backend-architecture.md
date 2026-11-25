@@ -48,11 +48,11 @@ and practice.
 - Behavior-preserving refactors should keep external Tauri command, REST, and
   generated client contracts stable unless the spec explicitly says otherwise.
 - Practice session selection and attempt lookup share the backend playable
-  predicate: approved question text, at least two nonempty choices, answer in
+  predicate: question text, at least two nonempty choices, answer in
   choices, rationale, and source evidence from citation page or source excerpt.
 - Practice sessions persist selected question snapshots when the session is
   created. Attempt grading and wrong-answer review prefer the immutable
-  snapshot and fall back to the live draft only for sessions created before the
+  snapshot and fall back to the live question only for sessions created before the
   snapshot table exists.
 - Wrong-answer explanation API is
   `POST /projects/{project_id}/wrong-answers/{attempt_id}/explanation`.
@@ -74,7 +74,7 @@ and practice.
   multipart field, operation header, status codes, response DTOs, and error
   envelope remain unchanged. PNG, JPEG/JPG, and static WebP are additive
   accepted inputs, with no database migration, `DocumentRead.media_type`, or
-  image-specific endpoint/service. Chunks, generated drafts, practice
+  image-specific endpoint/service. Chunks, generated questions, practice
   selection, attempts, and wrong-answer review stay scoped by `document_id`.
 - `source_preparation.py` owns trusted content detection and normalized input
   validation; extraction belongs to Capture Runtime. Source storage/repository helpers use source-file terminology, retain
@@ -90,8 +90,8 @@ Accepted:
 
 - Bounded contexts and layers as described in the DDD plan; no layer-only
   top-level packages.
-- Keep generated mock exam drafts as `approved` when that is the current tested
-  behavior.
+- Store every question without an approval status: a question is playable in
+  practice as soon as it is written.
 - Remove schema and non-schema compatibility facades after callers move to
   domain modules.
 - Use `pnpm nx ...` for verification.

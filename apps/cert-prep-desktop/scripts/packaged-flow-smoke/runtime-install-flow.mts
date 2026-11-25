@@ -162,12 +162,12 @@ export async function ensureCaptureRuntimeReady(
     .locator('capture-workbench input[type="file"]')
     .waitFor({ state: 'attached', timeout: 30_000 });
 
-  await page.getByRole('link', { name: 'Build', exact: true }).click();
+  await page.getByRole('link', { name: 'Questions', exact: true }).click();
   await waitText(
     run,
     /Workspace ready|Select a source document/i,
     60_000,
-    'Build workspace restored after Capture Runtime start',
+    'Questions page restored after Capture Runtime start',
   );
 }
 

@@ -3,16 +3,16 @@ from dataclasses import replace
 import pytest
 
 from cert_prep_backend.authoring.domain.deterministic_parser import extract_jlpt_question_blocks
-from cert_prep_backend.authoring.domain.generation import DraftJobCanceledError
+from cert_prep_backend.authoring.domain.generation import QuestionJobCanceledError
 from cert_prep_backend.authoring.domain.models import (
-    DraftGenerationStrategy,
-    DraftSuggestion,
+    QuestionGenerationStrategy,
+    QuestionSuggestion,
     SourceChunk,
 )
-from cert_prep_backend.authoring.infrastructure.draft_writing import (
-    generate_drafts_with_annotations_for_strategy,
+from cert_prep_backend.authoring.infrastructure.question_writing import (
+    write_questions_with_annotations_for_strategy,
 )
-from cert_prep_backend.authoring.infrastructure.streaming import _generate_streaming_fast_first_drafts
+from cert_prep_backend.authoring.infrastructure.question_jobs import _generate_fast_first_questions
 from cert_prep_backend.platform.errors import LanguageModelUnavailable
 
 
@@ -27,8 +27,8 @@ def _page(number: int, *, parsed: bool = False) -> SourceChunk:
     return SourceChunk(id=f"page-{number}", page_number=number, text=text, source_excerpt=text)
 
 
-def _reasoned(chunk: SourceChunk) -> DraftSuggestion:
-    return DraftSuggestion(
+def _reasoned(chunk: SourceChunk) -> QuestionSuggestion:
+    return QuestionSuggestion(
         chunk_id=chunk.id,
         question=f"Reasoned widget on page {chunk.page_number}?",
         choices=["alpha", "beta"],
@@ -52,7 +52,7 @@ class RecordingHybridProvider:
         self.duplicates = duplicates
         self.dictionary = dictionary
 
-    def generate_fast_first_draft(self, chunk, candidate):
+    def write_fast_first_question(self, chunk, candidate):
         self.fast_calls.append(chunk.id)
         if self.incomplete:
             return None
@@ -63,7 +63,7 @@ class RecordingHybridProvider:
             dictionary_generated=self.dictionary,
         )
 
-    def generate_reasoning_drafts(self, chunks, limit):
+    def write_reasoning_questions(self, chunks, limit):
         self.reasoning_calls.append(([chunk.id for chunk in chunks], limit))
         if self.error and chunks[0].id == "page-2":
             raise self.error
@@ -76,8 +76,8 @@ class RecordingHybridProvider:
 
 
 def _generate(provider, chunks, limit=10):
-    return generate_drafts_with_annotations_for_strategy(
-        provider, chunks, limit, DraftGenerationStrategy.HYBRID_REASONING
+    return write_questions_with_annotations_for_strategy(
+        provider, chunks, limit, QuestionGenerationStrategy.HYBRID_REASONING
     )
 
 
@@ -136,7 +136,7 @@ def test_a_repeat_limit_abort_skips_only_that_page():
 
 @pytest.mark.parametrize("error", [
     LanguageModelUnavailable("model missing"),
-    DraftJobCanceledError("Draft generation was canceled."),
+    QuestionJobCanceledError("Question generation was canceled."),
 ])
 def test_fatal_reasoning_errors_and_cancellation_propagate(error):
     provider = RecordingHybridProvider(error=error)
@@ -183,7 +183,7 @@ def test_without_fast_first_capability_the_existing_reasoning_path_is_used():
         def __init__(self):
             self.calls = []
 
-        def generate_reasoning_drafts(self, chunks, limit):
+        def write_reasoning_questions(self, chunks, limit):
             self.calls.append(([chunk.id for chunk in chunks], limit))
             return [_reasoned(chunks[-1])]
 
@@ -195,7 +195,7 @@ def test_without_fast_first_capability_the_existing_reasoning_path_is_used():
 
 def test_fast_first_only_provider_does_not_attempt_a_fallback():
     class FastFirstOnly:
-        generate_fast_first_draft = RecordingHybridProvider.generate_fast_first_draft
+        write_fast_first_question = RecordingHybridProvider.write_fast_first_question
 
         def __init__(self):
             self.fast_calls = []
@@ -210,8 +210,8 @@ def test_deterministic_only_does_not_call_either_provider_capability():
     provider = RecordingHybridProvider()
     pages = [_page(1, parsed=True), _page(2)]
     assert len(extract_jlpt_question_blocks(pages, 10)) == 1
-    result = generate_drafts_with_annotations_for_strategy(
-        provider, pages, 10, DraftGenerationStrategy.DETERMINISTIC_ONLY
+    result = write_questions_with_annotations_for_strategy(
+        provider, pages, 10, QuestionGenerationStrategy.DETERMINISTIC_ONLY
     )
     assert result.suggestions == []
     assert len(result.unavailable_blocks) == 1
@@ -226,7 +226,7 @@ def test_mixed_pages_assign_parser_compatible_source_order():
     assert [item.source_order for item in result.suggestions] == [10001, 22001]
 
 
-def test_several_reasoning_drafts_keep_their_order_within_the_chunk():
+def test_several_reasoning_questions_keep_their_order_within_the_chunk():
     provider = RecordingHybridProvider(duplicates=True)
     result = _generate(provider, [_page(1, parsed=True), replace(_page(2), chunk_index=2)])
     assert [item.source_order for item in result.suggestions] == [10001, 22001, 22003]
@@ -235,18 +235,18 @@ def test_several_reasoning_drafts_keep_their_order_within_the_chunk():
     ]
 
 
-@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("background", [False, True])
 @pytest.mark.parametrize("source_order", [None, 0, 20077])
-def test_reasoning_source_order_is_defaulted_only_when_absent(streaming, source_order):
+def test_reasoning_source_order_is_defaulted_only_when_absent(background, source_order):
     class OrderedReasoningProvider(RecordingHybridProvider):
-        def generate_reasoning_drafts(self, chunks, limit, **kwargs):
+        def write_reasoning_questions(self, chunks, limit, **kwargs):
             return [replace(_reasoned(chunks[0]), source_order=source_order)]
 
     chunk = replace(_page(2), chunk_index=2)
     provider = OrderedReasoningProvider()
-    if streaming:
-        suggestions = _generate_streaming_fast_first_drafts(
-            provider, chunk, 1, DraftGenerationStrategy.HYBRID_REASONING
+    if background:
+        suggestions = _generate_fast_first_questions(
+            provider, chunk, 1, QuestionGenerationStrategy.HYBRID_REASONING
         )
     else:
         suggestions = _generate(provider, [_page(1, parsed=True), chunk]).suggestions[1:]
