@@ -183,6 +183,13 @@ const LANES: readonly LaneSpec[] = [
   },
   {
     kind: 'always',
+    id: 'code-complexity-gate',
+    job: 'portable-quality',
+    name: 'Code size and complexity gate (TypeScript and Python)',
+    setups: ['pnpm-install', 'uv-sync'],
+  },
+  {
+    kind: 'always',
     id: 'test-architecture-tools',
     job: 'portable-quality',
     name: 'Test architecture tools',
@@ -248,6 +255,15 @@ const LANES: readonly LaneSpec[] = [
     setups: ['pnpm-install'],
     nx: ['run', 'cert-prep-desktop:typecheck-scripts'],
     triggerProjects: ['cert-prep-desktop'],
+  },
+  {
+    // Always planned: in affected mode the gate itself leaves Clippy out when
+    // no change since the base can alter the Rust findings.
+    kind: 'always',
+    id: 'rust-code-complexity-gate',
+    job: 'windows-quality',
+    name: 'Code size and complexity gate (Rust)',
+    setups: ['pnpm-install'],
   },
   {
     kind: 'when-any',
@@ -344,6 +360,23 @@ const LANES: readonly LaneSpec[] = [
     triggerProjects: ['cert-prep-desktop'],
   },
 ];
+
+/**
+ * Gate arguments of the two complexity steps, as `ci.yml` runs them. Only
+ * affected mode lets the Rust step leave Clippy out when no Rust input changed.
+ */
+export function codeComplexityGateArgs(
+  step: 'typescript-python' | 'rust',
+  options: LocalCiOptions,
+): string[] {
+  if (step === 'typescript-python') return ['--ci', '--without', 'clippy'];
+  return [
+    '--ci',
+    '--without',
+    'eslint,ruff',
+    ...(options.all ? [] : ['--clippy-when-changed-since', options.base]),
+  ];
+}
 
 function validateBaseRef(value: string): string {
   if (value === '' || value.startsWith('-')) {

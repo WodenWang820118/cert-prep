@@ -8,6 +8,8 @@
     "retired-names:update": "node tools/retired-names-gate.mts --update",
     "dead-code:check": "node tools/dead-code-gate.mts",
     "dead-code:update": "node tools/dead-code-gate.mts --update",
+    "code-complexity:check": "node tools/code-complexity-gate.mts",
+    "code-complexity:update": "node tools/code-complexity-gate.mts --update",
     "architecture:update": "node tools/architecture-graph.mts --write",
     "architecture:check": "node tools/architecture-graph.mts --check",
     "architecture-exceptions:check": "node tools/architecture-exceptions-gate.mts",

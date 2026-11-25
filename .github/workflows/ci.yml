@@ -100,6 +100,11 @@ jobs:
           && node tools/dead-code-gate.mts --ci
           && node tools/retired-names-gate.mts --ci
 
+      - name: Code size and complexity gate (TypeScript and Python)
+        run: >-
+          node --test tools/code-complexity-gate.test.mts
+          && node tools/code-complexity-gate.mts --ci --without clippy
+
       - name: Test architecture tools
         run: >-
           node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts
@@ -187,6 +192,9 @@ jobs:
 
       - name: Type-check desktop scripts
         run: pnpm nx run cert-prep-desktop:typecheck-scripts
+
+      - name: Code size and complexity gate (Rust)
+        run: node tools/code-complexity-gate.mts --ci --without eslint,ruff
 
       - name: Test package QA
         run: pnpm nx run cert-prep-desktop:package-qa-test

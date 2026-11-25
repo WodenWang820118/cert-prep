@@ -1,0 +1,1269 @@
+[
+  {
+    "tool": "clippy",
+    "rule": "too_many_arguments",
+    "file": "apps/cert-prep-desktop/src-tauri/src/backend/readiness.rs",
+    "symbol": "capture_runtime_status",
+    "value": 7
+  },
+  {
+    "tool": "clippy",
+    "rule": "too_many_arguments",
+    "file": "apps/cert-prep-desktop/src-tauri/src/runtime_installation.rs",
+    "symbol": "update_job",
+    "value": 7
+  },
+  {
+    "tool": "clippy",
+    "rule": "too_many_lines",
+    "file": "apps/cert-prep-desktop/src-tauri/src/backend/readiness.rs",
+    "symbol": "impl BackendState::capture_runtime_status",
+    "value": 88
+  },
+  {
+    "tool": "clippy",
+    "rule": "too_many_lines",
+    "file": "apps/cert-prep-desktop/src-tauri/src/backend/readiness.rs",
+    "symbol": "impl BackendState::status",
+    "value": 76
+  },
+  {
+    "tool": "clippy",
+    "rule": "too_many_lines",
+    "file": "apps/cert-prep-desktop/src-tauri/src/backend_process.rs",
+    "symbol": "launch_backend_entrypoint",
+    "value": 79
+  },
+  {
+    "tool": "eslint",
+    "rule": "complexity",
+    "file": "apps/cert-prep/src/app/authoring/data/question-jobs.store.ts",
+    "symbol": "QuestionJobsStore.syncJobStream",
+    "value": 16
+  },
+  {
+    "tool": "eslint",
+    "rule": "complexity",
+    "file": "apps/cert-prep/src/app/authoring/feature/questions-panel/questions-panel.component.ts",
+    "symbol": "QuestionsPanelComponent.generationStatus.<anonymous>",
+    "value": 27
+  },
+  {
+    "tool": "eslint",
+    "rule": "complexity",
+    "file": "apps/cert-prep/src/app/capture/data/cert-prep-capture-event-stream.ts",
+    "symbol": "normalizeCaptureEvent",
+    "value": 35
+  },
+  {
+    "tool": "eslint",
+    "rule": "complexity",
+    "file": "apps/cert-prep/src/app/capture/data/cert-prep-capture-event-stream.ts",
+    "symbol": "validateSegment",
+    "value": 26
+  },
+  {
+    "tool": "eslint",
+    "rule": "complexity",
+    "file": "apps/cert-prep/src/app/capture/data/cert-prep-capture-protocol.ts",
+    "symbol": "mapCaptureOperation",
+    "value": 22
+  },
+  {
+    "tool": "eslint",
+    "rule": "complexity",
+    "file": "apps/cert-prep/src/app/runtime/data/device-view-model.service.ts",
+    "symbol": "DeviceViewModelService.buildStatusLine",
+    "value": 16
+  },
+  {
+    "tool": "eslint",
+    "rule": "complexity",
+    "file": "apps/cert-prep/src/app/runtime/data/device-view-model.service.ts",
+    "symbol": "DeviceViewModelService.create",
+    "value": 18
+  },
+  {
+    "tool": "eslint",
+    "rule": "complexity",
+    "file": "apps/cert-prep/src/app/runtime/data/runtime-health-view-model.service.ts",
+    "symbol": "RuntimeHealthViewModelService.modelSection",
+    "value": 25
+  },
+  {
+    "tool": "eslint",
+    "rule": "complexity",
+    "file": "apps/cert-prep/src/app/source-library/data/source-operation-snapshot.service.ts",
+    "symbol": "SourceOperationSnapshotService.isExpectedSourceOperation",
+    "value": 20
+  },
+  {
+    "tool": "eslint",
+    "rule": "complexity",
+    "file": "apps/cert-prep/src/app/source-library/data/source-upload-lifecycle.ts",
+    "symbol": "SourceUploadLifecycle.pump",
+    "value": 16
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-depth",
+    "file": "apps/cert-prep/src/app/core/data/sse-frame-parser.ts",
+    "symbol": "SseFrameParser.push",
+    "value": 4
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines",
+    "file": "apps/cert-prep/src/app/authoring/data/questions.store.ts",
+    "symbol": "<file>",
+    "value": 448
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines",
+    "file": "apps/cert-prep/src/app/capture/data/cert-prep-capture-client.ts",
+    "symbol": "<file>",
+    "value": 444
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines",
+    "file": "apps/cert-prep/src/app/capture/data/cert-prep-capture-event-stream.ts",
+    "symbol": "<file>",
+    "value": 409
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines",
+    "file": "apps/cert-prep/src/app/capture/data/cert-prep-capture-protocol.ts",
+    "symbol": "<file>",
+    "value": 782
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines",
+    "file": "apps/cert-prep/src/app/core/shell/app.component.ts",
+    "symbol": "<file>",
+    "value": 345
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines",
+    "file": "apps/cert-prep/src/app/practice/data/practice.store.ts",
+    "symbol": "<file>",
+    "value": 414
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines",
+    "file": "apps/cert-prep/src/app/runtime/data/desktop-runtime.store.ts",
+    "symbol": "<file>",
+    "value": 425
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines",
+    "file": "apps/cert-prep/src/app/runtime/data/device-view-model.service.ts",
+    "symbol": "<file>",
+    "value": 334
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines",
+    "file": "apps/cert-prep/src/app/runtime/data/llm-installation-actions.store.ts",
+    "symbol": "<file>",
+    "value": 437
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines",
+    "file": "apps/cert-prep/src/app/runtime/data/llm-job-view.service.ts",
+    "symbol": "<file>",
+    "value": 270
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines",
+    "file": "apps/cert-prep/src/app/source-library/data/source-import.store.ts",
+    "symbol": "<file>",
+    "value": 1108
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines",
+    "file": "apps/cert-prep/src/app/source-library/data/source-upload-lifecycle.ts",
+    "symbol": "<file>",
+    "value": 342
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines",
+    "file": "apps/cert-prep/src/app/source-library/ui/source-image-crop/source-image-crop-dialog.component.ts",
+    "symbol": "<file>",
+    "value": 344
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines-per-function",
+    "file": "apps/cert-prep/src/app/capture/data/cert-prep-capture-event-stream.ts",
+    "symbol": "normalizeCaptureEvent",
+    "value": 96
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines-per-function",
+    "file": "apps/cert-prep/src/app/capture/data/cert-prep-capture-protocol.ts",
+    "symbol": "mapCaptureOperation",
+    "value": 88
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines-per-function",
+    "file": "apps/cert-prep/src/app/capture/data/cert-prep-capture-protocol.ts",
+    "symbol": "mapOcrCompute",
+    "value": 80
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines-per-function",
+    "file": "apps/cert-prep/src/app/core/data/cert-prep-sse-client.service.ts",
+    "symbol": "jsonEventsFromResponse",
+    "value": 61
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines-per-function",
+    "file": "apps/cert-prep/src/app/core/data/operation.store.ts",
+    "symbol": "OperationStore.run",
+    "value": 136
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines-per-function",
+    "file": "apps/cert-prep/src/app/core/data/operation.store.ts",
+    "symbol": "OperationStore.run.<anonymous>",
+    "value": 129
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines-per-function",
+    "file": "apps/cert-prep/src/app/runtime/data/device-view-model.service.ts",
+    "symbol": "DeviceViewModelService.buildStatusLine",
+    "value": 62
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines-per-function",
+    "file": "apps/cert-prep/src/app/runtime/data/device-view-model.service.ts",
+    "symbol": "DeviceViewModelService.resolveAdapterMatch",
+    "value": 63
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines-per-function",
+    "file": "apps/cert-prep/src/app/runtime/data/device-view-model.service.ts",
+    "symbol": "DeviceViewModelService.resolveOptionsAndSelection",
+    "value": 79
+  },
+  {
+    "tool": "eslint",
+    "rule": "max-lines-per-function",
+    "file": "apps/cert-prep/src/app/source-library/data/source-audio-preview.service.ts",
+    "symbol": "SourceAudioPreviewService.load",
+    "value": 74
+  },
+  {
+    "tool": "ruff",
+    "rule": "C901",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/question_writing.py",
+    "symbol": "write_questions_with_annotations_for_strategy",
+    "value": 20
+  },
+  {
+    "tool": "ruff",
+    "rule": "C901",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/api/capture_event_stream.py",
+    "symbol": "host_event_stream",
+    "value": 21
+  },
+  {
+    "tool": "ruff",
+    "rule": "C901",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/application/ocr_summary.py",
+    "symbol": "build_ocr_summary",
+    "value": 20
+  },
+  {
+    "tool": "ruff",
+    "rule": "C901",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/structuring.py",
+    "symbol": "CertPrepCaptureStructuringAdapter.structure",
+    "value": 16
+  },
+  {
+    "tool": "ruff",
+    "rule": "C901",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/device_policy.py",
+    "symbol": "corrected_device_policy",
+    "value": 16
+  },
+  {
+    "tool": "ruff",
+    "rule": "C901",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/device_verification.py",
+    "symbol": "verify_device_execution",
+    "value": 27
+  },
+  {
+    "tool": "ruff",
+    "rule": "C901",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/server_log.py",
+    "symbol": "parse_log_line",
+    "value": 18
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/ai_providers/infrastructure/ollama_transport.py",
+    "symbol": "OllamaProvider.__init__",
+    "value": 7
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/application/use_cases.py",
+    "symbol": "generate_imported_questions",
+    "value": 10
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/application/use_cases.py",
+    "symbol": "generate_source_questions",
+    "value": 8
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/domain/generation.py",
+    "symbol": "ManualQuestionGeneration.queue",
+    "value": 8
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/import_questions.py",
+    "symbol": "ImportedSourceQuestionGeneration.__init__",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/manual_operations.py",
+    "symbol": "create_operation",
+    "value": 9
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/ollama_question_writer.py",
+    "symbol": "OllamaQuestionWriter._reasoning_questions",
+    "value": 8
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/question_generation_jobs.py",
+    "symbol": "enqueue_chunk_job",
+    "value": 10
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/question_generation_jobs.py",
+    "symbol": "retry_source_jobs",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/question_jobs.py",
+    "symbol": "QuestionJobScheduler.__init__",
+    "value": 8
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/repository.py",
+    "symbol": "_insert_generated_question",
+    "value": 7
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/repository.py",
+    "symbol": "append_generated_questions_and_complete_job",
+    "value": 10
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/repository.py",
+    "symbol": "append_generated_questions_and_complete_manual_operation",
+    "value": 11
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/repository.py",
+    "symbol": "create_question",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/bootstrap/app.py",
+    "symbol": "build_llm_installation",
+    "value": 7
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/bootstrap/app.py",
+    "symbol": "create_app",
+    "value": 7
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/bootstrap/capture_links.py",
+    "symbol": "SourceLibraryCapturePublication.publish_audio_success",
+    "value": 8
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/api/capture_event_stream.py",
+    "symbol": "host_event_stream",
+    "value": 10
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/application/ports.py",
+    "symbol": "CapturePublication.publish_audio_success",
+    "value": 8
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/application/ports.py",
+    "symbol": "CaptureReviewWorkflow.begin_review",
+    "value": 10
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/application/ports.py",
+    "symbol": "CaptureReviewWorkflow.claim_commit",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/application/ports.py",
+    "symbol": "CaptureReviewWorkflow.commit_review",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/application/ports.py",
+    "symbol": "CaptureSources.attach_source",
+    "value": 8
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/application/use_cases.py",
+    "symbol": "_cancel_queued_capture",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/application/use_cases.py",
+    "symbol": "_fail_capture_begin",
+    "value": 8
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/application/use_cases.py",
+    "symbol": "_finish_canceled_capture",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/application/use_cases.py",
+    "symbol": "abandon_capture_upload",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/application/use_cases.py",
+    "symbol": "cancel_capture_review",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/application/use_cases.py",
+    "symbol": "commit_capture_review",
+    "value": 11
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/application/use_cases.py",
+    "symbol": "extract_capture_for_review",
+    "value": 11
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/application/use_cases.py",
+    "symbol": "hold_capture_stream",
+    "value": 7
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/application/use_cases.py",
+    "symbol": "preview_capture_structure",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/application/use_cases.py",
+    "symbol": "publish_reviewed_capture",
+    "value": 11
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/application/use_cases.py",
+    "symbol": "report_structuring_failure",
+    "value": 8
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/application/use_cases.py",
+    "symbol": "start_capture_review",
+    "value": 13
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/application/use_cases.py",
+    "symbol": "view_capture",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/coordinator.py",
+    "symbol": "CertPrepCaptureCoordinator.__init__",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/coordinator.py",
+    "symbol": "CertPrepCaptureCoordinator.begin_capture",
+    "value": 9
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/coordinator.py",
+    "symbol": "CertPrepCaptureCoordinator.capture",
+    "value": 8
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/persistence.py",
+    "symbol": "publish_capture_document",
+    "value": 10
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/review_sessions.py",
+    "symbol": "begin_confirm",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/review_sessions.py",
+    "symbol": "begin_confirm_in_connection",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/review_workflow.py",
+    "symbol": "CaptureReviewWorkflowAdapter.__init__",
+    "value": 7
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/review_workflow.py",
+    "symbol": "CaptureReviewWorkflowAdapter.begin_review",
+    "value": 10
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/review_workflow.py",
+    "symbol": "CaptureReviewWorkflowAdapter.claim_commit",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/review_workflow.py",
+    "symbol": "CaptureReviewWorkflowAdapter.commit_review",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/review_workflow.py",
+    "symbol": "begin_capture_commit",
+    "value": 8
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/review_workflow.py",
+    "symbol": "begin_review_capture",
+    "value": 14
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/review_workflow.py",
+    "symbol": "commit_review_capture",
+    "value": 11
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/source_extraction.py",
+    "symbol": "CaptureSourceExtraction.extract",
+    "value": 10
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/structuring.py",
+    "symbol": "CertPrepCaptureStructuringAdapter.structure",
+    "value": 8
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/llm_provisioning/application/use_cases.py",
+    "symbol": "_update_job",
+    "value": 9
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/llm_provisioning/domain/installation.py",
+    "symbol": "LLMInstallationJob.create_succeeded",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/llm_provisioning/domain/installation.py",
+    "symbol": "LLMInstallationProgress.__init__",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/practice/application/use_cases.py",
+    "symbol": "answer_question",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/practice/application/use_cases.py",
+    "symbol": "start_practice",
+    "value": 9
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/practice/domain/session.py",
+    "symbol": "PracticeSession.start",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/practice/domain/session.py",
+    "symbol": "select_questions",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/application/ports.py",
+    "symbol": "SourceExtraction.extract",
+    "value": 10
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/application/ports.py",
+    "symbol": "SourceRepository.attach_source",
+    "value": 9
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/application/use_cases.py",
+    "symbol": "_extract_and_generate_questions",
+    "value": 10
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/application/use_cases.py",
+    "symbol": "_process_source",
+    "value": 10
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/application/use_cases.py",
+    "symbol": "_queue_processing",
+    "value": 7
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/application/use_cases.py",
+    "symbol": "import_source",
+    "value": 14
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/application/use_cases.py",
+    "symbol": "retry_source_processing",
+    "value": 11
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/infrastructure/audio.py",
+    "symbol": "translate_chunk",
+    "value": 8
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/infrastructure/audio.py",
+    "symbol": "translate_stale_chunks",
+    "value": 7
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/infrastructure/chunks.py",
+    "symbol": "compare_and_set_chunk_translation",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/infrastructure/chunks.py",
+    "symbol": "insert_audio_segment",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/infrastructure/chunks.py",
+    "symbol": "update_chunk_translation",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/infrastructure/chunks.py",
+    "symbol": "upsert_page_chunk",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/infrastructure/operations.py",
+    "symbol": "_preserve_failed_audio_state",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/infrastructure/operations.py",
+    "symbol": "_record_stopped_source",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/infrastructure/operations.py",
+    "symbol": "_reset_source_derived_state",
+    "value": 9
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/infrastructure/operations.py",
+    "symbol": "create_and_attach_source",
+    "value": 11
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/infrastructure/operations.py",
+    "symbol": "finish_failed",
+    "value": 7
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/infrastructure/operations.py",
+    "symbol": "publish_capture_audio_success",
+    "value": 9
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/infrastructure/operations.py",
+    "symbol": "publish_success",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/infrastructure/progress.py",
+    "symbol": "complete_source_extraction_in_transaction",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/infrastructure/repository.py",
+    "symbol": "SqliteSourceRepository.attach_source",
+    "value": 9
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/source_library/infrastructure/sources.py",
+    "symbol": "insert_processing_source",
+    "value": 11
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/device_status.py",
+    "symbol": "build_device_status",
+    "value": 7
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/device_verification.py",
+    "symbol": "verify_device_execution",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/profile_installer.py",
+    "symbol": "OllamaProfileInstaller.__init__",
+    "value": 7
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/profiles.py",
+    "symbol": "_selection",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0913",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/server_coordinator.py",
+    "symbol": "OllamaServerCoordinator.__init__",
+    "value": 11
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0915",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/bootstrap/app.py",
+    "symbol": "create_app",
+    "value": 89
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR0915",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/device_verification.py",
+    "symbol": "verify_device_execution",
+    "value": 80
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/ai_providers/infrastructure/ollama_transport.py",
+    "symbol": "OllamaProvider.health",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/domain/deterministic_parser.py",
+    "symbol": "_continued_question",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/ollama_question_writer.py",
+    "symbol": "OllamaQuestionWriter.write_fast_first_question",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/ollama_question_writer.py",
+    "symbol": "OllamaQuestionWriter.write_fast_first_question",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/ollama_question_writer.py",
+    "symbol": "OllamaQuestionWriter.write_fast_first_question",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/question_jobs.py",
+    "symbol": "_generate_fast_first_questions",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/question_jobs.py",
+    "symbol": "_generate_fast_first_questions",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/question_writing.py",
+    "symbol": "write_questions_with_annotations_for_strategy",
+    "value": 5
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/question_writing.py",
+    "symbol": "write_questions_with_annotations_for_strategy",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/question_writing.py",
+    "symbol": "write_questions_with_annotations_for_strategy",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/question_writing.py",
+    "symbol": "write_questions_with_annotations_for_strategy",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/question_writing.py",
+    "symbol": "write_questions_with_annotations_for_strategy",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/question_writing.py",
+    "symbol": "write_questions_with_annotations_for_strategy",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/sudachi_reading_lexicon.py",
+    "symbol": "SudachiReadingLexicon.kanji_span_readings",
+    "value": 7
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/sudachi_reading_lexicon.py",
+    "symbol": "SudachiReadingLexicon.kanji_span_readings",
+    "value": 5
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/api/capture_event_stream.py",
+    "symbol": "host_event_stream",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/api/capture_event_stream.py",
+    "symbol": "host_event_stream",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/api/capture_event_stream.py",
+    "symbol": "host_event_stream",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/api/capture_event_stream.py",
+    "symbol": "host_event_stream",
+    "value": 5
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+    "symbol": "Database.migrate",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+    "symbol": "Database.migrate",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+    "symbol": "Database.migrate",
+    "value": 5
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+    "symbol": "Database.migrate",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+    "symbol": "Database.migrate",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/platform/database.py",
+    "symbol": "_legacy_page_source_kind",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "apps/cert-prep-backend/src/cert_prep_backend/platform/source_worker_pool.py",
+    "symbol": "SourceWorkerPool._worker_loop",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/_native_gpu_inventory.py",
+    "symbol": "_native_enumerate_adapters",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/_native_gpu_inventory.py",
+    "symbol": "_native_enumerate_adapters",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/_native_gpu_inventory.py",
+    "symbol": "_native_enumerate_adapters",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/device_policy.py",
+    "symbol": "corrected_device_policy",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/inventory.py",
+    "symbol": "_linux_available_memory",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/inventory.py",
+    "symbol": "_merge_accelerator_sources",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/inventory.py",
+    "symbol": "_merge_accelerator_sources",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/models.py",
+    "symbol": "extract_model_names",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/server_coordinator.py",
+    "symbol": "OllamaServerCoordinator._claim_switch",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/server_coordinator.py",
+    "symbol": "OllamaServerCoordinator._replace_owned_server",
+    "value": 6
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/server_coordinator.py",
+    "symbol": "OllamaServerCoordinator._replace_owned_server",
+    "value": 5
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/server_coordinator.py",
+    "symbol": "OllamaServerCoordinator._restart_server",
+    "value": 5
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/server_coordinator.py",
+    "symbol": "OllamaServerCoordinator._restart_server",
+    "value": 5
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/server_coordinator.py",
+    "symbol": "OllamaServerCoordinator._restart_server",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/server_coordinator.py",
+    "symbol": "OllamaServerCoordinator._restart_server",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/server_coordinator.py",
+    "symbol": "OllamaServerCoordinator._restart_server",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/server_coordinator.py",
+    "symbol": "OllamaServerCoordinator._restart_server",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/server_coordinator.py",
+    "symbol": "OllamaServerCoordinator._stop_after_close",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/server_coordinator.py",
+    "symbol": "OllamaServerCoordinator._switch_pass",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/server_coordinator.py",
+    "symbol": "OllamaServerCoordinator._verify_latest_load",
+    "value": 4
+  },
+  {
+    "tool": "ruff",
+    "rule": "PLR1702",
+    "file": "packages/cert-prep-ollama/src/cert_prep_ollama/server_log.py",
+    "symbol": "parse_log_line",
+    "value": 4
+  }
+]

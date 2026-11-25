@@ -1,0 +1,58 @@
+{
+  "thresholds": {
+    "eslint": {
+      "max-lines-per-function": 60,
+      "complexity": 15,
+      "max-params": 4,
+      "max-depth": 3,
+      "max-lines": 268
+    },
+    "ruff": {
+      "C901": 15,
+      "PLR0915": 60,
+      "PLR0913": 5,
+      "PLR1702": 3
+    },
+    "clippy": {
+      "too_many_lines": 60,
+      "too_many_arguments": 5,
+      "excessive_nesting": 5
+    }
+  },
+  "exclude": [
+    ".agents/**",
+    ".claude/**",
+    ".codex/**",
+    ".github/**",
+    ".opencode/**",
+    "docs/**",
+    "tools/**",
+    "**/scripts/**",
+    "**/*.{spec,test,e2e}.{js,jsx,mjs,cjs,ts,tsx,mts,cts}",
+    "**/*.spec-helpers.{ts,tsx,mts,cts}",
+    "**/*.typecheck.{ts,mts,cts}",
+    "**/{test,tests,testing,__fixtures__}/**",
+    "**/{test_*,*_test,*_tests,conftest}.py",
+    "**/{test,tests,*_test,*_tests,build}.rs",
+    "**/*.config.{js,mjs,cjs,ts,mts,cts}",
+    "**/vitest.workspace.{ts,mts,cts}",
+    "**/*.d.ts",
+    "apps/*-e2e/**",
+    "**/_vendor/**",
+    "libs/cert-prep-api/src/lib/cert-prep-api.generated.ts",
+    "libs/ui/**"
+  ],
+  "fastApiRoutes": [
+    "apps/cert-prep-backend/src/cert_prep_backend/ai_providers/api/router.py",
+    "apps/cert-prep-backend/src/cert_prep_backend/authoring/api/operation_events.py",
+    "apps/cert-prep-backend/src/cert_prep_backend/authoring/api/router.py",
+    "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/api/router.py",
+    "apps/cert-prep-backend/src/cert_prep_backend/capture_integration/api/runtime_router.py",
+    "apps/cert-prep-backend/src/cert_prep_backend/llm_provisioning/api/operation_events.py",
+    "apps/cert-prep-backend/src/cert_prep_backend/llm_provisioning/api/router.py",
+    "apps/cert-prep-backend/src/cert_prep_backend/practice/api/router.py",
+    "apps/cert-prep-backend/src/cert_prep_backend/projects/api/router.py",
+    "apps/cert-prep-backend/src/cert_prep_backend/source_library/api/operation_events.py",
+    "apps/cert-prep-backend/src/cert_prep_backend/source_library/api/router.py"
+  ]
+}

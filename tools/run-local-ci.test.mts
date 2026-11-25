@@ -10,6 +10,7 @@ import {
   LocalCiOptionError,
   type LocalCiOptions,
   affectedMainProjects,
+  codeComplexityGateArgs,
   extractJsonArray,
   formatSummary,
   parseOptions,
@@ -24,10 +25,12 @@ const nx = createRequire(join(workspaceRoot, 'package.json')).resolve(
 const ALWAYS_LANE_IDS = [
   'dead-code-gate',
   'retired-names-gate',
+  'code-complexity-gate',
   'test-architecture-tools',
   'architecture-diagrams',
   'architecture-exceptions-gate',
   'verify-capture-version-source',
+  'rust-code-complexity-gate',
 ];
 
 const ALL_LANE_IDS = [
@@ -36,6 +39,7 @@ const ALL_LANE_IDS = [
   'typecheck',
   'dead-code-gate',
   'retired-names-gate',
+  'code-complexity-gate',
   'test-architecture-tools',
   'architecture-diagrams',
   'architecture-exceptions-gate',
@@ -44,6 +48,7 @@ const ALL_LANE_IDS = [
   'e2e-mocked',
   'verify-capture-version-source',
   'desktop-typecheck-scripts',
+  'rust-code-complexity-gate',
   'desktop-package-qa-test',
   'desktop-release-tool-test',
   'verify-capture-installer',
@@ -98,11 +103,13 @@ test('selectLanes for web-only change skips backend and Tauri lanes', () => {
     'typecheck',
     'dead-code-gate',
   'retired-names-gate',
+    'code-complexity-gate',
     'test-architecture-tools',
     'architecture-diagrams',
     'architecture-exceptions-gate',
     'build-angular',
     'verify-capture-version-source',
+    'rust-code-complexity-gate',
   ]);
   assert.deepEqual(plan.selected[0]?.nx, [
     'run-many',
@@ -208,20 +215,47 @@ test('selectLanes combines positional job filters with affected and --all modes'
   assert.ok(
     affectedPortable.selected.every((lane) => lane.job === 'portable-quality'),
   );
-  assert.equal(affectedPortable.excluded.length, 11);
+  assert.equal(affectedPortable.excluded.length, 12);
   assert.equal(affectedPortable.setups.includes('install-capture-runtime'), false);
 
   const windowsDocsOnly = selectLanes([], {
     all: false,
     jobs: ['windows-quality'],
   });
-  assert.deepEqual(laneIds(windowsDocsOnly), ['verify-capture-version-source']);
-  assert.deepEqual(windowsDocsOnly.setups, []);
+  assert.deepEqual(laneIds(windowsDocsOnly), [
+    'verify-capture-version-source',
+    'rust-code-complexity-gate',
+  ]);
+  assert.deepEqual(windowsDocsOnly.setups, ['pnpm-install']);
 
   const allWindows = selectLanes([], { all: true, jobs: ['windows-quality'] });
-  assert.equal(allWindows.selected.length, 11);
-  assert.equal(allWindows.excluded.length, 11);
+  assert.equal(allWindows.selected.length, 12);
+  assert.equal(allWindows.excluded.length, 12);
   assert.deepEqual(allWindows.skipped, []);
+});
+
+test('the two complexity steps pass the gate what ci.yml passes, and only affected mode lets Clippy be left out', () => {
+  const affected: LocalCiOptions = { all: false, base: 'upstream/main', jobs: [] };
+  const all: LocalCiOptions = { all: true, base: DEFAULT_BASE, jobs: [] };
+  for (const options of [affected, all]) {
+    assert.deepEqual(codeComplexityGateArgs('typescript-python', options), [
+      '--ci',
+      '--without',
+      'clippy',
+    ]);
+  }
+  assert.deepEqual(codeComplexityGateArgs('rust', affected), [
+    '--ci',
+    '--without',
+    'eslint,ruff',
+    '--clippy-when-changed-since',
+    'upstream/main',
+  ]);
+  assert.deepEqual(codeComplexityGateArgs('rust', all), [
+    '--ci',
+    '--without',
+    'eslint,ruff',
+  ]);
 });
 
 test('parseOptions handles flags, positional jobs and aliases, and rejects invalid inputs', () => {

@@ -19,6 +19,7 @@ import {
   SETUP_LABELS,
   type SetupId,
   affectedMainProjects,
+  codeComplexityGateArgs,
   extractJsonArray,
   formatSummary,
   parseOptions,
@@ -122,7 +123,7 @@ function queryAffectedProjects(base: string): string[] {
   return extractJsonArray(result.stdout);
 }
 
-const CUSTOM_LANE_RUNNERS: Readonly<Record<string, () => boolean>> = {
+const CUSTOM_LANE_RUNNERS: Readonly<Record<string, (options: LocalCiOptions) => boolean>> = {
   'dead-code-gate': () =>
     runNode([
       '--import',
@@ -133,6 +134,17 @@ const CUSTOM_LANE_RUNNERS: Readonly<Record<string, () => boolean>> = {
     ]) && runNode(['tools/dead-code-gate.mts', '--ci']),
   'retired-names-gate': () =>
     runNode(['tools/retired-names-gate.mts', '--ci']),
+  'code-complexity-gate': (options) =>
+    runNode(['--test', 'tools/code-complexity-gate.test.mts']) &&
+    runNode([
+      'tools/code-complexity-gate.mts',
+      ...codeComplexityGateArgs('typescript-python', options),
+    ]),
+  'rust-code-complexity-gate': (options) =>
+    runNode([
+      'tools/code-complexity-gate.mts',
+      ...codeComplexityGateArgs('rust', options),
+    ]),
   'test-architecture-tools': () =>
     runNode([
       '--import',
@@ -203,10 +215,10 @@ function executeSetup(setup: SetupId): boolean {
   }
 }
 
-function executeLane(lane: PlannedLane): boolean {
+function executeLane(lane: PlannedLane, options: LocalCiOptions): boolean {
   const custom = CUSTOM_LANE_RUNNERS[lane.id];
   if (custom) {
-    return custom();
+    return custom(options);
   }
   if (lane.nx) {
     return runNx(lane.nx);
@@ -274,7 +286,7 @@ for (const lane of plan.selected) {
 
   console.log(`\n== [${lane.job}] ${lane.name}`);
   const start = performance.now();
-  const passed = executeLane(lane);
+  const passed = executeLane(lane, options);
   const durationSeconds = (performance.now() - start) / 1000;
 
   if (!passed) {
