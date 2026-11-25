@@ -191,6 +191,11 @@ function normalizeCaptureEvent(
     'segments',
     'error',
     'createdAt',
+    // Page and media progress; the runtime sends them as null on the events
+    // that do not change them.
+    'pagesDone',
+    'pagesTotal',
+    'durationMs',
   ]);
   const sequence = value['sequence'];
   const captureId = value['captureId'];
@@ -220,7 +225,20 @@ function normalizeCaptureEvent(
   ) {
     throw invalidEventStream();
   }
-  for (const field of ['partialRevision', 'coveredUntilMs'] as const) {
+  const pagesTotal = value['pagesTotal'];
+  if (
+    pagesTotal !== undefined &&
+    pagesTotal !== null &&
+    !safePositiveInteger(pagesTotal)
+  ) {
+    throw invalidEventStream();
+  }
+  for (const field of [
+    'partialRevision',
+    'coveredUntilMs',
+    'pagesDone',
+    'durationMs',
+  ] as const) {
     const candidate = value[field];
     if (
       candidate !== undefined &&
@@ -255,10 +273,23 @@ function normalizeCaptureEvent(
 
 function validateSegment(value: unknown): asserts value is RawCaptureSegment {
   if (!isRecord(value)) throw invalidEventStream();
+  const speaker = value['speaker'];
+  const speakerOverlap = value['speakerOverlap'];
   if (
     Object.keys(value).some(
-      (key) => !['segmentId', 'order', 'locator', 'text'].includes(key),
+      (key) =>
+        ![
+          'segmentId',
+          'order',
+          'locator',
+          'text',
+          // Diarization labels; null and false when it did not run.
+          'speaker',
+          'speakerOverlap',
+        ].includes(key),
     ) ||
+    (speaker !== undefined && speaker !== null && !nonEmptyString(speaker)) ||
+    (speakerOverlap !== undefined && typeof speakerOverlap !== 'boolean') ||
     !nonEmptyString(value['segmentId']) ||
     !safeNonNegativeInteger(value['order']) ||
     !nonEmptyString(value['text']) ||
