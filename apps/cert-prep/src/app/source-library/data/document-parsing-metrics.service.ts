@@ -1,11 +1,8 @@
 import { Injectable } from '@angular/core';
 import type { DocumentRead } from '../../core/domain';
-import type { DocumentParsingMetric } from '../domain';
-
-import { PARSING_METRIC_DEFINITIONS } from '../domain';
 
 /**
- * Owns parsing progress and metric formatting for source document cards.
+ * Owns source preparation progress and elapsed time for source document cards.
  */
 @Injectable({ providedIn: 'root' })
 export class DocumentParsingMetricsService {
@@ -47,25 +44,6 @@ export class DocumentParsingMetricsService {
         ? now
         : updatedAt;
     return this.formatElapsed(currentTime - startedAt);
-  }
-
-  parsingMetrics(document: DocumentRead): DocumentParsingMetric[] {
-    return PARSING_METRIC_DEFINITIONS.flatMap((definition) => {
-      const value = this.readMetricNumber(document, definition.keys);
-      if (value === null) {
-        return [];
-      }
-
-      return [
-        {
-          label: definition.label,
-          value:
-            definition.kind === 'duration'
-              ? this.formatMetricDuration(value)
-              : this.formatMetricCount(value),
-        },
-      ];
-    });
   }
 
   completedPageCount(document: DocumentRead): number {
@@ -131,28 +109,5 @@ export class DocumentParsingMetricsService {
       return `${seconds}s`;
     }
     return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
-  }
-
-  private readMetricNumber(
-    document: DocumentRead,
-    keys: readonly string[],
-  ): number | null {
-    const record = document as Record<string, unknown>;
-    for (const key of keys) {
-      const value = record[key];
-      if (typeof value === 'number' && Number.isFinite(value)) {
-        return key.endsWith('_seconds') ? value * 1000 : value;
-      }
-    }
-
-    return null;
-  }
-
-  private formatMetricDuration(milliseconds: number): string {
-    return `${Math.max(0, Math.round(milliseconds))} ms`;
-  }
-
-  private formatMetricCount(count: number): string {
-    return Math.max(0, Math.round(count)).toString();
   }
 }

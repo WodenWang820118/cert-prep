@@ -14,9 +14,8 @@ class SourceDocumentStatus(StrEnum):
     CANCEL_REQUESTED = "cancel_requested"
     CANCELED = "canceled"
     READY = "ready"
-    EXAM_FAILED = "exam_failed"
     NO_TEXT_DETECTED = "no_text_detected"
-    OCR_FAILED = "ocr_failed"
+    EXTRACTION_FAILED = "extraction_failed"
     TRANSCRIPTION_FAILED = "transcription_failed"
 
 

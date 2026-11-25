@@ -19,13 +19,10 @@ from cert_prep_backend.platform.errors import (
 )
 from cert_prep_backend.source_library.domain.document import (
     ExtractedPage,
-    PdfExtraction,
+    PageExtraction,
 )
 from cert_prep_backend.authoring.infrastructure import draft_jobs
 from cert_prep_backend.source_library.infrastructure import operations
-from cert_prep_backend.source_library.infrastructure.progress import (
-    record_extraction_progress,
-)
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.bootstrap.authoring_links import authoring_documents
 
@@ -154,50 +151,6 @@ def test_cancel_before_attach_is_terminal_and_creates_no_document(tmp_path: Path
         assert connection.execute("SELECT COUNT(*) FROM documents").fetchone()[0] == 0
 
 
-def test_progress_checkpoint_rejects_wrong_or_canceled_operation_without_writes(
-    tmp_path: Path,
-) -> None:
-    db = _database(tmp_path)
-    _insert_project(db, "project")
-    _attach(db, operation_id="upload", document_id="document")
-    page = _ready_extraction().pages[0]
-
-    with pytest.raises(DocumentProcessingCanceledError):
-        record_extraction_progress(
-            db,
-            project_id="project",
-            document_id="document",
-            operation_id="wrong-operation",
-            processed_page_count=1,
-            page=page,
-            ocr_device="cpu",
-            ocr_fallback_reason=None,
-            ocr_duration_ms=1,
-        )
-    operations.cancel_operation(
-        db,
-        project_id="project",
-        operation_id="upload",
-    )
-    with pytest.raises(DocumentProcessingCanceledError):
-        record_extraction_progress(
-            db,
-            project_id="project",
-            document_id="document",
-            operation_id="upload",
-            processed_page_count=1,
-            page=page,
-            ocr_device="cpu",
-            ocr_fallback_reason=None,
-            ocr_duration_ms=1,
-        )
-
-    with db.connect() as connection:
-        assert connection.execute(
-            "SELECT COUNT(*) FROM document_chunks WHERE document_id = 'document'"
-        ).fetchone()[0] == 0
-
-
 @pytest.mark.parametrize(
     "terminal_status",
     [
@@ -253,15 +206,10 @@ def test_cancel_first_rolls_back_late_publication_and_preserves_draft_history(
     assert document["page_count"] == 1
     assert document["has_text"] == 0
     assert document["ocr_device"] is None
-    assert document["ocr_fallback_reason"] is None
+    assert document["extraction_warnings"] is None
+    assert document["failure_message"] is None
     for column in (
-        "ocr_duration_ms",
         "processed_page_count",
-        "parse_wall_duration_ms",
-        "render_duration_ms",
-        "ocr_engine_duration_ms",
-        "ocr_worker_count",
-        "first_chunk_ms",
         "exam_item_count",
     ):
         assert document[column] == 0
@@ -294,7 +242,7 @@ def test_cancel_first_rolls_back_late_publication_and_preserves_draft_history(
 @pytest.mark.parametrize(
     ("request_cancel", "expected_operation_status", "expected_document_status"),
     [
-        (False, "failed", "ocr_failed"),
+        (False, "failed", "extraction_failed"),
         (True, "canceled", "canceled"),
     ],
 )
@@ -620,7 +568,7 @@ def test_concurrent_retry_has_one_owner_and_recovery_is_idempotent(
         operation_id=retry_id,
     ).status == "failed"
     document = _document_row(db, "document")
-    assert document["status"] == "ocr_failed"
+    assert document["status"] == "extraction_failed"
     assert document["storage_path"] == "C:/data/source.pdf"
     with db.connect() as connection:
         assert connection.execute(
@@ -706,28 +654,22 @@ def _attach_audio(db: Database, *, operation_id: str, document_id: str) -> None:
     )
 
 
-def _ready_extraction() -> PdfExtraction:
-    return PdfExtraction(
+def _ready_extraction() -> PageExtraction:
+    return PageExtraction(
         page_count=1,
         pages=(
             ExtractedPage(
                 page_number=1,
                 text="Question source text",
                 source_excerpt="Question source text",
-                extraction_method="embedded",
+                extraction_method="text_recognition",
             ),
         ),
         status="ready",
-        extraction_method="embedded",
+        extraction_method="text_recognition",
         ocr_device="cpu",
-        ocr_fallback_reason=None,
-        ocr_duration_ms=10,
+        extraction_warnings=None,
         processed_page_count=1,
-        parse_wall_duration_ms=20,
-        render_duration_ms=3,
-        ocr_engine_duration_ms=7,
-        ocr_worker_count=1,
-        first_chunk_ms=5,
     )
 
 
@@ -736,11 +678,9 @@ def _seed_partial_work(db: Database, document_id: str) -> None:
         connection.execute(
             """
             UPDATE documents
-            SET has_text = 1, ocr_device = 'igpu', ocr_fallback_reason = 'fallback',
-                ocr_duration_ms = 11, processed_page_count = 1,
-                parse_wall_duration_ms = 12, render_duration_ms = 13,
-                ocr_engine_duration_ms = 14, ocr_worker_count = 2,
-                first_chunk_ms = 15, exam_item_count = 3,
+            SET has_text = 1, ocr_device = 'igpu', extraction_warnings = 'fallback',
+                failure_message = 'earlier failure',
+                processed_page_count = 1, exam_item_count = 3,
                 content_profile = 'mixed', classification_detail = 'partial'
             WHERE id = ?
             """,

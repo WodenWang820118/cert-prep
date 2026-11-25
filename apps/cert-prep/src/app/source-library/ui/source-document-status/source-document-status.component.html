@@ -44,6 +44,11 @@
     }
   </div>
 
+  @if (failureMessage(); as message) {
+    <p class="m-0 text-sm" role="alert">
+      <span class="font-semibold">Why it failed:</span> {{ message }}
+    </p>
+  }
   @if (sourceWarning(); as warning) {
     <p class="m-0 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900" role="status">
       {{ warning }}

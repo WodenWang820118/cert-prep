@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import hashlib
 import json
+import logging
 from typing import cast
 
 from capture_runtime_client import (
@@ -15,6 +16,9 @@ from capture_runtime_client import (
 from cert_prep_backend.capture_integration.domain.review_session import (
     CaptureReviewSession,
     CaptureReviewStatus,
+)
+from cert_prep_backend.capture_integration.application.messages import (
+    requirement_unavailable_message,
 )
 from cert_prep_backend.capture_integration.application.errors import (
     CaptureExtractionCanceled,
@@ -43,6 +47,8 @@ from cert_prep_backend.source_library.application.ports import (
 )
 from cert_prep_backend.source_library.domain.document import SourceDocument
 from cert_prep_backend.platform.database import Database
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -360,9 +366,29 @@ class CaptureReviewWorkflowAdapter:
         except CaptureRuntimeCanceledError as error:
             raise CaptureExtractionCanceled() from error
         except CaptureRuntimeRequirementUnavailableError as error:
-            raise CaptureRequirementUnavailable(str(error)) from error
+            # The runtime's requirement detail and failure message are diagnostics: they are
+            # logged here once and kept out of the stored error and of the exception chain.
+            logger.warning(
+                "Capture Runtime requirement %s unavailable for operation %s (%s source): %s",
+                error.requirement_id,
+                operation_id,
+                source_kind,
+                error,
+            )
+            raise CaptureRequirementUnavailable(
+                requirement_unavailable_message(source_kind)
+            ) from None
         except CaptureRuntimeJobError as error:
-            raise CaptureExtractionFailed(error.code, error.last_event_sequence) from error
+            logger.warning(
+                "Capture Runtime extraction failed for operation %s (%s source), "
+                "code %s, stage %s: %s",
+                operation_id,
+                source_kind,
+                error.code,
+                error.stage,
+                error,
+            )
+            raise CaptureExtractionFailed(error.code, error.last_event_sequence) from None
         except Exception as error:
             raise CaptureExtractionFailed(None, None) from error
 

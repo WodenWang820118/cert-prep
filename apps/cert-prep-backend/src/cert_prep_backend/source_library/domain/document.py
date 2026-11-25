@@ -9,17 +9,20 @@ from typing import Final
 
 from cert_prep_backend.source_library.domain.exam_content import ContentProfileValue
 from cert_prep_backend.source_library.domain.exceptions import SourceDocumentUnavailable
-
-from cert_prep_backend.source_library.domain.statuses import PdfExtractionMethodValue, SourceDocumentStatus, SourceDocumentStatusValue
+from cert_prep_backend.source_library.domain.statuses import (
+    ExtractionMethodValue,
+    SourceDocumentStatusValue,
+)
 
 
 DocumentStatus = SourceDocumentStatusValue
-ExtractionMethod = PdfExtractionMethodValue
 
 AUDIO_MEDIA_TYPES: Final = {".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4"}
 MARKDOWN_UNAVAILABLE: Final = "markdown_unavailable"
 AUDIO_SOURCE_UNAVAILABLE: Final = "audio_source_unavailable"
 LANGUAGE_HINTS: Final = frozenset({"auto", "ja", "zh-Hant", "zh-Hans", "en", "mixed"})
+# The failure reason a document keeps when its extraction found no reviewable text.
+NO_TEXT_DETECTED_MESSAGE: Final = "No reviewable text was found in this source."
 
 
 def language_hint_or_auto(language_hint: str) -> str:
@@ -48,7 +51,7 @@ class ExtractedPage:
     page_number: int
     text: str
     source_excerpt: str
-    extraction_method: PdfExtractionMethodValue
+    extraction_method: ExtractionMethodValue
     raw_text: str = ""
     line_start: int | None = None
     line_end: int | None = None
@@ -57,27 +60,18 @@ class ExtractedPage:
 
 
 @dataclass(frozen=True, slots=True)
-class PdfExtraction:
+class PageExtraction:
     page_count: int
     pages: tuple[ExtractedPage, ...]
-    status: SourceDocumentStatus
-    extraction_method: PdfExtractionMethodValue
+    status: SourceDocumentStatusValue
+    extraction_method: ExtractionMethodValue
     ocr_device: str | None
-    ocr_fallback_reason: str | None
-    ocr_duration_ms: int
+    extraction_warnings: str | None
     processed_page_count: int
-    parse_wall_duration_ms: int = 0
-    render_duration_ms: int = 0
-    ocr_engine_duration_ms: int = 0
-    ocr_worker_count: int = 0
-    first_chunk_ms: int = 0
 
     @property
     def has_text(self) -> bool:
         return bool(self.pages)
-
-
-PdfExtractionResult = PdfExtraction
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,17 +83,12 @@ class SourceDocument:
     language_hint: str
     page_count: int
     has_text: bool
-    status: SourceDocumentStatus
-    extraction_method: PdfExtractionMethodValue
+    status: SourceDocumentStatusValue
+    extraction_method: ExtractionMethodValue
     ocr_device: str | None
-    ocr_fallback_reason: str | None
-    ocr_duration_ms: int
+    extraction_warnings: str | None
+    failure_message: str | None
     processed_page_count: int
-    parse_wall_duration_ms: int
-    render_duration_ms: int
-    ocr_engine_duration_ms: int
-    ocr_worker_count: int
-    first_chunk_ms: int
     exam_item_count: int
     content_profile: ContentProfileValue
     classification_detail: str
@@ -137,11 +126,11 @@ class SourceDocument:
 
     def status_after_import_drafts(self) -> str:
         """The status a document has once drafts were written while it was imported: still
-        processing if it was, ready when it has text and chunks, exam_failed otherwise."""
+        processing if it was, ready when it has text and chunks, no_text_detected otherwise."""
 
         if self.status == "processing":
             return "processing"
-        return "ready" if self.has_text and self.chunks_count > 0 else "exam_failed"
+        return "ready" if self.has_text and self.chunks_count > 0 else "no_text_detected"
 
     def ensure_playable(self) -> None:
         """Only a recording has a source that can be played."""
@@ -164,7 +153,7 @@ class DocumentChunk:
     line_end: int | None
     line_count: int
     source_excerpt: str
-    extraction_method: PdfExtractionMethodValue
+    extraction_method: ExtractionMethodValue
     content_profile: ContentProfileValue
     created_at: str
     locator_kind: str = "page"

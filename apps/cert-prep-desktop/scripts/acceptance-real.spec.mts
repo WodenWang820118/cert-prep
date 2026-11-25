@@ -61,8 +61,9 @@ test('real Cert Prep packaged PDF and JPEG acceptance journeys pass', async () =
     if (!pdfOnly) {
       // Run the one-page JPEG journey before the long PDF/restart journey. Each
       // journey still has its own app-data directory and CDP port; keeping the
-      // image cold start first avoids overlapping a fresh WindowsML worker with
-      // native OCR teardown from the previous packaged app.
+      // image cold start first avoids overlapping a fresh Capture Runtime
+      // text-recognition worker with native OCR teardown from the previous
+      // packaged app.
       if (!imageOptions || !fixtures.image) {
         throw new Error('JPEG acceptance options were unexpectedly absent.');
       }

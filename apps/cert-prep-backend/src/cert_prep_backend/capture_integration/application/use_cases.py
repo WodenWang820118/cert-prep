@@ -25,7 +25,11 @@ from cert_prep_backend.capture_integration.application.errors import (
     CaptureRuntimeCallFailed,
     CaptureSourceMissing,
 )
-from cert_prep_backend.capture_integration.application.messages import PDF_OCR_UNAVAILABLE_MESSAGE
+from cert_prep_backend.capture_integration.application.messages import (
+    EXTRACTION_FAILED_MESSAGE,
+    extraction_failure_message,
+    requirement_unavailable_message,
+)
 from cert_prep_backend.capture_integration.application.ocr_summary import (
     CaptureOcrSummaryRead,
     build_ocr_summary,
@@ -95,7 +99,6 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 _CREATION_FAILED = "Capture review creation failed."
-_EXTRACTION_FAILED = "Capture Runtime extraction failed."
 _COMMIT_NOT_QUEUED = "Capture commit could not be queued."
 _COMMIT_MISMATCH = "Capture commit does not match the completed request."
 _REVIEW_NOT_PENDING = "Capture review is no longer pending."
@@ -326,7 +329,7 @@ def extract_capture_for_review(
             operation_id=operation_id,
             session_id=session_id,
         )
-    except CaptureRequirementUnavailable as error:
+    except CaptureRequirementUnavailable:
         _fail_capture_begin(
             sessions,
             operations,
@@ -334,7 +337,7 @@ def extract_capture_for_review(
             project_id=project_id,
             operation_id=operation_id,
             session_id=session_id,
-            error=PDF_OCR_UNAVAILABLE_MESSAGE if source_kind == "pdf" else str(error),
+            error=requirement_unavailable_message(source_kind),
         )
     except CaptureExtractionFailed as error:
         _fail_capture_begin(
@@ -344,10 +347,12 @@ def extract_capture_for_review(
             project_id=project_id,
             operation_id=operation_id,
             session_id=session_id,
+            # Without a Capture code (for example storing the review state failed) the
+            # message is the generic one, not a text recognition diagnosis.
             error=(
-                PDF_OCR_UNAVAILABLE_MESSAGE
-                if source_kind == "pdf" and error.code == "requirement_unavailable"
-                else _EXTRACTION_FAILED
+                EXTRACTION_FAILED_MESSAGE
+                if error.code is None
+                else extraction_failure_message(source_kind, error.code)
             ),
             terminal_sequence=error.terminal_sequence,
         )
@@ -359,7 +364,7 @@ def extract_capture_for_review(
             project_id=project_id,
             operation_id=operation_id,
             session_id=session_id,
-            error=_EXTRACTION_FAILED,
+            error=EXTRACTION_FAILED_MESSAGE,
         )
     else:
         events.publish_review_ready(project_id, session_id)

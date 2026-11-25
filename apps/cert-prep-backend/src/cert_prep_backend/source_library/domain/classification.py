@@ -8,31 +8,6 @@ from cert_prep_backend.source_library.domain.exam_content import (
 from cert_prep_backend.source_library.domain.document import ExtractedPage
 
 
-def document_extraction_method_from_db(
-    connection,
-    project_id: str,
-    document_id: str,
-    *,
-    fallback: str,
-) -> str:
-    """Derive a document-level extraction method from its page chunks."""
-
-    rows = connection.execute(
-        """
-        SELECT DISTINCT extraction_method
-        FROM document_chunks
-        WHERE project_id = ? AND document_id = ?
-        """,
-        (project_id, document_id),
-    ).fetchall()
-    methods = {row["extraction_method"] for row in rows}
-    if not methods:
-        return fallback
-    if len(methods) == 1:
-        return methods.pop()
-    return "mixed"
-
-
 def document_classification(pages: tuple[ExtractedPage, ...]) -> tuple[str, str]:
     """Aggregate page-level content profiles into document classification fields."""
 

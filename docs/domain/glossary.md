@@ -17,10 +17,11 @@
 | 原始檔           | `SourceFile`                                  | 匯入的檔案、它的 SHA-256 與存放位置                            |
 | 段落             | `DocumentChunk`                               | 教材切成的一段文字，題目由段落產生；錄音的段落有時間區間與翻譯 |
 | 教材狀態         | `SourceDocumentStatus`                        | 處理中、取消中、已取消、可用，或處理失敗的原因                 |
-| 擷取結果         | `PdfExtraction`（舊名 `PdfExtractionResult`） | 一次擷取得到的頁面、狀態與各階段耗時                           |
+| 擷取結果         | `PageExtraction` | 一次擷取得到的頁面、狀態                           |
 | 擷取頁面         | `ExtractedPage`                               | 擷取出的一頁文字與擷取方式                                     |
-| 擷取方式         | `PdfExtractionMethod`                         | 內嵌文字、OCR、兩者混合，或沒有文字                            |
-| 擷取政策         | `PdfExtractionPolicy`                         | 依擷取出的頁面決定教材狀態與擷取方式                           |
+| 擷取方式         | `ExtractionMethod`                         | `text_recognition`、`transcription`、`none`，或歷史資料的 `text_layer`                            |
+| 擷取警告         | `extraction_warnings`                        | 擷取完成後需要試讀或檢查的提示                         |
+| 失敗訊息         | `failure_message`                             | 擷取失敗或沒有可用文字的原因：Cert 自己的說明，不含 Capture Runtime 的原文 |
 | 教材生命週期政策 | `SourceDocumentLifecyclePolicy`               | 教材什麼時候能產生題目、產生後是什麼狀態                       |
 | 內容類型         | `ContentProfile`                              | 教材的題型慣例，例如 `jlpt_vocabulary`、`jlpt_grouped`         |
 | 文字分類         | `TextClassification`                          | 一段文字判斷出的內容類型與判斷依據                             |

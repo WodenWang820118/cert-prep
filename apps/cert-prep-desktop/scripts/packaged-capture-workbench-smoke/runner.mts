@@ -513,7 +513,8 @@ async function runCaptureDocumentFlow(
     !documentResponse.ok() ||
     !isRecord(documentPayload) ||
     documentPayload.status !== 'ready' ||
-    documentPayload.extraction_method !== 'windowsml_ocr' ||
+    documentPayload.extraction_method !== 'text_recognition' ||
+    documentPayload.failure_message !== null ||
     typeof documentPayload.chunks_count !== 'number' ||
     documentPayload.chunks_count < 1
   ) {
@@ -579,7 +580,8 @@ async function verifyPersistedDocument(
     !response.ok() ||
     !isRecord(payload) ||
     payload.status !== 'ready' ||
-    payload.extraction_method !== 'windowsml_ocr'
+    payload.extraction_method !== 'text_recognition' ||
+    payload.failure_message !== null
   ) {
     throw new Error('Persisted Capture document was not ready after relaunch.');
   }

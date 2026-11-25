@@ -6,18 +6,19 @@ import { CAPTURE_RUNTIME_VERSION } from '../../../../tools/capture-runtime-versi
 import type { ProjectApiRef } from '../packaged-flow-smoke/types.mts';
 import { isRecord } from '../packaged-flow-smoke/text-utils.mts';
 
-// The display name the backend still gives the OCR requirement in its stored
-// error messages (`capture_integration/application/messages.py` and the
-// coordinator's source requirements); both expectations below derive from it.
-const BACKEND_OCR_DISPLAY_NAME = 'WindowsML OCR';
-const PDF_OCR_ERROR = `This PDF requires ${BACKEND_OCR_DISPLAY_NAME}, which is unavailable in the installed Capture Runtime.`;
-const IMAGE_OCR_ERROR = new RegExp(`^${BACKEND_OCR_DISPLAY_NAME} is unavailable\\. .+$`);
+// The messages the backend stores when a requirement is not ready
+// (`capture_integration/application/messages.py`). They are Cert's own text: the
+// runtime's requirement detail is logged, never stored.
+const PDF_OCR_ERROR =
+  'This PDF requires text recognition, which is unavailable in the installed Capture Runtime.';
+const IMAGE_OCR_ERROR = 'Text recognition is unavailable in the installed Capture Runtime.';
+const AUDIO_ERROR = 'Speech recognition is unavailable in the installed Capture Runtime.';
 
 export interface PublishedRuntimeNegativeCaseEvidence {
   readonly case: 'image' | 'audio' | 'scanned-pdf' | 'mixed-pdf';
   readonly fileName: string;
   readonly operationStatus: 'failed';
-  readonly documentStatus: 'ocr_failed' | 'transcription_failed';
+  readonly documentStatus: 'extraction_failed' | 'transcription_failed';
   readonly chunksCount: 0;
   readonly markdownStatus: 409;
   readonly error: string;
@@ -30,7 +31,7 @@ interface NegativeCaseDefinition {
   readonly mediaType: string;
   readonly content: Buffer;
   readonly expectedDocumentStatus: PublishedRuntimeNegativeCaseEvidence['documentStatus'];
-  readonly expectedError: string | RegExp;
+  readonly expectedError: string;
 }
 
 export async function assertPublishedCaptureSurface(page: Page): Promise<void> {
@@ -83,7 +84,7 @@ export async function runPublishedRuntimeNegativeDataCases(
       fileName: 'runtime-negative-image.png',
       mediaType: 'image/png',
       content: minimalPng(),
-      expectedDocumentStatus: 'ocr_failed',
+      expectedDocumentStatus: 'extraction_failed',
       expectedError: IMAGE_OCR_ERROR,
     },
     {
@@ -93,7 +94,7 @@ export async function runPublishedRuntimeNegativeDataCases(
       mediaType: 'audio/wav',
       content: minimalWav(),
       expectedDocumentStatus: 'transcription_failed',
-      expectedError: /^Speech recognition is unavailable\. .+$/,
+      expectedError: AUDIO_ERROR,
     },
     {
       case: 'scanned-pdf',
@@ -101,7 +102,7 @@ export async function runPublishedRuntimeNegativeDataCases(
       fileName: 'runtime-negative-scanned.pdf',
       mediaType: 'application/pdf',
       content: imageOnlyPdf(),
-      expectedDocumentStatus: 'ocr_failed',
+      expectedDocumentStatus: 'extraction_failed',
       expectedError: PDF_OCR_ERROR,
     },
     {
@@ -110,7 +111,7 @@ export async function runPublishedRuntimeNegativeDataCases(
       fileName: 'runtime-negative-mixed.pdf',
       mediaType: 'application/pdf',
       content: mixedTextAndImagePdf(),
-      expectedDocumentStatus: 'ocr_failed',
+      expectedDocumentStatus: 'extraction_failed',
       expectedError: PDF_OCR_ERROR,
     },
   ];
@@ -160,11 +161,7 @@ async function runNegativeCase(
     projectApi,
     definition.operationId,
   );
-  const matchesExpectedError =
-    definition.expectedError instanceof RegExp
-      ? definition.expectedError.test(stringValue(operation.error))
-      : operation.error === definition.expectedError;
-  if (!matchesExpectedError) {
+  if (operation.error !== definition.expectedError) {
     throw new Error(
       `${definition.case} exposed an unexpected dependency error.`,
     );
@@ -178,6 +175,9 @@ async function runNegativeCase(
   );
   if (
     document.status !== definition.expectedDocumentStatus ||
+    document.extraction_method !== 'none' ||
+    document.failure_message !== operation.error ||
+    document.extraction_warnings !== null ||
     document.chunks_count !== 0
   ) {
     throw new Error(

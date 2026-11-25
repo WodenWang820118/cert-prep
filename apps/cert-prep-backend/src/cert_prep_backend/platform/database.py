@@ -11,6 +11,50 @@ from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.change_notifications import DatabaseChangeNotifier
 
 
+# The failure texts Cert itself has stored as a document's old fallback reason or in
+# document_operations.error, in this release and earlier ones (each has a writer in the
+# history of the backend). Migration 30 keeps a stored reason or operation error that is
+# exactly one of these, because it is true and already Cert's own text; any other text came
+# from Capture Runtime and is replaced by Cert's message for the status and source. A frozen
+# copy: later changes to the live messages must not change the migration.
+_CERT_FAILURE_TEXTS: Final[tuple[str, ...]] = (
+    "Document upload did not pass validation.",
+    "Source validation failed.",
+    "PDF validation failed.",
+    "Document upload failed.",
+    "Document processing failed.",
+    "Document worker could not accept processing.",
+    "Document processing worker could not start.",
+    "Document processing was canceled but cleanup failed.",
+    "Document processing was interrupted by an app restart.",
+    "Parsing was interrupted before completion.",
+    "Superseded while repairing duplicate active document operations.",
+    "Capture review creation failed.",
+    "Capture Runtime extraction failed.",
+    "Capture commit could not be queued.",
+    "Capture review confirmation could not be queued.",
+    "Capture host structuring failed.",
+    "Capture review confirmation failed.",
+    "Capture review session was recovered after host shutdown.",
+    "OCR runtime is unavailable.",
+    "OCR provider unavailable.",
+    "Capture Runtime extraction requirements are unavailable.",
+    (
+        "Capture Runtime extraction assets are unavailable. Install the required WindowsML or "
+        "Whisper asset in Runtime setup, then retry."
+    ),
+    "This PDF requires text recognition, which is unavailable in the installed Capture Runtime.",
+    "Text recognition is unavailable in the installed Capture Runtime.",
+    "Speech recognition is unavailable in the installed Capture Runtime.",
+    "Text recognition could not read this source.",
+    "Speech recognition could not transcribe this recording.",
+    "No reviewable text was found in this source.",
+)
+_CERT_FAILURE_TEXTS_SQL: Final = ", ".join(
+    "'" + text.replace("'", "''") + "'" for text in _CERT_FAILURE_TEXTS
+)
+
+
 # Migration strategy: keep these local SQLite migrations append-only for now so
 # desktop installs do not need a separate migration CLI. Revisit Alembic when
 # downgrade support, branching migrations, or multi-process migration ownership
@@ -750,7 +794,264 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
         );
         """,
     ),
+    (
+        30,
+        """
+        CREATE TABLE documents_new (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            filename TEXT NOT NULL,
+            sha256 TEXT NOT NULL,
+            storage_path TEXT NOT NULL,
+            page_count INTEGER NOT NULL,
+            has_text INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            extraction_method TEXT NOT NULL DEFAULT 'none',
+            exam_item_count INTEGER NOT NULL DEFAULT 0,
+            ocr_device TEXT,
+            processed_page_count INTEGER NOT NULL DEFAULT 0,
+            language_hint TEXT NOT NULL DEFAULT 'auto',
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            content_profile TEXT NOT NULL DEFAULT 'unknown',
+            classification_detail TEXT NOT NULL DEFAULT '',
+            source_kind TEXT NOT NULL DEFAULT 'document',
+            duration_ms INTEGER,
+            transcription_status TEXT NOT NULL DEFAULT 'not_applicable',
+            translation_status TEXT NOT NULL DEFAULT 'not_applicable',
+            configured_transcription_model TEXT,
+            effective_transcription_model TEXT,
+            transcription_device TEXT,
+            transcription_warning TEXT,
+            extraction_warnings TEXT,
+            failure_message TEXT
+        );
+        INSERT INTO documents_new (
+            id, project_id, filename, sha256,
+            storage_path, page_count, has_text, status,
+            created_at, extraction_method, exam_item_count, ocr_device,
+            processed_page_count, language_hint, updated_at, content_profile,
+            classification_detail, source_kind, duration_ms, transcription_status,
+            translation_status, configured_transcription_model, effective_transcription_model,
+            transcription_device, transcription_warning, extraction_warnings, failure_message
+        )
+        SELECT
+            id,
+            project_id,
+            filename,
+            sha256,
+            storage_path,
+            page_count,
+            has_text,
+            CASE status
+                WHEN 'ocr_failed' THEN 'extraction_failed'
+                WHEN 'exam_failed' THEN 'no_text_detected'
+                ELSE status
+            END,
+            created_at,
+            CASE extraction_method
+                WHEN 'windowsml_ocr' THEN 'text_recognition'
+                WHEN 'embedded' THEN 'text_layer'
+                WHEN 'mixed' THEN 'text_layer'
+                WHEN 'ocr_failed' THEN 'none'
+                ELSE extraction_method
+            END,
+            exam_item_count,
+            -- Every stored device name that names WindowsML (windowsml-dml, amd_windowsml:0,
+            -- windowsml) was the DirectML device.
+            CASE WHEN lower(ocr_device) LIKE '%windowsml%' THEN 'directml' ELSE ocr_device END,
+            processed_page_count,
+            language_hint,
+            updated_at,
+            content_profile,
+            classification_detail,
+            source_kind,
+            duration_ms,
+            transcription_status,
+            translation_status,
+            configured_transcription_model,
+            effective_transcription_model,
+            transcription_device,
+            transcription_warning,
+            CASE WHEN NOT (status IN (
+                    'ocr_failed', 'exam_failed', 'no_text_detected',
+                    'transcription_failed'
+                )) THEN ocr_fallback_reason END,
+            CASE WHEN status IN (
+                    'ocr_failed', 'exam_failed', 'no_text_detected',
+                    'transcription_failed'
+                ) THEN ocr_fallback_reason END
+        FROM documents;
+
+        CREATE TABLE document_chunks_new (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            page_number INTEGER NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            source_excerpt TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            extraction_method TEXT NOT NULL DEFAULT 'none',
+            raw_text TEXT NOT NULL DEFAULT '',
+            line_start INTEGER,
+            line_end INTEGER,
+            line_count INTEGER NOT NULL DEFAULT 0,
+            content_profile TEXT NOT NULL DEFAULT 'unknown',
+            locator_kind TEXT NOT NULL DEFAULT 'page',
+            start_ms INTEGER,
+            end_ms INTEGER,
+            source_revision INTEGER NOT NULL DEFAULT 1,
+            translated_text TEXT,
+            translation_source_revision INTEGER
+        );
+        INSERT INTO document_chunks_new (
+            id, project_id, document_id, page_number,
+            chunk_index, text, source_excerpt, created_at,
+            extraction_method, raw_text, line_start, line_end,
+            line_count, content_profile, locator_kind, start_ms,
+            end_ms, source_revision, translated_text, translation_source_revision
+        )
+        SELECT
+            id,
+            project_id,
+            document_id,
+            page_number,
+            chunk_index,
+            text,
+            source_excerpt,
+            created_at,
+            CASE extraction_method
+                WHEN 'windowsml_ocr' THEN 'text_recognition'
+                WHEN 'embedded' THEN 'text_layer'
+                WHEN 'mixed' THEN 'text_layer'
+                WHEN 'ocr_failed' THEN 'none'
+                ELSE extraction_method
+            END,
+            raw_text,
+            line_start,
+            line_end,
+            line_count,
+            content_profile,
+            locator_kind,
+            start_ms,
+            end_ms,
+            source_revision,
+            translated_text,
+            translation_source_revision
+        FROM document_chunks;
+
+        -- A stored failure reason or operation error may be the error text of Capture
+        -- Runtime. The requirement messages of earlier releases become the current ones, a
+        -- text in _CERT_FAILURE_TEXTS stays, and any other text becomes the Cert message for
+        -- the status and source. Every failed operation of a document is cleaned on its own,
+        -- whatever its document holds now (a retry may have replaced the reason, and failed
+        -- recordings stored none). This runs before the rebuild, against the old documents
+        -- table: an earlier release stored the same runtime text for a run without text and
+        -- for any other failed run, so the text cannot tell them apart. The run without text
+        -- is the one that set a no_text_detected status. That writer stored one timestamp as
+        -- the operation's and the document's updated_at, while a retry took its created_at
+        -- before it waited for the write lock, so creation order does not say which run
+        -- settled last. The run without text is therefore the only failed operation of the
+        -- document whose updated_at equals the document's; when none or several match, no run
+        -- gets the no-text message. In every case a known Cert message is kept, a run without
+        -- an error is left alone, and the message for the source kind is the fallback for
+        -- any other error text.
+        UPDATE document_operations
+        SET error = CASE
+            WHEN document_operations.error LIKE 'This PDF requires WindowsML OCR%' THEN
+                'This PDF requires text recognition, which is unavailable in the '
+                || 'installed Capture Runtime.'
+            WHEN document_operations.error LIKE 'WindowsML OCR is unavailable%'
+                OR document_operations.error LIKE 'Speech recognition is unavailable.%'
+                THEN CASE
+                    WHEN source.source_kind = 'audio' THEN
+                        'Speech recognition is unavailable in the installed Capture Runtime.'
+                    WHEN lower(source.storage_path) LIKE '%.pdf' THEN
+                        'This PDF requires text recognition, which is unavailable in the '
+                        || 'installed Capture Runtime.'
+                    ELSE 'Text recognition is unavailable in the installed Capture Runtime.'
+                END
+            WHEN document_operations.error IN (""" + _CERT_FAILURE_TEXTS_SQL + """)
+                THEN document_operations.error
+            WHEN source.status = 'no_text_detected'
+                AND document_operations.updated_at = source.updated_at
+                AND (
+                    SELECT COUNT(*) FROM document_operations AS settled
+                    WHERE settled.document_id = source.id
+                        AND settled.status = 'failed'
+                        AND settled.updated_at = source.updated_at
+                ) = 1
+                THEN 'No reviewable text was found in this source.'
+            WHEN source.source_kind = 'audio'
+                THEN 'Speech recognition could not transcribe this recording.'
+            ELSE 'Text recognition could not read this source.'
+        END
+        FROM documents AS source
+        WHERE source.id = document_operations.document_id
+            AND document_operations.status = 'failed'
+            AND document_operations.error IS NOT NULL;
+
+        DROP TABLE document_chunks;
+        DROP TABLE documents;
+        ALTER TABLE documents_new RENAME TO documents;
+        ALTER TABLE document_chunks_new RENAME TO document_chunks;
+        CREATE INDEX idx_documents_project ON documents(project_id);
+        CREATE INDEX idx_chunks_document ON document_chunks(document_id, page_number);
+
+        UPDATE documents
+        SET extraction_warnings = REPLACE(REPLACE(extraction_warnings,
+                'This PDF requires WindowsML OCR', 'This PDF requires text recognition'),
+                'WindowsML OCR is unavailable', 'Text recognition is unavailable')
+        WHERE extraction_warnings IS NOT NULL;
+
+        UPDATE documents
+        SET failure_message = CASE
+            WHEN failure_message LIKE 'This PDF requires WindowsML OCR%' THEN
+                'This PDF requires text recognition, which is unavailable in the '
+                || 'installed Capture Runtime.'
+            WHEN failure_message LIKE 'WindowsML OCR is unavailable%'
+                OR failure_message LIKE 'Speech recognition is unavailable.%'
+                THEN CASE
+                    WHEN source_kind = 'audio' THEN
+                        'Speech recognition is unavailable in the installed Capture Runtime.'
+                    WHEN lower(storage_path) LIKE '%.pdf' THEN
+                        'This PDF requires text recognition, which is unavailable in the '
+                        || 'installed Capture Runtime.'
+                    ELSE 'Text recognition is unavailable in the installed Capture Runtime.'
+                END
+            WHEN failure_message IN (""" + _CERT_FAILURE_TEXTS_SQL + """)
+                THEN failure_message
+            WHEN status = 'no_text_detected'
+                THEN 'No reviewable text was found in this source.'
+            WHEN source_kind = 'audio'
+                THEN 'Speech recognition could not transcribe this recording.'
+            ELSE 'Text recognition could not read this source.'
+        END
+        WHERE failure_message IS NOT NULL;
+        -- Failed recordings stored no reason; they take the error of their last failed run.
+        UPDATE documents
+        SET failure_message = COALESCE(
+            (
+                SELECT run.error FROM document_operations AS run
+                WHERE run.document_id = documents.id
+                    AND run.status = 'failed'
+                    AND run.error IS NOT NULL
+                ORDER BY run.updated_at DESC, run.created_at DESC
+                LIMIT 1
+            ),
+            'Speech recognition could not transcribe this recording.'
+        )
+        WHERE status = 'transcription_failed' AND failure_message IS NULL;
+        """,
+    ),
 )
+
+
+# Migrations that rebuild a parent table (create, copy, drop, rename) run with foreign keys off,
+# so dropping the old table cascades into nothing, and statement by statement in one
+# transaction, so the version recheck and the rebuild commit together.
+_TABLE_REBUILD_MIGRATIONS: Final[frozenset[int]] = frozenset({30})
 
 
 class Database:
@@ -812,8 +1113,24 @@ class Database:
                 for version, sql in MIGRATIONS:
                     if version in applied:
                         continue
+                    rebuilds_tables = version in _TABLE_REBUILD_MIGRATIONS
+                    if rebuilds_tables:
+                        # Prevent cascades while replacing the parent tables. The existing
+                        # triggers keep referencing their final names throughout the rebuild.
+                        connection.execute("PRAGMA foreign_keys = OFF")
+                        connection.execute("PRAGMA legacy_alter_table = ON")
                     try:
-                        connection.executescript(f"BEGIN IMMEDIATE;\n{sql}")
+                        if rebuilds_tables:
+                            connection.execute("BEGIN IMMEDIATE")
+                            # A second Database instance may have migrated while we waited.
+                            if connection.execute(
+                                "SELECT 1 FROM schema_migrations WHERE version = ?", (version,)
+                            ).fetchone() is not None:
+                                connection.commit()
+                                continue
+                            _run_table_rebuild(connection, sql)
+                        else:
+                            connection.executescript(f"BEGIN IMMEDIATE;\n{sql}")
                         connection.execute(
                             "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                             (version, utc_now()),
@@ -822,7 +1139,32 @@ class Database:
                     except BaseException:
                         connection.rollback()
                         raise
+                    finally:
+                        if rebuilds_tables:
+                            connection.execute("PRAGMA legacy_alter_table = OFF")
+                            connection.execute("PRAGMA foreign_keys = ON")
             self._migrated = True
+
+
+def _run_table_rebuild(connection: sqlite3.Connection, sql: str) -> None:
+    # executescript would commit the transaction used for the version recheck.
+    statement = ""
+    for line in sql.splitlines(keepends=True):
+        statement += line
+        if sqlite3.complete_statement(statement):
+            connection.execute(statement)
+            statement = ""
+    if statement.strip():
+        raise sqlite3.OperationalError("Incomplete table rebuild statement.")
+    broken: dict[str, int] = {}
+    for table, _rowid, parent, _key in connection.execute("PRAGMA foreign_key_check"):
+        reference = f"{table} -> {parent}"
+        broken[reference] = broken.get(reference, 0) + 1
+    if broken:
+        details = ", ".join(
+            f"{reference} ({count} rows)" for reference, count in sorted(broken.items())
+        )
+        raise sqlite3.IntegrityError(f"Table rebuild broke foreign keys: {details}.")
 
 
 def utc_now() -> str:

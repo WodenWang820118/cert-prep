@@ -74,7 +74,7 @@ evidence.
 - The UI review edit, confirmation, durable ready document and Markdown
   download succeed. An authenticated request proves raw engine `text-recognition`
   and a recognized OCR device; the document and every page report
-  `windowsml_ocr`.
+  `text_recognition`.
 - Normal close leaves owned processes and listener ports at zero. Relaunching
   with the same app data reports installed-but-stopped and no Capture Runtime
   process until a second explicit Start, after which the document is visible.

@@ -24,16 +24,11 @@ def _document(**changes: object) -> SourceDocument:
         page_count=1,
         has_text=True,
         status=SourceDocumentStatus.READY,
-        extraction_method="embedded",
+        extraction_method="text_recognition",
         ocr_device=None,
-        ocr_fallback_reason=None,
-        ocr_duration_ms=0,
+        extraction_warnings=None,
+        failure_message=None,
         processed_page_count=1,
-        parse_wall_duration_ms=0,
-        render_duration_ms=0,
-        ocr_engine_duration_ms=0,
-        ocr_worker_count=0,
-        first_chunk_ms=0,
         exam_item_count=0,
         content_profile="unknown",
         classification_detail="",
@@ -64,7 +59,7 @@ class RecordingDocuments:
     ("changes", "status"),
     [
         ({"status": SourceDocumentStatus.PROCESSING}, "processing"),
-        ({"status": SourceDocumentStatus.EXAM_FAILED, "has_text": False}, "ready"),
+        ({"status": SourceDocumentStatus.NO_TEXT_DETECTED, "has_text": False}, "ready"),
         ({"status": SourceDocumentStatus.READY, "chunks_count": 0}, "ready"),
     ],
 )
@@ -82,9 +77,9 @@ def test_drafts_the_learner_asked_for_leave_the_document_ready_unless_it_is_proc
     ("changes", "status"),
     [
         ({"status": SourceDocumentStatus.PROCESSING}, "processing"),
-        ({"status": SourceDocumentStatus.EXAM_FAILED}, "ready"),
-        ({"chunks_count": 0}, "exam_failed"),
-        ({"has_text": False}, "exam_failed"),
+        ({"status": SourceDocumentStatus.NO_TEXT_DETECTED}, "ready"),
+        ({"chunks_count": 0}, "no_text_detected"),
+        ({"has_text": False}, "no_text_detected"),
     ],
 )
 def test_drafts_written_after_import_need_text_and_chunks(changes, status) -> None:

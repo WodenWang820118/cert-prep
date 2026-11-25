@@ -80,7 +80,7 @@ class DocumentExamState(Protocol):
 
     def record_import_draft_count(self, project_id: str, document_id: str, count: int) -> None:
         """Record the drafts written while the document was imported; a document without text
-        or chunks is marked exam_failed."""
+        or chunks is marked no_text_detected."""
         ...
 
 

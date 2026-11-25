@@ -193,10 +193,10 @@ def test_a_retry_never_reuses_an_operation_id() -> None:
 
 
 def test_a_retry_needs_a_retryable_outcome_and_no_running_work() -> None:
-    for status in ("canceled", "ocr_failed", "no_text_detected", "transcription_failed"):
+    for status in ("canceled", "extraction_failed", "no_text_detected", "transcription_failed"):
         ensure_retry_allowed(has_active_operation=False, document_status=status)
     with pytest.raises(DocumentOperationConflictError, match="active processing operation"):
-        ensure_retry_allowed(has_active_operation=True, document_status="ocr_failed")
+        ensure_retry_allowed(has_active_operation=True, document_status="extraction_failed")
     with pytest.raises(DocumentOperationStateError, match="not eligible"):
         ensure_retry_allowed(has_active_operation=False, document_status="ready")
 
@@ -219,18 +219,18 @@ def test_a_failed_page_document_keeps_its_reason_and_a_canceled_one_resets() -> 
     )
     default = failure_state(failed, document_status=None, extraction_method=None, page_count=3)
 
-    assert (no_text.status, no_text.fallback_reason, no_text.processed_page_count) == (
+    assert (no_text.status, no_text.failure_message, no_text.processed_page_count) == (
         "no_text_detected",
         "No text found.",
         3,
     )
     assert (default.status, default.extraction_method, default.processed_page_count) == (
-        "ocr_failed",
-        "ocr_failed",
+        "extraction_failed",
+        "none",
         0,
     )
     assert failure_state(
-        canceled, document_status="ocr_failed", extraction_method="ocr", page_count=3
+        canceled, document_status="extraction_failed", extraction_method="ocr", page_count=3
     ) == failure_state(canceled, document_status=None, extraction_method=None, page_count=0)
 
 

@@ -37,6 +37,7 @@ from cert_prep_backend.capture_integration.infrastructure.review_workflow import
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.platform.errors import NotFoundError
+from cert_prep_backend.source_library.domain.document import NO_TEXT_DETECTED_MESSAGE
 from cert_prep_backend.source_library.infrastructure.repository import (
     SqliteDocumentOperationRepository,
     SqliteDocumentRepository,
@@ -89,7 +90,7 @@ def test_recovery_discards_unfinished_draft_jobs_of_interrupted_runs(tmp_path: P
     assert _operations(db).recover_interrupted() == 1
 
     assert _job_statuses(db, doc) == sorted(FINISHED_JOB_STATUSES)
-    assert _document_row(db, doc)["status"] == "ocr_failed"
+    assert _document_row(db, doc)["status"] == "extraction_failed"
 
 
 @pytest.mark.parametrize("stop", ["cancel", "fail"])
@@ -115,6 +116,59 @@ def test_a_stopped_audio_run_discards_unfinished_jobs_and_keeps_its_transcript(
     document = _document_row(db, audio)
     assert document["status"] == expected_status
     assert document["exam_item_count"] == 0
+    assert document["extraction_warnings"] is None
+    assert document["failure_message"] == (
+        "Transcription failed." if stop == "fail" else None
+    )
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_failure"),
+    [
+        ("ready", None),
+        ("no_text_detected", "earlier failure"),
+        ("processing", "earlier failure"),
+    ],
+)
+def test_the_exam_state_clears_the_failure_message_when_ready_and_keeps_it_otherwise(
+    tmp_path: Path, status: str, expected_failure: str | None
+) -> None:
+    db = _database(tmp_path)
+    _ready_document(db, "doc", status="no_text_detected")
+    with db.connect() as connection:
+        connection.execute(
+            """
+            UPDATE documents SET extraction_warnings = 'kept warning',
+                failure_message = 'earlier failure'
+            WHERE id = 'doc'
+            """
+        )
+
+    _documents(db).record_exam_state("proj", "doc", status=status, exam_item_count=2)
+
+    document = _document_row(db, "doc")
+    assert document["status"] == status
+    assert document["exam_item_count"] == 2
+    assert document["extraction_warnings"] == "kept warning"
+    assert document["failure_message"] == expected_failure
+
+
+def test_a_document_that_ends_without_text_gets_the_no_text_reason_and_keeps_its_warnings(
+    tmp_path: Path,
+) -> None:
+    db = _database(tmp_path)
+    _ready_document(db, "warned", status="ready")
+    with db.connect() as connection:
+        connection.execute(
+            "UPDATE documents SET extraction_warnings = 'page 2 is blank' WHERE id = 'warned'"
+        )
+
+    _documents(db).record_exam_state("proj", "warned", status="no_text_detected", exam_item_count=0)
+
+    warned = _document_row(db, "warned")
+    assert warned["status"] == "no_text_detected"
+    assert warned["extraction_warnings"] == "page 2 is blank"
+    assert warned["failure_message"] == NO_TEXT_DETECTED_MESSAGE
 
 
 def test_the_job_cleanup_rolls_back_with_the_run_it_belongs_to(tmp_path: Path) -> None:
@@ -205,9 +259,9 @@ def test_source_library_refuses_work_for_a_missing_project(tmp_path: Path) -> No
     ("status", "has_text", "expected_status"),
     [
         ("ready", 1, "ready"),
-        ("exam_failed", 1, "ready"),
+        ("no_text_detected", 1, "ready"),
         ("processing", 1, "processing"),
-        ("ready", 0, "exam_failed"),
+        ("ready", 0, "no_text_detected"),
     ],
 )
 def test_a_committed_draft_job_records_the_document_exam_state(
@@ -247,7 +301,7 @@ def test_a_draft_job_without_new_drafts_still_counts_the_document_drafts(
     tmp_path: Path,
 ) -> None:
     db = _database(tmp_path)
-    _ready_document(db, "doc", status="exam_failed")
+    _ready_document(db, "doc", status="no_text_detected")
     with db.connect() as connection:
         _draft(connection, "earlier", "doc", status="approved")
     job = _committing_job(db, "doc")
@@ -274,7 +328,7 @@ def test_a_draft_job_without_new_drafts_still_counts_the_document_drafts(
     ("status", "has_text", "expected_status"),
     [
         ("ready", 1, "ready"),
-        ("exam_failed", 0, "ready"),
+        ("no_text_detected", 0, "ready"),
         ("processing", 1, "processing"),
     ],
 )
@@ -316,7 +370,7 @@ def test_the_document_exam_state_rolls_back_with_the_draft_commit(
     tmp_path: Path, kind: str
 ) -> None:
     db = _database(tmp_path)
-    _ready_document(db, "doc", status="exam_failed")
+    _ready_document(db, "doc", status="no_text_detected")
     if kind == "job":
         job = draft_jobs.enqueue_chunk_job(
             db,
@@ -370,7 +424,7 @@ def test_the_document_exam_state_rolls_back_with_the_draft_commit(
             )
 
     document = _document_row(db, "doc")
-    assert document["status"] == "exam_failed"
+    assert document["status"] == "no_text_detected"
     assert document["exam_item_count"] == 0
     assert document["updated_at"] == "t0"
     assert drafts_repository.list_drafts(db, "proj", projects=authoring_projects(db)) == []

@@ -14,6 +14,7 @@ class ContentProfile(StrEnum):
     JLPT_VOCABULARY = "jlpt_vocabulary"
     JLPT_GROUPED = "jlpt_grouped"
     MIXED = "mixed"
+    STUDY_MATERIAL = "study_material"
 
 
 class QuestionItemKind(StrEnum):

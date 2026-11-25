@@ -122,12 +122,12 @@ test('OCR page-record evidence rejects embedded or cross-document records', () =
         runId: 'acceptance-run-1',
         expectedDocumentId: 'document-1',
         expectedProjectId: 'project-1',
-        document: { ...ocrDocumentRecord(), extraction_method: 'embedded' },
+        document: { ...ocrDocumentRecord(), extraction_method: 'text_layer' },
         chunks: [ocrChunkRecord()],
         expectedPageNumbers: [1],
         appDataEmptyAtLaunch: true,
       }),
-    /document\.extraction_method expected windowsml_ocr/u,
+    /document\.extraction_method expected text_recognition/u,
   );
   assert.throws(
     () =>
@@ -154,7 +154,7 @@ function ocrDocumentRecord(): Record<string, unknown> {
     chunks_count: 1,
     has_text: true,
     status: 'ready',
-    extraction_method: 'windowsml_ocr',
+    extraction_method: 'text_recognition',
     source_kind: 'document',
   };
 }
@@ -167,7 +167,7 @@ function ocrChunkRecord(): Record<string, unknown> {
     chunk_index: 0,
     source_revision: 1,
     locator_kind: 'page',
-    extraction_method: 'windowsml_ocr',
+    extraction_method: 'text_recognition',
     raw_text: 'private OCR text',
   };
 }

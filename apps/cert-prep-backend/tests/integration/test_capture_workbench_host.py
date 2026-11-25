@@ -53,7 +53,7 @@ from cert_prep_backend.capture_integration.infrastructure.coordinator import (
 )
 from cert_prep_backend.capture_integration.infrastructure.mapping import (
     capture_document_to_audio_segments,
-    capture_document_to_pdf_extraction,
+    capture_document_to_page_extraction,
 )
 from conftest import _test_ocr_projection
 from cert_prep_backend.capture_integration.infrastructure.structuring import (
@@ -958,7 +958,7 @@ class RecordingCaptureRuntime:
                     {
                         "requirementId": "text-recognition",
                         "kind": "text-recognition",
-                        "displayName": "WindowsML OCR",
+                        "displayName": "Text recognition",
                         "status": requirement_status.value,
                         "requiredFor": ["pdf", "image"],
                         "installStrategy": "unavailable",
@@ -1231,7 +1231,7 @@ def test_capture_coordinator_uses_host_provider_then_fetches_validated_result() 
             CaptureSourceKind.IMAGE,
             "sample.png",
             "image/png",
-            "WindowsML OCR is unavailable. No downloadable model is published for this runtime release.",
+            "Text recognition is unavailable. No downloadable model is published for this runtime release.",
         ),
         (
             CaptureSourceKind.RECORDING,
@@ -1568,13 +1568,13 @@ def test_capture_coordinator_maps_structuring_control_to_sidecar_cancel(
 
 def test_capture_document_maps_page_and_time_provenance_without_restructuring() -> None:
     document = CaptureDocument.model_validate(_document_payload())
-    extraction = capture_document_to_pdf_extraction(document)
+    extraction = capture_document_to_page_extraction(document)
 
     assert extraction.page_count == 1
     assert extraction.pages[0].page_number == 1
     assert extraction.pages[0].raw_text == "Visible source text"
     assert extraction.pages[0].text == "Visible target text"
-    assert extraction.extraction_method == "windowsml_ocr"
+    assert extraction.extraction_method == "text_recognition"
 
     audio = _document_payload()
     audio["source"]["fileName"] = "sample.wav"
@@ -1604,7 +1604,7 @@ def test_capture_document_rejects_non_ocr_extraction_provenance(
     document = CaptureDocument.model_validate(payload)
 
     with pytest.raises(ValueError, match="OCR-only"):
-        capture_document_to_pdf_extraction(document)
+        capture_document_to_page_extraction(document)
 
 
 def test_capture_document_persists_ocr_only_method_for_every_page() -> None:
@@ -1635,15 +1635,15 @@ def test_capture_document_persists_ocr_only_method_for_every_page() -> None:
     payload["sourceText"] = "Visible source text\nSecond OCR page"
     payload["targetText"] = "Visible target text\nSecond OCR page"
 
-    extraction = capture_document_to_pdf_extraction(
+    extraction = capture_document_to_page_extraction(
         CaptureDocument.model_validate(payload)
     )
 
     assert [page.extraction_method for page in extraction.pages] == [
-        "windowsml_ocr",
-        "windowsml_ocr",
+        "text_recognition",
+        "text_recognition",
     ]
-    assert extraction.extraction_method == "windowsml_ocr"
+    assert extraction.extraction_method == "text_recognition"
 
 
 def test_capture_document_mapping_uses_runtime_ocr_projection_text_and_device() -> None:
@@ -1653,7 +1653,7 @@ def test_capture_document_mapping_uses_runtime_ocr_projection_text_and_device() 
     projection.pages[0].text = "Canonical Paddle OCR text"
     projection.provenance.device = "directml"
 
-    extraction = capture_document_to_pdf_extraction(
+    extraction = capture_document_to_page_extraction(
         document,
         ocr_projection=projection,
     )

@@ -12,15 +12,14 @@ from cert_prep_contracts.documents import (
 )
 
 
-class PdfExtractionMethod(StrEnum):
-    EMBEDDED = "embedded"
-    MIXED = "mixed"
+class ExtractionMethod(StrEnum):
     NONE = "none"
-    OCR_FAILED = "ocr_failed"
-    WINDOWSML_OCR = "windowsml_ocr"
+    TEXT_RECOGNITION = "text_recognition"
+    TRANSCRIPTION = "transcription"
+    TEXT_LAYER = "text_layer"
 
 
-PDF_EXTRACTION_METHOD_VALUES: Final[tuple[str, ...]] = tuple(
-    method.value for method in PdfExtractionMethod
+EXTRACTION_METHOD_VALUES: Final[tuple[str, ...]] = tuple(
+    method.value for method in ExtractionMethod
 )
-PdfExtractionMethodValue: TypeAlias = PdfExtractionMethod | str
+ExtractionMethodValue: TypeAlias = ExtractionMethod | str

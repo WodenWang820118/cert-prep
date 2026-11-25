@@ -29,7 +29,7 @@ export interface Components {
     CaptureSpeaker: { "speakerId": string; "sample"?: Components['schemas']['TimeLocator'] | null; "displayName"?: string | null };
     CaptureStatus: string;
     ChunkList: { "items": Components['schemas']['ChunkRead'][] };
-    ChunkRead: { "id": string; "document_id": string; "page_number": number; "chunk_index": number; "text": string; "raw_text": string; "line_start": number | null; "line_end": number | null; "line_count": number; "source_excerpt": string; "extraction_method": Components['schemas']['PdfExtractionMethod'] | string; "content_profile": Components['schemas']['ContentProfile'] | string; "created_at": string; "locator_kind"?: string; "start_ms"?: number | null; "end_ms"?: number | null; "source_revision"?: number; "translated_text"?: string | null; "translation_source_revision"?: number | null; "translation_stale"?: boolean };
+    ChunkRead: { "id": string; "document_id": string; "page_number": number; "chunk_index": number; "text": string; "raw_text": string; "line_start": number | null; "line_end": number | null; "line_count": number; "source_excerpt": string; "extraction_method": Components['schemas']['ExtractionMethod'] | string; "content_profile": Components['schemas']['ContentProfile'] | string; "created_at": string; "locator_kind"?: string; "start_ms"?: number | null; "end_ms"?: number | null; "source_revision"?: number; "translated_text"?: string | null; "translation_source_revision"?: number | null; "translation_stale"?: boolean };
     ChunkUpdate: { "text": string };
     CommitStructuredResultRequest: { "clientRequestId": string; "candidate": Components['schemas']['CaptureDocument'] };
     ContentProfile: string;
@@ -45,13 +45,14 @@ export interface Components {
     DocumentOperationPhase: "uploading" | "processing" | "awaiting_review" | "transcribing" | "translating" | "canceling" | "committing" | "canceled" | "completed" | "failed";
     DocumentOperationRead: { "id": string; "project_id": string; "document_id": string | null; "status": Components['schemas']['DocumentOperationStatus']; "phase": Components['schemas']['DocumentOperationPhase']; "cancellable": boolean; "error": string | null; "created_at": string; "updated_at": string };
     DocumentOperationStatus: "queued" | "running" | "cancel_requested" | "canceled" | "succeeded" | "failed";
-    DocumentRead: { "id": string; "project_id": string; "filename": string; "sha256": string; "language_hint": string; "page_count": number; "has_text": boolean; "status": Components['schemas']['SourceDocumentStatus'] | string; "extraction_method": Components['schemas']['PdfExtractionMethod'] | string; "ocr_device": string | null; "ocr_fallback_reason": string | null; "ocr_duration_ms": number; "processed_page_count": number; "parse_wall_duration_ms": number; "render_duration_ms": number; "ocr_engine_duration_ms": number; "ocr_worker_count": number; "first_chunk_ms": number; "exam_item_count": number; "content_profile": Components['schemas']['ContentProfile'] | string; "classification_detail": string; "chunks_count": number; "created_at": string; "updated_at": string; "source_kind"?: string; "duration_ms"?: number | null; "transcription_status"?: string; "translation_status"?: string; "configured_transcription_model"?: string | null; "effective_transcription_model"?: string | null; "transcription_device"?: string | null; "transcription_warning"?: string | null };
+    DocumentRead: { "id": string; "project_id": string; "filename": string; "sha256": string; "language_hint": string; "page_count": number; "has_text": boolean; "status": Components['schemas']['SourceDocumentStatus'] | string; "extraction_method": Components['schemas']['ExtractionMethod'] | string; "ocr_device": string | null; "extraction_warnings": string | null; "failure_message": string | null; "processed_page_count": number; "exam_item_count": number; "content_profile": Components['schemas']['ContentProfile'] | string; "classification_detail": string; "chunks_count": number; "created_at": string; "updated_at": string; "source_kind"?: string; "duration_ms"?: number | null; "transcription_status"?: string; "translation_status"?: string; "configured_transcription_model"?: string | null; "effective_transcription_model"?: string | null; "transcription_device"?: string | null; "transcription_warning"?: string | null };
     DraftGenerateRequest: { "limit"?: number; "strategy"?: Components['schemas']['DraftGenerationStrategy'] };
     DraftGenerationJobList: { "items": Components['schemas']['DraftGenerationJobRead'][] };
     DraftGenerationJobRead: { "id": string; "project_id": string; "document_id": string; "chunk_id": string; "page_number": number; "strategy": Components['schemas']['DraftGenerationStrategy']; "status": Components['schemas']['DraftGenerationJobStatus']; "phase": string; "cancellable": boolean; "provider": string; "model": string; "effective_provider": string | null; "effective_model": string | null; "fallback_reason": string | null; "generated_count": number; "retry_count": number; "last_error": string | null; "created_at": string; "updated_at": string };
     DraftGenerationJobStatus: "pending" | "running" | "cancel_requested" | "canceled" | "succeeded" | "skipped_provider_unavailable" | "skipped_missing_model" | "failed";
     DraftGenerationStrategy: string;
     DraftStatus: string;
+    ExtractionMethod: string;
     HTTPValidationError: { "detail"?: Components['schemas']['ValidationError'][] };
     HealthResponse: { "status": string; "app": string; "version": string; "python_version": string; "runtime_mode": string };
     LLMExecutionMode: string;
@@ -82,7 +83,6 @@ export interface Components {
     OperationFailure: { "code": string; "message": string; "stage"?: string | null; "retryable"?: boolean };
     PageLocator: { "kind"?: "page"; "page": number; "boundingBox"?: unknown[] | null };
     PartialCapture: { "protocolVersion"?: "2"; "captureId": string; "source": Components['schemas']['CaptureSource']; "revision": number; "coveredUntilMs"?: number | null; "segments"?: Components['schemas']['RawCaptureSegment'][]; "sourceText"?: string; "extractionEngine"?: Components['schemas']['CaptureEngine'] | null; "updatedAt": string };
-    PdfExtractionMethod: string;
     PracticeAttemptCreate: { "question_id": string; "selected_answer": string };
     PracticeAttemptRead: { "id": string; "session_id": string; "project_id": string; "question_id": string; "selected_answer": string; "is_correct": boolean; "created_at": string };
     PracticeSessionCreate: { "mode"?: Components['schemas']['PracticeSessionMode']; "document_id"?: string | null; "question_count"?: number | null; "random_seed"?: number | null; "wrong_attempt_ids"?: string[] | null };
@@ -182,6 +182,7 @@ export type DraftGenerationJobRead = Components['schemas']['DraftGenerationJobRe
 export type DraftGenerationJobStatus = Components['schemas']['DraftGenerationJobStatus'];
 export type DraftGenerationStrategy = Components['schemas']['DraftGenerationStrategy'];
 export type DraftStatus = Components['schemas']['DraftStatus'];
+export type ExtractionMethod = Components['schemas']['ExtractionMethod'];
 export type HTTPValidationError = Components['schemas']['HTTPValidationError'];
 export type HealthResponse = Components['schemas']['HealthResponse'];
 export type LLMExecutionMode = Components['schemas']['LLMExecutionMode'];
@@ -212,7 +213,6 @@ export type OllamaServerOwnership = Components['schemas']['OllamaServerOwnership
 export type OperationFailure = Components['schemas']['OperationFailure'];
 export type PageLocator = Components['schemas']['PageLocator'];
 export type PartialCapture = Components['schemas']['PartialCapture'];
-export type PdfExtractionMethod = Components['schemas']['PdfExtractionMethod'];
 export type PracticeAttemptCreate = Components['schemas']['PracticeAttemptCreate'];
 export type PracticeAttemptRead = Components['schemas']['PracticeAttemptRead'];
 export type PracticeSessionCreate = Components['schemas']['PracticeSessionCreate'];

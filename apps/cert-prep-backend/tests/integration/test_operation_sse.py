@@ -314,7 +314,7 @@ def test_document_operation_events_active_route_does_not_expose_recovered_operat
 
     payload = json.loads(body.split("data: ", 1)[1].strip())
     assert payload["operation"]["status"] == "failed"
-    assert payload["document"]["status"] == "ocr_failed"
+    assert payload["document"]["status"] == "extraction_failed"
 
 
 def test_document_operation_events_streams_an_active_operation(tmp_path) -> None:

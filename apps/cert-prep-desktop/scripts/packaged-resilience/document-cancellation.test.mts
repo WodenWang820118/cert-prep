@@ -234,11 +234,6 @@ function document(
     chunks_count: chunks,
     has_text: hasText,
     processed_page_count: partial,
-    ocr_duration_ms: partial,
-    parse_wall_duration_ms: partial,
-    render_duration_ms: partial,
-    ocr_engine_duration_ms: partial,
-    first_chunk_ms: partial,
     exam_item_count: partial,
   };
 }

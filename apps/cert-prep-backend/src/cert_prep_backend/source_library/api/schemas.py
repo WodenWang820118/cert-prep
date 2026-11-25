@@ -4,12 +4,9 @@ from dataclasses import asdict
 
 from pydantic import BaseModel
 
+from cert_prep_backend.source_library.domain.document import DocumentChunk, DocumentStatus
 from cert_prep_backend.source_library.domain.exam_content import ContentProfileValue
-from cert_prep_backend.source_library.domain.document import (
-    DocumentStatus,
-    DocumentChunk,
-    ExtractionMethod,
-)
+from cert_prep_backend.source_library.domain.statuses import ExtractionMethodValue
 
 
 class DocumentRead(BaseModel):
@@ -21,16 +18,11 @@ class DocumentRead(BaseModel):
     page_count: int
     has_text: bool
     status: DocumentStatus
-    extraction_method: ExtractionMethod
+    extraction_method: ExtractionMethodValue
     ocr_device: str | None
-    ocr_fallback_reason: str | None
-    ocr_duration_ms: int
+    extraction_warnings: str | None
+    failure_message: str | None
     processed_page_count: int
-    parse_wall_duration_ms: int
-    render_duration_ms: int
-    ocr_engine_duration_ms: int
-    ocr_worker_count: int
-    first_chunk_ms: int
     exam_item_count: int
     content_profile: ContentProfileValue
     classification_detail: str
@@ -62,7 +54,7 @@ class ChunkRead(BaseModel):
     line_end: int | None
     line_count: int
     source_excerpt: str
-    extraction_method: ExtractionMethod
+    extraction_method: ExtractionMethodValue
     content_profile: ContentProfileValue
     created_at: str
     locator_kind: str = "page"

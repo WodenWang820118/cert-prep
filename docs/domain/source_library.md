@@ -16,9 +16,9 @@
 | 原始檔           | `SourceFile`                | 匯入的檔案、它的 SHA-256 與存放位置                    |
 | 段落             | `DocumentChunk`             | 教材切成的一段文字；錄音的段落有時間區間與翻譯         |
 | 教材狀態         | `SourceDocumentStatus`      | 處理中、取消中、已取消、可用，或處理失敗的原因         |
-| 擷取結果         | `PdfExtraction`             | 一次擷取得到的頁面、狀態與各階段耗時                   |
+| 擷取結果         | `PageExtraction`             | 一次擷取得到的頁面、狀態                   |
 | 擷取頁面         | `ExtractedPage`             | 擷取出的一頁文字與擷取方式                             |
-| 擷取方式         | `PdfExtractionMethod`       | 內嵌文字、OCR、兩者混合，或沒有文字                    |
+| 擷取方式         | `ExtractionMethod`       | `text_recognition`、`transcription`、`none`，或歷史資料的 `text_layer`                    |
 | 內容類型         | `ContentProfile`            | 教材的題型慣例，例如 `jlpt_vocabulary`、`jlpt_grouped` |
 | 題目形式         | `QuestionItemKind`          | 一題是單獨的字彙題，還是題組裡的一題                   |
 | Markdown 匯出    | `MarkdownProjection`        | 可匯出的 PDF 與用來產生 Markdown 的段落                |
@@ -40,7 +40,7 @@ classDiagram
     filename
     source_kind
     status: SourceDocumentStatus
-    extraction_method: PdfExtractionMethod
+    extraction_method: ExtractionMethod
     content_profile: ContentProfile
     chunks_count
     ensure_markdown_exportable()
@@ -147,7 +147,7 @@ stateDiagram-v2
 | 查看作業進度       | `view_operation_progress`   | 作業與它處理的教材，作業事件串流的快照                                                   |
 | 查看進行中作業     | `view_active_operation`     | 教材仍在排隊、執行或取消中的作業；沒有時是 `NotFoundError`                               |
 | 記錄草稿數         | `record_draft_count`        | 給題目編寫：學習者要求的草稿寫好後記錄教材的題目數；處理中的教材維持處理中，其他變成可用 |
-| 記錄匯入後的草稿數 | `record_import_draft_count` | 給題目編寫：匯入後產生的草稿寫好後記錄題目數；有文字與段落時可用，否則 `exam_failed`     |
+| 記錄匯入後的草稿數 | `record_import_draft_count` | 給題目編寫：匯入後產生的草稿寫好後記錄題目數；有文字與段落時可用，否則 `no_text_detected`     |
 
 匯入與重試的規則：
 
@@ -199,7 +199,7 @@ sequenceDiagram
 - 資料表：`documents`、`document_chunks`、`document_operations` 屬教材來源；migration 在 `platform/database.py`。`projects` 與 `draft_generation_jobs` 由所屬上下文的用例使用，教材來源的 infrastructure 不查那些資料表。
 - 原始檔：`<data_dir>/uploads/<project_id>/<sha256><副檔名>`（`infrastructure/storage.py`）。
 - HTTP：`/projects/{project_id}/documents`、`/projects/{project_id}/document-operations`（`api/router.py`；DTO 在 `source_library/api/schemas.py` 與 `cert_prep_contracts.documents`）。作業的即時狀態經 `api/operation_events.py` 的 server-sent events（`…/document-operations/{operation_id}/events`、`…/documents/{document_id}/document-operation/events`）；串流由 `platform/sse.py` 提供，快照來自 `view_operation_progress`，作業結束時串流結束。
-- API 的 `SourceDocumentStatus`、`PdfExtractionMethod`、`ContentProfile`、`QuestionItemKind`、`DocumentOperationStatus`、`DocumentOperationPhase` 列舉值對應到概念集的 `source-library.*`。
+- API 的 `SourceDocumentStatus`、`ExtractionMethod`、`ContentProfile`、`QuestionItemKind`、`DocumentOperationStatus`、`DocumentOperationPhase` 列舉值對應到概念集的 `source-library.*`。
 
 ## 前端
 

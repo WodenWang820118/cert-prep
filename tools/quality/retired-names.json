@@ -70,5 +70,215 @@
     "match": "word",
     "replacement": "suggestedRequirementIds",
     "allowed": []
+  },
+  {
+    "name": "build-capture",
+    "match": "word",
+    "replacement": "build-windows-x64",
+    "allowed": []
+  },
+  {
+    "name": "build-capture-dev",
+    "match": "word",
+    "replacement": "build-windows-x64-dev",
+    "allowed": []
+  },
+  {
+    "name": "build:tauri:win",
+    "match": "substring",
+    "replacement": "build:windows-x64",
+    "allowed": []
+  },
+  {
+    "name": "e2e-local-package",
+    "match": "word",
+    "replacement": "e2e-mocked-api",
+    "allowed": []
+  },
+  {
+    "name": "src/e2e/local-package",
+    "match": "substring",
+    "replacement": "src/e2e/mocked-api",
+    "allowed": []
+  },
+  {
+    "name": "install-capture-workbench-dependencies.mts",
+    "match": "substring",
+    "replacement": "install-capture-npm-packages.mts",
+    "allowed": []
+  },
+  {
+    "name": "packaged-0-3-9-image",
+    "match": "word",
+    "replacement": "packaged-negative-image",
+    "allowed": []
+  },
+  {
+    "name": "packaged-0-3-9-audio",
+    "match": "word",
+    "replacement": "packaged-negative-audio",
+    "allowed": []
+  },
+  {
+    "name": "packaged-0-3-9-scanned-pdf",
+    "match": "word",
+    "replacement": "packaged-negative-scanned-pdf",
+    "allowed": []
+  },
+  {
+    "name": "packaged-0-3-9-mixed-pdf",
+    "match": "word",
+    "replacement": "packaged-negative-mixed-pdf",
+    "allowed": []
+  },
+  {
+    "name": "windowsml_ocr",
+    "match": "word",
+    "replacement": "text_recognition",
+    "allowed": []
+  },
+  {
+    "name": "WINDOWSML_OCR",
+    "match": "word",
+    "replacement": "TEXT_RECOGNITION",
+    "allowed": []
+  },
+  {
+    "name": "PdfExtractionMethod",
+    "match": "word",
+    "replacement": "ExtractionMethod",
+    "allowed": []
+  },
+  {
+    "name": "PdfExtractionMethodValue",
+    "match": "word",
+    "replacement": "ExtractionMethodValue",
+    "allowed": []
+  },
+  {
+    "name": "PDF_EXTRACTION_METHOD_VALUES",
+    "match": "word",
+    "replacement": "EXTRACTION_METHOD_VALUES",
+    "allowed": []
+  },
+  {
+    "name": "PdfExtraction",
+    "match": "word",
+    "replacement": "PageExtraction",
+    "allowed": []
+  },
+  {
+    "name": "PdfExtractionPolicy",
+    "match": "word",
+    "replacement": "remove this name; no such class exists",
+    "allowed": []
+  },
+  {
+    "name": "capture_document_to_pdf_extraction",
+    "match": "word",
+    "replacement": "capture_document_to_page_extraction",
+    "allowed": []
+  },
+  {
+    "name": "PdfExtractionResult",
+    "match": "word",
+    "replacement": "PageExtraction",
+    "allowed": []
+  },
+  {
+    "name": "ocr_fallback_reason",
+    "match": "word",
+    "replacement": "extraction_warnings or failure_message",
+    "allowed": []
+  },
+  {
+    "name": "exam_failed",
+    "match": "word",
+    "replacement": "no_text_detected",
+    "allowed": []
+  },
+  {
+    "name": "EXAM_FAILED",
+    "match": "word",
+    "replacement": "NO_TEXT_DETECTED",
+    "allowed": []
+  },
+  {
+    "name": "ocr_failed",
+    "match": "word",
+    "replacement": "extraction_failed for status or none for method",
+    "allowed": []
+  },
+  {
+    "name": "OCR_FAILED",
+    "match": "word",
+    "replacement": "EXTRACTION_FAILED for status",
+    "allowed": []
+  },
+  {
+    "name": "parsingMetrics",
+    "match": "word",
+    "replacement": "remove the unused parsing metrics",
+    "allowed": []
+  },
+  {
+    "name": "PARSING_METRIC_DEFINITIONS",
+    "match": "word",
+    "replacement": "remove the unused parsing metrics",
+    "allowed": []
+  },
+  {
+    "name": "DocumentParsingMetric",
+    "match": "word",
+    "replacement": "remove the unused parsing metrics",
+    "allowed": []
+  },
+  {
+    "name": "record_extraction_progress",
+    "match": "word",
+    "replacement": "publish the final extraction",
+    "allowed": []
+  },
+  {
+    "name": "document_extraction_method_from_db",
+    "match": "word",
+    "replacement": "use the extraction result",
+    "allowed": []
+  },
+  {
+    "name": "ocr_duration_ms",
+    "match": "word",
+    "replacement": "remove this extraction timing field",
+    "allowed": []
+  },
+  {
+    "name": "parse_wall_duration_ms",
+    "match": "word",
+    "replacement": "remove this extraction timing field",
+    "allowed": []
+  },
+  {
+    "name": "render_duration_ms",
+    "match": "word",
+    "replacement": "remove this extraction timing field",
+    "allowed": []
+  },
+  {
+    "name": "ocr_engine_duration_ms",
+    "match": "word",
+    "replacement": "remove this extraction timing field",
+    "allowed": []
+  },
+  {
+    "name": "ocr_worker_count",
+    "match": "word",
+    "replacement": "remove this extraction timing field",
+    "allowed": []
+  },
+  {
+    "name": "first_chunk_ms",
+    "match": "word",
+    "replacement": "remove this extraction timing field",
+    "allowed": []
   }
 ]

@@ -24,7 +24,7 @@ def _chunk(page_number: int, text: str) -> DocumentChunk:
         line_end=None,
         line_count=0,
         source_excerpt=text,
-        extraction_method="embedded",
+        extraction_method="text_recognition",
         content_profile="unknown",
         created_at="2026-10-27T00:00:00+00:00",
     )

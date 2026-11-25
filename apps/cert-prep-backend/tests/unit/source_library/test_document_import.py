@@ -46,14 +46,9 @@ def _document(**changes: object) -> SourceDocument:
         status=SourceDocumentStatus.PROCESSING,
         extraction_method="none",
         ocr_device=None,
-        ocr_fallback_reason=None,
-        ocr_duration_ms=0,
+        extraction_warnings=None,
+        failure_message=None,
         processed_page_count=0,
-        parse_wall_duration_ms=0,
-        render_duration_ms=0,
-        ocr_engine_duration_ms=0,
-        ocr_worker_count=0,
-        first_chunk_ms=0,
         exam_item_count=0,
         content_profile="unknown",
         classification_detail="",
@@ -195,7 +190,7 @@ def _import(
     content: bytes = b"%PDF source",
     filename: str = "notes.pdf",
     project_id: str = "project",
-) -> SourceDocument | DocumentOperation:
+) -> SourceDocument:
     return asyncio.run(
         use_cases.import_document(
             FakeProjects(),
@@ -312,7 +307,8 @@ def test_extraction_without_text_fails_the_operation_and_marks_the_document() ->
 
     result = _import(operations, documents, extraction, drafting)
 
-    assert isinstance(result, DocumentOperation)
+    # The upload answers with its document, which the failed operation left without text.
+    assert isinstance(result, SourceDocument)
     assert operations.failures == [
         {
             "error": "No text was detected.",
@@ -371,8 +367,8 @@ def test_extraction_goes_on_only_while_the_operation_processes_that_document() -
     [
         ({"status": SourceDocumentStatus.PROCESSING}, "processing"),
         ({"status": SourceDocumentStatus.READY, "chunks_count": 3}, "ready"),
-        ({"status": SourceDocumentStatus.READY, "chunks_count": 0}, "exam_failed"),
-        ({"status": SourceDocumentStatus.READY, "chunks_count": 3, "has_text": False}, "exam_failed"),
+        ({"status": SourceDocumentStatus.READY, "chunks_count": 0}, "no_text_detected"),
+        ({"status": SourceDocumentStatus.READY, "chunks_count": 3, "has_text": False}, "no_text_detected"),
     ],
 )
 def test_drafts_written_at_import_leave_the_document_ready_only_with_text(changes, status) -> None:

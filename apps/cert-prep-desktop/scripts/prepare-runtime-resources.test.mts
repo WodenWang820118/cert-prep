@@ -77,7 +77,7 @@ test('dev resources remain local and non-publishable without cert-prep OCR asset
   assert.equal(metadata.release_tag, 'cert-prep-local-v0.1.0-alpha.1');
   assert.equal(metadata.channel, 'local_nonpublishable');
   assert.equal(metadata.publishable, false);
-  assert.equal('windowsml_ocr' in metadata.runtime_assets, false);
+  assert.deepEqual(Object.keys(metadata.runtime_assets).sort(), ['backend', 'capture_runtime']);
 });
 
 test('Capture Runtime staging fails closed on missing or changed provenance', async () => {
