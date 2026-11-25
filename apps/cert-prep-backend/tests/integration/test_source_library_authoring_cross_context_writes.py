@@ -24,6 +24,7 @@ from cert_prep_backend.authoring.infrastructure import manual_operations
 from cert_prep_backend.authoring.infrastructure import repository as questions_repository
 from cert_prep_backend.authoring.infrastructure.sources import SourceLibraryQuestionSources
 from cert_prep_backend.bootstrap.authoring_links import (
+    SourceLibraryQuestionCount,
     authoring_sources,
     bind_source_question_count,
     question_repository,
@@ -146,8 +147,9 @@ def test_the_question_count_clears_the_failure_message_when_ready_and_keeps_it_o
             WHERE id = 'doc'
             """
         )
-
-    _sources(db).record_question_count("proj", "doc", status=status, question_count=2)
+        source_repository(db, connection).record_question_count(
+            "proj", "doc", status=status, question_count=2
+        )
 
     source = _source_row(db, "doc")
     assert source["status"] == status
@@ -165,8 +167,9 @@ def test_a_source_that_ends_without_text_gets_the_no_text_reason_and_keeps_its_w
         connection.execute(
             "UPDATE sources SET extraction_warnings = 'page 2 is blank' WHERE id = 'warned'"
         )
-
-    _sources(db).record_question_count("proj", "warned", status="no_text_detected", question_count=0)
+        source_repository(db, connection).record_question_count(
+            "proj", "warned", status="no_text_detected", question_count=0
+        )
 
     warned = _source_row(db, "warned")
     assert warned["status"] == "no_text_detected"
@@ -545,6 +548,79 @@ def test_a_failed_question_count_does_not_store_the_hand_written_question(
 
     assert questions_repository.list_questions(db, "proj", projects=authoring_projects(db)) == []
     assert dict(_source_row(db, "cove")) == before
+
+
+@pytest.mark.parametrize(
+    "write",
+    [
+        questions_repository.SqliteQuestionRepository.append_generated_questions_and_record_count,
+        questions_repository.SqliteQuestionRepository.append_import_questions_and_record_count,
+    ],
+)
+def test_a_failed_question_count_rolls_back_synchronously_generated_questions(
+    tmp_path: Path, write
+) -> None:
+    db = _database(tmp_path)
+    _ready_source(db, "cove")
+    suggestions = [_suggestion("cove-chunk", "Which lantern marks the cove?")]
+    question_repository(db).append_generated_questions_and_record_count("proj", "cove", suggestions)
+    before = dict(_source_row(db, "cove"))
+    assert before["question_count"] == 1
+
+    class FailingQuestionCount(SourceLibraryQuestionCount):
+        def record_question_count(self, project_id: str, source_id: str, count: int) -> None:
+            super().record_question_count(project_id, source_id, count)
+            assert count == 2
+            raise RuntimeError("The cove count could not be stored.")
+
+        def record_import_question_count(self, project_id: str, source_id: str, count: int) -> None:
+            super().record_import_question_count(project_id, source_id, count)
+            assert count == 2
+            raise RuntimeError("The cove count could not be stored.")
+
+    def bind(connection: Connection) -> FailingQuestionCount:
+        return FailingQuestionCount(source_repository(db, connection))
+
+    repository = questions_repository.SqliteQuestionRepository(
+        db,
+        projects=authoring_projects(db),
+        sources=SourceLibraryQuestionSources(source_repository(db)),
+        question_count=bind,
+    )
+    with pytest.raises(RuntimeError, match="The cove count could not be stored"):
+        write(repository, "proj", "cove", [_suggestion("cove-chunk", "Which boat is moored?")])
+
+    assert [
+        question.question for question in repository.for_source("proj", source_id="cove")
+    ] == [suggestions[0].question]
+    assert dict(_source_row(db, "cove")) == before
+
+
+def test_synchronous_generation_keeps_a_processing_source_processing(tmp_path: Path) -> None:
+    db = _database(tmp_path)
+    _ready_source(db, "cove", status="processing")
+
+    question_repository(db).append_generated_questions_and_record_count(
+        "proj", "cove", [_suggestion("cove-chunk", "Which lantern marks the cove?")]
+    )
+
+    source = _source_row(db, "cove")
+    assert source["status"] == "processing"
+    assert source["question_count"] == 1
+
+
+def test_import_generation_without_suggestions_records_the_no_text_status(tmp_path: Path) -> None:
+    db = _database(tmp_path)
+    _ready_source(db, "cove", has_text=0)
+    with db.connect() as connection:
+        _question(connection, "existing", "cove")
+
+    created = question_repository(db).append_import_questions_and_record_count("proj", "cove", [])
+
+    assert created == []
+    source = _source_row(db, "cove")
+    assert source["status"] == "no_text_detected"
+    assert source["question_count"] == 1
 
 
 def _operations(db: Database) -> SqliteSourceOperationRepository:

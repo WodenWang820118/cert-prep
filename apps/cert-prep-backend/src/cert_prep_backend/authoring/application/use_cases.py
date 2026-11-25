@@ -93,11 +93,7 @@ def generate_source_questions(
     if not chunks:
         raise ValidationError("Document has no extracted text chunks.")
     suggestions = writing.suggestions(model, chunks, limit, strategy)
-    added = questions.add_generated(project_id, source_id, suggestions)
-    sources.record_question_count(
-        project_id, source_id, questions.count_for_source(project_id, source_id)
-    )
-    return added
+    return questions.append_generated_questions_and_record_count(project_id, source_id, suggestions)
 
 
 def list_generation_jobs(
@@ -188,8 +184,4 @@ def generate_imported_questions(
         ]
     except LanguageModelUnavailable:
         suggestions = []
-    if suggestions:
-        questions.add_generated(project_id, source_id, suggestions)
-    sources.record_import_question_count(
-        project_id, source_id, questions.count_for_source(project_id, source_id)
-    )
+    questions.append_import_questions_and_record_count(project_id, source_id, suggestions)

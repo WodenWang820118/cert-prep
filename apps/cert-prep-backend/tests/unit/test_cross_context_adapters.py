@@ -82,7 +82,7 @@ def test_authoring_sources_adapter(tmp_path: Path) -> None:
         sources.require("other-proj", source_id)
 
 
-def test_source_library_question_sources_chunks_and_question_counts(tmp_path: Path) -> None:
+def test_source_library_question_sources_reads_chunks(tmp_path: Path) -> None:
     db = _database(tmp_path)
     source_id = _attach_pdf(db, operation_id="upload-2")
     repository = source_repository(db)
@@ -111,17 +111,6 @@ def test_source_library_question_sources_chunks_and_question_counts(tmp_path: Pa
 
     with pytest.raises(NotFoundError, match="Document chunk not found"):
         sources.chunk("proj", source_id, "missing-chunk")
-
-    # A source still being processed stays processing; only the count changes.
-    sources.record_question_count("proj", source_id, 5)
-    source_record = repository.source("proj", source_id)
-    assert source_record.status == "processing"
-    assert source_record.question_count == 5
-
-    # record_import_question_count
-    sources.record_import_question_count("proj", source_id, 3)
-    source_record = repository.source("proj", source_id)
-    assert source_record.question_count == 3
 
 
 def test_question_repository_and_question_generation_jobs(tmp_path: Path) -> None:
@@ -192,14 +181,3 @@ def test_capture_operations_and_review_commit(tmp_path: Path) -> None:
     updated_op = raw_ops.operation("proj", "upload-4")
     assert updated_op.status.value == "running"
     assert updated_op.phase.value == "processing"
-
-
-
-
-
-
-
-
-
-
-

@@ -84,46 +84,6 @@ def create_question(
     return _question_from_row(row)
 
 
-def create_generated_questions(
-    db: Database,
-    *,
-    project_id: str,
-    source_id: str,
-    suggestions: list[QuestionSuggestion],
-    projects: StudyProjects,
-) -> list[Question]:
-    if not projects.exists(project_id):
-        raise NotFoundError("Project not found.")
-    now = utc_now()
-    question_ids: list[str] = []
-    with db.connect() as connection:
-        for index, suggestion in enumerate(suggestions, start=1):
-            if _matching_generated_question_exists(
-                connection,
-                project_id=project_id,
-                source_id=source_id,
-                suggestion=suggestion,
-            ):
-                continue
-            question_id = str(uuid4())
-            question_ids.append(question_id)
-            _insert_generated_question(
-                connection,
-                question_id=question_id,
-                project_id=project_id,
-                source_id=source_id,
-                suggestion=suggestion,
-                source_order=suggestion.source_order or index,
-                now=now,
-            )
-        rows = [
-            row
-            for question_id in question_ids
-            if (row := _question_query(connection, project_id, question_id)) is not None
-        ]
-    return [_question_from_row(row) for row in rows]
-
-
 def append_generated_questions_and_complete_job(
     db: Database,
     *,
@@ -344,7 +304,7 @@ def _append_generated_questions(
     *,
     project_id: str,
     source_id: str,
-    suggestions: list[QuestionSuggestion],
+    suggestions: Sequence[QuestionSuggestion],
 ) -> list[Row]:
     now = utc_now()
     question_ids: list[str] = []
@@ -617,22 +577,45 @@ class SqliteQuestionRepository:
             raise NotFoundError("Project not found.")
         return update_question(self._db, project_id, question_id, edit)
 
-    def add_generated(
+    def append_generated_questions_and_record_count(
         self, project_id: str, source_id: str, suggestions: Sequence[QuestionSuggestion]
     ) -> list[Question]:
-        return create_generated_questions(
-            self._db,
-            project_id=project_id,
-            source_id=source_id,
-            suggestions=list(suggestions),
-            projects=self._projects,
+        return self._append_questions_and_record_count(
+            project_id, source_id, suggestions, during_import=False
         )
 
-    def count_for_source(self, project_id: str, source_id: str) -> int:
-        if self._connection is not None:
-            return _source_question_count(self._connection, project_id, source_id)
+    def append_import_questions_and_record_count(
+        self, project_id: str, source_id: str, suggestions: Sequence[QuestionSuggestion]
+    ) -> list[Question]:
+        return self._append_questions_and_record_count(
+            project_id, source_id, suggestions, during_import=True
+        )
+
+    def _append_questions_and_record_count(
+        self,
+        project_id: str,
+        source_id: str,
+        suggestions: Sequence[QuestionSuggestion],
+        *,
+        during_import: bool,
+    ) -> list[Question]:
+        if not self._projects.exists(project_id):
+            raise NotFoundError("Project not found.")
         with self._db.connect() as connection:
-            return _source_question_count(connection, project_id, source_id)
+            connection.execute("BEGIN IMMEDIATE")
+            rows = _append_generated_questions(
+                connection,
+                project_id=project_id,
+                source_id=source_id,
+                suggestions=suggestions,
+            )
+            count = _source_question_count(connection, project_id, source_id)
+            writer = self._question_count(connection)
+            if during_import:
+                writer.record_import_question_count(project_id, source_id, count)
+            else:
+                writer.record_question_count(project_id, source_id, count)
+        return [_question_from_row(row) for row in rows]
 
     def for_source(self, project_id: str, *, source_id: str | None) -> list[Question]:
         if self._connection is not None:

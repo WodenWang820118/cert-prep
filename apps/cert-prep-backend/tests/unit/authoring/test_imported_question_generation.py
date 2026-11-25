@@ -35,7 +35,6 @@ def _suggestion(question: str) -> QuestionSuggestion:
 class Recorder:
     def __init__(self, *, suggestions: list[QuestionSuggestion] | Exception = ()) -> None:
         self._suggestions = suggestions
-        self.stored = 0
         self.calls: list[tuple] = []
 
     # QuestionGenerationWork
@@ -46,9 +45,6 @@ class Recorder:
     def chunks_of(self, project_id: str, source_id: str) -> list[SourceChunk]:
         return [CHUNK]
 
-    def record_import_question_count(self, project_id: str, source_id: str, count: int) -> None:
-        self.calls.append(("record", count))
-
     # QuestionWriting
     def import_suggestions(self, model: object, chunks, limit: int) -> list[QuestionSuggestion]:
         self.calls.append(("write", model, limit))
@@ -57,13 +53,11 @@ class Recorder:
         return list(self._suggestions)
 
     # QuestionRepository
-    def add_generated(self, project_id: str, source_id: str, suggestions) -> list[object]:
-        self.calls.append(("add", len(suggestions)))
-        self.stored += 1
+    def append_import_questions_and_record_count(
+        self, project_id: str, source_id: str, suggestions
+    ) -> list[object]:
+        self.calls.append(("append_and_record_count", project_id, source_id, len(suggestions)))
         return list(suggestions)[:1]
-
-    def count_for_source(self, project_id: str, source_id: str) -> int:
-        return self.stored
 
 
 def _question(recorder: Recorder, *, streams: bool, writes: bool) -> None:
@@ -98,21 +92,7 @@ def test_questions_written_at_import_are_playable_and_counted() -> None:
     assert recorder.calls == [
         ("enqueue", "document"),
         ("write", "model", 7),
-        ("add", 2),
-        ("record", 1),
-    ]
-
-
-def test_writing_at_import_twice_records_every_question_of_the_source() -> None:
-    recorder = Recorder(suggestions=[_suggestion("Q1"), _suggestion("Q2")])
-
-    _question(recorder, streams=False, writes=True)
-    _question(recorder, streams=False, writes=True)
-
-    # Each run keeps one question; the count is every question the source has.
-    assert [call for call in recorder.calls if call[0] == "record"] == [
-        ("record", 1),
-        ("record", 2),
+        ("append_and_record_count", "project", "document", 2),
     ]
 
 
@@ -122,8 +102,7 @@ def test_an_import_without_questions_records_none(outcome) -> None:
 
     _question(recorder, streams=False, writes=True)
 
-    assert recorder.calls[-1] == ("record", 0)
-    assert not any(call[0] == "add" for call in recorder.calls)
+    assert recorder.calls[-1] == ("append_and_record_count", "project", "document", 0)
 
 
 def _job(status: QuestionGenerationJobStatus) -> QuestionGenerationJob:

@@ -41,14 +41,16 @@ class QuestionRepository(Protocol):
 
     def edit(self, project_id: str, question_id: str, edit: QuestionEdit) -> Question: ...
 
-    def add_generated(
+    def append_generated_questions_and_record_count(
         self, project_id: str, source_id: str, suggestions: Sequence[QuestionSuggestion]
     ) -> list[Question]:
-        """Store generated questions, skipping ones the source already has."""
+        """Store new generated questions and the source's total count atomically."""
         ...
 
-    def count_for_source(self, project_id: str, source_id: str) -> int:
-        """How many questions the source has, whoever wrote them and whenever."""
+    def append_import_questions_and_record_count(
+        self, project_id: str, source_id: str, suggestions: Sequence[QuestionSuggestion]
+    ) -> list[Question]:
+        """Store new import-time questions and record the total count even if none are added."""
         ...
 
     def for_source(
@@ -99,18 +101,11 @@ class SourceQuestionCount(Protocol):
 
 
 class QuestionSources(Protocol):
-    """A source's chunks in Source Library, and the question count recorded with its status."""
+    """A source's chunks in Source Library."""
 
     def chunks_of(self, project_id: str, source_id: str) -> list[SourceChunk]: ...
 
     def chunk(self, project_id: str, source_id: str, chunk_id: str) -> SourceChunk: ...
-
-    def record_question_count(self, project_id: str, source_id: str, count: int) -> None: ...
-
-    def record_import_question_count(self, project_id: str, source_id: str, count: int) -> None:
-        """Record the source's question count after questions were written while it was
-        imported; a source without text or chunks is marked no_text_detected."""
-        ...
 
 
 class QuestionWriting(Protocol):
