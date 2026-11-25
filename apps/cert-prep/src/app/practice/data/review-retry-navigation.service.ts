@@ -11,7 +11,7 @@ export class ReviewRetryNavigationService {
   start(attemptIds: readonly string[]): Observable<boolean> {
     return this.practice.createReviewRetrySession(attemptIds).pipe(
       switchMap((started) =>
-        started ? from(this.router.navigateByUrl('/random-quiz')).pipe(switchMap(() => of(true))) : of(false),
+        started ? from(this.router.navigateByUrl('/random-draw')).pipe(switchMap(() => of(true))) : of(false),
       ),
     );
   }

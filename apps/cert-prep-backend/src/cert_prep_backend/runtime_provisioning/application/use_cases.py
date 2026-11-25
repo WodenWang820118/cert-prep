@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from cert_prep_backend.platform.errors import OperationNotCancellableError, ProviderUnavailableError
+from cert_prep_backend.platform.errors import InstallerUnavailable, OperationNotCancellableError
 from cert_prep_backend.runtime_provisioning.application.ports import (
     RuntimeInstallation,
     RuntimeInstaller,
@@ -67,10 +67,10 @@ def start_runtime_installation(
     if callable(validate):
         try:
             validate()
-        except ProviderUnavailableError:
+        except InstallerUnavailable:
             raise
         except Exception as exc:
-            raise ProviderUnavailableError(str(exc)) from exc
+            raise InstallerUnavailable(str(exc)) from exc
 
     target = RuntimeInstallationTarget(
         kind=installer.kind,
@@ -329,7 +329,7 @@ def _update_job(
 def _installer(runtime: RuntimeInstallation, kind: RuntimeRequirementKind) -> RuntimeInstaller:
     installer = runtime.installers.get(kind)
     if installer is None:
-        raise ProviderUnavailableError(f"No installer is configured for {kind.value}.")
+        raise InstallerUnavailable(f"No installer is configured for {kind.value}.")
     return installer
 
 

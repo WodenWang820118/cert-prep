@@ -735,7 +735,7 @@ export class SourceImportStore {
       return;
     }
     this.operations
-      .run('transcript-edit', 'Japanese transcript saved', (signal) =>
+      .run('transcript-edit', 'Transcript saved', (signal) =>
         this.api.updateDocumentChunk(projectId, documentId, chunkId, { text }, { signal }),
         () => this.isCurrentProjectDocument(projectId, documentId),
       )

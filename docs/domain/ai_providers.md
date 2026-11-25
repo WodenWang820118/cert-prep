@@ -125,7 +125,7 @@ sequenceDiagram
     Client-->>Ollama: 回覆
     Ollama-->>Writer: 回覆文字，由題目編寫解析
   end
-  Ollama->>Ollama: 成功才記入產生歸屬；任何失敗包成 ProviderUnavailableError
+  Ollama->>Ollama: 成功才記入產生歸屬；任何失敗包成 LanguageModelUnavailable
 ```
 
 `create_app` 把 `lazy_provider_from_settings(settings)`（測試可以注入自己的供應者）放在 `app.state.llm_provider`，把 `OllamaMachineInventory(settings)` 放在 `app.state.machine_inventory`，並交給執行環境的 `RuntimeInstallationManager`。router 只呼叫 `application/use_cases.py` 的用例。
@@ -136,7 +136,7 @@ sequenceDiagram
 - 練習與複習：用供應者的健康狀態決定能不能請模型解說錯題；解說能力 `PracticeExplanationProvider` 由練習與複習自己定義。
 - 擷取整合：用結構化 JSON 整理擷取結果。
 - 執行環境：用模型下載、模型上線檢查與需要安裝的執行環境安裝 Ollama 與模型；安裝設定檔模型時用 `choose_ollama_profile`；`/runtime/machine-inventory` 用 `inspect_machine`，回應用 AI 供應的 `MachineInventoryRead`（已知例外，D15）。`/llm/model-downloads` 是執行環境的端點（D14）。
-- 教材來源：`infrastructure/translation.py` 的 `OllamaTraditionalChineseTranslator` 實作教材來源的 `TraditionalChineseTranslator` port，由 `bootstrap/source_library_links.py` 接線。使用設定的主機、模型與逾時；單段翻譯用完即卸載，批次翻譯保留模型 5 分鐘，結束時釋放資源。每個翻譯請求算一次使用擁有的伺服器，裝置切換會等它；使用者選 CPU 時加上 `num_gpu=0`。其餘提示詞、呼叫參數與錯誤維持原樣，沒有另外包裝翻譯用例。
+- 教材來源：`infrastructure/translation.py` 的 `OllamaTraditionalChineseTranslator` 實作教材來源的 `TraditionalChineseTranslator` port，由 `bootstrap/source_library_links.py` 接線。使用設定的主機、模型與逾時；單段翻譯用完即卸載，批次翻譯保留模型 5 分鐘，結束時釋放資源。每個翻譯請求算一次使用擁有的伺服器，裝置切換會等它；使用者選 CPU 時加上 `num_gpu=0`。翻譯提示詞依段落所屬教材的 `language_hint` 指定來源語言；自動偵測時由模型判斷。
 
 其他上下文只能經 `ai_providers.application` 與 `ai_providers.domain` 使用 AI 供應（import-linter「Other contexts reach AI Providers only through its application and domain」），AI 供應不依賴任何其他上下文（「AI Providers does not depend on other contexts」）。
 

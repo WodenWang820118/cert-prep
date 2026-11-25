@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 import re
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import uuid4
 
 from fastapi import (
@@ -24,7 +24,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from capture_runtime_client import (
-    CAPTURE_RUNTIME_VERSION,
     CaptureBlock,
     CaptureDocument,
     CaptureEngine,
@@ -45,6 +44,7 @@ from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.errors import NotFoundError, ValidationError
 from cert_prep_backend.capture_integration.api.capture_event_stream import (
     CaptureRuntimeEventRegistry,
+    capture_review_failure,
     event_registry,
     host_event_stream,
     session_or_404,
@@ -93,8 +93,8 @@ from cert_prep_backend.source_library.application.errors import SourceTooLarge
 
 
 router = APIRouter(
-    prefix="/projects/{project_id}/capture-workbench/captures",
-    tags=["capture-workbench"],
+    prefix="/projects/{project_id}/capture-reviews",
+    tags=["capture-reviews"],
 )
 _OCR_SUMMARY_NOT_FOUND_RESPONSE = {
     "model": ApiErrorRead,
@@ -157,10 +157,24 @@ class CaptureReviewOperationRead(CaptureOperation):
     document_id: str
 
 
+class CaptureExtractionProvenanceRead(_ApiModel):
+    status: Literal["recorded", "reconstructed"]
+    engine: str
+    model: str | None
+    device: str | None
+    runtime_version: str | None
+
+
+class _RecordedExtraction(BaseModel):
+    engine: CaptureEngine
+    runtime_version: str
+
+
 class CaptureResultRead(_ApiModel):
     operation: CaptureReviewOperationRead
     raw: RawCapture
     result: CaptureDocument
+    extraction_provenance: CaptureExtractionProvenanceRead
 
 
 def require_capture_coordinator(request: Request) -> None:
@@ -350,13 +364,22 @@ def get_capture(
         raise HTTPException(status_code=502, detail=str(error)) from None
     documents = get_capture_documents(request)
     files = get_capture_file_store(request)
-    if viewed.runtime_operation is None:
+    if (
+        viewed.runtime_operation is None
+        or viewed.session.status is CaptureReviewStatus.FAILED
+    ):
         return _operation_for_session(
             documents,
             files,
             project_id=project_id,
             session=viewed.session,
             document=viewed.document,
+            operations=get_capture_operations(request),
+            ingestion_id=(
+                viewed.runtime_operation.ingestion_id
+                if viewed.runtime_operation is not None
+                else None
+            ),
         )
     try:
         operation = viewed.runtime_operation
@@ -383,6 +406,7 @@ def get_capture(
         project_id=project_id,
         session=viewed.session,
         document=viewed.document,
+        operations=get_capture_operations(request),
     )
 
 
@@ -632,6 +656,7 @@ def commit_capture(
         bytes_count=content_length,
         media_type=media_type,
         last_event_sequence=int(queued.last_event_sequence),
+        ingestion_id=session_or_404(sessions, project_id, capture_id).runtime_ingestion_id,
     )
 
 
@@ -667,12 +692,14 @@ def report_structuring_failure(
         raise HTTPException(status_code=409, detail=str(error)) from error
     except CaptureGatewayRejection as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
-    if reported.replay:
+    if reported.replay or reported.runtime_operation is None:
         return get_capture(request, project_id, capture_id, db)
+    session = session_or_404(sessions, project_id, capture_id)
     return _host_operation(
         reported.runtime_operation,
         capture_id=capture_id,
         document_id=reported.document_id,
+        failure=capture_review_failure(operations, session),
     )
 
 
@@ -730,7 +757,7 @@ def get_result(
         raise not_found_error(str(error)) from error
     except CaptureReviewConflict as error:
         raise HTTPException(status_code=409, detail=str(error))
-    persisted = _document_projection(
+    persisted, provenance = _document_projection(
         stored.document,
         stored.chunks,
         content_length=stored.content_length,
@@ -756,6 +783,7 @@ def get_result(
                     ),
                     raw=viewed.raw,
                     result=persisted,
+                    extraction_provenance=provenance,
                 )
                 capture_reviews.release_capture_result(
                     runtime, runtime_capture_id=runtime_id
@@ -794,9 +822,11 @@ def get_result(
             bytes_count=content_length,
             media_type=media_type,
             last_event_sequence=int(stored.session.last_event_sequence),
+            ingestion_id=stored.session.runtime_ingestion_id,
         ),
         raw=_raw_projection(persisted),
         result=persisted,
+        extraction_provenance=provenance,
     )
 
 
@@ -860,6 +890,8 @@ def _operation_for_session(
     project_id: str,
     session: CaptureReviewSession,
     document: SourceDocument,
+    operations: CaptureOperations,
+    ingestion_id: str | None = None,
 ) -> CaptureReviewOperationRead:
     status_value = {
         CaptureReviewStatus.PENDING: CaptureStatus.WAITING_INPUT,
@@ -889,6 +921,12 @@ def _operation_for_session(
         bytes_count=content_length,
         media_type=media_type,
         last_event_sequence=int(session.last_event_sequence),
+        ingestion_id=ingestion_id or session.runtime_ingestion_id,
+        failure=(
+            capture_review_failure(operations, session)
+            if status_value is CaptureStatus.FAILED
+            else None
+        ),
     )
 
 
@@ -901,25 +939,17 @@ def _operation_from_document(
     bytes_count: int,
     media_type: str,
     last_event_sequence: int = 0,
+    ingestion_id: str | None = None,
+    failure: OperationFailure | None = None,
 ) -> CaptureReviewOperationRead:
     terminal = status_value in {
         CaptureStatus.COMPLETED,
         CaptureStatus.FAILED,
         CaptureStatus.CANCELLED,
     }
-    failure = (
-        OperationFailure(
-            code="host_capture_failed",
-            message="Cert Prep capture processing failed.",
-            stage="host",
-            retryable=False,
-        )
-        if status_value is CaptureStatus.FAILED
-        else None
-    )
     return CaptureReviewOperationRead(
         capture_id=capture_id,
-        ingestion_id=document.id,
+        ingestion_id=ingestion_id or capture_id,
         kind=(
             CaptureSourceKind.PDF
             if media_type == "application/pdf"
@@ -948,12 +978,15 @@ def _host_operation(
     *,
     capture_id: str,
     document_id: str,
+    failure: OperationFailure | None = None,
 ) -> CaptureReviewOperationRead:
+    payload = operation.model_dump(mode="json", by_alias=True)
+    if failure is not None:
+        payload["error"] = failure.model_dump(mode="json", by_alias=True)
     return CaptureReviewOperationRead.model_validate(
         {
-            **operation.model_dump(mode="json", by_alias=True),
+            **payload,
             "captureId": capture_id,
-            "ingestionId": document_id,
             "documentId": document_id,
         }
     )
@@ -965,7 +998,7 @@ def _document_projection(
     *,
     content_length: int,
     media_type: str,
-) -> CaptureDocument:
+) -> tuple[CaptureDocument, CaptureExtractionProvenanceRead]:
     segments = [
         RawCaptureSegment(
             segment_id=chunk.id,
@@ -994,16 +1027,35 @@ def _document_projection(
         "bytes": max(1, content_length),
     }
     digest = f"sha256:{document.sha256}"
-    extraction = CaptureEngine(
-        engine=(
+    if document.extraction_provenance is not None:
+        recorded = _RecordedExtraction.model_validate_json(document.extraction_provenance)
+        extraction = recorded.engine
+        provenance = CaptureExtractionProvenanceRead(
+            status="recorded",
+            engine=extraction.engine,
+            model=extraction.model,
+            device=extraction.device,
+            runtime_version=recorded.runtime_version,
+        )
+    else:
+        engine = (
             "text-recognition"
             if document.extraction_method == "text_recognition"
             else document.extraction_method
-        ),
-        model=f"capture-runtime@{CAPTURE_RUNTIME_VERSION}",
-        digest=digest,
-        device=document.ocr_device,
-    )
+        )
+        provenance = CaptureExtractionProvenanceRead(
+            status="reconstructed",
+            engine=engine,
+            model=None,
+            device=document.ocr_device,
+            runtime_version=None,
+        )
+        extraction = CaptureEngine(
+            engine=engine,
+            model="unknown",
+            digest=digest,
+            device=document.ocr_device,
+        )
     structuring = CaptureEngine(
         engine="cert-prep-host-structuring",
         model="cert-prep-backend",
@@ -1025,7 +1077,7 @@ def _document_projection(
         ),
         created_at=document.created_at,
         completed_at=document.updated_at,
-    )
+    ), provenance
 
 
 def _raw_projection(document: CaptureDocument) -> RawCapture:

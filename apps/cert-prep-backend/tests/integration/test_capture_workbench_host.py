@@ -12,7 +12,7 @@ import httpx
 from pydantic import ValidationError
 import pytest
 
-from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import LanguageModelUnavailable
 from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeClient,
     CaptureRuntimeCompatibilityError,
@@ -768,7 +768,7 @@ def test_capture_adapter_has_no_hidden_provider_fallback() -> None:
         DraftOnlyProvider(), PullSessionRuntime(raw), clock=lambda: NOW
     )
 
-    with pytest.raises(ProviderUnavailableError, match="cannot produce structured JSON"):
+    with pytest.raises(LanguageModelUnavailable, match="cannot produce structured JSON"):
         adapter.structure(
             raw,
             capture_id="capture-1",

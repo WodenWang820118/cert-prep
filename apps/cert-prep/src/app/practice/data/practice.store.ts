@@ -17,7 +17,7 @@ import { DraftReviewStore } from '../../authoring/data';
 import { OperationStore } from '../../core/data';
 import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../../source-library/data';
-import { WrongAnswerReviewStore } from './wrong-answer-review.store';
+import { WrongAnswerRetryStore } from './wrong-answer-retry.store';
 
 @Injectable({ providedIn: 'root' })
 export class PracticeStore {
@@ -29,7 +29,7 @@ export class PracticeStore {
   private readonly activeSessionsQueryEnabled = signal(false);
   private readonly sessionPayloads = inject(PracticeSessionPayloadService);
   private readonly sourceImport = inject(SourceImportStore);
-  private readonly wrongAnswers = inject(WrongAnswerReviewStore);
+  private readonly wrongAnswers = inject(WrongAnswerRetryStore);
 
   readonly sessionQuestionCount = signal(5);
   readonly selectedDocumentId = signal<string | null>(null);
@@ -73,7 +73,7 @@ export class PracticeStore {
     }
     return counts;
   });
-  readonly fullExamDocuments = computed(() => {
+  readonly wholeSourceDocuments = computed(() => {
     const counts = this.questionsByDocument();
     return this.sourceImport
       .documents()
@@ -82,11 +82,11 @@ export class PracticeStore {
           document.status === 'ready' && (counts.get(document.id) ?? 0) > 0,
       );
   });
-  readonly effectiveFullExamDocumentId = computed(() => {
+  readonly effectiveWholeSourceDocumentId = computed(() => {
     const activeDocumentId = this.sourceImport.activeDocumentId();
     if (
       activeDocumentId !== null &&
-      this.fullExamDocuments().some(
+      this.wholeSourceDocuments().some(
         (document) => document.id === activeDocumentId,
       )
     ) {
@@ -96,21 +96,21 @@ export class PracticeStore {
     const selectedId = this.selectedDocumentId();
     if (
       selectedId !== null &&
-      this.fullExamDocuments().some((document) => document.id === selectedId)
+      this.wholeSourceDocuments().some((document) => document.id === selectedId)
     ) {
       return selectedId;
     }
 
-    return this.fullExamDocuments()[0]?.id ?? null;
+    return this.wholeSourceDocuments()[0]?.id ?? null;
   });
   readonly selectedDocumentQuestionCount = computed(() => {
-    const documentId = this.effectiveFullExamDocumentId();
+    const documentId = this.effectiveWholeSourceDocumentId();
     return documentId === null
       ? 0
       : (this.questionsByDocument().get(documentId) ?? 0);
   });
-  readonly fullExamDocumentSelectValue = computed(
-    () => this.effectiveFullExamDocumentId() ?? '',
+  readonly wholeSourceDocumentSelectValue = computed(
+    () => this.effectiveWholeSourceDocumentId() ?? '',
   );
   readonly activeQuestion = computed(() => {
     const session = this.practiceSession();
@@ -179,7 +179,7 @@ export class PracticeStore {
   }
 
   setSelectedDocumentId(documentId: string): void {
-    const nextDocument = this.fullExamDocuments().find(
+    const nextDocument = this.wholeSourceDocuments().find(
       (document) => document.id === documentId,
     );
     this.selectedDocumentId.set(nextDocument?.id ?? null);
@@ -207,7 +207,7 @@ export class PracticeStore {
 
     if (mode === 'full_document') {
       return (
-        this.effectiveFullExamDocumentId() !== null &&
+        this.effectiveWholeSourceDocumentId() !== null &&
         this.selectedDocumentQuestionCount() > 0
       );
     }
@@ -232,7 +232,7 @@ export class PracticeStore {
       return 'Choose a parsed document with generated questions.';
     }
 
-    return 'Generate at least one question before starting a random quiz.';
+    return 'Generate at least one question before starting a random draw.';
   }
 
   createPracticeSession(
@@ -386,7 +386,7 @@ export class PracticeStore {
   private sessionPayload(mode: PracticeSessionMode): PracticeSessionPayload {
     return this.sessionPayloads.createPayload({
       mode,
-      fullExamDocumentId: this.effectiveFullExamDocumentId(),
+      wholeSourceDocumentId: this.effectiveWholeSourceDocumentId(),
       selectedDocumentQuestionCount: this.selectedDocumentQuestionCount(),
       sessionQuestionCount: this.sessionQuestionCount(),
       questionCount: this.questionCount(),

@@ -53,7 +53,7 @@ export interface MockCertPrepApi {
   readonly playableDrafts: readonly CompleteQuestionDraft[];
   readonly secondaryPlayableDrafts: readonly CompleteQuestionDraft[];
   readonly incompleteApprovedDrafts: readonly QuestionDraftRead[];
-  readonly fullExamDocument: DocumentRead;
+  readonly wholeSourceDocument: DocumentRead;
   attempts(projectId?: string): readonly PracticeAttemptRead[];
   currentSession(projectId?: string): PracticeSessionRead | null;
   holdUpload(filename: string): void;
@@ -103,7 +103,7 @@ interface MockProjectState {
   readonly drafts: readonly QuestionDraftRead[];
   readonly playableDrafts: readonly CompleteQuestionDraft[];
   readonly incompleteApprovedDrafts: readonly QuestionDraftRead[];
-  readonly fullExamDocument: DocumentRead;
+  readonly wholeSourceDocument: DocumentRead;
   readonly uploadedDocuments: DocumentRead[];
   readonly uploadedSourceFiles: MockUploadedSourceFile[];
   readonly sessions: Map<string, PracticeSessionRead>;
@@ -221,7 +221,7 @@ export async function installMockCertPrepApi(
     completeDraft(project.id, documents[1].id, {
       id: 'draft-3',
       chunk_id: 'chunk-3',
-      question: 'Which study action best matches a full exam review?',
+      question: 'Which study action best matches a whole source review?',
       choices: [
         'Complete every question from the selected document',
         'Mix questions from unrelated PDFs',
@@ -229,9 +229,9 @@ export async function installMockCertPrepApi(
         'Answer only the first item',
       ],
       answer: 'Complete every question from the selected document',
-      rationale: 'Full exam mode is document-scoped.',
+      rationale: 'Whole source mode is document-scoped.',
       citation_page: 1,
-      source_excerpt: 'Full exam sessions use questions from one document.',
+      source_excerpt: 'Whole source sessions use questions from one document.',
       source_order: 20001,
       source_question_number: '1',
     }),
@@ -349,7 +349,7 @@ export async function installMockCertPrepApi(
     drafts,
     playableDrafts,
     incompleteApprovedDrafts,
-    fullExamDocument: documents[0],
+    wholeSourceDocument: documents[0],
   });
   const secondaryState = createMockProjectState({
     project: secondaryProject,
@@ -359,7 +359,7 @@ export async function installMockCertPrepApi(
     drafts: secondaryDrafts,
     playableDrafts: secondaryPlayableDrafts,
     incompleteApprovedDrafts: [],
-    fullExamDocument: secondaryDocuments[0],
+    wholeSourceDocument: secondaryDocuments[0],
   });
   const projectStates = new Map(
     [primaryState, secondaryState].map((state) => [state.project.id, state]),
@@ -540,6 +540,15 @@ export async function installMockCertPrepApi(
       return;
     }
     const projectId = projectState.project.id;
+    const captureReviewsPath = `/projects/${projectId}/capture-reviews`;
+
+    if (path === captureReviewsPath || path.startsWith(`${captureReviewsPath}/`)) {
+      await fulfillJson(route, 503, {
+        code: 'capture_runtime_unavailable',
+        message: 'Capture Runtime is not configured for this process.',
+      });
+      return;
+    }
 
     if (method === 'GET' && path === `/projects/${projectId}/question-drafts`) {
       await fulfillJson(
@@ -757,7 +766,7 @@ export async function installMockCertPrepApi(
     playableDrafts,
     secondaryPlayableDrafts,
     incompleteApprovedDrafts,
-    fullExamDocument: documents[0],
+    wholeSourceDocument: documents[0],
     attempts: (projectId) => [
       ...stateFor(projectStates, projectId, lastProjectState).attempts,
     ],
@@ -839,7 +848,7 @@ function createMockProjectState(args: {
   readonly drafts: readonly QuestionDraftRead[];
   readonly playableDrafts: readonly CompleteQuestionDraft[];
   readonly incompleteApprovedDrafts: readonly QuestionDraftRead[];
-  readonly fullExamDocument: DocumentRead;
+  readonly wholeSourceDocument: DocumentRead;
 }): MockProjectState {
   return {
     ...args,

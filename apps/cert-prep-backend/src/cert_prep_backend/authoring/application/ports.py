@@ -107,7 +107,7 @@ class DraftWriting(Protocol):
         self, model: object, chunks: Sequence[SourceChunk], limit: int
     ) -> list[DraftSuggestion]:
         """Drafts written in one pass while a document is imported, without a strategy;
-        ProviderUnavailableError when the model cannot write them."""
+        LanguageModelUnavailable when the model cannot write them."""
         ...
 
 

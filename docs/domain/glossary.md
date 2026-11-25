@@ -41,9 +41,17 @@
 | ---------------- | ------------------------------ | -------------------------------------------------- |
 | 擷取             | capture                        | 交給 Capture Runtime 做 OCR 或語音轉文字的一次工作 |
 | 擷取檢閱         | `CaptureReviewSession`         | 使用者檢查擷取結果、確認後才寫成教材段落           |
+| 擷取頁 | Capture Workbench | `/capture`，從 PDF 或圖片擷取教材 |
 | 擷取檢閱狀態     | `CaptureReviewStatus`          | 等待、確認中、完成、取消，或失敗                   |
 | 擷取檢閱的結束   | `CaptureReviewEnding`          | 要求檢閱進入完成、取消或失敗，以及結束時的事件序號 |
 | 擷取檢閱無法轉換 | `CaptureReviewTransitionError` | 檢閱的狀態不允許這次轉換                           |
+| 擷取檢閱失敗 | `capture_review_failed` | 擷取檢閱以失敗結束；帶已儲存的文件作業階段與失敗訊息 |
+| Capture Runtime 無法使用 | `CaptureRuntimeUnavailable` | Capture Runtime 沒有設定或連不上（`capture_runtime_unavailable`） |
+| 擷取需求無法使用 | `CaptureRequirementUnavailable` | runtime 在執行，但來源需要的擷取引擎沒有安裝（`capture_requirement_unavailable`） |
+| 語言模型無法使用 | `LanguageModelUnavailable` | Ollama 或模型連不上、沒有安裝，或回應無法使用 |
+| 安裝無法執行 | `InstallerUnavailable` | 安裝程式或下載無法執行 |
+| 擷取來源證明 | `extractionProvenance` | 擷取的引擎、模型、裝置與 runtime 版本；`recorded` 是寫成教材時存下的，`reconstructed` 是舊教材推回的（模型與版本為空） |
+| 安裝產物 | `artifact` | 桌面安裝紀錄裡安裝內容的識別，包括 Capture Runtime 發行版 |
 
 ## 題目編寫
 
@@ -86,6 +94,10 @@
 | 練習         | `PracticeSession`         | 一次作答；模式有整份、隨機抽題、錯題重練                           |
 | 練習狀態     | `PracticeSessionStatus`   | 進行中、完成（每題都答過）、放棄                                   |
 | 練習模式     | `PracticeSessionMode`     | 隨機抽題、整份教材、錯題重練                                       |
+| 整份教材 | Whole source | `/whole-source`，使用一份教材的所有可練習題目 |
+| 隨機抽題 | Random draw | `/random-draw`，從可練習題目中隨機抽題 |
+| 錯題重練 | Wrong-answer retry | `/wrong-answer-retry`，重練目前的錯題 |
+| 錯題總覽 | Wrong-answer summary | `/wrong-answers/summary`，顯示錯題統計與弱點 |
 | 練習題目     | `PracticeQuestion`        | 練習問的一題：開始時的快照，之後改草稿不影響已開始的練習           |
 | 草稿狀態     | `QuestionDraftStatus`     | 練習只用已核可的草稿                                               |
 | 選題         | `QuestionSelection`       | 新練習問哪些題、題數，以及隨機抽題的種子                           |

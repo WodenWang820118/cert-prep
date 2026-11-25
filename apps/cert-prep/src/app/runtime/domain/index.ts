@@ -5,4 +5,4 @@ export * from './health-runtime.contracts';
 export * from './health.constants';
 export * from './device-status.contracts';
 export * from './device-copy.constants';
-export type { ModelHealthViewModel, ModelHealthViewState, RuntimeStatusSectionView } from './model-health.contracts';
+export type { RuntimeHealthViewModel, RuntimeHealthViewState, RuntimeStatusSectionView } from './runtime-health-view-model.contracts';

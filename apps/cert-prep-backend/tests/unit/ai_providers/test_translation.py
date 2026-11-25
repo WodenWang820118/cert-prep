@@ -21,7 +21,17 @@ from cert_prep_ollama.server_coordinator import OllamaServerCoordinator
 
 @pytest.mark.parametrize('keep_alive', [0, '5m'])
 @pytest.mark.parametrize('content, expected', [('  譯文  ', '譯文'), (None, '')])
-def test_translation_preserves_model_request(monkeypatch, keep_alive, content, expected):
+@pytest.mark.parametrize(
+    ('source_language', 'source_text', 'source_instruction'),
+    [
+        ('en', 'Hello', 'The source language is English. '),
+        ('ja', 'こんにちは', 'The source language is Japanese. '),
+        ('auto', 'Hello', 'Detect the source language. '),
+    ],
+)
+def test_translation_preserves_model_request(
+    monkeypatch, keep_alive, content, expected, source_language, source_text, source_instruction
+):
     client = Mock()
     client.chat.return_value = SimpleNamespace(message=SimpleNamespace(content=content))
     factory = Mock(return_value=client)
@@ -29,7 +39,7 @@ def test_translation_preserves_model_request(monkeypatch, keep_alive, content, e
     settings = Settings(ollama_host='http://localhost:1234', ollama_timeout_seconds=37)
     translator = translation.OllamaTraditionalChineseTranslator(settings, keep_alive=keep_alive)
 
-    assert translator.translate('原文') == expected
+    assert translator.translate(source_text, source_language=source_language) == expected
     factory.assert_called_once_with(host=settings.ollama_host, timeout=37)
     client.chat.assert_called_once_with(
         model=settings.ollama_model,
@@ -37,11 +47,12 @@ def test_translation_preserves_model_request(monkeypatch, keep_alive, content, e
             {
                 'role': 'system',
                 'content': (
-                    'Translate Japanese into natural Traditional Chinese used in Taiwan. '
+                    f'{source_instruction}'
+                    'Translate the source text into natural Traditional Chinese used in Taiwan. '
                     'Return only the translation. Preserve names, numbers, and meaning.'
                 ),
             },
-            {'role': 'user', 'content': '原文'},
+            {'role': 'user', 'content': source_text},
         ],
         options={'temperature': 0, 'num_ctx': 2048, 'num_predict': 512},
         think=False,
@@ -62,8 +73,10 @@ def test_translation_propagates_model_errors(monkeypatch):
     client.chat.side_effect = failure
     monkeypatch.setattr(translation, 'Client', Mock(return_value=client))
 
+    translator = translation.OllamaTraditionalChineseTranslator(Settings())
+
     with pytest.raises(RuntimeError) as raised:
-        translation.OllamaTraditionalChineseTranslator(Settings()).translate('原文')
+        translator.translate('原文', source_language='ja')
     assert raised.value is failure
 
 
@@ -155,7 +168,7 @@ def _translate(monkeypatch, server) -> dict:
     client.chat.return_value = SimpleNamespace(message=SimpleNamespace(content='譯文'))
     monkeypatch.setattr(translation, 'Client', Mock(return_value=client))
     translator = translation.OllamaTraditionalChineseTranslator(Settings(), server=server)
-    assert translator.translate('原文') == '譯文'
+    assert translator.translate('原文', source_language='ja') == '譯文'
     return client.chat.call_args.kwargs['options']
 
 
@@ -247,7 +260,7 @@ def test_a_translation_in_flight_is_not_interrupted_by_a_device_switch(monkeypat
 
     def run() -> None:
         try:
-            assert translator.translate('原文') == '譯文'
+            assert translator.translate('原文', source_language='ja') == '譯文'
         except BaseException as exc:  # noqa: BLE001 - the test thread must report it
             errors.append(exc)
 

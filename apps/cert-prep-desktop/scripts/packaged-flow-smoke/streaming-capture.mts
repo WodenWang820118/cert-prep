@@ -1,7 +1,7 @@
 export {
   answerForVisiblePracticeQuestion,
   captureDocumentOcrEvidence,
-  captureFullExamSessionCreate,
+  captureWholeSourceSessionCreate,
   captureLlmHealth,
   observeStreamingApiResponses,
   waitForUploadDocumentResponse,

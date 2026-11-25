@@ -4,51 +4,61 @@ import { DocumentParsingMetricsService } from './document-parsing-metrics.servic
 describe('DocumentParsingMetricsService', () => {
   const metrics = new DocumentParsingMetricsService();
 
-  it('reports phase-based progress while Japanese audio is transcribing', () => {
+  it.each([
+    ['ja', 'Transcribing Japanese audio'],
+    ['en', 'Transcribing English audio'],
+    ['auto', 'Transcribing audio'],
+  ])('reports transcription progress for a %s language hint', (language_hint, label) => {
     const document = documentRead({
       source_kind: 'audio',
       page_count: 0,
       processed_page_count: 0,
       status: 'processing',
+      language_hint,
       transcription_status: 'pending',
       translation_status: 'pending',
     });
 
     expect(metrics.progressPercent(document)).toBe(25);
-    expect(metrics.progressLabel(document)).toBe(
-      'Transcribing Japanese audio',
-    );
+    expect(metrics.progressLabel(document)).toBe(label);
   });
 
-  it('reports translation progress after the Japanese transcript is saved', () => {
+  it('reports translation progress after the English transcript is saved', () => {
     const document = documentRead({
       source_kind: 'audio',
       page_count: 0,
       status: 'processing',
+      language_hint: 'en',
       transcription_status: 'succeeded',
       translation_status: 'pending',
     });
 
     expect(metrics.progressPercent(document)).toBe(75);
     expect(metrics.progressLabel(document)).toBe(
-      'Japanese transcript ready / translating to Traditional Chinese',
+      'English transcript ready / translating to Traditional Chinese',
     );
   });
 
-  it('treats a usable transcript with failed translation as complete work', () => {
-    const document = documentRead({
-      source_kind: 'audio',
-      page_count: 0,
-      status: 'ready',
-      transcription_status: 'succeeded',
-      translation_status: 'failed',
-    });
+  it.each([
+    ['ja', 'Japanese transcript ready / Traditional Chinese translation failed'],
+    ['en', 'English transcript ready / Traditional Chinese translation failed'],
+    ['auto', 'Transcript ready / Traditional Chinese translation failed'],
+  ])(
+    'treats a usable %s transcript with failed translation as complete work',
+    (language_hint, label) => {
+      const document = documentRead({
+        source_kind: 'audio',
+        page_count: 0,
+        status: 'ready',
+        language_hint,
+        transcription_status: 'succeeded',
+        translation_status: 'failed',
+      });
 
-    expect(metrics.progressPercent(document)).toBe(100);
-    expect(metrics.progressLabel(document)).toBe(
-      'Japanese transcript ready / Traditional Chinese translation failed',
-    );
-  });
+      expect(metrics.progressPercent(document)).toBe(100);
+      expect(metrics.progressLabel(document)).toBe(label);
+    },
+  );
 
   it('keeps page-based progress for non-audio documents', () => {
     const document = documentRead({

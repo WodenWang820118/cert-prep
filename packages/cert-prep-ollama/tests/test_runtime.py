@@ -10,7 +10,7 @@ from cert_prep_contracts.llm import ModelPullProgress
 from cert_prep_contracts.runtime import RuntimeInstallationStatus, RuntimeRequirementKind
 from cert_prep_ollama import installers as installer_module
 from cert_prep_ollama import server as server_module
-from cert_prep_ollama.exceptions import ProviderUnavailableError
+from cert_prep_ollama.exceptions import OllamaInstallationUnavailable
 from cert_prep_ollama.installers import OllamaModelInstaller, OllamaRuntimeInstaller
 from cert_prep_ollama.models import (
     extract_model_names,
@@ -172,7 +172,7 @@ def test_ollama_runtime_install_raises_provider_error_on_command_failure(monkeyp
     )
     monkeypatch.setattr(installer_module.subprocess, "run", fake_run)
 
-    with pytest.raises(ProviderUnavailableError, match="winget failed"):
+    with pytest.raises(OllamaInstallationUnavailable, match="winget failed"):
         OllamaRuntimeInstaller().install(lambda _progress: None)
 
 
@@ -184,7 +184,7 @@ def test_ollama_model_installer_rejects_unsupported_provider() -> None:
     assert requirement.kind == RuntimeRequirementKind.OLLAMA_MODEL
     assert requirement.available is False
     assert requirement.unavailable_reason == "unsupported_provider"
-    with pytest.raises(ProviderUnavailableError, match="does not support model downloads"):
+    with pytest.raises(OllamaInstallationUnavailable, match="does not support model downloads"):
         installer.validate_installable()
 
 

@@ -17,7 +17,7 @@ from cert_prep_contracts.runtime import (
     RuntimeRequirementKind,
     RuntimeRequirementSnapshot,
 )
-from cert_prep_ollama.exceptions import ProviderUnavailableError
+from cert_prep_ollama.exceptions import OllamaInstallationUnavailable
 from cert_prep_ollama.modelfiles import parameters_from_profile
 from cert_prep_ollama.models import extract_model_names, pull_progress
 from cert_prep_ollama.server import (
@@ -61,7 +61,7 @@ class OllamaProfileInstaller:
 
         try:
             model_names = self._installed_model_names()
-        except ProviderUnavailableError as exc:
+        except OllamaInstallationUnavailable as exc:
             return RuntimeRequirementSnapshot(
                 kind=self.kind,
                 label="Ollama profile model",
@@ -157,7 +157,7 @@ class OllamaProfileInstaller:
             )
             create = getattr(self._client, "create", None)
             if not callable(create):
-                raise ProviderUnavailableError("Ollama client does not support model creation.")
+                raise OllamaInstallationUnavailable("Ollama client does not support model creation.")
             for update in create(
                 model=self.model,
                 from_=self.profile.base_model,
@@ -182,7 +182,7 @@ class OllamaProfileInstaller:
             )
             model_names = self._installed_model_names()
             if self.model not in model_names:
-                raise ProviderUnavailableError(
+                raise OllamaInstallationUnavailable(
                     f"Ollama profile model was not registered: {self.model}",
                     code="model_missing",
                 )
@@ -212,9 +212,9 @@ class OllamaProfileInstaller:
         try:
             return extract_model_names(self._client.list())
         except _OLLAMA_UNAVAILABLE_EXCEPTIONS as exc:
-            raise ProviderUnavailableError(f"Ollama unavailable: {exc}", code="ollama_not_running")
+            raise OllamaInstallationUnavailable(f"Ollama unavailable: {exc}", code="ollama_not_running")
         except Exception as exc:
-            raise ProviderUnavailableError(
+            raise OllamaInstallationUnavailable(
                 f"Ollama model list response was invalid: {exc}",
                 code="ollama_response_invalid",
             ) from exc
@@ -227,8 +227,8 @@ class OllamaProfileInstaller:
                 return
             executable = resolve_ollama_executable()
             if executable is None:
-                raise ProviderUnavailableError("Ollama is not installed.", code="ollama_missing")
-            raise ProviderUnavailableError(
+                raise OllamaInstallationUnavailable("Ollama is not installed.", code="ollama_missing")
+            raise OllamaInstallationUnavailable(
                 "Ollama local API did not become reachable.",
                 code="ollama_not_running",
             )
@@ -240,8 +240,8 @@ class OllamaProfileInstaller:
         ):
             return
         if executable is None:
-            raise ProviderUnavailableError("Ollama is not installed.", code="ollama_missing")
-        raise ProviderUnavailableError(
+            raise OllamaInstallationUnavailable("Ollama is not installed.", code="ollama_missing")
+        raise OllamaInstallationUnavailable(
             "Ollama local API did not become reachable.",
             code="ollama_not_running",
         )
@@ -258,7 +258,7 @@ def _create_progress(response: Any) -> ModelPullProgress:
         total = response.get("total", total)
         error = response.get("error", error)
     if isinstance(error, str) and error.strip():
-        raise ProviderUnavailableError(
+        raise OllamaInstallationUnavailable(
             f"Ollama profile creation failed: {error.strip()}",
             code="ollama_create_failed",
         )

@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import {
   DESKTOP_STACK_RESERVE_BYTES,
   STARTUP_PROBE_PHASES,
-  captureTrialUrl,
+  capturePageUrl,
   classifyDesktopStartupFailure,
   parseDesktopStartupProbeArgs,
   parsePeStackReserve,
@@ -31,13 +31,13 @@ test('startup probe CLI resolves the supplied Windows workspace root and phase',
         'probe-output',
         '--phase',
         'cdp-viewport',
-        '--verify-capture-trial',
+        '--verify-capture-page',
       ],
       workspace,
     );
     assert.equal(options.workspaceRoot, workspace);
     assert.equal(options.phaseSelection, 'cdp-viewport');
-    assert.equal(options.verifyCaptureTrial, true);
+    assert.equal(options.verifyCapturePage, true);
     assert.equal(options.outDir, resolve(workspace, 'probe-output'));
     assert.equal(options.appDataDir, resolve(workspace, 'probe-output/app-data'));
   } finally {
@@ -45,7 +45,7 @@ test('startup probe CLI resolves the supplied Windows workspace root and phase',
   }
 });
 
-test('capture-trial verification rejects non-viewport phases', () => {
+test('capture page verification rejects non-viewport phases', () => {
   const workspace = mkdtempSync(resolve(tmpdir(), 'cert-prep-startup-probe-'));
   try {
     assert.throws(
@@ -56,7 +56,7 @@ test('capture-trial verification rejects non-viewport phases', () => {
             'probe-output',
             '--phase',
             'cdp-attach',
-            '--verify-capture-trial',
+            '--verify-capture-page',
           ],
           workspace,
         ),
@@ -67,12 +67,12 @@ test('capture-trial verification rejects non-viewport phases', () => {
   }
 });
 
-test('capture-trial route is derived only from a loaded application URL', () => {
+test('capture page route is derived only from a loaded application URL', () => {
   assert.equal(
-    captureTrialUrl('http://tauri.localhost/'),
-    'http://tauri.localhost/capture-workbench-trial',
+    capturePageUrl('http://tauri.localhost/'),
+    'http://tauri.localhost/capture',
   );
-  assert.throws(() => captureTrialUrl('about:blank'), /loaded application URL/);
+  assert.throws(() => capturePageUrl('about:blank'), /loaded application URL/);
 });
 
 test('native stack overflow classification wins over a later closed-page error', () => {

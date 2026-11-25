@@ -34,7 +34,7 @@ from cert_prep_backend.authoring.domain.generation import (
 )
 from cert_prep_backend.platform.errors import (
     NotFoundError,
-    ProviderUnavailableError,
+    LanguageModelUnavailable,
     ValidationError,
 )
 
@@ -213,7 +213,7 @@ def generate_document_drafts(
         raise not_found_error(str(exc)) from exc
     except ValidationError as exc:
         raise validation_error(str(exc)) from exc
-    except ProviderUnavailableError as exc:
+    except LanguageModelUnavailable as exc:
         raise api_error(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "provider_unavailable",

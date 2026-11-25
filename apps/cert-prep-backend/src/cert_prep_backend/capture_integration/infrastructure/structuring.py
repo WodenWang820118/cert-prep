@@ -28,7 +28,7 @@ from capture_runtime_client import (
     SubmitStructuringBatch,
 )
 
-from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import LanguageModelUnavailable
 from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeClient,
     CaptureRuntimeProtocolError,
@@ -125,7 +125,7 @@ class CertPrepCaptureStructuringAdapter:
             else None
         )
         if target_language is not None and provider is None:
-            raise ProviderUnavailableError(
+            raise LanguageModelUnavailable(
                 "The configured Cert Prep provider cannot produce structured JSON."
             )
         self._checkpoint(should_cancel, deadline, monotonic_clock)
@@ -195,7 +195,7 @@ class CertPrepCaptureStructuringAdapter:
                 if getattr(getattr(snapshot, "server", None), "value", None) == "external":
                     actual_device, actual_name = None, None
                 if (actual_device, actual_name) != (engine.device, engine.device_name):
-                    raise ProviderUnavailableError("Ollama device changed during structuring.")
+                    raise LanguageModelUnavailable("Ollama device changed during structuring.")
             self._checkpoint(should_cancel, deadline, monotonic_clock)
             session = self._runtime_client.submit_structuring_batch(
                 capture_id,
@@ -351,7 +351,7 @@ def _resolve_engine_identity(
         return engine
     health = getattr(provider, "health", None)
     if not callable(health):
-        raise ProviderUnavailableError("Ollama device verification requires provider health.")
+        raise LanguageModelUnavailable("Ollama device verification requires provider health.")
     # Loading through the provider runs its coordinator's verification and any
     # corrective restart before the durable session records provider identity.
     for _ in range(2):
@@ -374,7 +374,7 @@ def _resolve_engine_identity(
                         "device_name": observed.adapter_name if backend.value != "cpu" else None,
                     }
                 )
-    raise ProviderUnavailableError("Ollama execution device could not be verified.")
+    raise LanguageModelUnavailable("Ollama execution device could not be verified.")
 
 
 def _batch_idempotency_key(operation_id: str, batch_index: int) -> str:

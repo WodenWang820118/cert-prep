@@ -1,6 +1,6 @@
 // PDF leg of the real OCR acceptance (see ../acceptance-real.spec.mts) and the
 // packaged product flow: runtime install, project, scanned-PDF OCR, questions,
-// Full Exam, Random Quiz or Markdown export, and persistence after a restart.
+// Whole source, Random draw or Markdown export, and persistence after a restart.
 import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
@@ -16,8 +16,8 @@ import {
 import {
   createAndEditQuestion,
   createProject,
-  runFullExamWrongAnswer,
-  runRandomQuizCorrectClear,
+  runWholeSourceWrongAnswer,
+  runRandomDrawCorrectClear,
   uploadAndParsePdf,
   verifyMarkdownExport,
   verifyStreamingPracticeReady,
@@ -82,9 +82,9 @@ async function runFlow(run: SmokeRunState): Promise<void> {
     return;
   }
   await createAndEditQuestion(run);
-  await runFullExamWrongAnswer(run);
+  await runWholeSourceWrongAnswer(run);
   if (!run.options.acceptanceVerifyMarkdownExport) {
-    await runRandomQuizCorrectClear(run);
+    await runRandomDrawCorrectClear(run);
   } else {
     // The Capture Workbench review/export must complete before the app is
     // relaunched; persistence is checked by restartAndVerifyPersistence below.

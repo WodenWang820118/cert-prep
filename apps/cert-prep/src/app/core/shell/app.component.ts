@@ -50,10 +50,10 @@ export class App implements OnInit, OnDestroy {
       pages: [
         { id: 'build', label: 'Build', icon: 'lucideWrench', path: '/build' },
         {
-          id: 'capture_workbench_trial',
+          id: 'capture_workbench',
           label: 'Capture Workbench',
           icon: 'lucideBox',
-          path: '/capture-workbench-trial',
+          path: '/capture',
         },
       ],
     },
@@ -62,16 +62,16 @@ export class App implements OnInit, OnDestroy {
       label: 'Practice',
       pages: [
         {
-          id: 'full_exam',
-          label: 'Full Exam',
+          id: 'whole_source',
+          label: 'Whole source',
           icon: 'lucideFileCheck',
-          path: '/full-exam',
+          path: '/whole-source',
         },
         {
-          id: 'random_quiz',
-          label: 'Random Quiz',
+          id: 'random_draw',
+          label: 'Random draw',
           icon: 'lucideRefreshCcw',
-          path: '/random-quiz',
+          path: '/random-draw',
         },
       ],
     },
@@ -80,16 +80,16 @@ export class App implements OnInit, OnDestroy {
       label: 'Review',
       pages: [
         {
-          id: 'dashboard',
-          label: 'Dashboard',
+          id: 'wrong_answer_summary',
+          label: 'Wrong-answer summary',
           icon: 'lucideChartColumn',
-          path: '/dashboard',
+          path: '/wrong-answers/summary',
         },
         {
-          id: 'review',
-          label: 'Wrong Answers',
+          id: 'wrong_answer_retry',
+          label: 'Wrong-answer retry',
           icon: 'lucideHistory',
-          path: '/review',
+          path: '/wrong-answer-retry',
         },
       ],
     },
@@ -317,7 +317,7 @@ export class App implements OnInit, OnDestroy {
   }
 
   protected isBackendIndependentRoute(): boolean {
-    return ['/runtime', '/capture-workbench-trial'].includes(this.currentPath());
+    return ['/runtime', '/capture'].includes(this.currentPath());
   }
 
   protected openRuntimeManager(): void {

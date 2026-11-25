@@ -7,6 +7,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { namedSourceLanguage } from '../../domain';
 import type {
   SourceImportAction,
   SourceUploadQueueViewModel,
@@ -53,20 +54,9 @@ export class SourceUploadQueueComponent {
   }
 
   protected languageLabel(language: string): string {
-    switch (language) {
-      case 'ja':
-        return 'Japanese';
-      case 'zh-Hant':
-        return 'Traditional Chinese';
-      case 'zh-Hans':
-        return 'Simplified Chinese';
-      case 'en':
-        return 'English';
-      case 'mixed':
-        return 'Mixed languages';
-      default:
-        return 'Auto-detect';
-    }
+    return language === 'mixed'
+      ? 'Mixed languages'
+      : (namedSourceLanguage(language) ?? 'Auto-detect');
   }
 
   protected upload(): void {

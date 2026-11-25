@@ -45,7 +45,7 @@ from cert_prep_backend.authoring.infrastructure.response_parsing import (
     fast_first_retry_prompt,
     json_object_or_unavailable,
 )
-from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import LanguageModelUnavailable
 
 _LOGGER = logging.getLogger(__name__)
 _REASONING_JSON_ATTEMPTS = 4
@@ -241,13 +241,13 @@ class OllamaDraftWriter:
                         _LOGGER.warning(
                             "Ollama fast-first answer did not match visible choices; retrying."
                         )
-                except ProviderUnavailableError as exc:
+                except LanguageModelUnavailable as exc:
                     if "invalid JSON" not in str(exc) or attempt + 1 >= _REASONING_JSON_ATTEMPTS:
                         raise
                     _LOGGER.warning("Ollama fast-first response was not JSON; retrying.")
             if payload is None or answer is None:
-                raise ProviderUnavailableError("Ollama returned an unreadable response.")
-        except ProviderUnavailableError as exc:
+                raise LanguageModelUnavailable("Ollama returned an unreadable response.")
+        except LanguageModelUnavailable as exc:
             if is_non_fatal_generation_error(exc):
                 return None
             raise
@@ -309,7 +309,7 @@ def _request_reasoning_payload(
                     keep_alive=keep_alive,
                 )
             )
-        except ProviderUnavailableError as exc:
+        except LanguageModelUnavailable as exc:
             if "invalid JSON" not in str(exc) or attempt + 1 >= _REASONING_JSON_ATTEMPTS:
                 raise
             _LOGGER.warning("Ollama reasoning response was not JSON; retrying.")

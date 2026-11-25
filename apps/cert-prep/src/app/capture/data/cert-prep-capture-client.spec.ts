@@ -154,7 +154,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const headers = new Headers(init.headers);
     expect(url).toBe(
-      'http://127.0.0.1:8765/projects/project-1/capture-workbench/captures/capture-1/events',
+      'http://127.0.0.1:8765/projects/project-1/capture-reviews/capture-1/events',
     );
     expect(url).not.toContain(TEST_BACKEND_TOKEN);
     expect(headers.get('Authorization')).toBe(`Bearer ${TEST_BACKEND_TOKEN}`);
@@ -432,6 +432,77 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
       firstValueFrom(client.getResult('capture-1')),
     ).rejects.toThrow('result source does not match the capture operation');
   });
+
+  it.each([
+    {
+      status: 'recorded' as const,
+      engine: 'text-recognition',
+      model: 'capture-ocr-v1',
+      device: 'igpu',
+      runtimeVersion: CAPTURE_RUNTIME_VERSION,
+    },
+    {
+      status: 'reconstructed' as const,
+      engine: 'text-recognition',
+      model: null,
+      device: null,
+      runtimeVersion: null,
+    },
+  ])(
+    'keeps the $status extraction provenance of a result by its source digest',
+    async (provenance) => {
+      await seedCapture();
+      expect(
+        client.extractionProvenanceForSourceSha256('a'.repeat(64)),
+      ).toBeNull();
+      api.getResult.mockReturnValueOnce(
+        of({ ...makeCompositeResult(), extractionProvenance: provenance }),
+      );
+
+      const result = await firstValueFrom(client.getResult('capture-1'));
+
+      expect(result).toMatchObject({ extractionProvenance: provenance });
+      expect(
+        client.extractionProvenanceForSourceSha256('a'.repeat(64)),
+      ).toEqual(provenance);
+      expect(
+        client.extractionProvenanceForSourceSha256('b'.repeat(64)),
+      ).toBeNull();
+    },
+  );
+
+  it.each([
+    ['is missing', undefined],
+    [
+      'has an unknown status',
+      { status: 'rebuilt', engine: 'text-recognition', model: null, device: null, runtimeVersion: null },
+    ],
+    [
+      'has no engine',
+      { status: 'recorded', engine: '', model: null, device: null, runtimeVersion: null },
+    ],
+    [
+      'has a non-string model',
+      { status: 'recorded', engine: 'text-recognition', model: 7, device: null, runtimeVersion: null },
+    ],
+  ])(
+    'rejects a result whose extraction provenance %s',
+    async (_case, provenance) => {
+      await seedCapture();
+      const malformed = {
+        ...makeCompositeResult(),
+        extractionProvenance: provenance,
+      } as unknown as ReturnType<typeof makeCompositeResult>;
+      api.getResult.mockReturnValueOnce(of(malformed));
+
+      await expect(
+        firstValueFrom(client.getResult('capture-1')),
+      ).rejects.toThrow(/extractionProvenance/u);
+      expect(
+        client.extractionProvenanceForSourceSha256('a'.repeat(64)),
+      ).toBeNull();
+    },
+  );
 
   it('forwards cancellation, failure reporting, and deletion through the backend', async () => {
     await seedCapture();
@@ -1058,6 +1129,13 @@ function makeDocument(): CaptureDocument {
 function makeCompositeResult() {
   return {
     operation: makeOperation({ status: 'completed' }),
+    extractionProvenance: {
+      status: 'recorded' as const,
+      engine: makeRaw().extractionEngine.engine,
+      model: makeRaw().extractionEngine.model,
+      device: null,
+      runtimeVersion: CAPTURE_RUNTIME_VERSION,
+    },
     raw: makeRaw(),
     result: makeDocument(),
   };

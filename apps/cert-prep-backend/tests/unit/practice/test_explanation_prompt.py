@@ -1,7 +1,7 @@
 """Discuss mistake with AI asks for a Traditional Chinese explanation."""
 
 from cert_prep_backend.ai_providers.domain.provider import ProviderHealth
-from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import LanguageModelUnavailable
 from cert_prep_backend.practice.application.explanations import (
     EXPLANATION_LANGUAGE_INSTRUCTION,
     WrongAnswerGroundedFields,
@@ -140,7 +140,7 @@ def test_an_unavailable_provider_keeps_the_english_fallback() -> None:
 def test_a_failed_json_chat_falls_back() -> None:
     class FailingProvider(RecordingJsonProvider):
         def json_chat_session(self, _operation):
-            raise ProviderUnavailableError("model stopped")
+            raise LanguageModelUnavailable("model stopped")
 
     result = explain_wrong_answer(FailingProvider("unused"), _wrong_answer())
 

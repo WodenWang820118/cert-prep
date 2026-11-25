@@ -15,7 +15,7 @@ from cert_prep_contracts.runtime import (
     RuntimeRequirementKind,
     RuntimeRequirementSnapshot,
 )
-from cert_prep_ollama.exceptions import ProviderUnavailableError
+from cert_prep_ollama.exceptions import OllamaInstallationUnavailable
 from cert_prep_ollama.models import DEFAULT_OLLAMA_MODEL
 from cert_prep_ollama.server import ensure_ollama_server_running, resolve_ollama_executable
 
@@ -68,7 +68,7 @@ class OllamaRuntimeInstaller:
 
         progress(RuntimeInstallProgress("Starting the Ollama Windows installer."))
         if os.name != "nt":
-            raise ProviderUnavailableError(
+            raise OllamaInstallationUnavailable(
                 "Ollama installer automation is only configured for Windows."
             )
 
@@ -84,7 +84,7 @@ class OllamaRuntimeInstaller:
         )
         if completed.returncode != 0:
             output = (completed.stderr or completed.stdout or "").strip()
-            raise ProviderUnavailableError(output or "Ollama installer failed.")
+            raise OllamaInstallationUnavailable(output or "Ollama installer failed.")
         executable = resolve_ollama_executable()
         if executable is None:
             return RuntimeInstallationStatus.WAITING_FOR_USER
@@ -95,7 +95,7 @@ class OllamaRuntimeInstaller:
             else ensure_ollama_server_running(self._ollama_host, executable=executable)
         )
         if not server_running:
-            raise ProviderUnavailableError(
+            raise OllamaInstallationUnavailable(
                 "Ollama was installed, but the local API did not become reachable."
             )
         return RuntimeInstallationStatus.SUCCEEDED
@@ -143,7 +143,7 @@ class OllamaModelInstaller:
         """Raise when the configured provider cannot pull models."""
 
         if not callable(getattr(self._provider, "pull_model", None)):
-            raise ProviderUnavailableError(
+            raise OllamaInstallationUnavailable(
                 "Configured LLM provider does not support model downloads."
             )
 
@@ -154,7 +154,7 @@ class OllamaModelInstaller:
 
         pull = getattr(self._provider, "pull_model", None)
         if not callable(pull):
-            raise ProviderUnavailableError(
+            raise OllamaInstallationUnavailable(
                 "Configured LLM provider does not support model downloads."
             )
 
@@ -170,7 +170,7 @@ class OllamaModelInstaller:
         try:
             pull(record_model_progress)
         except Exception as exc:
-            raise ProviderUnavailableError(f"Ollama unavailable: {exc}") from exc
+            raise OllamaInstallationUnavailable(f"Ollama unavailable: {exc}") from exc
         return RuntimeInstallationStatus.SUCCEEDED
 
 

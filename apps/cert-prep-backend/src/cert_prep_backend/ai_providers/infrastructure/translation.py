@@ -16,6 +16,15 @@ TRANSLATION_OPTIONS = {
 }
 
 
+_SOURCE_LANGUAGES = {
+    'en': 'English',
+    'ja': 'Japanese',
+    'zh-Hans': 'Simplified Chinese',
+    'zh-Hant': 'Traditional Chinese',
+    'mixed': 'mixed languages',
+}
+
+
 class OllamaTraditionalChineseTranslator:
     def __init__(
         self,
@@ -33,7 +42,13 @@ class OllamaTraditionalChineseTranslator:
         self._released = False
         self._server = server
 
-    def translate(self, japanese: str) -> str:
+    def translate(self, source_text: str, *, source_language: str) -> str:
+        language = _SOURCE_LANGUAGES.get(source_language)
+        source_instruction = (
+            f'The source language is {language}. '
+            if language is not None
+            else 'Detect the source language. '
+        )
         with self._while_server_in_use():
             response = self._client.chat(
                 model=self._model,
@@ -41,11 +56,12 @@ class OllamaTraditionalChineseTranslator:
                     {
                         'role': 'system',
                         'content': (
-                            'Translate Japanese into natural Traditional Chinese used in Taiwan. '
-                            'Return only the translation. Preserve names, numbers, and meaning.'
+                            f'{source_instruction}'
+                            'Translate the source text into natural Traditional Chinese '
+                            'used in Taiwan. Return only the translation. Preserve names, numbers, and meaning.'
                         ),
                     },
-                    {'role': 'user', 'content': japanese},
+                    {'role': 'user', 'content': source_text},
                 ],
                 options=self._options(),
                 think=False,

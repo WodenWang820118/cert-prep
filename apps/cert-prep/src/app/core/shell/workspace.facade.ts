@@ -7,7 +7,7 @@ import { OperationStore } from '../data';
 import { PracticeStore } from '../../practice/data';
 import { ProjectStore } from '../../projects/data';
 import { SourceImportStore } from '../../source-library/data';
-import { WrongAnswerReviewStore } from '../../practice/data';
+import { WrongAnswerRetryStore } from '../../practice/data';
 
 @Injectable({ providedIn: 'root' })
 export class WorkspaceFacade {
@@ -17,7 +17,7 @@ export class WorkspaceFacade {
   private readonly operations = inject(OperationStore);
   private readonly practice = inject(PracticeStore);
   private readonly projects = inject(ProjectStore);
-  private readonly review = inject(WrongAnswerReviewStore);
+  private readonly review = inject(WrongAnswerRetryStore);
   private readonly sourceImport = inject(SourceImportStore);
   readonly hasLoadedBackendState = signal(false);
 

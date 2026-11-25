@@ -368,7 +368,7 @@ function productionFixture(): {
         paths_within_workspace_run_root: true,
         reparse_points_absent: true,
       },
-      full_exam_question_count: 8,
+      whole_source_question_count: 8,
       first_chunk_gate_ms: 15_000,
       first_chunk_under_gate: true,
       ocr_completion: {

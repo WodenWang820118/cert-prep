@@ -1,12 +1,12 @@
 import type { AppIconName } from '../ui';
 export type StudyPageId =
   | 'build'
-  | 'full_exam'
-  | 'random_quiz'
+  | 'whole_source'
+  | 'random_draw'
   | 'runtime'
-  | 'dashboard'
-  | 'review'
-  | 'capture_workbench_trial';
+  | 'wrong_answer_summary'
+  | 'wrong_answer_retry'
+  | 'capture_workbench';
 
 /**
  * Presentation metadata for one route-backed shell page.

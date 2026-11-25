@@ -73,7 +73,7 @@ export interface SmokeMetrics {
   llm_health?: LlmHealthSnapshot;
   generation_readiness_at_start?: GenerationReadinessSnapshot;
   resources_released_at_end?: ResourcesReleasedAtEndSnapshot;
-  full_exam_question_count?: number;
+  whole_source_question_count?: number;
   first_chunk_gate_ms: number;
   first_chunk_under_gate: boolean;
   streaming_draft_page_limit?: number;

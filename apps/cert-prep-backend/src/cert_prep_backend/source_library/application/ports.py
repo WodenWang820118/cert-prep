@@ -188,7 +188,7 @@ class SourceUpload(Protocol):
 class TraditionalChineseTranslator(Protocol):
     """Translate transcript text into Traditional Chinese used in Taiwan."""
 
-    def translate(self, japanese: str) -> str: ...
+    def translate(self, source_text: str, *, source_language: str) -> str: ...
 
 
 class ChunkTranslator(Protocol):
@@ -228,7 +228,8 @@ class SourceExtraction(Protocol):
     Capture Runtime, without a review).
 
     Errors: DocumentProcessingCanceledError when should_cancel stopped it,
-    ProviderUnavailableError when extraction cannot run, SourceTextNotDetected and
+    CaptureRequirementUnavailable for a missing requirement, CaptureRuntimeUnavailable
+    for an unreachable runtime, SourceTextNotDetected and
     SourceExtractionFailed when it ran and failed."""
 
     def extract(

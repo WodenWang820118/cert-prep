@@ -10,7 +10,7 @@ from cert_prep_backend.authoring.domain.models import (
 )
 from cert_prep_backend.authoring.infrastructure import repository as drafts_repository
 from cert_prep_backend.bootstrap.study_projects import authoring_projects
-from cert_prep_backend.platform.errors import NotFoundError, ProviderUnavailableError
+from cert_prep_backend.platform.errors import NotFoundError, LanguageModelUnavailable
 from cert_prep_backend.ai_providers.domain.provider import ProviderHealth
 from cert_prep_backend.authoring.api.schemas import DraftGenerateRequest
 
@@ -348,7 +348,7 @@ class UnavailableExamProvider:
         )
 
     def generate_drafts(self, _chunks, _limit):
-        raise ProviderUnavailableError("provider offline")
+        raise LanguageModelUnavailable("provider offline")
 
 
 class RecordingExamProvider:

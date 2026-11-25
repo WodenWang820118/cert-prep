@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import type { DocumentRead } from '../../core/domain';
+import { namedSourceLanguage } from '../domain';
 
 /**
  * Owns source preparation progress and elapsed time for source document cards.
@@ -79,15 +80,17 @@ export class DocumentParsingMetricsService {
   }
 
   private audioProgressLabel(document: DocumentRead): string {
+    const language = namedSourceLanguage(document.language_hint);
+    const transcript = language ? `${language} transcript` : 'Transcript';
     if (document.status === 'ready') {
       return document.translation_status === 'failed'
-        ? 'Japanese transcript ready / Traditional Chinese translation failed'
-        : 'Japanese transcript and Traditional Chinese translation ready';
+        ? `${transcript} ready / Traditional Chinese translation failed`
+        : `${transcript} and Traditional Chinese translation ready`;
     }
     if (document.transcription_status === 'succeeded') {
       return document.translation_status === 'failed'
-        ? 'Japanese transcript ready / Traditional Chinese translation failed'
-        : 'Japanese transcript ready / translating to Traditional Chinese';
+        ? `${transcript} ready / Traditional Chinese translation failed`
+        : `${transcript} ready / translating to Traditional Chinese`;
     }
     if (document.status === 'cancel_requested') {
       return 'Canceling audio processing';
@@ -96,7 +99,7 @@ export class DocumentParsingMetricsService {
       return 'Audio processing canceled';
     }
     if (document.status === 'processing') {
-      return 'Transcribing Japanese audio';
+      return language ? `Transcribing ${language} audio` : 'Transcribing audio';
     }
     return 'Audio processing failed';
   }

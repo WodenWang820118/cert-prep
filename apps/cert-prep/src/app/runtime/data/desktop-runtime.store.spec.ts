@@ -218,7 +218,7 @@ function captureRuntimeInstallation(
     id,
     kind: 'capture_runtime',
     provider: 'bundled-release',
-    model: `capture-runtime@${CAPTURE_RUNTIME_VERSION}`,
+    artifact: `capture-runtime@${CAPTURE_RUNTIME_VERSION}`,
     status,
     detail: `Capture Runtime ${status}.`,
     completed: null,

@@ -6,6 +6,7 @@
 import { CAPTURE_RUNTIME_VERSION } from '@cert-prep/capture-runtime-version';
 import type {
   CaptureDocument as ApiCaptureDocument,
+  CaptureExtractionProvenanceRead,
   RuntimeInstallation as ApiRuntimeInstallation,
   RuntimeReady as ApiRuntimeReady,
   RuntimeRequirement as ApiRuntimeRequirement,
@@ -403,10 +404,15 @@ export function mapPartialCapture(
   };
 }
 
+/** A capture result plus Cert's own record of how its text was extracted. */
+export interface CaptureResultWithProvenance extends CaptureResult {
+  readonly extractionProvenance: CaptureExtractionProvenanceRead;
+}
+
 export function mapCaptureResult(
   value: unknown,
   expectedCaptureId: string,
-): CaptureResult {
+): CaptureResultWithProvenance {
   const composite = record(value, 'capture result');
   const operation = mapCaptureOperation(
     composite['operation'],
@@ -423,7 +429,34 @@ export function mapCaptureResult(
   ) {
     fail('result source does not match the capture operation');
   }
-  return { operation, raw, result };
+  return {
+    operation,
+    raw,
+    result,
+    extractionProvenance: mapExtractionProvenance(
+      composite['extractionProvenance'],
+    ),
+  };
+}
+
+function mapExtractionProvenance(
+  value: unknown,
+): CaptureExtractionProvenanceRead {
+  const label = 'extractionProvenance';
+  const provenance = record(value, label);
+  return {
+    status: enumValue(provenance['status'], `${label}.status`, [
+      'recorded',
+      'reconstructed',
+    ] as const),
+    engine: text(provenance['engine'], `${label}.engine`),
+    model: nullableText(provenance['model'], `${label}.model`),
+    device: nullableText(provenance['device'], `${label}.device`),
+    runtimeVersion: nullableText(
+      provenance['runtimeVersion'],
+      `${label}.runtimeVersion`,
+    ),
+  };
 }
 
 export function mapRawCapture(value: unknown): RawCapture {
@@ -619,6 +652,10 @@ export function text(value: unknown, label: string): string {
     fail(`${label} must be a non-empty string`);
   }
   return value;
+}
+
+function nullableText(value: unknown, label: string): string | null {
+  return value === null ? null : text(value, label);
 }
 
 function stringValue(value: unknown, label: string): string {

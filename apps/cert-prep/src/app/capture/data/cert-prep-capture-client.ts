@@ -25,6 +25,7 @@ import {
   assertCaptureRuntimeCompatible,
   CAPTURE_RUNTIME_MAJOR,
 } from '@gx-capture/capture-workbench-ui';
+import type { CaptureExtractionProvenanceRead } from '@cert-prep/api';
 import { CERT_PREP_API } from '../../core/data';
 import { CertPrepRuntimeConfig } from '../../core/data';
 import { ProjectStore } from '../../projects/data';
@@ -63,6 +64,8 @@ export class CertPrepCaptureClient
   private readonly projects = inject(ProjectStore);
   private readonly runtimeConfig = inject(CertPrepRuntimeConfig);
   private readonly captures = new Map<string, CaptureRecord>();
+  private readonly extractionProvenance =
+    new Map<string, CaptureExtractionProvenanceRead>();
   private readonly completedDocuments = new Map<string, string>();
   private latestDocumentId: string | null = null;
 
@@ -252,8 +255,13 @@ export class CertPrepCaptureClient
         ),
         raw: result.raw,
         result: result.result,
+        extractionProvenance: result.extractionProvenance,
       })),
       tap((result) => {
+        this.extractionProvenance.set(
+          result.result.source.sha256,
+          result.extractionProvenance,
+        );
         this.completedDocuments.set(
           result.result.source.sha256,
           record.documentId,
@@ -354,6 +362,12 @@ export class CertPrepCaptureClient
     });
   }
 
+  extractionProvenanceForSourceSha256(
+    sourceSha256: string,
+  ): CaptureExtractionProvenanceRead | null {
+    return this.extractionProvenance.get(sourceSha256) ?? null;
+  }
+
   documentIdForSourceSha256(sourceSha256: string): string | null {
     const completedDocumentId = this.completedDocuments.get(sourceSha256);
     if (completedDocumentId !== undefined) return completedDocumentId;
@@ -436,7 +450,7 @@ function captureEventsUrl(
   captureId: string,
 ): string {
   const base = baseUrl.replace(/\/+$/u, '');
-  return `${base}/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}/events`;
+  return `${base}/projects/${encodeURIComponent(projectId)}/capture-reviews/${encodeURIComponent(captureId)}/events`;
 }
 
 function structuringRequestId(captureId: string): string {

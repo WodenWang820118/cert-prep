@@ -116,6 +116,7 @@ class CapturePublication(Protocol):
         model: str,
         device: str | None,
         warning: str | None,
+        extraction_provenance: str,
     ) -> SourceDocument: ...
 
     def publish_success(
@@ -125,6 +126,7 @@ class CapturePublication(Protocol):
         operation_id: str,
         document_id: str,
         extraction: PageExtraction,
+        extraction_provenance: str,
     ) -> SourceDocument: ...
 
 

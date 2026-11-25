@@ -103,6 +103,7 @@ class SourceDocument:
     effective_transcription_model: str | None = None
     transcription_device: str | None = None
     transcription_warning: str | None = None
+    extraction_provenance: str | None = None
 
     def ensure_markdown_exportable(self) -> None:
         """Only a PDF whose processing has completed has a Markdown projection."""
@@ -175,7 +176,7 @@ def edited_transcript_text(text: str) -> str:
 
     normalized = text.strip()
     if not normalized:
-        raise ValueError("Japanese transcript text must not be empty.")
+        raise ValueError("Transcript text must not be empty.")
     return normalized
 
 @dataclass(frozen=True, slots=True)

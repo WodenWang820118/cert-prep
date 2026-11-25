@@ -124,7 +124,7 @@ test('refreshes transport and page through the caller across two forced restarts
     },
   });
   assert.deepEqual(firstRestartPage.actions, [
-    'open-random-quiz',
+    'open-random-draw',
     'wait-for-resume-response',
     'wait-for-resume-button',
     'click-resume',
@@ -379,7 +379,7 @@ function resumePage(
   const actions: string[] = [];
   const navigation = fakeLocator({
     visible: true,
-    onClick: () => actions.push('open-random-quiz'),
+    onClick: () => actions.push('open-random-draw'),
   });
   const resume = fakeLocator({
     visible: true,

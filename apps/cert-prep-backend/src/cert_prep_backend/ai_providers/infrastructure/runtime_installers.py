@@ -13,7 +13,7 @@ from cert_prep_backend.ai_providers.domain.provider import (
     provider_capability,
 )
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import InstallerUnavailable
 from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeInstallProgress,
@@ -114,7 +114,7 @@ class LazyOllamaProfileInstaller:
                     self._settings, self._machine_inventory.inventory, provider_selected=True,
                 )
                 if selection is None:
-                    raise ProviderUnavailableError("Ollama profile selection is not available.")
+                    raise InstallerUnavailable("Ollama profile selection is not available.")
                 self._installer = OllamaProfileInstaller(
                     selection.selected_profile,
                     host=self._settings.ollama_host,

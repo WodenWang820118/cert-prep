@@ -2,7 +2,7 @@
 
 import pytest
 
-from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import InstallerUnavailable
 from cert_prep_backend.runtime_provisioning.infrastructure.installers import LLMModelInstaller
 from cert_prep_contracts.llm import ModelPullProgress
 
@@ -58,5 +58,5 @@ def test_each_onboarding_stage_translates_failure(stage):
         raise ValueError("provider failed")
 
     setattr(provider, stage, fail)
-    with pytest.raises(ProviderUnavailableError, match="future-provider unavailable: provider failed"):
+    with pytest.raises(InstallerUnavailable, match="future-provider unavailable: provider failed"):
         LLMModelInstaller(provider).install(lambda progress: None)

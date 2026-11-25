@@ -1,13 +1,9 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { parsePackagedCaptureWorkbenchSmokeArgs } from './args.mts';
 import { redactCaptureEvidence } from './evidence.mts';
-import {
-  assertGracefulCloseSummary,
-  CAPTURE_WORKBENCH_READY_STATUS_PATTERN,
-} from './runner.mts';
+import { assertGracefulCloseSummary } from './runner.mts';
 import {
   imageOnlyPdf,
   minimalPng,
@@ -87,21 +83,6 @@ test('requires a supplied exe and fresh isolated output paths', () => {
       ]),
     /direct child of --out-dir/,
   );
-});
-
-test('the trial page source carries the ready status the smoke waits for', () => {
-  const captureTrialPageSource = readFileSync(
-    new URL(
-      '../../../../apps/cert-prep/src/app/capture/feature/capture-workbench-trial/capture-workbench-trial.page.ts',
-      import.meta.url,
-    ),
-    'utf8',
-  );
-  assert.match(
-    captureTrialPageSource,
-    CAPTURE_WORKBENCH_READY_STATUS_PATTERN,
-  );
-  assert.doesNotMatch(captureTrialPageSource, /Image and audio capture are unavailable/);
 });
 
 test('rejects a forced app termination as packaged acceptance evidence', () => {

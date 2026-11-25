@@ -6,7 +6,7 @@ import re
 from typing import Any
 
 from cert_prep_backend.authoring.domain.models import DraftSuggestion
-from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import LanguageModelUnavailable
 
 RATIONALE_LANGUAGE_INSTRUCTION = (
     "解說（rationale）必須用繁體中文（台灣用語）撰寫，不可用日文或英文；日文原文只放在「」裡引用。"
@@ -93,7 +93,7 @@ def json_object(content: object) -> dict[str, Any]:
 def json_object_or_unavailable(content: object, *, provider_label: str) -> dict[str, Any]:
     payload = json_object(content)
     if not payload:
-        raise ProviderUnavailableError(f"{provider_label} returned invalid JSON.")
+        raise LanguageModelUnavailable(f"{provider_label} returned invalid JSON.")
     return payload
 
 

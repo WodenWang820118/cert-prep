@@ -17,7 +17,7 @@ import {
   DevicePreferenceStore,
   DeviceViewModelService,
   HealthStore,
-  ModelHealthViewModelFacade,
+  RuntimeHealthViewModelFacade,
 } from '../../data';
 import { DEVICE_COPY } from '../../domain';
 import {
@@ -63,7 +63,7 @@ export class RuntimeManagerPage {
   protected readonly operations = inject(OperationStore);
   protected readonly devicePreference = inject(DevicePreferenceStore);
   private readonly deviceViewModels = inject(DeviceViewModelService);
-  private readonly healthViewModels = inject(ModelHealthViewModelFacade);
+  private readonly healthViewModels = inject(RuntimeHealthViewModelFacade);
 
   protected readonly viewModel = this.healthViewModels.viewModel;
 

@@ -1,6 +1,6 @@
 // Mocked browser regression: user journeys in the Angular app with every API
 // call answered by installMockCertPrepApi (no backend, no OCR, no LLM). It
-// covers upload queues and ordering, practice, Random Quiz, Full Exam, review,
+// covers upload queues and ordering, practice, Random draw, Whole source, review,
 // and project switching. Real OCR on a packaged app is
 // apps/cert-prep-desktop/scripts/acceptance-real.spec.mts.
 import { mkdir } from 'node:fs/promises';
@@ -18,30 +18,41 @@ import {
   completePracticeQuestions,
   createProject,
   createWorkspaceWithUploadedDocument,
-  expectFullExamDocumentOptions,
-  expectRandomQuizAvailableCount,
+  expectWholeSourceDocumentOptions,
+  expectRandomDrawAvailableCount,
   expectWorkspaceReady,
-  expectWrongAnswerDashboard,
-  expectWrongAnswerReview,
+  expectWrongAnswerSummary,
+  expectWrongAnswerRetry,
   runMultiPdfBatchUploadScenario,
   runMultiPdfIsolationScenario,
   retryWrongAnswerAndClearReview,
   seedMockApiConfig,
-  startDashboardWeakAreaRetry,
-  startReviewQuizForAllWrongAnswersAndClearReview,
-  startRandomQuiz,
+  startWrongAnswerSummaryWeakAreaRetry,
+  startRetryForAllWrongAnswersAndClearReview,
+  startRandomDraw,
   uploadDocumentAndExpectDraft,
   wrongChoiceForDraft,
 } from '../support/practice-flow';
 
-test('completes Random Quiz for every playable mocked draft and records wrong answers', async ({
+test('opens the Capture Workbench from Build navigation', async ({ page }) => {
+  await installMockCertPrepApi(page);
+  await seedMockApiConfig(page, apiBaseUrl, devToken);
+  await page.goto('/');
+  await page.getByRole('link', { name: 'Capture Workbench' }).click();
+  await expect(page).toHaveURL(/\/capture$/);
+  await expect(
+    page.getByRole('heading', { name: 'Capture Workbench', exact: true }),
+  ).toBeVisible();
+});
+
+test('completes Random draw for every playable mocked draft and records wrong answers', async ({
   page,
 }) => {
   const api = await installMockCertPrepApi(page);
   await seedMockApiConfig(page, apiBaseUrl, devToken);
 
   await createWorkspaceWithUploadedDocument(page, api);
-  await startRandomQuiz(page, api);
+  await startRandomDraw(page, api);
 
   expect(api.practiceSessionPayload()).toMatchObject({
     mode: 'random_draw',
@@ -54,7 +65,7 @@ test('completes Random Quiz for every playable mocked draft and records wrong an
     api.playableDrafts,
     wrongChoiceForDraft,
   );
-  await expectWrongAnswerReview(page, api, api.playableDrafts);
+  await expectWrongAnswerRetry(page, api, api.playableDrafts);
 
   expect(api.seenPaths()).toEqual(expectedSeenPaths(api));
 });
@@ -82,21 +93,21 @@ test('captures the route-mocked practice journey for UI regression only', async 
     fullPage: true,
   });
 
-  await startRandomQuiz(page, api, 1);
+  await startRandomDraw(page, api, 1);
   await page.screenshot({
     path: resolve(screenshotDirectory, '02-mocked-practice-session.png'),
     fullPage: true,
   });
 
   await completePracticeQuestions(page, api, [api.draft], wrongChoiceForDraft);
-  await expectWrongAnswerReview(page, api, [api.draft]);
+  await expectWrongAnswerRetry(page, api, [api.draft]);
   await page.screenshot({
-    path: resolve(screenshotDirectory, '03-wrong-answer-review.png'),
+    path: resolve(screenshotDirectory, '03-wrong-answer-retry.png'),
     fullPage: true,
   });
 });
 
-test('keeps Full Exam sessions isolated to the selected PDF document', async ({
+test('keeps Whole source sessions isolated to the selected PDF document', async ({
   page,
 }) => {
   const api = await installMockCertPrepApi(page);
@@ -106,7 +117,7 @@ test('keeps Full Exam sessions isolated to the selected PDF document', async ({
   expect(api.practiceSessionPayloads()).toHaveLength(2);
 });
 
-test('uploads multiple PDFs in one batch and starts Full Exam for the selected PDF', async ({
+test('uploads multiple PDFs in one batch and starts Whole source for the selected PDF', async ({
   page,
 }) => {
   const api = await installMockCertPrepApi(page);
@@ -379,39 +390,39 @@ test('retries a wrong answer from Review and clears it after a correct answer', 
   await seedMockApiConfig(page, apiBaseUrl, devToken);
 
   await createWorkspaceWithUploadedDocument(page, api);
-  await startRandomQuiz(page, api, 1);
+  await startRandomDraw(page, api, 1);
   await retryWrongAnswerAndClearReview(page, api);
   expect(api.wrongAnswers()).toHaveLength(0);
 });
 
-test('starts a review quiz from all current wrong answers', async ({
+test('starts a retry from all current wrong answers', async ({
   page,
 }) => {
   const api = await installMockCertPrepApi(page);
   await seedMockApiConfig(page, apiBaseUrl, devToken);
 
   await createWorkspaceWithUploadedDocument(page, api);
-  await startRandomQuiz(page, api, 2);
-  await startReviewQuizForAllWrongAnswersAndClearReview(page, api);
+  await startRandomDraw(page, api, 2);
+  await startRetryForAllWrongAnswersAndClearReview(page, api);
   expect(api.wrongAnswers()).toHaveLength(0);
 });
 
-test('shows project dashboard weak areas and starts a focused retry', async ({
+test('shows wrong-answer summary weak areas and starts a focused retry', async ({
   page,
 }) => {
   const api = await installMockCertPrepApi(page);
   await seedMockApiConfig(page, apiBaseUrl, devToken);
 
   await createWorkspaceWithUploadedDocument(page, api);
-  await startRandomQuiz(page, api, 2);
+  await startRandomDraw(page, api, 2);
   await completePracticeQuestions(
     page,
     api,
     api.playableDrafts.slice(0, 2),
     wrongChoiceForDraft,
   );
-  await expectWrongAnswerDashboard(page, api);
-  await startDashboardWeakAreaRetry(page, api, {
+  await expectWrongAnswerSummary(page, api);
+  await startWrongAnswerSummaryWeakAreaRetry(page, api, {
     documentId: api.document.id,
     citationPage: 1,
   });
@@ -441,10 +452,10 @@ test('clears document draft practice and review state when switching projects', 
       .locator('.workbench-file-name')
       .getByText(api.document.filename, { exact: true }),
   ).toBeVisible();
-  await page.getByRole('link', { name: 'Random Quiz' }).click();
-  await startRandomQuiz(page, api, 1);
+  await page.getByRole('link', { name: 'Random draw' }).click();
+  await startRandomDraw(page, api, 1);
   await completePracticeQuestions(page, api, [api.draft], wrongChoiceForDraft);
-  await page.getByRole('link', { name: 'Wrong Answers' }).click();
+  await page.getByRole('link', { name: 'Wrong-answer retry' }).click();
   await expect(page.getByText(api.draft.question)).toBeVisible();
 
   const requestMarker = api.markRequestLog();
@@ -458,8 +469,8 @@ test('clears document draft practice and review state when switching projects', 
   ).toBeVisible();
   await expect(page.getByText(api.draft.question)).toBeHidden();
 
-  await page.getByRole('link', { name: 'Dashboard' }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.getByRole('link', { name: 'Wrong-answer summary' }).click();
+  await expect(page).toHaveURL(/\/wrong-answers\/summary$/);
   await expect(page.getByText('No weakness data yet.')).toBeVisible();
   await expect(page.getByText(api.draft.question)).toBeHidden();
 
@@ -473,8 +484,8 @@ test('clears document draft practice and review state when switching projects', 
   await expect(page.getByText(api.document.filename)).toBeHidden();
   await expect(page.getByText(api.draft.question)).toBeHidden();
 
-  await page.getByRole('link', { name: 'Random Quiz' }).click();
-  await expectRandomQuizAvailableCount(
+  await page.getByRole('link', { name: 'Random draw' }).click();
+  await expectRandomDrawAvailableCount(
     page,
     api.secondaryPlayableDrafts.length,
   );
@@ -482,7 +493,7 @@ test('clears document draft practice and review state when switching projects', 
     page.getByLabel('Session details').getByText('Not started'),
   ).toBeVisible();
   await page.getByRole('spinbutton', { name: 'Random draw size' }).fill('1');
-  await page.getByRole('button', { name: 'Start random quiz' }).click();
+  await page.getByRole('button', { name: 'Start random draw' }).click();
   await expect
     .poll(() => api.practiceSessionPayload(api.secondaryProject.id))
     .toMatchObject({ mode: 'random_draw', question_count: 1 });
@@ -504,7 +515,7 @@ test('clears document draft practice and review state when switching projects', 
   ).toEqual([]);
 });
 
-test('excludes incomplete approved-looking drafts from Random Quiz and Full Exam', async ({
+test('excludes incomplete approved-looking drafts from Random draw and Whole source', async ({
   page,
 }) => {
   const api = await installMockCertPrepApi(page);
@@ -513,26 +524,26 @@ test('excludes incomplete approved-looking drafts from Random Quiz and Full Exam
 
   await createWorkspaceWithUploadedDocument(page, api);
 
-  await page.getByRole('link', { name: 'Random Quiz' }).click();
-  await expectRandomQuizAvailableCount(page, api.playableDrafts.length);
+  await page.getByRole('link', { name: 'Random draw' }).click();
+  await expectRandomDrawAvailableCount(page, api.playableDrafts.length);
   await page.getByRole('spinbutton', { name: 'Random draw size' }).fill('100');
-  await page.getByRole('button', { name: 'Start random quiz' }).click();
+  await page.getByRole('button', { name: 'Start random draw' }).click();
   await expect.poll(() => api.practiceSessionPayload()).not.toBeNull();
   expect(api.practiceSessionPayload()).toMatchObject({
     mode: 'random_draw',
     question_count: api.playableDrafts.length,
   });
 
-  await expectFullExamDocumentOptions(page, api);
-  await page.getByRole('combobox').selectOption(api.fullExamDocument.id);
-  await page.getByRole('button', { name: 'Start full exam' }).click();
+  await expectWholeSourceDocumentOptions(page, api);
+  await page.getByRole('combobox').selectOption(api.wholeSourceDocument.id);
+  await page.getByRole('button', { name: 'Start whole source' }).click();
   await expect
     .poll(() => api.practiceSessionPayload())
     .toMatchObject({ mode: 'full_document' });
   expect(api.practiceSessionPayload()).toMatchObject({
     mode: 'full_document',
-    document_id: api.fullExamDocument.id,
-    question_count: api.playableDraftsForDocument(api.fullExamDocument.id)
+    document_id: api.wholeSourceDocument.id,
+    question_count: api.playableDraftsForDocument(api.wholeSourceDocument.id)
       .length,
   });
 });

@@ -280,5 +280,341 @@
     "match": "word",
     "replacement": "remove this extraction timing field",
     "allowed": []
+  },
+  {
+    "name": "capture-workbench-trial",
+    "match": "substring",
+    "replacement": "capture-workbench files or /capture route",
+    "allowed": []
+  },
+  {
+    "name": "CaptureWorkbenchTrialPage",
+    "match": "substring",
+    "replacement": "CaptureWorkbenchPage",
+    "allowed": []
+  },
+  {
+    "name": "capture_workbench_trial",
+    "match": "word",
+    "replacement": "capture_workbench",
+    "allowed": []
+  },
+  {
+    "name": "trialStatus",
+    "match": "word",
+    "replacement": "status",
+    "allowed": []
+  },
+  {
+    "name": "capture-trial-",
+    "match": "substring",
+    "replacement": "capture-",
+    "allowed": []
+  },
+  {
+    "name": "--verify-capture-trial",
+    "match": "substring",
+    "replacement": "--verify-capture-page",
+    "allowed": []
+  },
+  {
+    "name": "captureTrialUrl",
+    "match": "word",
+    "replacement": "capturePageUrl",
+    "allowed": []
+  },
+  {
+    "name": "verifyCaptureTrial",
+    "match": "word",
+    "replacement": "verifyCapturePage",
+    "allowed": []
+  },
+  {
+    "name": "Capture Workbench trial",
+    "match": "substring-ignore-case",
+    "replacement": "Capture Workbench",
+    "allowed": []
+  },
+  {
+    "name": "Capture Trial navigation",
+    "match": "substring",
+    "replacement": "Capture page navigation",
+    "allowed": []
+  },
+  {
+    "name": "full-exam",
+    "match": "substring",
+    "replacement": "whole-source",
+    "allowed": []
+  },
+  {
+    "name": "FullExam",
+    "match": "substring",
+    "replacement": "WholeSource",
+    "allowed": []
+  },
+  {
+    "name": "fullExam",
+    "match": "substring",
+    "replacement": "wholeSource",
+    "allowed": []
+  },
+  {
+    "name": "full_exam",
+    "match": "substring",
+    "replacement": "whole_source",
+    "allowed": []
+  },
+  {
+    "name": "Full Exam",
+    "match": "substring-ignore-case",
+    "replacement": "Whole source",
+    "allowed": []
+  },
+  {
+    "name": "random-quiz",
+    "match": "substring",
+    "replacement": "random-draw",
+    "allowed": []
+  },
+  {
+    "name": "RandomQuiz",
+    "match": "substring",
+    "replacement": "RandomDraw",
+    "allowed": []
+  },
+  {
+    "name": "randomQuiz",
+    "match": "substring",
+    "replacement": "randomDraw",
+    "allowed": []
+  },
+  {
+    "name": "random_quiz",
+    "match": "substring",
+    "replacement": "random_draw",
+    "allowed": []
+  },
+  {
+    "name": "Random Quiz",
+    "match": "substring-ignore-case",
+    "replacement": "Random draw",
+    "allowed": []
+  },
+  {
+    "name": "WrongAnswerReview",
+    "match": "substring",
+    "replacement": "WrongAnswerRetry",
+    "allowed": []
+  },
+  {
+    "name": "wrong-answer-review",
+    "match": "substring",
+    "replacement": "wrong-answer-retry",
+    "allowed": []
+  },
+  {
+    "name": "openReviewPage",
+    "match": "word",
+    "replacement": "openWrongAnswerRetryPage",
+    "allowed": []
+  },
+  {
+    "name": "Start review quiz",
+    "match": "substring",
+    "replacement": "Start wrong-answer retry",
+    "allowed": []
+  },
+  {
+    "name": "ReviewQuiz",
+    "match": "substring",
+    "replacement": "WrongAnswerRetry",
+    "allowed": []
+  },
+  {
+    "name": "japaneseText",
+    "match": "word",
+    "replacement": "transcriptText",
+    "allowed": []
+  },
+  {
+    "name": "path: 'review'",
+    "match": "substring",
+    "replacement": "path: 'wrong-answer-retry'",
+    "allowed": []
+  },
+  {
+    "name": "'/review'",
+    "match": "substring",
+    "replacement": "'/wrong-answer-retry'",
+    "allowed": []
+  },
+  {
+    "name": "\"/review\"",
+    "match": "substring",
+    "replacement": "\"/wrong-answer-retry\"",
+    "allowed": []
+  },
+  {
+    "name": "`/review`",
+    "match": "substring",
+    "replacement": "`/wrong-answer-retry`",
+    "allowed": []
+  },
+  {
+    "name": "DashboardPage",
+    "match": "substring",
+    "replacement": "WrongAnswerSummaryPage",
+    "allowed": []
+  },
+  {
+    "name": "WrongAnswerDashboard",
+    "match": "substring",
+    "replacement": "WrongAnswerSummary",
+    "allowed": []
+  },
+  {
+    "name": "wrong-answer-dashboard",
+    "match": "substring",
+    "replacement": "wrong-answer-summary",
+    "allowed": []
+  },
+  {
+    "name": "DashboardMetric",
+    "match": "word",
+    "replacement": "WrongAnswerSummaryMetric",
+    "allowed": []
+  },
+  {
+    "name": "dashboard.page",
+    "match": "substring",
+    "replacement": "wrong-answer-summary.page",
+    "allowed": []
+  },
+  {
+    "name": "path: 'dashboard'",
+    "match": "substring",
+    "replacement": "path: 'wrong-answers/summary'",
+    "allowed": []
+  },
+  {
+    "name": "'/dashboard'",
+    "match": "substring",
+    "replacement": "'/wrong-answers/summary'",
+    "allowed": []
+  },
+  {
+    "name": "\"/dashboard\"",
+    "match": "substring",
+    "replacement": "\"/wrong-answers/summary\"",
+    "allowed": []
+  },
+  {
+    "name": "`/dashboard`",
+    "match": "substring",
+    "replacement": "`/wrong-answers/summary`",
+    "allowed": []
+  },
+  {
+    "name": "ModelHealthViewModel",
+    "match": "substring",
+    "replacement": "RuntimeHealthViewModel",
+    "allowed": []
+  },
+  {
+    "name": "model-health-view-model",
+    "match": "substring",
+    "replacement": "runtime-health-view-model",
+    "allowed": []
+  },
+  {
+    "name": "ModelHealthViewState",
+    "match": "word",
+    "replacement": "RuntimeHealthViewState",
+    "allowed": []
+  },
+  {
+    "name": "model-health.contracts",
+    "match": "substring",
+    "replacement": "runtime-health-view-model.contracts",
+    "allowed": []
+  },
+  {
+    "name": "BuildWorkbenchPage",
+    "match": "substring",
+    "replacement": "BuildPage",
+    "allowed": []
+  },
+  {
+    "name": "build-workbench",
+    "match": "substring",
+    "replacement": "build",
+    "allowed": []
+  },
+  {
+    "name": "workbench-page",
+    "match": "word",
+    "replacement": "app-page",
+    "allowed": []
+  },
+  {
+    "name": "Japanese transcript text must not be empty.",
+    "match": "substring",
+    "replacement": "Transcript text must not be empty.",
+    "allowed": []
+  },
+  {
+    "name": "Translate Japanese into natural Traditional Chinese used in Taiwan.",
+    "match": "substring",
+    "replacement": "State the source chunk language",
+    "allowed": []
+  },
+  {
+    "name": "ProviderUnavailableError",
+    "match": "word",
+    "replacement": "LanguageModelUnavailable, CaptureRequirementUnavailable, or InstallerUnavailable",
+    "allowed": []
+  },
+  {
+    "name": "host_capture_failed",
+    "match": "word",
+    "replacement": "capture_review_failed",
+    "allowed": []
+  },
+  {
+    "name": "capture-workbench/captures",
+    "match": "substring",
+    "replacement": "capture-reviews",
+    "allowed": []
+  },
+  {
+    "name": "capture_workbench_captures",
+    "match": "substring",
+    "replacement": "capture_reviews",
+    "allowed": []
+  },
+  {
+    "name": "CAPTURE_RUNTIME_MODEL",
+    "match": "word",
+    "replacement": "CAPTURE_RUNTIME_RELEASE",
+    "allowed": []
+  },
+  {
+    "name": "captureRuntimeModel",
+    "match": "word",
+    "replacement": "captureRuntimeArtifact",
+    "allowed": []
+  },
+  {
+    "name": "DesktopRuntimeInstallation.model",
+    "match": "substring",
+    "replacement": "DesktopRuntimeInstallation.artifact",
+    "allowed": []
+  },
+  {
+    "name": "DesktopRuntimeInstallation::model",
+    "match": "substring",
+    "replacement": "DesktopRuntimeInstallation::artifact",
+    "allowed": []
   }
 ]

@@ -88,7 +88,7 @@ export async function ensureCaptureRuntimeReady(
     .getByRole('link', { name: 'Capture Workbench', exact: true })
     .click();
   await page
-    .getByRole('heading', { name: 'Capture Workbench trial' })
+    .getByRole('heading', { name: 'Capture Workbench' })
     .waitFor({ timeout: 60_000 });
 
   const installButton = page.getByRole('button', {
@@ -99,7 +99,7 @@ export async function ensureCaptureRuntimeReady(
     await runNativeCaptureRuntimeJob(run, 'install_capture_runtime');
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 });
     await page
-      .getByRole('heading', { name: 'Capture Workbench trial' })
+      .getByRole('heading', { name: 'Capture Workbench' })
       .waitFor({ timeout: 60_000 });
   }
 
@@ -111,7 +111,7 @@ export async function ensureCaptureRuntimeReady(
     await runNativeCaptureRuntimeJob(run, 'start_capture_runtime');
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 });
     await page
-      .getByRole('heading', { name: 'Capture Workbench trial' })
+      .getByRole('heading', { name: 'Capture Workbench' })
       .waitFor({ timeout: 60_000 });
   }
 

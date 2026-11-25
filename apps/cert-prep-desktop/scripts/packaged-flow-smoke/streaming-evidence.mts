@@ -8,7 +8,7 @@ import type {
 
 export const FIRST_CHUNK_GATE_MS = 15_000;
 
-interface FullExamScope {
+interface WholeSourceScope {
   projectId: string;
   documentId: string;
 }
@@ -198,11 +198,11 @@ export function sanitizeQuestionSnapshot(
   };
 }
 
-/** Returns the actual Full Exam size only when request and response prove one document scope. */
-export function fullExamQuestionCountFromSession(
+/** Returns the actual Whole source size only when request and response prove one document scope. */
+export function wholeSourceQuestionCountFromSession(
   requestPayload: unknown,
   responsePayload: unknown,
-  expected: FullExamScope,
+  expected: WholeSourceScope,
 ): number | null {
   if (!isRecord(requestPayload) || !isRecord(responsePayload)) {
     return null;

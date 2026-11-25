@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
-from capture_runtime_client import CaptureSourceKind
+from capture_runtime_client import CaptureSourceKind, CaptureTransportError
 
 from cert_prep_backend.capture_integration.application.messages import (
     REQUIREMENT_UNAVAILABLE_CODE,
@@ -23,8 +23,9 @@ from cert_prep_backend.capture_integration.infrastructure.persistence import (
     publish_capture_document,
 )
 from cert_prep_backend.platform.errors import (
+    CaptureRequirementUnavailable,
+    CaptureRuntimeUnavailable,
     DocumentProcessingCanceledError,
-    ProviderUnavailableError,
 )
 from cert_prep_backend.source_library.application.errors import (
     SourceExtractionFailed,
@@ -99,6 +100,8 @@ class CaptureSourceExtraction:
                 should_cancel=should_cancel,
                 spoken_language=capture_spoken_language(language_hint) if is_audio else None,
             )
+        except CaptureTransportError as error:
+            raise CaptureRuntimeUnavailable("Capture Runtime is unavailable.") from error
         except CaptureRuntimeCanceledError as error:
             raise DocumentProcessingCanceledError(str(error)) from error
         except CaptureRuntimeRequirementUnavailableError as error:
@@ -112,7 +115,7 @@ class CaptureSourceExtraction:
                 source_kind,
                 error,
             )
-            raise ProviderUnavailableError(requirement_unavailable_message(source_kind)) from None
+            raise CaptureRequirementUnavailable(requirement_unavailable_message(source_kind)) from None
         except CaptureRuntimeJobError as error:
             logger.warning(
                 "Capture Runtime extraction failed for operation %s (%s source), "
@@ -124,7 +127,7 @@ class CaptureSourceExtraction:
                 error,
             )
             if error.code == REQUIREMENT_UNAVAILABLE_CODE:
-                raise ProviderUnavailableError(
+                raise CaptureRequirementUnavailable(
                     requirement_unavailable_message(source_kind)
                 ) from None
             if error.code == "no_text_detected":
@@ -140,6 +143,7 @@ class CaptureSourceExtraction:
             source_kind=source_kind,
             expected_sha256=sha256,
             document=capture.document,
+            runtime_version=capture.runtime_version,
             ocr_projection=capture.ocr_projection,
             publication=self._publication,
         )

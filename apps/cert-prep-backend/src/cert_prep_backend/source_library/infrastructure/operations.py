@@ -280,6 +280,7 @@ def publish_success(
     operation_id: str,
     document_id: str,
     extraction: PageExtraction,
+    extraction_provenance: str | None = None,
 ) -> SourceDocument:
     """Atomically publish final extraction data and terminal operation success."""
 
@@ -303,6 +304,7 @@ def publish_success(
             document_id=document_id,
             extraction=extraction,
             now=now,
+            extraction_provenance=extraction_provenance,
         )
         _apply(
             connection,
@@ -323,6 +325,7 @@ def publish_capture_audio_success(
     model: str,
     device: str | None,
     warning: str | None,
+    extraction_provenance: str | None = None,
 ) -> SourceDocument:
     """Atomically publish validated Capture Runtime transcript and translations."""
 
@@ -381,6 +384,7 @@ def publish_capture_audio_success(
                 transcription_status = 'succeeded', translation_status = 'succeeded',
                 configured_transcription_model = ?, effective_transcription_model = ?,
                 transcription_device = ?, transcription_warning = ?,
+                extraction_provenance = ?,
                 content_profile = 'study_material', classification_detail = '',
                 updated_at = ?
             WHERE project_id = ? AND id = ? AND status = 'processing'
@@ -392,6 +396,7 @@ def publish_capture_audio_success(
                 model,
                 device,
                 warning,
+                extraction_provenance,
                 now,
                 project_id,
                 document_id,
@@ -777,7 +782,8 @@ def _reset_document_derived_state(
         """
         UPDATE documents
         SET status = ?, has_text = 0, extraction_method = ?,
-            ocr_device = NULL, extraction_warnings = NULL, failure_message = ?,
+            ocr_device = NULL, extraction_warnings = NULL, extraction_provenance = NULL,
+            failure_message = ?,
             processed_page_count = ?, exam_item_count = 0,
             content_profile = 'unknown', classification_detail = '',
             updated_at = ?
@@ -806,6 +812,17 @@ def _operation_query_by_id(connection: Connection, operation_id: str) -> Row | N
 
 
 
+# The stored extraction provenance describes a completed transcript. A stopped audio run
+# keeps it exactly when it keeps that transcript: transcription had succeeded and its time
+# chunks are still there (extraction_method stays 'transcription'). Partial chunks of an
+# unfinished transcription are not the result the provenance describes. Bound parameter:
+# the number of kept time chunks. SQLite reads the old transcription_status here.
+_KEEP_PROVENANCE_OF_COMPLETED_TRANSCRIPT = """CASE
+                WHEN transcription_status = 'succeeded' AND ? > 0
+                THEN extraction_provenance
+            END"""
+
+
 def _preserve_canceled_audio_state(
     connection: Connection,
     *,
@@ -826,7 +843,11 @@ def _preserve_canceled_audio_state(
         """
         UPDATE documents
         SET status = ?, has_text = ?, extraction_method = ?,
-            ocr_device = NULL, extraction_warnings = NULL, failure_message = NULL,
+            ocr_device = NULL, extraction_warnings = NULL,
+            extraction_provenance = """
+        + _KEEP_PROVENANCE_OF_COMPLETED_TRANSCRIPT
+        + """,
+            failure_message = NULL,
             processed_page_count = ?, exam_item_count = 0,
             content_profile = ?, classification_detail = '',
             transcription_status = CASE
@@ -844,6 +865,7 @@ def _preserve_canceled_audio_state(
             "canceled",
             int(chunks_count > 0),
             "transcription" if chunks_count > 0 else "none",
+            chunks_count,
             chunks_count,
             "study_material" if chunks_count > 0 else "unknown",
             now,
@@ -884,6 +906,9 @@ def _preserve_failed_audio_state(
             END,
             has_text = ?, extraction_method = ?,
             ocr_device = NULL, extraction_warnings = NULL,
+            extraction_provenance = """
+        + _KEEP_PROVENANCE_OF_COMPLETED_TRANSCRIPT
+        + """,
             failure_message = CASE WHEN transcription_status != 'succeeded' THEN ? END,
             processed_page_count = ?, exam_item_count = 0,
             content_profile = ?, classification_detail = '',
@@ -897,6 +922,7 @@ def _preserve_failed_audio_state(
         (
             int(chunks_count > 0),
             "transcription" if chunks_count > 0 else "none",
+            chunks_count,
             error,
             chunks_count,
             "study_material" if chunks_count > 0 else "unknown",

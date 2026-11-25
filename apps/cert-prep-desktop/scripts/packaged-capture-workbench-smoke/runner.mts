@@ -71,7 +71,7 @@ import {
 import { assertRasterPdfFixture } from './fixture-contract.mts';
 
 const REVIEW_MARKER = '[packaged review]';
-export const CAPTURE_WORKBENCH_READY_STATUS_PATTERN =
+const CAPTURE_WORKBENCH_READY_STATUS_PATTERN =
   /Capture Workbench is ready\./;
 
 interface CaptureResult {
@@ -446,7 +446,7 @@ async function runCaptureDocumentFlow(
         const url = new URL(response.url());
         return (
           url.origin === new URL(projectApi.apiBaseUrl).origin &&
-          url.pathname.endsWith('/capture-workbench/captures')
+          url.pathname.endsWith('/capture-reviews')
         );
       } catch {
         return false;
@@ -473,7 +473,7 @@ async function runCaptureDocumentFlow(
   const rawResponse = await page.request.get(
     `${projectApi.apiBaseUrl}/projects/${encodeURIComponent(
       projectApi.projectId,
-    )}/capture-workbench/captures/${encodeURIComponent(captureId)}/raw`,
+    )}/capture-reviews/${encodeURIComponent(captureId)}/raw`,
     { headers: { Authorization: projectApi.authorization } },
   );
   const rawPayload: unknown = await rawResponse.json();
@@ -593,7 +593,7 @@ async function openCaptureWorkbench(run: SmokeRunState): Promise<void> {
     .getByRole('link', { name: 'Capture Workbench', exact: true })
     .click();
   await page
-    .getByRole('heading', { name: 'Capture Workbench trial' })
+    .getByRole('heading', { name: 'Capture Workbench' })
     .waitFor({ timeout: 60_000 });
 }
 

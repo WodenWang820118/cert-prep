@@ -140,3 +140,18 @@ export interface DetachedTombstone {
   readonly operationId: string;
   subscription: Subscription | null;
 }
+
+export function namedSourceLanguage(language: string): string | undefined {
+  switch (language) {
+    case 'ja':
+      return 'Japanese';
+    case 'zh-Hant':
+      return 'Traditional Chinese';
+    case 'zh-Hans':
+      return 'Simplified Chinese';
+    case 'en':
+      return 'English';
+    default:
+      return undefined;
+  }
+}

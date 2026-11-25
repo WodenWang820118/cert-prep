@@ -144,6 +144,7 @@ def host_event_stream(
                         capture_id,
                         session,
                         document,
+                        operations=operations,
                         source_kind=_event_source_kind(
                             documents,
                             project_id=project_id,
@@ -176,6 +177,7 @@ def host_event_stream(
                             capture_id,
                             session,
                             document,
+                            operations=operations,
                             source_kind=_event_source_kind(
                                 documents,
                                 project_id=project_id,
@@ -209,6 +211,7 @@ def host_event_stream(
             capture_id,
             session,
             document,
+            operations=operations,
             source_kind=_event_source_kind(
                 documents, project_id=project_id, document_id=document.id
             ),
@@ -231,6 +234,7 @@ def _terminal_host_event(
     session: CaptureReviewSession,
     document: SourceDocument,
     *,
+    operations: CaptureOperations,
     source_kind: CaptureSourceKind,
 ) -> CaptureEvent:
     status_value = session.status
@@ -240,12 +244,7 @@ def _terminal_host_event(
         CaptureReviewStatus.FAILED: CaptureEventType.FAILED,
     }[status_value]
     failure = (
-        OperationFailure(
-            code="host_capture_failed",
-            message="Cert Prep capture processing failed.",
-            stage="host",
-            retryable=False,
-        )
+        capture_review_failure(operations, session)
         if event_type is CaptureEventType.FAILED
         else None
     )
@@ -260,6 +259,25 @@ def _terminal_host_event(
         progress=1,
         error=failure,
         created_at=document.updated_at,
+    )
+
+
+def capture_review_failure(
+    operations: CaptureOperations, session: CaptureReviewSession
+) -> OperationFailure:
+    try:
+        operation = operations.operation(session.project_id, session.operation_id)
+    except NotFoundError:
+        operation = None
+    return OperationFailure(
+        code="capture_review_failed",
+        message=(
+            operation.error
+            if operation is not None and operation.error
+            else "Cert Prep capture processing failed."
+        ),
+        stage=operation.phase.value if operation is not None else "host",
+        retryable=False,
     )
 
 

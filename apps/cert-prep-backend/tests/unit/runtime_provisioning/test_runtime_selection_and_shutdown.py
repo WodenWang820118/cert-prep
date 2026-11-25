@@ -7,7 +7,7 @@ from threading import Event
 import pytest
 
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import InstallerUnavailable
 from cert_prep_backend.ai_providers.infrastructure import runtime_installers
 from cert_prep_backend.runtime_provisioning.infrastructure.manager import RuntimeInstallationManager
 from cert_prep_contracts.runtime import RuntimeInstallationStatus as Status
@@ -108,7 +108,7 @@ def test_failed_lazy_profile_selection_is_retried_and_success_is_cached(tmp_path
     )
     lazy = runtime_installers.LazyOllamaProfileInstaller(settings, SimpleNamespace(inventory=object()))
     assert lazy.model == "ollama-profile:auto"
-    with pytest.raises(ProviderUnavailableError, match="Ollama profile selection is not available."):
+    with pytest.raises(InstallerUnavailable, match="Ollama profile selection is not available."):
         lazy.requirement()
     lazy.validate_installable()
     assert lazy.model == "cached-model"

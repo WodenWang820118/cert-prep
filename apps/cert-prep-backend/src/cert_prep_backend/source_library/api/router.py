@@ -23,13 +23,14 @@ from cert_prep_backend.api.errors import (
     validation_error,
 )
 from cert_prep_backend.platform.errors import (
+    CaptureRequirementUnavailable,
+    CaptureRuntimeUnavailable,
     DocumentOperationConflictError,
     DocumentOperationStateError,
     DocumentProcessingCanceledError,
     InvalidSourceError,
     NotFoundError,
     OperationNotCancellableError,
-    ProviderUnavailableError,
 )
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.projects.application.ports import ProjectRepository
@@ -215,8 +216,14 @@ async def upload_document(
         )
     except (SourceTooLarge, InvalidSourceError) as exc:
         raise validation_error(str(exc)) from exc
-    except ProviderUnavailableError as exc:
-        raise api_error(status.HTTP_503_SERVICE_UNAVAILABLE, "capture_runtime_unavailable", str(exc)) from exc
+    except CaptureRequirementUnavailable as exc:
+        raise api_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "capture_requirement_unavailable", str(exc)
+        ) from exc
+    except CaptureRuntimeUnavailable as exc:
+        raise api_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "capture_runtime_unavailable", str(exc)
+        ) from exc
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
     except DocumentProcessingCanceledError as exc:
@@ -308,8 +315,14 @@ async def retry_document_processing(
         raise not_found_error(str(exc)) from exc
     except InvalidSourceError as exc:
         raise _document_source_missing_error("The stored source file is unavailable for retry.") from exc
-    except ProviderUnavailableError as exc:
-        raise api_error(status.HTTP_503_SERVICE_UNAVAILABLE, "capture_runtime_unavailable", str(exc)) from exc
+    except CaptureRequirementUnavailable as exc:
+        raise api_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "capture_requirement_unavailable", str(exc)
+        ) from exc
+    except CaptureRuntimeUnavailable as exc:
+        raise api_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "capture_runtime_unavailable", str(exc)
+        ) from exc
     except DocumentProcessingCanceledError as exc:
         raise _operation_canceled_error(str(exc)) from exc
     except DocumentOperationConflictError as exc:

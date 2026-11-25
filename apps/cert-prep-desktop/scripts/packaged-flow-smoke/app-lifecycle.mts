@@ -464,19 +464,19 @@ export async function restartAndVerifyPersistence(
   let reviewPersisted = true;
   if (run.options.acceptanceVerifyMarkdownExport) {
     const reviewLink = activePage(run).getByRole('link', {
-      name: 'Wrong Answers',
+      name: 'Wrong-answer retry',
       exact: true,
     });
     await reviewLink.waitFor({ state: 'visible', timeout: 30_000 });
     await reviewLink.click({ timeout: 30_000 });
     await waitText(
       run,
-      /Wrong Answers|1 recorded|Selected:/i,
+      /Wrong-answer retry|1 recorded|Selected:/i,
       30_000,
       'persisted wrong-answer review',
     );
     await screenshot(run, 'restart-persistence-review');
-    reviewPersisted = /Wrong Answers|1 recorded|Selected:/i.test(
+    reviewPersisted = /Wrong-answer retry|1 recorded|Selected:/i.test(
       await bodyText(run),
     );
     await ensureCaptureRuntimeReady(run);

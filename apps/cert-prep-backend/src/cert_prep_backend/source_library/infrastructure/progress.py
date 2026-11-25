@@ -15,6 +15,7 @@ def complete_document_extraction_in_transaction(
     document_id: str,
     extraction: PageExtraction,
     now: str,
+    extraction_provenance: str | None = None,
 ) -> SourceDocument:
     """Publish extraction results using the caller's transaction."""
 
@@ -46,6 +47,7 @@ def complete_document_extraction_in_transaction(
             extraction_method = ?,
             ocr_device = ?,
             extraction_warnings = ?,
+            extraction_provenance = ?,
             failure_message = NULL,
             processed_page_count = ?,
             content_profile = ?,
@@ -59,6 +61,7 @@ def complete_document_extraction_in_transaction(
             extraction.extraction_method,
             extraction.ocr_device,
             extraction.extraction_warnings,
+            extraction_provenance,
             extraction.processed_page_count,
             content_profile,
             classification_detail,

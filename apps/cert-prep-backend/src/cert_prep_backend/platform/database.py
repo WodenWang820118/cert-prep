@@ -1045,6 +1045,13 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
         WHERE status = 'transcription_failed' AND failure_message IS NULL;
         """,
     ),
+    (
+        31,
+        """
+        ALTER TABLE documents ADD COLUMN extraction_provenance TEXT;
+        ALTER TABLE capture_review_sessions ADD COLUMN runtime_ingestion_id TEXT;
+        """,
+    ),
 )
 
 

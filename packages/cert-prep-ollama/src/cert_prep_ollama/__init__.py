@@ -12,7 +12,7 @@ from cert_prep_ollama.device_verification import (
     DeviceExecution,
     verify_device_execution,
 )
-from cert_prep_ollama.exceptions import OllamaError, ProviderUnavailableError
+from cert_prep_ollama.exceptions import OllamaError, OllamaInstallationUnavailable
 from cert_prep_ollama.inventory import collect_machine_inventory
 from cert_prep_ollama.installers import (
     OllamaModelInstaller,
@@ -84,7 +84,7 @@ __all__ = [
     "OllamaProfileInstaller",
     "OllamaRuntimeInstaller",
     "OllamaServerCoordinator",
-    "ProviderUnavailableError",
+    "OllamaInstallationUnavailable",
     "RunnerDevice",
     "RunnerStarted",
     "SchedulerSelection",

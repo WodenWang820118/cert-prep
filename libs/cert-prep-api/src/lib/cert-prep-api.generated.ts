@@ -8,18 +8,19 @@ export interface Components {
   schemas: {
     AnswerKeySource: string;
     ApiErrorRead: { "code": string; "message": string; "details"?: Record<string, unknown> | null };
-    Body_create_capture_projects__project_id__capture_workbench_captures_post: { "file": string };
+    Body_create_capture_projects__project_id__capture_reviews_post: { "file": string };
     Body_upload_document_projects__project_id__documents_post: { "file": string; "language_hint"?: string };
     CaptureBlock: { "blockId": string; "order": number; "type": string; "sourceSegmentId": string; "locator": Components['schemas']['PageLocator'] | Components['schemas']['TimeLocator']; "sourceText": string; "targetText": string };
     CaptureDocument: { "schemaVersion"?: "2"; "source": Components['schemas']['CaptureSource']; "rawSegments": Components['schemas']['RawCaptureSegment'][]; "blocks": Components['schemas']['CaptureBlock'][]; "sourceText": string; "targetText": string; "extractionEngine": Components['schemas']['CaptureEngine']; "diarizationEngine"?: Components['schemas']['CaptureEngine'] | null; "speakers"?: Components['schemas']['CaptureSpeaker'][]; "suggestedRequirementIds"?: string[]; "structuringEngine": Components['schemas']['CaptureEngine']; "warnings"?: string[]; "createdAt": string; "completedAt": string };
     CaptureEngine: { "engine": string; "model": string; "digest": string; "device"?: string | null; "deviceName"?: string | null; "elapsedMs"?: number | null; "stageMs"?: Record<string, unknown> | null };
+    CaptureExtractionProvenanceRead: { "status": string; "engine": string; "model": string | null; "device": string | null; "runtimeVersion": string | null };
     CaptureOcrFailureRead: { "code": string; "retryable": boolean };
     CaptureOcrPageSummaryRead: { "page": number; "status": string; "normalizedCharCount": number; "boxCount": number; "confidence": number | null; "failure": Components['schemas']['CaptureOcrFailureRead'] | null };
     CaptureOcrProvenanceRead: Components['schemas']['CaptureOcrResolvedProvenanceRead'] | Components['schemas']['CaptureOcrUnavailableProvenanceRead'];
     CaptureOcrResolvedProvenanceRead: { "status": "resolved"; "runtimeVersion": string; "contractSetSha256": string; "engine": "text-recognition"; "model": string; "modelDigest": string; "device": string; "profileId": string; "profileSpecSha256": string };
     CaptureOcrSummaryRead: { "projectionSchemaVersion": 3; "captureId": string; "status": string; "pageCount": number; "pages": Components['schemas']['CaptureOcrPageSummaryRead'][]; "provenance": Components['schemas']['CaptureOcrProvenanceRead']; "failure": Components['schemas']['CaptureOcrFailureRead'] | null };
     CaptureOcrUnavailableProvenanceRead: { "status": "unavailable"; "runtimeVersion": string; "contractSetSha256": string; "profileId": string; "profileSpecSha256": string; "reason": string };
-    CaptureResultRead: { "operation": Components['schemas']['CaptureReviewOperationRead']; "raw": Components['schemas']['RawCapture']; "result": Components['schemas']['CaptureDocument'] };
+    CaptureResultRead: { "operation": Components['schemas']['CaptureReviewOperationRead']; "raw": Components['schemas']['RawCapture']; "result": Components['schemas']['CaptureDocument']; "extractionProvenance": Components['schemas']['CaptureExtractionProvenanceRead'] };
     CaptureReview: { "reviewVersion"?: 2; "edits"?: Components['schemas']['CaptureReviewEdit'][] };
     CaptureReviewEdit: { "segmentId": string; "reviewedText": string };
     CaptureReviewOperationRead: { "protocolVersion"?: "2"; "captureId": string; "ingestionId": string; "kind": Components['schemas']['CaptureSourceKind']; "status": Components['schemas']['CaptureStatus']; "progress"?: number | null; "partialRevision": number; "lastEventSequence": number; "source"?: Components['schemas']['CaptureSource'] | null; "error"?: Components['schemas']['OperationFailure'] | null; "createdAt": string; "updatedAt": string; "completedAt"?: string | null; "pagesTotal"?: number | null; "pagesDone"?: number | null; "durationMs"?: number | null; "coveredUntilMs"?: number | null; "documentId": string };
@@ -138,11 +139,12 @@ export interface Components {
 
 export type AnswerKeySource = Components['schemas']['AnswerKeySource'];
 export type ApiErrorRead = Components['schemas']['ApiErrorRead'];
-export type Body_create_capture_projects__project_id__capture_workbench_captures_post = Components['schemas']['Body_create_capture_projects__project_id__capture_workbench_captures_post'];
+export type Body_create_capture_projects__project_id__capture_reviews_post = Components['schemas']['Body_create_capture_projects__project_id__capture_reviews_post'];
 export type Body_upload_document_projects__project_id__documents_post = Components['schemas']['Body_upload_document_projects__project_id__documents_post'];
 export type CaptureBlock = Components['schemas']['CaptureBlock'];
 export type CaptureDocument = Components['schemas']['CaptureDocument'];
 export type CaptureEngine = Components['schemas']['CaptureEngine'];
+export type CaptureExtractionProvenanceRead = Components['schemas']['CaptureExtractionProvenanceRead'];
 export type CaptureOcrFailureRead = Components['schemas']['CaptureOcrFailureRead'];
 export type CaptureOcrPageSummaryRead = Components['schemas']['CaptureOcrPageSummaryRead'];
 export type CaptureOcrProvenanceRead = Components['schemas']['CaptureOcrProvenanceRead'];
@@ -619,40 +621,40 @@ export function createCertPrepRequestFactory(): CertPrepRequestFactory {
       return { method: 'POST' as const, path: `/capture-runtime/installations/${encodeURIComponent(installationId)}/cancel`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
     createCapture: (projectId: string, body: FormData, options?: CertPrepRequestOptions) => {
-      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-reviews`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
     getCapture: (projectId: string, captureId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-reviews/${encodeURIComponent(captureId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
     deleteCapture: (projectId: string, captureId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'DELETE' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+      return { method: 'DELETE' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-reviews/${encodeURIComponent(captureId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
     getCaptureOcrSummary: (projectId: string, captureId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}/ocr-summary`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-reviews/${encodeURIComponent(captureId)}/ocr-summary`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
     captureEvents: (projectId: string, captureId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}/events`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-reviews/${encodeURIComponent(captureId)}/events`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
     getPartial: (projectId: string, captureId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}/partial`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-reviews/${encodeURIComponent(captureId)}/partial`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
     getRaw: (projectId: string, captureId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}/raw`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-reviews/${encodeURIComponent(captureId)}/raw`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
     structureCapture: (projectId: string, captureId: string, body: Components['schemas']['CaptureReviewStructureRequest'], options?: CertPrepRequestOptions) => {
-      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}/structure`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-reviews/${encodeURIComponent(captureId)}/structure`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
     commitCapture: (projectId: string, captureId: string, body: Components['schemas']['CommitStructuredResultRequest'], options?: CertPrepRequestOptions) => {
-      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}/structure/commit`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-reviews/${encodeURIComponent(captureId)}/structure/commit`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
     reportStructuringFailure: (projectId: string, captureId: string, body: Components['schemas']['ReportStructuringFailureRequest'], options?: CertPrepRequestOptions) => {
-      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}/structure/failure`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-reviews/${encodeURIComponent(captureId)}/structure/failure`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
     cancelCapture: (projectId: string, captureId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}/cancel`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-reviews/${encodeURIComponent(captureId)}/cancel`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
     getResult: (projectId: string, captureId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}/result`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-reviews/${encodeURIComponent(captureId)}/result`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
     documentOperationEvents: (projectId: string, operationId: string, options?: CertPrepRequestOptions) => {
       return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/document-operations/${encodeURIComponent(operationId)}/events`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };

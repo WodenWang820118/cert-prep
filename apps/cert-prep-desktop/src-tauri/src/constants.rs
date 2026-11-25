@@ -7,7 +7,7 @@ pub(crate) const BACKEND_RUNTIME_MANIFEST: &str = "backend-runtime-manifest.json
 pub(crate) const CAPTURE_RUNTIME_MANIFEST: &str = "capture-runtime-manifest.json";
 pub(crate) const CAPTURE_RUNTIME_BINARY: &str = "capture-runtime-x86_64-pc-windows-msvc.exe";
 pub(crate) const CAPTURE_RUNTIME_VERSION: &str = env!("CERT_PREP_CAPTURE_RUNTIME_VERSION");
-pub(crate) const CAPTURE_RUNTIME_MODEL: &str = concat!(
+pub(crate) const CAPTURE_RUNTIME_RELEASE: &str = concat!(
     "capture-runtime@",
     env!("CERT_PREP_CAPTURE_RUNTIME_VERSION")
 );

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import json
 from typing import Protocol, runtime_checkable
 
-from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import LanguageModelUnavailable
 from cert_prep_backend.ai_providers.domain.provider import (
     JsonChatProvider,
     ProviderHealth,
@@ -80,7 +80,7 @@ def explain_wrong_answer(provider: object, wrong_answer: WrongAnswer) -> WrongAn
     if metadata.available and explanation_provider is not None:
         try:
             generated = explanation_provider.explain_wrong_answer(fields).strip()
-        except ProviderUnavailableError:
+        except LanguageModelUnavailable:
             generated = ""
         if generated:
             return WrongAnswerExplanation(
@@ -127,7 +127,7 @@ def _provider_metadata(provider: object) -> _ProviderMetadata:
 
     try:
         health = provider.health()
-    except (ProviderUnavailableError, RuntimeError, OSError):
+    except (LanguageModelUnavailable, RuntimeError, OSError):
         return _ProviderMetadata(provider=provider_name, model=model_name, available=False)
 
     if isinstance(health, ProviderHealth):
@@ -173,7 +173,7 @@ def _explanation_from_model(provider: object, fields: WrongAnswerGroundedFields)
                 num_predict=512,
             )
         )
-    except ProviderUnavailableError:
+    except LanguageModelUnavailable:
         return ""
     return _explanation_text(content)
 

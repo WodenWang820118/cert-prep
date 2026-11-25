@@ -62,9 +62,9 @@
                 <span>Play this segment</span>
               </button>
               <label class="workbench-field mt-2">
-                <span>Japanese transcript</span>
+                <span>Transcript</span>
                 <textarea
-                  #japaneseText
+                  #transcriptText
                   rows="3"
                   [value]="chunk.text"
                 ></textarea>
@@ -74,7 +74,7 @@
                   class="workbench-secondary-button"
                   type="button"
                   [disabled]="model().transcriptMutationBusy"
-                  (click)="updateTranscript(chunk.id, japaneseText.value)"
+                  (click)="updateTranscript(chunk.id, transcriptText.value)"
                 >
                   <app-icon name="lucideSave" />
                   <span>Save transcript</span>

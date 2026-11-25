@@ -110,7 +110,7 @@ Line numbers in this section, and the `device_policy.py` / `server_coordinator.p
 **CPU in the existing health fields.** The inventory policy (no GPU → CPU, with the original warning) stays fixed at provider creation. A stored choice whose policy target is CPU overlays that per call, including when Ollama is external:
 - `execution_mode=cpu`, with the warning `The user's device choice is CPU; Ollama requests run on the CPU.`
 - `num_gpu=0` in requests (`_chat_options`).
-- The existing "CPU" label then appears with no new UI (`apps/cert-prep/src/app/runtime/data/model-health-view-model.service.ts:60-64`).
+- The existing "CPU" label then appears with no new UI (`apps/cert-prep/src/app/runtime/data/runtime-health-view-model.service.ts:60-64`).
 - Non-Windows stays unmanaged (`not_applicable`), so a CPU choice there does not overlay the creation-time mode.
 
 **API.**
@@ -188,7 +188,7 @@ Model it on `tests/unit/test_gpu_inventory_contract.py:22-65`.
 - The stored choice is saved but not applied (`status=external_server`).
 - To let Cert Prep start its own server: quit the tray Ollama, then press "Refresh all" (`runtime-manager.page.html:116-124`). Health then fails `list()`, `ensure_running` starts our own server with the stored choice, and ownership becomes owned.
 
-**Where it appears.** The runtime manager page (`/runtime`), in a new "Device" section after the Reasoning model row (`apps/cert-prep/src/app/runtime/feature/runtime-manager/runtime-manager.page.html:83-106`). The view model is built in `model-health-view-model.service.ts` style.
+**Where it appears.** The runtime manager page (`/runtime`), in a new "Device" section after the Reasoning model row (`apps/cert-prep/src/app/runtime/feature/runtime-manager/runtime-manager.page.html:83-106`). The view model is built in the style of `runtime-health-view-model.service.ts`.
 
 **Decided wording and screen choices (slices 5 and 6):**
 - **Language**: zh-TW copy in `runtime/domain/device-copy.constants.ts`.
@@ -328,4 +328,4 @@ Slices 1–4 can be merged on green checks. Slices 5–6 need the product owner'
 - C:\software-dev\cert-prep\packages\cert-prep-ollama\src\cert_prep_ollama\device_policy.py
 - C:\software-dev\cert-prep\apps\cert-prep-backend\src\cert_prep_backend\ai_providers\infrastructure\ollama_transport.py
 - C:\software-dev\cert-prep\apps\cert-prep-backend\src\cert_prep_backend\ai_providers\api\schemas.py
-- C:\software-dev\cert-prep\apps\cert-prep\src\app\runtime\data\model-health-view-model.service.ts
+- C:\software-dev\cert-prep\apps\cert-prep\src\app\runtime\data\runtime-health-view-model.service.ts

@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 from cert_prep_backend.runtime_provisioning.application.ports import RuntimeInstaller
 
-from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import InstallerUnavailable
 from cert_prep_backend.ai_providers.domain.provider import (
     ModelDownloadProvider,
     ModelOnboardingProvider,
@@ -83,14 +83,14 @@ class LLMModelInstaller:
 
     def validate_installable(self) -> None:
         if provider_capability(self._provider, ModelDownloadProvider) is None:
-            raise ProviderUnavailableError(
+            raise InstallerUnavailable(
                 "Configured LLM provider does not support model downloads."
             )
 
     def install(self, progress: Callable[[RuntimeInstallProgress], None]) -> RuntimeInstallationStatus:
         model_provider = provider_capability(self._provider, ModelDownloadProvider)
         if model_provider is None:
-            raise ProviderUnavailableError(
+            raise InstallerUnavailable(
                 "Configured LLM provider does not support model downloads."
             )
         last_completed: int | None = None
@@ -128,7 +128,7 @@ class LLMModelInstaller:
                 onboarding.verify_model_onboarding(record_verification)
                 progress(RuntimeInstallProgress("Model onboarding verified.", last_completed, last_total, "committing", False))
         except Exception as exc:
-            raise ProviderUnavailableError(f"{_provider_label(self.provider)} unavailable: {exc}") from exc
+            raise InstallerUnavailable(f"{_provider_label(self.provider)} unavailable: {exc}") from exc
         return RuntimeInstallationStatus.SUCCEEDED
 
 

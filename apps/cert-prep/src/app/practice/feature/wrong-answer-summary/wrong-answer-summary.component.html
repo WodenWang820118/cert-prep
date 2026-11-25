@@ -1,0 +1,176 @@
+<section class="wrong-answer-summary" aria-labelledby="summary-heading">
+  <header class="summary-header">
+    <div>
+      <h2 id="summary-heading">Wrong-answer summary</h2>
+      <p>
+        Project weakness analysis —
+        {{ projects.selectedProject()?.name ?? 'Select a project' }}
+      </p>
+    </div>
+
+    <button
+      class="workbench-secondary-button summary-refresh-button"
+      type="button"
+      [disabled]="
+        operations.isBusyFor(busyActions) || projects.selectedProject() === null
+      "
+      (click)="refresh()"
+    >
+      <app-icon
+        name="lucideRefreshCw"
+        [busy]="operations.isBusyFor(busyActions)"
+      />
+      <span>Refresh</span>
+    </button>
+  </header>
+
+  <dl class="summary-kpis" aria-label="Weakness summary">
+    @for (metric of metrics(); track metric.label) {
+      <div [class]="'is-' + metric.tone">
+        <dt>{{ metric.label }}</dt>
+        <dd>{{ metric.value }}</dd>
+      </div>
+    }
+  </dl>
+
+  @if (hasSummaryData()) {
+    <section class="summary-grid" aria-label="Weakness details">
+      <article class="summary-panel weak-area-panel">
+        <header>
+          <div>
+            <h3>Weak areas by source</h3>
+            <p>
+              Current and cleared mistakes grouped by source document and page.
+            </p>
+          </div>
+        </header>
+
+        <div class="weak-area-list">
+          @for (area of weakAreas(); track area.key) {
+            <section class="weak-area-row">
+              <div class="weak-area-source">
+                <span>{{ area.documentLabel }}</span>
+                <strong>{{ area.pageLabel }}</strong>
+              </div>
+              <div class="weak-area-counts">
+                <span>
+                  <strong>{{ area.currentWrongCount }}</strong>
+                  current
+                </span>
+                <span>
+                  <strong>{{ area.clearedCount }}</strong>
+                  cleared
+                </span>
+                <span>{{ area.lastWrongLabel }}</span>
+              </div>
+              <button
+                class="workbench-secondary-button summary-retry-button"
+                type="button"
+                [disabled]="
+                  area.attemptIds.length === 0 ||
+                  operations.isBusyFor(busyActions)
+                "
+                (click)="retryAttemptIds(area.attemptIds)"
+              >
+                <app-icon name="lucideRefreshCw" />
+                <span>
+                  {{
+                    area.attemptIds.length === 0
+                      ? 'Cleared'
+                      : retryLabel(area.attemptIds)
+                  }}
+                </span>
+              </button>
+            </section>
+          } @empty {
+            <p class="summary-muted">No source clusters yet.</p>
+          }
+        </div>
+      </article>
+
+      <article class="summary-panel repeated-panel">
+        <header>
+          <div>
+            <h3>Repeated misses</h3>
+            <p>Questions that have missed more than once.</p>
+          </div>
+        </header>
+
+        <div class="repeated-list">
+          @for (miss of repeatedMisses(); track miss.questionId) {
+            <section class="repeated-row">
+              <div>
+                <p class="repeated-meta">
+                  {{ miss.documentLabel }} - {{ miss.pageLabel }} -
+                  {{ miss.missCount }} misses - {{ miss.lastWrongLabel }}
+                </p>
+                <h4>{{ miss.question }}</h4>
+                @if (miss.sourceExcerpt) {
+                  <p class="repeated-source">{{ miss.sourceExcerpt }}</p>
+                }
+              </div>
+              <button
+                class="workbench-secondary-button summary-retry-button"
+                type="button"
+                [disabled]="
+                  miss.attemptIds.length === 0 ||
+                  operations.isBusyFor(busyActions)
+                "
+                (click)="retryAttemptIds(miss.attemptIds)"
+              >
+                <app-icon name="lucideRefreshCw" />
+                <span>
+                  {{
+                    miss.attemptIds.length === 0
+                      ? 'Cleared'
+                      : retryLabel(miss.attemptIds)
+                  }}
+                </span>
+              </button>
+            </section>
+          } @empty {
+            <p class="summary-muted">No repeated misses yet.</p>
+          }
+        </div>
+      </article>
+
+      <article class="summary-panel answer-pattern-panel">
+        <header>
+          <div>
+            <h3>Answer patterns</h3>
+            <p>Current wrong answers grouped by selected and correct answer.</p>
+          </div>
+        </header>
+
+        <div class="answer-pattern-list">
+          @for (pattern of answerPatterns(); track pattern.key) {
+            <section class="answer-pattern-row">
+              <div class="answer-pattern-flow">
+                <span>{{ pattern.selectedAnswer }}</span>
+                <app-icon name="lucideArrowRight" />
+                <strong>{{ pattern.correctAnswer }}</strong>
+              </div>
+              <span class="answer-pattern-count">{{ pattern.count }}</span>
+              <ul>
+                @for (sample of pattern.samples; track $index) {
+                  <li>{{ sample }}</li>
+                }
+              </ul>
+            </section>
+          } @empty {
+            <p class="summary-muted">No current wrong-answer patterns.</p>
+          }
+        </div>
+      </article>
+    </section>
+  } @else {
+    <article class="summary-empty-state">
+      <app-icon name="lucideChartColumn" />
+      <h3>No weakness data yet.</h3>
+      <p>
+        Practice questions in this project first. Missed answers will appear
+        here as source clusters, repeated misses, and answer patterns.
+      </p>
+    </article>
+  }
+</section>

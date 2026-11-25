@@ -16,8 +16,20 @@ class InvalidSourceError(ValidationError):
     pass
 
 
-class ProviderUnavailableError(BackendError):
-    """Raised when a provider or its prerequisites are not available."""
+class LanguageModelUnavailable(BackendError):
+    """Ollama or its model is unavailable, or its response cannot be used."""
+
+
+class CaptureRequirementUnavailable(BackendError):
+    """The running Capture Runtime lacks the source's required capability."""
+
+
+class CaptureRuntimeUnavailable(BackendError):
+    """The Capture Runtime cannot be reached."""
+
+
+class InstallerUnavailable(BackendError):
+    """An installer or download cannot run."""
 
 
 class DocumentOperationConflictError(BackendError):

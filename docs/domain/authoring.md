@@ -265,4 +265,4 @@ flowchart TD
 - 手動產生或重試完成，以及背景產生工作的事件串流報告進度時。
 - 練習的 `PracticeStore` 與練習面板需要最新的已核可題目時。
 
-`DraftReviewStore` 在 app 啟動時由 `WorkspaceFacade` 建立，在每一頁都監看教材活動：在其他頁切換專案時，最新的教材變成目前的教材，草稿也會再查一次；回到 `/build` 時不再重新查詢。`/build` 頁（`core/shell` 的 `BuildWorkbenchPage`）只排版教材來源的匯入面板與草稿面板，沒有狀態也沒有邏輯。`core/shell/build-route-draft-reload.spec.ts` 以真的路由、殼層與 store 對 `HttpTestingController` 記錄每個請求與事件串流的順序：打開 `/build`、第一次查詢回空之後才完成的上傳、選另一份教材、再選同一份、切換專案。
+`DraftReviewStore` 在 app 啟動時由 `WorkspaceFacade` 建立，在每一頁都監看教材活動：在其他頁切換專案時，最新的教材變成目前的教材，草稿也會再查一次；回到 `/build` 時不再重新查詢。`/build` 頁（`core/shell` 的 `BuildPage`）只排版教材來源的匯入面板與草稿面板，沒有狀態也沒有邏輯。`core/shell/build-route-draft-reload.spec.ts` 以真的路由、殼層與 store 對 `HttpTestingController` 記錄每個請求與事件串流的順序：打開 `/build`、第一次查詢回空之後才完成的上傳、選另一份教材、再選同一份、切換專案。

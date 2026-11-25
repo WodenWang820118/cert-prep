@@ -31,8 +31,8 @@ export const ACCEPTANCE_PRIVATE_SCREENSHOT_SELECTORS = [
   // adjacent status/result containers so filenames and OCR text cannot leak
   // through a stale child selector.
   'capture-workbench',
-  '.capture-trial-status',
-  '.capture-trial-result',
+  '.capture-status',
+  '.capture-result',
 ] as const;
 
 const ACCEPTANCE_REDACTION_ONLY_SELECTORS = [

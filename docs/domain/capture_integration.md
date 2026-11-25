@@ -77,6 +77,7 @@ classDiagram
     document_id
     operation_id
     runtime_capture_id
+    runtime_ingestion_id
     status: CaptureReviewStatus
     review_revision
     expires_at
@@ -85,7 +86,7 @@ classDiagram
     last_event_sequence
     is_active
     is_terminal
-    with_runtime_capture(runtime_capture_id, now) CaptureReviewSession
+    with_runtime_capture(runtime_capture_id, now, runtime_ingestion_id) CaptureReviewSession
     claim_confirmation(review_revision, client_request_id, review_digest, now)
     finished(ending, now) CaptureReviewSession
   }
@@ -204,8 +205,11 @@ sequenceDiagram
 
 ## 規則與資料來源
 
-- 資料表：`capture_review_sessions`。migration 25 建立表，26 加上 `confirm_request_id` 與 `confirm_review_digest`，28 加上 `last_event_sequence`。都在 `platform/database.py`。
-- HTTP：`/projects/{project_id}/capture-workbench/captures` 與 `/capture-runtime`。事件是工作台下的 `GET /{capture_id}/events`，`text/event-stream`。
+- 資料表：`capture_review_sessions`。migration 25 建立表，26 加上 `confirm_request_id` 與 `confirm_review_digest`，28 加上 `last_event_sequence`，31 加上 `runtime_ingestion_id`（同一個 migration 也給 `documents` 加上 `extraction_provenance`；兩欄在舊資料列都是 NULL）。都在 `platform/database.py`。
+- HTTP：`/projects/{project_id}/capture-reviews` 與 `/capture-runtime`。事件是工作台下的 `GET /{capture_id}/events`，`text/event-stream`。
+- OpenAPI 標籤是 `capture-reviews`。宿主的 `captureId` 是擷取檢閱的 id；`ingestionId` 在 runtime 回報攝取 id 時就是它，否則是擷取檢閱的 id，從不是教材 id（教材 id 是 `documentId`）。
+- `capture_runtime_unavailable` 只表示 Capture Runtime 沒有設定或連不上；`capture_requirement_unavailable` 表示 runtime 在執行，但來源需要的擷取引擎沒有安裝。擷取檢閱失敗時的代碼是 `capture_review_failed`，帶已儲存的文件作業階段與失敗訊息；沒有儲存的原因時才用固定句子。
+- 擷取結果附上 Cert 自己的 `extractionProvenance`：`recorded` 是擷取寫成教材時存下的引擎、模型、裝置與 runtime 版本（`documents.extraction_provenance`）；`reconstructed` 是 migration 31 之前的教材，引擎由擷取方式推回，模型與 runtime 版本為空，不編造版本。Capture 的 `CaptureEngine.model` 不接受空值，所以這些舊教材在工作台的 `extractionEngine.model` 是 `unknown`。
 - 安裝請求的 `consent: true` 與 UUID `X-Idempotency-Key` 留在 router。安裝進入 `completed`、`failed`、`cancelled` 或 `manual_action_required` 時，client 清掉 discovery 快取。
 - `CaptureReviewStatus` 不是 OpenAPI 的列舉，概念集沒有對應項目。
 - 已知例外仍在 `apps/cert-prep-backend/pyproject.toml`：runtime router 對 `host_models`（`RuntimeReady` 也由 infrastructure 的 Capture SDK client 解析）；`persistence` 與 `review_workflow` 對教材來源的 infrastructure。
@@ -217,14 +221,14 @@ sequenceDiagram
 | 層        | 公開（`index.ts`）                                      | 內容                                                                                                                                                                                                                                                                                                                                    |
 | --------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `domain`  | 全部（`export *`）                                      | 擷取紀錄、SSE frame 與事件串流的型別，OCR 運算預檢（`OcrComputePreflight`）與帶預檢的 runtime 就緒（`CaptureRuntimeReady`），以及事件串流的事件種類與大小上限                                                                                                                                                                           |
-| `data`    | `CertPrepCaptureClient`、`CaptureRuntimePreflightStore` | `CertPrepCaptureClient` 把工作台的 streaming v2 client 與結構化介面接到已驗證的 Cert Prep 後端（`/capture-runtime` 與 `/capture-workbench/captures`），連同 API 回應與 SDK 型別互轉的 `cert-prep-capture-protocol` 與事件串流；`CaptureRuntimePreflightStore` 讀 runtime 就緒與 OCR 運算預檢，決定能不能匯入。都是 `providedIn: 'root'` |
-| `feature` | `CaptureWorkbenchTrialPage`                             | `/capture-workbench-trial` 頁（`app-capture-workbench-trial-page`，殼層路由 lazy 載入）：Capture Runtime 可用後載入預檢、註冊 `@gx-capture/capture-workbench-ui` 的 Web Component、擷取完成後重新整理教材，並下載 Markdown                                                                                                              |
+| `data`    | `CertPrepCaptureClient`、`CaptureRuntimePreflightStore` | `CertPrepCaptureClient` 把工作台的 streaming v2 client 與結構化介面接到已驗證的 Cert Prep 後端（`/capture-runtime` 與 `/capture-reviews`），連同 API 回應與 SDK 型別互轉的 `cert-prep-capture-protocol` 與事件串流；`CaptureRuntimePreflightStore` 讀 runtime 就緒與 OCR 運算預檢，決定能不能匯入。都是 `providedIn: 'root'` |
+| `feature` | `CaptureWorkbenchPage`                             | `/capture` 頁（`app-capture-page`，殼層路由 lazy 載入）：Capture Runtime 可用後載入預檢、註冊 `@gx-capture/capture-workbench-ui` 的 Web Component、擷取完成後重新整理教材，並下載 Markdown                                                                                                              |
 
 沒有 `ui`：畫面是工作台套件的 Web Component。
 
 擷取整合只引用自己、教材來源（`source-library/data` 的 `SourceImportStore`：擷取完成後 `refreshUploadedDocument` 與 `loadLatestDocument`）、學習專案（`projects/data` 的 `ProjectStore`）、執行環境（`runtime/data` 的 `DesktopRuntimeStore`：桌面端 Capture Runtime 的狀態、安裝與啟動）與 `core`。它不引用題目編寫或練習，所以沒有要反轉的呼叫。
 
-Capture Runtime 的就緒、來源證明、需求與安裝屬於擷取整合（見上文「負責與不負責」），所以 OCR 預檢的 store 在 `capture/data`，不在 `runtime`。它原本在 `stores/capture-runtime`，反向引用 `pages/capture-workbench-trial` 的 client 與型別（最後兩項 Sheriff 已知例外）；client 搬到同一層、型別搬到 `capture/domain` 後，store 經同層與 `../domain` 引用，兩項例外移除。
+Capture Runtime 的就緒、來源證明、需求與安裝屬於擷取整合（見上文「負責與不負責」），所以 OCR 預檢的 store 在 `capture/data`，不在 `runtime`。它原本在 `stores/capture-runtime`，反向引用擷取頁的 client 與型別（最後兩項 Sheriff 已知例外）；client 搬到同一層、型別搬到 `capture/domain` 後，store 經同層與 `../domain` 引用，兩項例外移除。
 
 `cert-prep-capture-protocol` 以 Cert Prep 的採用版本（`@cert-prep/capture-runtime-version`，`tools/capture-runtime-version.mts`）檢查 runtime 的 minor 版本。Sheriff 把 `tools` 標成 `layer:capture-runtime-version`，只有 `type:data` 與 `context:capture` 可以引用。`tools/capture-runtime-consumer-source.mts` 與 `tools/capture-runtime-version-check.mts` 用 `capture/data/cert-prep-capture-client.ts` 的路徑檢查採用的 SDK。
 

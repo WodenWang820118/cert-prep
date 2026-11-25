@@ -34,13 +34,13 @@ describe('PracticePanelComponent', () => {
     });
   });
 
-  it('renders the random quiz empty state', () => {
+  it('renders the random draw empty state', () => {
     const fixture = TestBed.createComponent(PracticePanelComponent);
     fixture.componentRef.setInput('sessionMode', 'random_draw');
 
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Random Quiz');
+    expect(fixture.nativeElement.textContent).toContain('Random draw');
     expect(fixture.nativeElement.textContent).toContain(
       'Select a project before starting practice.',
     );
@@ -210,7 +210,7 @@ describe('PracticePanelComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Question 1 of 1');
   });
 
-  it('loads project documents and drafts before rendering full exam readiness', () => {
+  it('loads project documents and drafts before rendering whole source readiness', () => {
     const projects = TestBed.inject(ProjectStore);
     projects.projects.set([appProject]);
     projects.select(appProject.id);
@@ -230,7 +230,7 @@ describe('PracticePanelComponent', () => {
     expect(apiClient.listQuestionDrafts).toHaveBeenCalledWith(appProject.id);
     expect(metricValue(fixture.nativeElement, 'Documents')).toBe('1');
     expect(metricValue(fixture.nativeElement, 'Questions')).toBe('1');
-    expect(buttonByText(fixture.nativeElement, 'Start full exam')?.disabled).toBe(
+    expect(buttonByText(fixture.nativeElement, 'Start whole source')?.disabled).toBe(
       false,
     );
   });

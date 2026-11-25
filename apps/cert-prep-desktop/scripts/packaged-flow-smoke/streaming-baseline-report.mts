@@ -127,7 +127,7 @@ interface PackagedStreamingProductionSummary {
   succeeded_jobs: StreamingDraftJobAttribution[];
   producing_jobs: StreamingDraftJobAttribution[];
   resources_released_at_end: ResourcesReleasedAtEndSnapshot | null;
-  full_exam_question_count: number | null;
+  whole_source_question_count: number | null;
   artifacts: {
     production_summary_json: string;
     baseline_json: string;
@@ -435,8 +435,8 @@ export function buildProductionSummary(
       resourcesReleased,
       effectiveProvider,
     ),
-    full_exam_questions_present:
-      (run.metrics.full_exam_question_count ?? 0) > 0,
+    whole_source_questions_present:
+      (run.metrics.whole_source_question_count ?? 0) > 0,
     ocr_completed_expected_pages:
       report.ocr_completion.pages_processed === EXPECTED_BASELINE_PAGES &&
       report.ocr_completion.total_pages === EXPECTED_BASELINE_PAGES,
@@ -493,7 +493,7 @@ export function buildProductionSummary(
     succeeded_jobs: succeededJobs,
     producing_jobs: producingJobs,
     resources_released_at_end: resourcesReleased ?? null,
-    full_exam_question_count: run.metrics.full_exam_question_count ?? null,
+    whole_source_question_count: run.metrics.whole_source_question_count ?? null,
     artifacts: {
       production_summary_json: normalizePath(
         relative(run.options.workspaceRoot, productionSummaryPath),

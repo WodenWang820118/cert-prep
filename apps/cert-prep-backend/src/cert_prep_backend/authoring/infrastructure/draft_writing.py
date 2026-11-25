@@ -33,7 +33,7 @@ from cert_prep_backend.authoring.domain.ports import (
 )
 from cert_prep_backend.authoring.infrastructure.ollama_drafts import OllamaDraftWriter
 from cert_prep_backend.authoring.infrastructure.placeholder_drafts import PlaceholderDraftWriter
-from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import LanguageModelUnavailable
 from cert_prep_contracts.llm import LLMProviderName
 
 __all__ = [
@@ -65,7 +65,7 @@ def draft_writer_for(
         return OllamaDraftWriter(json_chat, reading_lexicon=reading_lexicon)
     if getattr(model, "provider", None) == LLMProviderName.FAKE:
         return PlaceholderDraftWriter()
-    raise ProviderUnavailableError(
+    raise LanguageModelUnavailable(
         f"The {getattr(model, 'provider', 'configured')} provider cannot write question drafts."
     )
 
@@ -142,7 +142,7 @@ def generate_drafts_with_annotations_for_strategy(
                     source_chunk,
                     candidate,
                 )
-            except ProviderUnavailableError as exc:
+            except LanguageModelUnavailable as exc:
                 if not is_non_fatal_generation_error(exc):
                     raise
                 completed = None
@@ -175,7 +175,7 @@ def generate_drafts_with_annotations_for_strategy(
                     continue
                 try:
                     suggestions = reasoning_provider.generate_reasoning_drafts([chunk], remaining)
-                except ProviderUnavailableError as exc:
+                except LanguageModelUnavailable as exc:
                     if not is_non_fatal_generation_error(exc):
                         raise
                     continue

@@ -12,13 +12,13 @@ from runtime_characterization_support import (
     worker_gates as worker_gates,
 )
 
-from cert_prep_backend.platform.errors import OperationNotCancellableError, ProviderUnavailableError
+from cert_prep_backend.platform.errors import InstallerUnavailable, OperationNotCancellableError
 from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus as Status,
     RuntimeInstallProgress as Progress,
     RuntimeRequirementKind as Kind,
 )
-from cert_prep_ollama.exceptions import ProviderUnavailableError as OllamaUnavailableError
+from cert_prep_ollama.exceptions import OllamaInstallationUnavailable
 
 
 def test_ready_creates_fresh_success_before_validation_or_active_reuse(make_manager, installer):
@@ -44,8 +44,8 @@ def test_ready_creates_fresh_success_before_validation_or_active_reuse(make_mana
 
 
 @pytest.mark.parametrize("error", [
-    ProviderUnavailableError("unavailable"),
-    OllamaUnavailableError("unavailable"),
+    InstallerUnavailable("unavailable"),
+    OllamaInstallationUnavailable("unavailable"),
     ValueError("unavailable"),
 ])
 def test_validation_precedes_reuse_and_translates_failures(make_manager, installer, error):
@@ -54,10 +54,10 @@ def test_validation_precedes_reuse_and_translates_failures(make_manager, install
     installer.validation_error = error
     installer.calls.clear()
 
-    with pytest.raises(ProviderUnavailableError, match="^unavailable$") as caught:
+    with pytest.raises(InstallerUnavailable, match="^unavailable$") as caught:
         manager.start_installation(Kind.OLLAMA)
 
-    assert (caught.value is error) == isinstance(error, ProviderUnavailableError)
+    assert (caught.value is error) == isinstance(error, InstallerUnavailable)
     if caught.value is not error:
         assert caught.value.__cause__ is error
     assert installer.calls == ["requirement", "validate"]
@@ -69,7 +69,7 @@ def test_invalid_unconfigured_and_missing_jobs(make_manager):
     with pytest.raises(ValueError):
         manager.start_installation("not-a-kind")
     assert manager.requirement(Kind.OLLAMA_MODEL) is None
-    with pytest.raises(ProviderUnavailableError, match="No installer is configured for ollama_model."):
+    with pytest.raises(InstallerUnavailable, match="No installer is configured for ollama_model."):
         manager.start_model_installation()
     for method in (manager.get_installation, manager.cancel_installation):
         with pytest.raises(KeyError, match="missing"):
