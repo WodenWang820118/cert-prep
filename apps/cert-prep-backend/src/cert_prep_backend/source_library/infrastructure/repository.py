@@ -25,6 +25,7 @@ from cert_prep_backend.source_library.infrastructure.sources import (
     get_source,
     get_source_file,
     list_sources,
+    set_authored_question_count,
     set_question_count,
     update_question_count,
 )
@@ -45,9 +46,9 @@ class SqliteSourceRepository:
     def __init__(
         self, db: Database, *, projects: StudyProjects, connection: Connection | None = None
     ) -> None:
-        # A caller's connection joins that transaction for `source` and `record_question_count`.
-        # Question Authoring passes the connection that commits its questions, so the source's
-        # question count and status is written with them.
+        # A caller's connection joins that transaction for `source`, `record_question_count`
+        # and `record_authored_question_count`. Question Authoring passes the connection that
+        # commits its questions, so the source's question count and status is written with them.
         self._db = db
         self._projects = projects
         self._connection = connection
@@ -81,6 +82,20 @@ class SqliteSourceRepository:
             project_id=project_id,
             source_id=source_id,
             status=status,
+            question_count=question_count,
+        )
+
+    def record_authored_question_count(
+        self, project_id: str, source_id: str, *, question_count: int
+    ) -> None:
+        """Store the count only; status, failure message and `updated_at` stay."""
+
+        if self._connection is None:
+            raise RuntimeError("The question count joins the transaction that stores the question.")
+        set_authored_question_count(
+            self._connection,
+            project_id=project_id,
+            source_id=source_id,
             question_count=question_count,
         )
 

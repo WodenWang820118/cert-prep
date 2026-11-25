@@ -65,6 +65,12 @@ class SourceRepository(Protocol):
         """Store the source's status and its count of questions."""
         ...
 
+    def record_authored_question_count(
+        self, project_id: str, source_id: str, *, question_count: int
+    ) -> None:
+        """Store the count only; status, failure message and `updated_at` stay."""
+        ...
+
 
 class SourceOperationRepository(Protocol):
     """Operations; each transition is stored atomically, guarded by the state it came from."""

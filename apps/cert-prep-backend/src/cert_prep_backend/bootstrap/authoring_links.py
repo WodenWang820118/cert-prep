@@ -28,8 +28,8 @@ from cert_prep_backend.source_library.application.ports import SourceRepository
 
 
 class SourceLibraryQuestionCount:
-    """Source Library's `record_question_count` and `record_import_question_count`, for Question
-    Authoring's `SourceQuestionCount` port."""
+    """Source Library's `record_question_count`, `record_import_question_count` and
+    `record_authored_question_count`, for Question Authoring's `SourceQuestionCount` port."""
 
     def __init__(self, sources: SourceRepository) -> None:
         self._sources = sources
@@ -39,6 +39,15 @@ class SourceLibraryQuestionCount:
 
     def record_import_question_count(self, project_id: str, source_id: str, count: int) -> None:
         source_library.record_import_question_count(
+            self._sources, project_id, source_id, count
+        )
+
+    def record_authored_question_count(
+        self, project_id: str, source_id: str, count: int
+    ) -> None:
+        """Store the count only; status, failure message and `updated_at` stay."""
+
+        source_library.record_authored_question_count(
             self._sources, project_id, source_id, count
         )
 
@@ -77,6 +86,7 @@ def question_repository(
         connection,
         projects=authoring_projects(db, connection),
         sources=SourceLibraryQuestionSources(repository),
+        question_count=bind_source_question_count(db),
     )
 
 

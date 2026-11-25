@@ -103,7 +103,7 @@ def test_questions_written_at_import_are_playable_and_counted() -> None:
     ]
 
 
-def test_writing_at_import_twice_records_the_sources_total() -> None:
+def test_writing_at_import_twice_records_every_question_of_the_source() -> None:
     recorder = Recorder(suggestions=[_suggestion("Q1"), _suggestion("Q2")])
 
     _question(recorder, streams=False, writes=True)

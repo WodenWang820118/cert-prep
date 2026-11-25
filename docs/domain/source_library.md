@@ -147,8 +147,9 @@ stateDiagram-v2
 | 重試處理           | `retry_source_processing` | 以新的作業 id 從保存的原始檔重新處理教材；原始檔不見或被改過時無法重試                   |
 | 查看作業進度       | `view_operation_progress`   | 作業與它處理的教材，作業事件串流的快照                                                   |
 | 查看進行中作業     | `view_active_operation`     | 教材仍在排隊、執行或取消中的作業；沒有時是 `NotFoundError`                               |
-| 記錄題目數         | `record_question_count`        | 給題目編寫：學習者要求的題目寫好後記錄教材所有題目的總數；處理中的教材維持處理中，其他變成可用 |
-| 記錄匯入後的題目數 | `record_import_question_count` | 給題目編寫：匯入後產生的題目寫好後記錄教材所有題目的總數；有文字與段落時可用，否則 `no_text_detected`     |
+| 記錄題目數         | `record_question_count`            | 給題目編寫：學習者要求的題目寫好後記錄教材題目數；處理中的教材維持處理中，其他變成可用 |
+| 記錄匯入後的題目數 | `record_import_question_count` | 給題目編寫：匯入後產生的題目寫好後記錄教材題目數；有文字與段落時可用，否則 `no_text_detected`     |
+| 記錄手寫題目數     | `record_authored_question_count` | 給題目編寫：手寫一題時，在儲存題目的交易裡只記錄教材題目數，狀態、失敗訊息與 `updated_at` 不變 |
 
 匯入與重試的規則：
 
@@ -188,7 +189,7 @@ sequenceDiagram
 - 擷取整合：不經檢閱的匯入經 port `SourceExtraction` 交給擷取整合的 `CaptureSourceExtraction`；擷取檢閱的上傳用 `receive_upload`。擷取結果寫成段落與檢閱流程經擷取整合的 port（`CapturePublication`、`BindCaptureReviewCommit`、`CaptureOperations`），由 `bootstrap/capture_links.py` 組裝，不直接呼叫 `source_library.infrastructure`。
 - 題目編寫：匯入或重試出段落後，經 port `ImportedQuestionGeneration` 開始產生題目；教材來源不依賴題目編寫。
 - 題目編寫：作業失敗、取消或重試時，教材還沒結束的題目產生工作（`pending`、`running`、`cancel_requested`）要刪掉，已結束的留作紀錄。`question_generation_jobs` 屬題目編寫，所以教材來源經自己的 port `SourceQuestionJobs` 呼叫 `discard_unfinished_generation_jobs`。`SqliteSourceOperationRepository` 把作業交易（`BEGIN IMMEDIATE`）的連線交給題目編寫的 repository，工作和作業、教材、段落在同一個交易裡寫入或一起復原。擷取整合的檢閱復原與確認失敗也經 `SourceOperationRepository` 停止作業，所以同樣刪掉這些工作。
-- 題目編寫：寫入產生的題目時，題目編寫經它的 port `SourceQuestionCount` 呼叫 `record_question_count` 或 `record_import_question_count`；實作把題目編寫寫入交易的連線交給 `SqliteSourceRepository`，教材的狀態與題目數和題目一起寫入。
+- 題目編寫：寫入產生的題目時，題目編寫經它的 port `SourceQuestionCount` 呼叫 `record_question_count` 或 `record_import_question_count`；實作把題目編寫寫入交易的連線交給 `SqliteSourceRepository`，教材的狀態與題目數和題目一起寫入。手寫一題時，在同一個交易的連線上呼叫 `record_authored_question_count`，只寫教材題目數，狀態、失敗訊息與 `updated_at` 不變。
 - 題目編寫：讀段落與更新題目數經題目編寫的 port `QuestionSources` 與教材來源用例 `list_chunks`、`view_chunk`、`record_question_count`、`record_import_question_count`，教材存在檢查經 `ProjectSources`，不直接呼叫 `source_library.infrastructure`。
 - 練習與複習：整份教材模式經 `view_source` 確認教材屬於這個專案。這次讀取用自己的連線，在練習的寫入交易之前。
 - AI 供應：經 `application/ports.py` 的 `TraditionalChineseTranslator` 翻譯文字；`ChunkTranslator` 仍負責段落翻譯操作。`bootstrap/source_library_links.py` 注入 AI 供應的 `OllamaTraditionalChineseTranslator`，教材來源負責段落版本檢查、取消、翻譯結果的保存與批次結束時釋放資源。

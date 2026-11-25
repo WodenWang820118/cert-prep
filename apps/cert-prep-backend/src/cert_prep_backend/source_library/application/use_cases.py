@@ -71,6 +71,7 @@ __all__ = [
     "receive_upload",
     "record_question_count",
     "record_import_question_count",
+    "record_authored_question_count",
     "recover_interrupted_work",
     "retry_source_processing",
     "translate_chunk",
@@ -139,6 +140,18 @@ def record_import_question_count(
         status=source.status_after_import_questions(),
         question_count=count,
     )
+
+
+def record_authored_question_count(
+    sources: SourceRepository, project_id: str, source_id: str, count: int
+) -> None:
+    """Store the count only; status, failure message and `updated_at` stay.
+
+    The count is every question the source has, which the caller counted.
+    """
+
+    sources.source(project_id, source_id)
+    sources.record_authored_question_count(project_id, source_id, question_count=count)
 
 
 def export_markdown(
