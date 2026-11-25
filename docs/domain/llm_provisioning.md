@@ -141,9 +141,9 @@ stateDiagram-v2
 | `running`          | `failed`           | 應用程式重啟收回中斷工作；階段設為 `interrupted`                     |
 | `waiting_for_user` | `waiting_for_user` | 應用程式重啟，但重新探測後需求仍未就緒（狀態保持不變）               |
 
-### 故意保留的特殊路徑與相容行為
+### 故意保留的特殊路徑
 
-- **終態後的延遲進度更新（Late progress after a terminal state returns to running）**：目前進度處理邏輯在工作已進入終態（`succeeded` 或 `failed`）後若仍收到進度回報，不會拋出錯誤，而是會將狀態更新回 `running`（這是既有管理器的相容行為，刻意保留）。
+- **終態後的延遲進度更新（Late progress after a terminal state returns to running）**：目前進度處理邏輯在工作已進入終態（`succeeded` 或 `failed`）後若仍收到進度回報，不會拋出錯誤，而是會將狀態更新回 `running`（這是安裝進度處理既有的行為，刻意保留）。
 - **等待中工作的取消保留在要求取消（Cancelling a waiting job stays `cancel_requested` until restart）**：取消處於 `waiting_for_user` 狀態的工作時，由於沒有活躍的工作執行緒來收尾確認，工作狀態會停留在 `cancel_requested`，直到應用程式重新啟動執行 `recover_llm_installations` 時才會轉為 `canceled`。
 - **安裝後探測錯誤發生在處理常式外（Post-install probe errors）**：安裝器正常執行返回後呼叫 `requirement()` 若發生例外，會在工作執行緒的例外捕捉區塊外拋出。
 - **正常返回即視為成功（A normal return becomes success even if still unavailable）**：只要安裝器正常執行完畢（且非回傳 `waiting_for_user`），用例即將工作終態標為 `succeeded`，不會強制要求後續探測的 `requirement().available` 必須為 `True`。
@@ -153,7 +153,7 @@ stateDiagram-v2
 - `committing` 是一個技術階段（`LLMInstallationPhase.COMMITTING`），而非狀態列舉。進入提交階段後，工作變為不可取消（`cancellable = False`），並記錄 `commit_started_at`；後續進度更新維持提交中且不可取消。
 - 已提交成功的安裝工作不允許被取消；若對已提交且成功的工作呼叫取消，會引發 `OperationNotCancellableError`。
 - 跨工作唯一性：同一個需求種類（`LLMRequirementKind`）同時只能存在一個進行中（active: `queued`, `running`, `cancel_requested`, `waiting_for_user`）的工作。此規則由 `LLMInstallationJobRepository` 的鎖與 SQLite 資料庫的局部唯一索引共同維護，而非由單一聚合自己維護。
-- 重試政策：終態後重試會建立一筆新的安裝工作，管理器層級不維護自動重試或退避迴圈。
+- 重試政策：終態後重試會建立一筆新的安裝工作，安裝流程不維護自動重試或退避迴圈。
 - 聚合不直接依賴 `Event`、`Lock`、`Thread`、`sqlite3`、UUID 產生或系統時鐘，所有時間與 ID 皆由外部注入。
 
 ## 用例
@@ -207,7 +207,7 @@ sequenceDiagram
   end
 ```
 
-`create_app` 把 `LLMInstallationJobRepository`、`ConfiguredLLMInstallers` 與 `ThreadLLMInstallationWork` 組合封裝為 `LLMInstallation` 放在 `app.state.llm_installation_manager`。router 只依 port 呼叫用例。
+`create_app` 把 `LLMInstallationJobRepository`、`ConfiguredLLMInstallers` 與 `ThreadLLMInstallationWork` 組合封裝為 `LLMInstallation` 放在 `app.state.llm_installation`。router 只依 port 呼叫用例。
 
 ## 埠與轉接器（Ports and Adapters）
 

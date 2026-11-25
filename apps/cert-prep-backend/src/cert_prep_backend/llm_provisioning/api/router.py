@@ -17,15 +17,15 @@ from cert_prep_contracts.llm_installation import LLMRequirementKind
 router = APIRouter(prefix="/llm", tags=["llm"])
 
 
-def get_llm_installation_manager(request: Request) -> LLMInstallation:
-    return request.app.state.llm_installation_manager
+def get_app_llm_installation(request: Request) -> LLMInstallation:
+    return request.app.state.llm_installation
 
 
 @router.get("/requirements", response_model=LLMRequirementsRead)
 def llm_requirements(
-    manager: LLMInstallation = Depends(get_llm_installation_manager),
+    installation: LLMInstallation = Depends(get_app_llm_installation),
 ):
-    return {"items": llm_installations.list_llm_requirements(manager)}
+    return {"items": llm_installations.list_llm_requirements(installation)}
 
 
 @router.post(
@@ -35,12 +35,12 @@ def llm_requirements(
 )
 def start_llm_installation(
     body: StartLLMInstallationRequest,
-    manager: LLMInstallation = Depends(get_llm_installation_manager),
+    installation: LLMInstallation = Depends(get_app_llm_installation),
 ):
     try:
         if body.kind == LLMRequirementKind.OLLAMA_MODEL:
-            return llm_installations.download_selected_model(manager)
-        return llm_installations.start_llm_installation(manager, body.kind)
+            return llm_installations.download_selected_model(installation)
+        return llm_installations.start_llm_installation(installation, body.kind)
     except InstallerUnavailable as exc:
         raise api_error(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -52,10 +52,10 @@ def start_llm_installation(
 @router.get("/installations/{job_id}", response_model=LLMInstallationRead)
 def get_llm_installation(
     job_id: str,
-    manager: LLMInstallation = Depends(get_llm_installation_manager),
+    installation: LLMInstallation = Depends(get_app_llm_installation),
 ):
     try:
-        return llm_installations.view_llm_installation(manager, job_id)
+        return llm_installations.view_llm_installation(installation, job_id)
     except KeyError as exc:
         raise not_found_error("LLM installation job was not found.") from exc
 
@@ -63,10 +63,10 @@ def get_llm_installation(
 @router.delete("/installations/{job_id}", response_model=LLMInstallationRead)
 def cancel_llm_installation(
     job_id: str,
-    manager: LLMInstallation = Depends(get_llm_installation_manager),
+    installation: LLMInstallation = Depends(get_app_llm_installation),
 ):
     try:
-        return llm_installations.cancel_llm_installation(manager, job_id)
+        return llm_installations.cancel_llm_installation(installation, job_id)
     except KeyError as exc:
         raise not_found_error("LLM installation job was not found.") from exc
     except OperationNotCancellableError as exc:

@@ -846,7 +846,25 @@
   {
     "name": "runtime_installation_manager",
     "match": "word",
-    "replacement": "llm_installation_manager",
+    "replacement": "llm_installation",
+    "allowed": []
+  },
+  {
+    "name": "llm_installation_manager",
+    "match": "word",
+    "replacement": "llm_installation",
+    "allowed": []
+  },
+  {
+    "name": "get_llm_installation_manager",
+    "match": "word",
+    "replacement": "get_app_llm_installation",
+    "allowed": []
+  },
+  {
+    "name": "llm_installation_compat",
+    "match": "word",
+    "replacement": "build_llm_installation and the llm_provisioning use cases",
     "allowed": []
   },
   {
@@ -900,7 +918,7 @@
   {
     "name": "runtime_installation_compat",
     "match": "word",
-    "replacement": "llm_installation_compat",
+    "replacement": "build_llm_installation and the llm_provisioning use cases",
     "allowed": []
   },
   {
@@ -1067,7 +1085,13 @@
   {
     "name": "RuntimeInstallationManager",
     "match": "word",
-    "replacement": "LLMInstallationManager",
+    "replacement": "LLMInstallation",
+    "allowed": []
+  },
+  {
+    "name": "LLMInstallationManager",
+    "match": "word",
+    "replacement": "LLMInstallation",
     "allowed": []
   },
   {

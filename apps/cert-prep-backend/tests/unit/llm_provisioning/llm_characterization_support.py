@@ -8,7 +8,12 @@ from uuid import UUID
 
 import pytest
 
+from cert_prep_backend.bootstrap.app import build_llm_installation
 from cert_prep_backend.platform.config import Settings
+from cert_prep_backend.llm_provisioning.application.use_cases import (
+    recover_llm_installations,
+    stop_llm_installations,
+)
 from cert_prep_backend.llm_provisioning.infrastructure import manager as manager_module
 from cert_prep_contracts.llm_installation import (
     LLMInstallationStatus as Status,
@@ -126,11 +131,11 @@ def worker_gates(monkeypatch):
 
 
 @pytest.fixture
-def make_manager(tmp_path, installer, worker_gates):
-    managers = []
+def make_installation(tmp_path, installer, worker_gates):
+    installations = []
 
     def make(*, installers=None, db=None, async_jobs=False):
-        instance = manager_module.LLMInstallationManager(
+        installation = build_llm_installation(
             settings=Settings(data_dir=tmp_path, llm_provider="fake"),
             llm_provider=object(),
             machine_inventory=object(),
@@ -138,13 +143,14 @@ def make_manager(tmp_path, installer, worker_gates):
             async_jobs=async_jobs,
             installers=[installer] if installers is None else installers,
         )
-        managers.append(instance)
-        return instance
+        recover_llm_installations(installation)
+        installations.append(installation)
+        return installation
 
     yield make
     for release, done, worker in worker_gates:
         release.set()
         worker.join(timeout=10)
-        assert done.is_set(), "worker did not finish before manager cleanup"
-    for instance in managers:
-        instance.close()
+        assert done.is_set(), "worker did not finish before installation cleanup"
+    for installation in installations:
+        stop_llm_installations(installation)

@@ -143,7 +143,7 @@ logger = logging.getLogger(__name__)
 def create_app(
     settings: Settings | None = None,
     llm_provider: LLMProvider | None = None,
-    llm_installation_manager: LLMInstallation | None = None,
+    llm_installation: LLMInstallation | None = None,
     llm_installation_async_jobs: bool = True,
     source_processing_async_jobs: bool = True,
     background_question_jobs: bool = True,
@@ -169,7 +169,7 @@ def create_app(
                     ",".join(close_result.unresolved_operation_ids),
                     extra={"operation_ids": close_result.unresolved_operation_ids},
                 )
-            llm_installations.stop_llm_installations(app.state.llm_installation_manager)
+            llm_installations.stop_llm_installations(app.state.llm_installation)
             app.state.question_job_scheduler.close()
             llm_provider_close = getattr(app.state.llm_provider, "close", None)
             if callable(llm_provider_close):
@@ -318,10 +318,10 @@ def create_app(
         settings=app_settings,
     )
     app.state.machine_inventory = OllamaMachineInventory(app_settings)
-    if llm_installation_manager:
-        app.state.llm_installation_manager = llm_installation_manager
+    if llm_installation:
+        app.state.llm_installation = llm_installation
     else:
-        app.state.llm_installation_manager = build_llm_installation(
+        app.state.llm_installation = build_llm_installation(
             settings=app_settings,
             llm_provider=app.state.llm_provider,
             machine_inventory=app.state.machine_inventory,
@@ -329,7 +329,7 @@ def create_app(
             async_jobs=llm_installation_async_jobs,
             server=app.state.ollama_server,
         )
-        llm_installations.recover_llm_installations(app.state.llm_installation_manager)
+        llm_installations.recover_llm_installations(app.state.llm_installation)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=app_settings.allowed_origins,

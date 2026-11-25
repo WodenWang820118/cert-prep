@@ -5,12 +5,18 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from llm_characterization_support import (
     installer as installer,
-    make_manager as make_manager,
+    make_installation as make_installation,
     no_ollama_start as no_ollama_start,
     runtime_clock as runtime_clock,
     worker_gates as worker_gates,
 )
 
+from cert_prep_backend.llm_provisioning.application.use_cases import (
+    cancel_llm_installation,
+    download_selected_model,
+    start_llm_installation,
+    view_llm_installation,
+)
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.database import Database
 from cert_prep_contracts.llm_installation import (
@@ -44,14 +50,14 @@ def saved_job(database, job_id):
 
 @pytest.mark.parametrize("original", list(Status))
 def test_restart_recovery_preserves_columns_and_applies_status_rules(
-    tmp_path, make_manager, installer, original,
+    tmp_path, make_installation, installer, original,
 ):
     database = Database(Settings(data_dir=tmp_path))
     commit = "2025-01-01T00:00:00+00:00"
     seed_job(database, "saved-job", original, commit=commit)
     before = saved_job(database, "saved-job")
-    manager = make_manager(db=database)
-    recovered = manager.get_installation("saved-job")
+    installation = make_installation(db=database)
+    recovered = view_llm_installation(installation, "saved-job")
     after = saved_job(database, "saved-job")
 
     if original in {Status.QUEUED, Status.RUNNING}:
@@ -81,32 +87,32 @@ def test_restart_recovery_preserves_columns_and_applies_status_rules(
     if original in {Status.QUEUED, Status.RUNNING, Status.CANCEL_REQUESTED}:
         assert after["updated_at"] > before["updated_at"]
     if original == Status.WAITING_FOR_USER:
-        assert manager.get_installation("saved-job") == recovered
+        assert view_llm_installation(installation, "saved-job") == recovered
         installer.available = True
-        ready = manager.get_installation("saved-job")
+        ready = view_llm_installation(installation, "saved-job")
         assert ready.status == Status.SUCCEEDED
         assert ready.error is None
         assert saved_job(database, "saved-job")["error"] is None
 
 
-def test_waiting_cancellation_finishes_only_after_restart(tmp_path, make_manager, installer):
+def test_waiting_cancellation_finishes_only_after_restart(tmp_path, make_installation, installer):
     database = Database(Settings(data_dir=tmp_path))
     installer.action = lambda progress: Status.WAITING_FOR_USER
-    first = make_manager(db=database)
-    waiting = first.start_installation(Kind.OLLAMA)
-    requested = first.cancel_installation(waiting.id)
+    first = make_installation(db=database)
+    waiting = start_llm_installation(first, Kind.OLLAMA)
+    requested = cancel_llm_installation(first, waiting.id)
     assert requested.status == Status.CANCEL_REQUESTED
     assert saved_job(database, waiting.id)["status"] == "cancel_requested"
 
-    second = make_manager(db=database)
-    recovered = second.get_installation(waiting.id)
+    second = make_installation(db=database)
+    recovered = view_llm_installation(second, waiting.id)
     assert recovered.status == Status.CANCELED
     assert recovered.detail == "LLM installation cancellation completed after restart."
     assert recovered.error is None
     assert saved_job(database, waiting.id)["status"] == "canceled"
 
 
-def test_wait_for_user_persists_every_column(tmp_path, make_manager, installer):
+def test_wait_for_user_persists_every_column(tmp_path, make_installation, installer):
     database = Database(Settings(data_dir=tmp_path))
 
     def waiting_after_partial_progress(progress):
@@ -114,7 +120,7 @@ def test_wait_for_user_persists_every_column(tmp_path, make_manager, installer):
         return Status.WAITING_FOR_USER
 
     installer.action = waiting_after_partial_progress
-    waiting = make_manager(db=database).start_installation(Kind.OLLAMA)
+    waiting = start_llm_installation(make_installation(db=database), Kind.OLLAMA)
     row = saved_job(database, waiting.id)
     assert (row["status"], row["phase"], row["cancellable"]) == (
         "waiting_for_user", "waiting_for_user", 1,
@@ -128,19 +134,19 @@ def test_wait_for_user_persists_every_column(tmp_path, make_manager, installer):
 
 
 def test_wait_for_user_after_cancel_request_persists_canceled_columns(
-    tmp_path, make_manager, installer,
+    tmp_path, make_installation, installer,
 ):
     database = Database(Settings(data_dir=tmp_path))
-    manager = make_manager(db=database)
+    installation = make_installation(db=database)
 
     def cancel_then_wait(progress):
         progress(Progress("downloaded", 70, 90))
-        (job_id,) = manager._jobs
-        manager.cancel_installation(job_id)
+        [stored] = installation.jobs.list_all()
+        cancel_llm_installation(installation, stored.id)
         return Status.WAITING_FOR_USER
 
     installer.action = cancel_then_wait
-    result = manager.start_installation(Kind.OLLAMA)
+    result = start_llm_installation(installation, Kind.OLLAMA)
     row = saved_job(database, result.id)
     assert (row["status"], row["phase"], row["cancellable"]) == ("canceled", "canceled", 0)
     assert row["detail"] == "LLM installation canceled"
@@ -152,7 +158,7 @@ def test_wait_for_user_after_cancel_request_persists_canceled_columns(
     assert row["updated_at"] == result.updated_at
 
 
-def test_recovery_retains_exact_newest_100_with_created_and_id_tiebreaks(tmp_path, make_manager):
+def test_recovery_retains_exact_newest_100_with_created_and_id_tiebreaks(tmp_path, make_installation):
     database = Database(Settings(data_dir=tmp_path))
     for index in range(105):
         seed_job(database, f"history-{index:03}", Status.SUCCEEDED, offset=index)
@@ -167,61 +173,61 @@ def test_recovery_retains_exact_newest_100_with_created_and_id_tiebreaks(tmp_pat
             "SELECT id FROM llm_installation_jobs "
             "ORDER BY updated_at DESC, created_at DESC, id DESC LIMIT 100"
         )]
-    manager = make_manager(db=database)
+    installation = make_installation(db=database)
     assert expected[:3] == ["history-104", "history-001", "history-000"]
-    assert list(manager._jobs) == list(reversed(expected))
+    assert [job.id for job in installation.jobs.list_all()] == list(reversed(expected))
     for index in range(105):
         job_id = f"history-{index:03}"
         if job_id in expected:
-            assert manager.get_installation(job_id).id == job_id
+            assert view_llm_installation(installation, job_id).id == job_id
         else:
             with pytest.raises(KeyError):
-                manager.get_installation(job_id)
+                view_llm_installation(installation, job_id)
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM llm_installation_jobs").fetchone()[0] == 105
 
 
 @pytest.mark.parametrize("status", [Status.QUEUED, Status.RUNNING, Status.CANCEL_REQUESTED])
-def test_recovery_updates_old_rows_before_selecting_retained_history(tmp_path, make_manager, status):
+def test_recovery_updates_old_rows_before_selecting_retained_history(tmp_path, make_installation, status):
     database = Database(Settings(data_dir=tmp_path))
     seed_job(database, "old-active", status)
     for index in range(105):
         seed_job(database, f"history-{index:03}", Status.SUCCEEDED, offset=index + 1)
-    manager = make_manager(db=database)
+    installation = make_installation(db=database)
     assert saved_job(database, "old-active")["status"] == (
         "canceled" if status == Status.CANCEL_REQUESTED else "failed"
     )
-    assert manager.get_installation("old-active").status == (
+    assert view_llm_installation(installation, "old-active").status == (
         Status.CANCELED if status == Status.CANCEL_REQUESTED else Status.FAILED
     )
-    assert len(manager._jobs) == 100
+    assert len(installation.jobs.list_all()) == 100
     with pytest.raises(KeyError):
-        manager.get_installation("history-000")
+        view_llm_installation(installation, "history-000")
 
 
 def test_eviction_uses_oldest_terminal_update_and_keeps_active_and_database_history(
-    tmp_path, make_manager, installer,
+    tmp_path, make_installation, installer,
 ):
     database = Database(Settings(data_dir=tmp_path))
     model = type(installer)(Kind.OLLAMA_MODEL)
     model.available = True
     # A separate kind avoids readiness bypass creating successes for the active kind.
-    manager = make_manager(db=database, async_jobs=True, installers=[installer, model])
-    active = manager.start_installation(Kind.OLLAMA)
-    finished = [manager.start_model_installation() for _ in range(101)]
-    assert manager.get_installation(active.id) == active
+    installation = make_installation(db=database, async_jobs=True, installers=[installer, model])
+    active = start_llm_installation(installation, Kind.OLLAMA)
+    finished = [download_selected_model(installation) for _ in range(101)]
+    assert view_llm_installation(installation, active.id) == active
     for job in finished[:2]:
         with pytest.raises(KeyError):
-            manager.get_installation(job.id)
+            view_llm_installation(installation, job.id)
         assert saved_job(database, job.id)["status"] == "succeeded"
-    assert list(manager._jobs) == [active.id, *(job.id for job in finished[2:])]
-    assert manager.get_installation(finished[-1].id) == finished[-1]
+    assert [job.id for job in installation.jobs.list_all()] == [active.id, *(job.id for job in finished[2:])]
+    assert view_llm_installation(installation, finished[-1].id) == finished[-1]
     with database.connect() as connection:
         assert connection.execute("SELECT COUNT(*) FROM llm_installation_jobs").fetchone()[0] == 102
 
 
 def test_terminal_finalization_evicts_oldest_terminal_not_oldest_active(
-    tmp_path, make_manager, installer,
+    tmp_path, make_installation, installer,
 ):
     database = Database(Settings(data_dir=tmp_path))
     for index in range(100):
@@ -233,33 +239,33 @@ def test_terminal_finalization_evicts_oldest_terminal_not_oldest_active(
             "UPDATE llm_installation_jobs SET updated_at = '2024-01-01T00:00:00+00:00' "
             "WHERE id = 'history-099'"
         )
-    manager = make_manager(db=database)
-    result = manager.start_installation(Kind.OLLAMA)
+    installation = make_installation(db=database)
+    result = start_llm_installation(installation, Kind.OLLAMA)
     assert result.status == Status.SUCCEEDED
     with pytest.raises(KeyError):
-        manager.get_installation("history-099")
-    assert manager.get_installation("history-000").status == Status.SUCCEEDED
-    assert len(manager._jobs) == 100
+        view_llm_installation(installation, "history-099")
+    assert view_llm_installation(installation, "history-000").status == Status.SUCCEEDED
+    assert len(installation.jobs.list_all()) == 100
     assert saved_job(database, "history-099")["status"] == "succeeded"
 
 
 def test_database_less_mode_has_same_lifecycle_and_100_job_retention(
-    tmp_path, make_manager, installer,
+    tmp_path, make_installation, installer,
 ):
     installer.available = True
-    manager = make_manager()
-    jobs = [manager.start_installation(Kind.OLLAMA) for _ in range(103)]
+    installation = make_installation()
+    jobs = [start_llm_installation(installation, Kind.OLLAMA) for _ in range(103)]
     for job in jobs[:3]:
         with pytest.raises(KeyError):
-            manager.get_installation(job.id)
-    assert list(manager._jobs) == [job.id for job in jobs[3:]]
-    assert manager.get_installation(jobs[-1].id) == jobs[-1]
+            view_llm_installation(installation, job.id)
+    assert [job.id for job in installation.jobs.list_all()] == [job.id for job in jobs[3:]]
+    assert view_llm_installation(installation, jobs[-1].id) == jobs[-1]
     assert not Settings(data_dir=tmp_path).database_path.exists()
 
 
 @pytest.mark.parametrize("bytes_count", [None, 0])
-def test_available_requirement_preserves_null_or_zero_counts(make_manager, installer, bytes_count):
+def test_available_requirement_preserves_null_or_zero_counts(make_installation, installer, bytes_count):
     installer.available = True
     installer.bytes = bytes_count
-    result = make_manager().start_installation(Kind.OLLAMA)
+    result = start_llm_installation(make_installation(), Kind.OLLAMA)
     assert result.completed == result.total == bytes_count

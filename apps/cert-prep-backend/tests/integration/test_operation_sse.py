@@ -9,10 +9,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 from cert_prep_backend.ai_providers.infrastructure.machine_inventory import OllamaMachineInventory
-from cert_prep_backend.bootstrap.app import create_app
+from cert_prep_backend.bootstrap.app import build_llm_installation, create_app
 from cert_prep_backend.platform.sse import operation_snapshot_stream
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.llm_provisioning.infrastructure.manager import LLMInstallationManager
+from cert_prep_backend.llm_provisioning.application.use_cases import (
+    recover_llm_installations,
+    start_llm_installation,
+    stop_llm_installations,
+    view_llm_installation,
+)
 from cert_prep_backend.source_library.infrastructure import operations as source_operations
 from cert_prep_backend.platform.change_notifications import DatabaseChangeNotifier
 from cert_prep_backend.platform.database import Database
@@ -132,7 +137,7 @@ def test_operation_snapshot_stream_observes_revision_before_initial_snapshot() -
         (LLMRequirementKind.OLLAMA_MODEL, "llm-installation"),
     ],
 )
-def test_runtime_manager_db_commits_wake_operation_stream(
+def test_llm_installation_db_commits_wake_operation_stream(
     tmp_path,
     kind: LLMRequirementKind,
     event_name: str,
@@ -174,7 +179,7 @@ def test_runtime_manager_db_commits_wake_operation_stream(
             release_install.wait(timeout=2)
             return LLMInstallationStatus.SUCCEEDED
 
-    manager = LLMInstallationManager(
+    installation = build_llm_installation(
         settings=settings,
         llm_provider=object(),
         machine_inventory=OllamaMachineInventory(settings),
@@ -182,12 +187,13 @@ def test_runtime_manager_db_commits_wake_operation_stream(
         async_jobs=True,
         installers=[BlockingInstaller(kind)],
     )
+    recover_llm_installations(installation)
     try:
-        job = manager.start_installation(kind)
+        job = start_llm_installation(installation, kind)
         assert progress_emitted.wait(timeout=1)
         stream = operation_snapshot_stream(
             notifier=notifier,
-            snapshot=lambda: asdict(manager.get_installation(job.id)),
+            snapshot=lambda: asdict(view_llm_installation(installation, job.id)),
             event_name=event_name,
             is_terminal=lambda value: value["status"]
             in {
@@ -209,7 +215,7 @@ def test_runtime_manager_db_commits_wake_operation_stream(
         assert notifier.revision() >= 3
     finally:
         release_install.set()
-        manager.close()
+        stop_llm_installations(installation)
 
 
 def test_source_operation_events_route_streams_authenticated_terminal_snapshot(
