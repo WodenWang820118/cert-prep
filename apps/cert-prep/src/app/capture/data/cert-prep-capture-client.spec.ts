@@ -194,6 +194,93 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     });
   });
 
+  it('accepts events as the 0.11.0 runtime serializes them, progress and speaker fields included', async () => {
+    await seedCapture();
+    const segment = {
+      segmentId: 'segment-1',
+      order: 0,
+      locator: { kind: 'page', page: 1 },
+      text: 'page one',
+      speaker: null,
+      speakerOverlap: false,
+    };
+    const body = [
+      sseFrame(1, 'checkpoint', {
+        pagesDone: null,
+        pagesTotal: null,
+        durationMs: null,
+        segments: [],
+        error: null,
+      }),
+      sseFrame(2, 'segment', {
+        pagesDone: 1,
+        pagesTotal: 3,
+        durationMs: null,
+        segments: [segment],
+        error: null,
+      }),
+    ].join('');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(body, {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        }),
+      ),
+    );
+
+    const events = await lastValueFrom(
+      client.captureEvents('capture-1').pipe(toArray()),
+    );
+
+    expect(events).toMatchObject([
+      { sequence: 1, eventType: 'checkpoint', pagesDone: null },
+      {
+        sequence: 2,
+        eventType: 'segment',
+        pagesDone: 1,
+        pagesTotal: 3,
+        segments: [{ segmentId: 'segment-1', speakerOverlap: false }],
+      },
+    ]);
+  });
+
+  it.each([
+    ['a zero page total', { pagesTotal: 0 }],
+    ['a negative page count', { pagesDone: -1 }],
+    ['a fractional duration', { durationMs: 1.5 }],
+    [
+      'a non-boolean speaker overlap',
+      {
+        segments: [
+          {
+            segmentId: 'segment-1',
+            order: 0,
+            locator: { kind: 'page', page: 1 },
+            text: 'page one',
+            speakerOverlap: 'no',
+          },
+        ],
+      },
+    ],
+  ])('rejects an event with %s', async (_label, payload) => {
+    await seedCapture();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(sseFrame(1, 'checkpoint', payload), {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        }),
+      ),
+    );
+
+    await expect(
+      lastValueFrom(client.captureEvents('capture-1')),
+    ).rejects.toThrow();
+  });
+
   it('ignores standalone SSE heartbeats and other no-data blocks', async () => {
     await seedCapture();
     const body = [
